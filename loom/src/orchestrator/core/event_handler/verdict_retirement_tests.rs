@@ -14,7 +14,21 @@ use crate::fs::session_files::{load_session_exact, save_session};
 use crate::models::failure::{FailureInfo, FailureType};
 use crate::models::session::{Session, SessionBackendKind, SessionExitReason, SessionStatus};
 use crate::orchestrator::terminal::native::write_test_pid_identity;
+use crate::process::sandbox_probe::skip_without_group_signals;
 use crate::verify::transitions::{load_stage, update_stage};
+
+/// An orchestrator that tracks `session` as the live session of `test-stage`.
+fn tracking_orchestrator(
+    work: &std::path::Path,
+    root: &std::path::Path,
+    session: &Session,
+) -> Orchestrator {
+    let mut orchestrator = orchestrator_for(work, root);
+    orchestrator
+        .active_sessions
+        .insert("test-stage".to_string(), session.clone());
+    orchestrator
+}
 
 fn disputing_stage(work: &std::path::Path) -> (Session, u32) {
     executing_stage(work);
@@ -64,14 +78,15 @@ fn retirement_keeps_a_missing_assigned_writer_for_block_and_dispute() {
 /// instead of the daemon adopting the same idle process.
 #[test]
 fn retiring_kills_the_disputing_agent_and_clears_the_stage_session() {
+    if skip_without_group_signals("retiring_kills_the_disputing_agent_and_clears_the_stage_session")
+    {
+        return;
+    }
     let temp = handoff_work_dir();
     let work = temp.path().join(".loom").join("work");
     let (session, agent_pid) = disputing_stage(&work);
 
-    let mut orchestrator = orchestrator_for(&work, temp.path());
-    orchestrator
-        .active_sessions
-        .insert("test-stage".to_string(), session.clone());
+    let mut orchestrator = tracking_orchestrator(&work, temp.path(), &session);
 
     let survivors = orchestrator.retire_disputing_agents("test-stage").unwrap();
 
@@ -105,6 +120,9 @@ fn retiring_kills_the_disputing_agent_and_clears_the_stage_session() {
 /// applied.
 #[test]
 fn retiring_leaves_the_adjudication_session_alone() {
+    if skip_without_group_signals("retiring_leaves_the_adjudication_session_alone") {
+        return;
+    }
     let temp = handoff_work_dir();
     let work = temp.path().join(".loom").join("work");
     let (session, agent_pid) = disputing_stage(&work);
@@ -115,10 +133,7 @@ fn retiring_leaves_the_adjudication_session_alone() {
     let adjudicator_pid = spawn_orphan_process();
     write_test_pid_identity(&work, &adjudication_session, adjudicator_pid).unwrap();
 
-    let mut orchestrator = orchestrator_for(&work, temp.path());
-    orchestrator
-        .active_sessions
-        .insert("test-stage".to_string(), session.clone());
+    let mut orchestrator = tracking_orchestrator(&work, temp.path(), &session);
 
     let survivors = orchestrator.retire_disputing_agents("test-stage").unwrap();
 
@@ -136,6 +151,9 @@ fn retiring_leaves_the_adjudication_session_alone() {
 /// runs only ahead of applying a verdict.
 #[test]
 fn a_stage_not_under_adjudication_is_not_retired() {
+    let false = skip_without_group_signals("a_stage_not_under_adjudication_is_not_retired") else {
+        return;
+    };
     let temp = handoff_work_dir();
     let work = temp.path().join(".loom").join("work");
     executing_stage(&work);
@@ -145,10 +163,7 @@ fn a_stage_not_under_adjudication_is_not_retired() {
     write_test_pid_identity(&work, &session, agent_pid).unwrap();
     assign_stage_session(&work, &session.id);
 
-    let mut orchestrator = orchestrator_for(&work, temp.path());
-    orchestrator
-        .active_sessions
-        .insert("test-stage".to_string(), session.clone());
+    let mut orchestrator = tracking_orchestrator(&work, temp.path(), &session);
 
     let survivors = orchestrator.retire_disputing_agents("test-stage").unwrap();
 
@@ -197,6 +212,9 @@ fn block_directly(work: &std::path::Path, failure_info: Option<FailureInfo>) {
 /// of an earlier attempt must not stand in the way.
 #[test]
 fn an_agent_block_retires_the_live_session() {
+    if skip_without_group_signals("an_agent_block_retires_the_live_session") {
+        return;
+    }
     let temp = handoff_work_dir();
     let work = temp.path().join(".loom").join("work");
     let (session, agent_pid) = stage_with_live_agent(&work);
@@ -206,10 +224,7 @@ fn an_agent_block_retires_the_live_session() {
     })
     .unwrap();
 
-    let mut orchestrator = orchestrator_for(&work, temp.path());
-    orchestrator
-        .active_sessions
-        .insert("test-stage".to_string(), session.clone());
+    let mut orchestrator = tracking_orchestrator(&work, temp.path(), &session);
 
     let response =
         crate::daemon::handle_block_stage(&work, "test-stage", "spec is ambiguous").unwrap();
@@ -249,6 +264,10 @@ fn an_agent_block_retires_the_live_session() {
 /// already gone or owned by the crash path, so the block handler leaves it.
 #[test]
 fn a_crash_blocked_stage_is_left_to_the_crash_path() {
+    let false = skip_without_group_signals("a_crash_blocked_stage_is_left_to_the_crash_path")
+    else {
+        return;
+    };
     let temp = handoff_work_dir();
     let work = temp.path().join(".loom").join("work");
     let (session, agent_pid) = stage_with_live_agent(&work);
@@ -271,6 +290,9 @@ fn a_crash_blocked_stage_is_left_to_the_crash_path() {
 /// on; its session belongs to the new attempt and must not be touched.
 #[test]
 fn a_stage_that_left_blocked_is_not_retired() {
+    let false = skip_without_group_signals("a_stage_that_left_blocked_is_not_retired") else {
+        return;
+    };
     let temp = handoff_work_dir();
     let work = temp.path().join(".loom").join("work");
     let (_session, agent_pid) = stage_with_live_agent(&work);
@@ -295,6 +317,9 @@ fn a_stage_that_left_blocked_is_not_retired() {
 /// `ContextExhausted`, and `MergeSessionCompleted` would never fire.
 #[test]
 fn a_merge_resolver_is_not_retired_by_a_block() {
+    let false = skip_without_group_signals("a_merge_resolver_is_not_retired_by_a_block") else {
+        return;
+    };
     let temp = handoff_work_dir();
     let work = temp.path().join(".loom").join("work");
     executing_stage(&work);
@@ -308,10 +333,7 @@ fn a_merge_resolver_is_not_retired_by_a_block() {
     let resolver_pid = spawn_orphan_process();
     write_test_pid_identity(&work, &resolver, resolver_pid).unwrap();
 
-    let mut orchestrator = orchestrator_for(&work, temp.path());
-    orchestrator
-        .active_sessions
-        .insert("test-stage".to_string(), resolver.clone());
+    let mut orchestrator = tracking_orchestrator(&work, temp.path(), &resolver);
 
     orchestrator.on_stage_blocked("test-stage").unwrap();
 

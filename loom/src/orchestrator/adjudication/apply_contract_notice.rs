@@ -28,13 +28,13 @@ pub(super) fn accepted(outcome: &Outcome<'_>) -> String {
         .iter()
         .map(|(path, _)| path.as_str())
         .collect();
-    let dropped = &outcome.refrozen.dropped;
-    let dropped = if dropped.is_empty() {
+    let restored = &outcome.refrozen.restored;
+    let restored = if restored.is_empty() {
         String::new()
     } else {
         format!(
-            " Dropped from the freeze, as the worktree no longer holds them: {}.",
-            dropped.join(", ")
+            " Put back from their frozen copies, as the worktree had changed them: {}.",
+            restored.join(", ")
         )
     };
     let action = if outcome.written.is_empty() {
@@ -44,7 +44,8 @@ pub(super) fn accepted(outcome: &Outcome<'_>) -> String {
     };
     format!(
         "The adjudicator ruled on your contract dispute.\n\n{}\nThe stage's contract and \
-         harness files are re-frozen at their current content ({}).{dropped}{}{}\n\n\
+         harness files are re-frozen ({}): each accepted replacement as written, every \
+         other frozen file at its frozen copy.{restored}{}{}\n\n\
          Action: {action}\n",
         rulings_section(outcome.rulings),
         paths.join(", "),
@@ -54,12 +55,21 @@ pub(super) fn accepted(outcome: &Outcome<'_>) -> String {
 }
 
 /// The notice for a verdict that rejects every disputed contract. Any
-/// replacement was discarded and the worktree left alone.
-pub(super) fn rejected(stage_id: &str, rulings: &[ContractRuling], replaced: bool) -> String {
+/// replacement was discarded and the worktree left alone. Without one, the
+/// restore commands are named only when `restore`: admission refused drift,
+/// so they matter only for a frozen file changed since.
+pub(super) fn rejected(
+    stage_id: &str,
+    rulings: &[ContractRuling],
+    replaced: bool,
+    restore: bool,
+) -> String {
     let action = if replaced {
         "Your replacements were discarded; the worktree was not changed. Implement against \
          the frozen contracts."
             .to_string()
+    } else if !restore {
+        "implement against the frozen contracts.".to_string()
     } else {
         let restores: Vec<String> = rulings
             .iter()

@@ -96,6 +96,9 @@ fn xdotool_close_tries_later_matching_windows_after_failure() {
 #[cfg(target_os = "linux")]
 #[test]
 fn failed_xdotool_close_reaches_verified_pid_teardown() {
+    crate::process::sandbox_probe::require_group_signals!(
+        "failed_xdotool_close_reaches_verified_pid_teardown"
+    );
     use super::super::{pid_tracking, window_identity, NativeBackend};
     use crate::models::session::Session;
     use crate::orchestrator::terminal::emulator::TerminalEmulator;

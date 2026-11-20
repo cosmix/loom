@@ -1,6 +1,7 @@
 //! Contract tests for stage file-server: `verify_text`, the save path, the document and diff
 //! routes, search and the turn text store.
 
+use loom::process::sandbox_probe::skip_without_loopback;
 use std::io::{Read, Write};
 use std::net::{IpAddr, Ipv4Addr, TcpStream};
 use std::path::PathBuf;
@@ -20,6 +21,16 @@ use tempfile::TempDir;
 #[path = "test_support/mod.rs"]
 mod test_support;
 use test_support::git_repo::{git, TestRepo};
+
+/// Returns from the calling test, naming it, when this process cannot bind a loopback
+/// listener, since every test here starts a planning server.
+macro_rules! needs_loopback {
+    ($test:literal) => {
+        if skip_without_loopback($test) {
+            return;
+        }
+    };
+}
 
 /// A temp git repository on `main` holding `doc/product/index.md` and `files`, committed.
 fn repo(files: &[(&str, &str)]) -> TempDir {
@@ -160,6 +171,7 @@ fn verify_text_agrees_with_verify_json() {
 
 #[test]
 fn save_refuses_a_done_plan() {
+    needs_loopback!("save_refuses_a_done_plan");
     let old = "# Old plan\n\nDone.\n";
     let repo = repo(&[("doc/plans/DONE-PLAN-x.md", old)]);
     let server = serve(&repo);
@@ -171,6 +183,7 @@ fn save_refuses_a_done_plan() {
 
 #[test]
 fn save_refuses_a_brief_of_a_running_plan() {
+    needs_loopback!("save_refuses_a_brief_of_a_running_plan");
     let brief = "# Common\n\nShared context.\n";
     let repo = repo(&[
         ("doc/plans/IN_PROGRESS-PLAN-x.md", &plan(".", "true", "")),
@@ -185,6 +198,7 @@ fn save_refuses_a_brief_of_a_running_plan() {
 
 #[test]
 fn stale_opened_hash_returns_current_text() {
+    needs_loopback!("stale_opened_hash_returns_current_text");
     let current = "# Section 1\n\nCurrent text.\n";
     let repo = repo(&[("doc/product/section_01.md", current)]);
     let server = serve(&repo);
@@ -207,6 +221,7 @@ fn stale_opened_hash_returns_current_text() {
 
 #[test]
 fn save_refuses_a_symlinked_document() {
+    needs_loopback!("save_refuses_a_symlinked_document");
     let text = "# A\n\nTarget.\n";
     let repo = repo(&[("doc/product/a.md", text)]);
     symlink(&repo, "doc/notes/link.md", "../product/a.md");
@@ -219,6 +234,7 @@ fn save_refuses_a_symlinked_document() {
 
 #[test]
 fn invalid_plan_needs_save_with_errors() {
+    needs_loopback!("invalid_plan_needs_save_with_errors");
     let valid = plan(".", "true", "");
     let repo = repo(&[("doc/plans/PLAN-x.md", &valid)]);
     let server = serve(&repo);
@@ -234,6 +250,7 @@ fn invalid_plan_needs_save_with_errors() {
 
 #[test]
 fn oversized_save_is_refused_before_the_body() {
+    needs_loopback!("oversized_save_is_refused_before_the_body");
     let text = "# Section 1\n";
     let repo = repo(&[("doc/product/section_01.md", text)]);
     let server = serve(&repo);
@@ -257,6 +274,7 @@ fn oversized_save_is_refused_before_the_body() {
 
 #[test]
 fn doc_and_diff_routes_refuse_bad_paths() {
+    needs_loopback!("doc_and_diff_routes_refuse_bad_paths");
     let repo = repo(&[
         ("doc/product/a.md", "# A\n\nVisible.\n"),
         (".env", "SECRET=hunter2\n"),
@@ -305,6 +323,7 @@ fn search(server: &RunningServer, q: &str, scope: Scope) -> Vec<String> {
 
 #[test]
 fn quoted_query_matches_literal_text() {
+    needs_loopback!("quoted_query_matches_literal_text");
     let repo = repo(&[
         (
             "doc/plans/PLAN-a.md",
@@ -327,6 +346,7 @@ fn quoted_query_matches_literal_text() {
 
 #[test]
 fn search_finds_done_and_archived_plans() {
+    needs_loopback!("search_finds_done_and_archived_plans");
     let repo = repo(&[
         ("doc/plans/DONE-PLAN-old.md", "# Old\n\nzephyr\n"),
         ("doc/plans/archive/PLAN-older.md", "# Older\n\nzephyr\n"),
@@ -344,6 +364,7 @@ fn search_finds_done_and_archived_plans() {
 
 #[test]
 fn end_turn_sees_a_write_made_just_before() {
+    needs_loopback!("end_turn_sees_a_write_made_just_before");
     let repo = repo(&[("doc/product/section_01.md", "# Section 1\n\nBefore.\n")]);
     let server = serve(&repo);
     let store = server

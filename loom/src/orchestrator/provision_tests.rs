@@ -1,4 +1,5 @@
 use super::*;
+use crate::process::sandbox_probe::{skip_without_confinement, skip_without_loopback};
 use std::fs;
 use std::os::unix::fs::symlink;
 use tempfile::TempDir;
@@ -23,6 +24,9 @@ fn failure_of(entries: &[ProvisionEntry], worktree: &TempDir) -> String {
 
 #[test]
 fn runs_in_the_working_dir() {
+    if skip_without_confinement() {
+        return;
+    }
     let worktree = worktree_with_web();
 
     run_provision(&[entry("web", "touch here")], worktree.path()).unwrap();
@@ -33,6 +37,11 @@ fn runs_in_the_working_dir() {
 
 #[test]
 fn provision_reaches_network_without_exposing_sibling_files() {
+    if skip_without_loopback("provision_reaches_network_without_exposing_sibling_files")
+        || skip_without_confinement()
+    {
+        return;
+    }
     use std::io::Read;
     use std::net::TcpListener;
 
@@ -73,6 +82,9 @@ fn provision_reaches_network_without_exposing_sibling_files() {
 
 #[test]
 fn runs_the_entries_in_order() {
+    if skip_without_confinement() {
+        return;
+    }
     let worktree = worktree_with_web();
     let entries = [
         entry(".", "echo first > order"),
@@ -87,6 +99,9 @@ fn runs_the_entries_in_order() {
 
 #[test]
 fn stops_at_the_first_failure() {
+    if skip_without_confinement() {
+        return;
+    }
     let worktree = worktree_with_web();
     let entries = [entry(".", "exit 3"), entry(".", "touch ran-after")];
 
@@ -98,6 +113,9 @@ fn stops_at_the_first_failure() {
 
 #[test]
 fn the_reason_keeps_the_last_ten_stderr_lines() {
+    if skip_without_confinement() {
+        return;
+    }
     let worktree = worktree_with_web();
     let command =
         "echo to-stdout; for i in $(seq 1 12); do echo line$i >&2; echo >&2; done; exit 1";
@@ -113,6 +131,9 @@ fn the_reason_keeps_the_last_ten_stderr_lines() {
 
 #[test]
 fn the_reason_falls_back_to_stdout_when_stderr_is_blank() {
+    if skip_without_confinement() {
+        return;
+    }
     let worktree = worktree_with_web();
 
     let reason = failure_of(
@@ -125,6 +146,9 @@ fn the_reason_falls_back_to_stdout_when_stderr_is_blank() {
 
 #[test]
 fn the_reason_cuts_each_line_to_300_characters() {
+    if skip_without_confinement() {
+        return;
+    }
     let worktree = worktree_with_web();
     let command = "yes a | head -c 800 | tr -d '\\n' >&2; exit 1";
 
@@ -136,6 +160,9 @@ fn the_reason_cuts_each_line_to_300_characters() {
 
 #[test]
 fn the_reason_carries_no_terminal_escape_from_the_output() {
+    if skip_without_confinement() {
+        return;
+    }
     let worktree = worktree_with_web();
     let command = "printf '\\033]0;x\\007\\033[2Jboom\\r\\n' >&2; exit 1";
 

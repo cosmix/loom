@@ -11,6 +11,8 @@ use std::time::Duration;
 
 use tempfile::TempDir;
 
+use crate::process::sandbox_probe::{require_unix_socket_and_loopback, skip_without_loopback};
+
 use super::{listen, proxy_environment, run};
 
 #[test]
@@ -43,6 +45,7 @@ fn listener_forwards_both_ways() {
     let dir = TempDir::new().expect("tempdir");
     fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o700)).expect("chmod");
     let socket = dir.path().join("proxy.sock");
+    require_unix_socket_and_loopback!("listener_forwards_both_ways", &socket);
     let upstream = UnixListener::bind(&socket).expect("bind unix echo");
     thread::spawn(move || {
         if let Ok((mut stream, _)) = upstream.accept() {
@@ -68,6 +71,9 @@ fn listener_forwards_both_ways() {
 #[test]
 #[serial_test::serial]
 fn run_exports_proxy_and_returns_status() {
+    if skip_without_loopback("run_exports_proxy_and_returns_status") {
+        return;
+    }
     let args: Vec<OsString> = [
         "-c",
         r#"case "$HTTPS_PROXY" in http://127.0.0.1:*) exit 7;; *) exit 1;; esac"#,
@@ -87,6 +93,9 @@ fn run_exports_proxy_and_returns_status() {
 #[test]
 #[serial_test::serial]
 fn run_reports_missing_program() {
+    if skip_without_loopback("run_reports_missing_program") {
+        return;
+    }
     let program = Path::new("/nonexistent/loom-test-program");
     let err = run(Path::new("/nonexistent/proxy.sock"), program, &[]).expect_err("missing");
     assert!(

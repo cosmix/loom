@@ -1,8 +1,10 @@
+use crate::process::sandbox_probe::skip_without_group_signals;
 use std::process::Command;
 use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::process::is_process_alive;
+use crate::process::sandbox_probe::skip_without_pty;
 
 use super::protocol::WindowSize;
 use super::pty::PtyChild;
@@ -44,6 +46,9 @@ fn read_until(child: &PtyChild, needle: &[u8], timeout: Duration) -> Vec<u8> {
 
 #[test]
 fn pty_child_echoes_input() {
+    if skip_without_pty("pty_child_echoes_input") {
+        return;
+    }
     let child = spawn_shell("read line; printf 'got:%s\\n' \"$line\"");
     write_bytes(&child, b"hi\n");
     let output = read_until(&child, b"got:hi", Duration::from_secs(10));
@@ -57,6 +62,9 @@ fn pty_child_echoes_input() {
 
 #[test]
 fn pty_child_resize_is_visible_to_stty() {
+    if skip_without_pty("pty_child_resize_is_visible_to_stty") {
+        return;
+    }
     let child = spawn_shell("read x; stty size");
     child
         .resize(WindowSize {
@@ -76,6 +84,12 @@ fn pty_child_resize_is_visible_to_stty() {
 
 #[test]
 fn pty_child_shutdown_reaps_the_child() {
+    let false = skip_without_group_signals("pty_child_shutdown_reaps_the_child") else {
+        return;
+    };
+    if skip_without_pty("pty_child_shutdown_reaps_the_child") {
+        return;
+    }
     let child = spawn_shell("sleep 30");
     let pid = child.pid();
     let started = Instant::now();
@@ -89,6 +103,9 @@ fn pty_child_shutdown_reaps_the_child() {
 
 #[test]
 fn pty_child_resize_delivers_sigwinch() {
+    if skip_without_pty("pty_child_resize_delivers_sigwinch") {
+        return;
+    }
     let child = spawn_shell("trap 'stty size' WINCH; read x");
     thread::sleep(Duration::from_millis(100));
     child
@@ -108,6 +125,12 @@ fn pty_child_resize_delivers_sigwinch() {
 
 #[test]
 fn pty_write_survives_a_child_that_stops_reading() {
+    let false = skip_without_group_signals("pty_write_survives_a_child_that_stops_reading") else {
+        return;
+    };
+    if skip_without_pty("pty_write_survives_a_child_that_stops_reading") {
+        return;
+    }
     // Raw mode, as tmux sets it, and only once the child says it is set. A
     // canonical-mode PTY holding no complete line never refuses the master's
     // writes on Darwin: input past MAX_INPUT is discarded with a bell instead,

@@ -1,7 +1,11 @@
 use super::*;
 use crate::process::lifecycle_tests::InheritorGuard;
+use crate::process::sandbox_probe::skip_without_group_signals;
 
 fn parent_exit_fixture(reply: bool) {
+    let false = skip_without_group_signals("codex_lifecycle parent_exit_fixture") else {
+        return;
+    };
     let temp = tempfile::tempdir().unwrap();
     let guard = InheritorGuard::new(temp.path());
     let response = if reply {

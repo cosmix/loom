@@ -1,11 +1,17 @@
 //! Restart-safety tests for strict session discovery during handoff.
 
 use super::*;
+use crate::process::sandbox_probe::skip_without_group_signals;
 
 /// Session discovery is part of the proof that no writer survives. A corrupt
 /// record may belong to this stage, so takedown must fail closed.
 #[test]
 fn handoff_does_not_requeue_when_persisted_session_discovery_is_uncertain() {
+    let false = skip_without_group_signals(
+        "handoff_does_not_requeue_when_persisted_session_discovery_is_uncertain",
+    ) else {
+        return;
+    };
     let temp = handoff_work_dir();
     let work = temp.path().join(".loom").join("work");
     executing_stage(&work);
@@ -44,6 +50,11 @@ fn handoff_does_not_requeue_when_persisted_session_discovery_is_uncertain() {
 /// takedown does for its kill.
 #[test]
 fn a_restarted_backstop_writes_handoff_then_retires_the_persisted_session() {
+    if skip_without_group_signals(
+        "a_restarted_backstop_writes_handoff_then_retires_the_persisted_session",
+    ) {
+        return;
+    }
     let temp = handoff_work_dir();
     let work = temp.path().join(".loom").join("work");
     executing_stage(&work);

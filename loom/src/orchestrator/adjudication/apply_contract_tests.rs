@@ -1,7 +1,8 @@
 //! An accepted contract dispute's re-freeze (`apply_contract.rs`): which run
 //! directory each contract keeps or gets and which files are re-hashed, with
 //! and without an amendment, on a retry that finds the amendment applied, and
-//! for harness files changed, added or deleted since the freeze.
+//! for harness files changed, added or deleted since the freeze: a recorded
+//! one is put back and frozen at its frozen copy, a new one frozen as added.
 
 use chrono::Utc;
 use serde_json::json;
@@ -334,19 +335,34 @@ fn a_retry_records_and_freezes_an_amended_file_the_record_lacks() {
     assert_eq!(frozen_hash(&fx, CONTRACT_FILE), Some(original));
 }
 
+/// A frozen harness file edited after admission is never frozen by an
+/// accept: the worktree gets its frozen copy back and the freeze keeps it.
 #[test]
-fn a_changed_harness_file_is_refrozen() {
+fn a_changed_harness_file_is_put_back_and_stays_frozen() {
     let fx = fixture_with_harness();
-    let changed: &[u8] = b"pub fn ready() -> bool { true }\n";
-    write_worktree_file(&fx, HARNESS_FILE, changed);
+    write_worktree_file(&fx, HARNESS_FILE, b"pub fn ready() -> bool { true }\n");
 
     accept(&fx, json!({}));
 
-    assert_eq!(frozen_hash(&fx, HARNESS_FILE), Some(sha256_hex(changed)));
+    assert_eq!(
+        frozen_hash(&fx, HARNESS_FILE),
+        Some(sha256_hex(HARNESS_CONTENT))
+    );
     let copy = contract_store::frozen_file_path(&fx.work, "s1", HARNESS_FILE);
-    assert_eq!(std::fs::read(copy).unwrap(), changed);
+    assert_eq!(std::fs::read(copy).unwrap(), HARNESS_CONTENT);
+    let worktree = std::fs::read(fx.worktree.join(HARNESS_FILE)).unwrap();
+    assert_eq!(worktree, HARNESS_CONTENT);
     let contract = sha256_hex(CONTRACT_CONTENT);
     assert_eq!(frozen_hash(&fx, CONTRACT_FILE), Some(contract));
+    let notice = super::feedback::read_feedback(&fx.work, "s1")
+        .unwrap()
+        .unwrap();
+    assert!(
+        notice.contains(&format!(
+            "frozen copies, as the worktree had changed them: {HARNESS_FILE}"
+        )),
+        "{notice}"
+    );
 }
 
 #[test]
@@ -364,14 +380,15 @@ fn a_new_harness_file_is_added() {
 }
 
 #[test]
-fn a_deleted_harness_file_is_dropped() {
+fn a_deleted_harness_file_is_put_back_and_stays_frozen() {
     let fx = fixture_with_harness();
     std::fs::remove_file(fx.worktree.join(HARNESS_FILE)).unwrap();
 
     accept(&fx, json!({}));
 
-    assert_eq!(frozen_hash(&fx, HARNESS_FILE), None);
-    let copy = contract_store::frozen_file_path(&fx.work, "s1", HARNESS_FILE);
-    assert!(!copy.exists(), "the dropped file's copy must go");
+    let kept = sha256_hex(HARNESS_CONTENT);
+    assert_eq!(frozen_hash(&fx, HARNESS_FILE), Some(kept));
+    let worktree = std::fs::read(fx.worktree.join(HARNESS_FILE)).unwrap();
+    assert_eq!(worktree, HARNESS_CONTENT);
     assert!(frozen_hash(&fx, CONTRACT_FILE).is_some());
 }

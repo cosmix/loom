@@ -69,6 +69,7 @@ fn drop_a_base_test(fx: &Fixture) {
 }
 
 #[test]
+#[serial_test::serial]
 fn a_stage_without_a_current_review_is_refused_before_any_job() {
     let fx = Fixture::new(StageType::Standard, 2);
 
@@ -85,6 +86,7 @@ fn a_stage_without_a_current_review_is_refused_before_any_job() {
 }
 
 #[test]
+#[serial_test::serial]
 fn an_integrity_event_is_refused_before_any_job() {
     let fx = Fixture::new(StageType::Standard, 2);
     drop_a_base_test(&fx);
@@ -98,6 +100,7 @@ fn an_integrity_event_is_refused_before_any_job() {
 }
 
 #[test]
+#[serial_test::serial]
 fn a_stage_the_gates_pass_queues_its_completion() {
     let fx = Fixture::new(StageType::Standard, 2);
     fx.record_review(false);
@@ -130,6 +133,7 @@ fn pass(fx: &Fixture, mut job: JobRecord) -> JobRecord {
 }
 
 #[test]
+#[serial_test::serial]
 fn the_application_still_refuses_a_review_gone_stale_during_the_run() {
     let fx = Fixture::new(StageType::Standard, 2);
     fx.record_review(false);

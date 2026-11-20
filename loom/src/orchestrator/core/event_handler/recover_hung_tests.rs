@@ -24,6 +24,7 @@ use crate::models::stage::{AcceptanceCriterion, StageType};
 use crate::orchestrator::monitor::heartbeat::{write_heartbeat, Heartbeat};
 use crate::orchestrator::monitor::stall_line::COMPLETION_ACTIVITY;
 use crate::orchestrator::terminal::native::write_test_pid_identity;
+use crate::process::sandbox_probe::require_group_signals;
 use crate::test_git::{git, TestRepo};
 use crate::verify::transitions::{load_stage, update_stage};
 use std::path::Path;
@@ -47,6 +48,7 @@ pub(super) fn report(session_id: &str, stale_duration_secs: u64) -> HungReport<'
 #[test]
 #[serial_test::serial]
 fn forward_facts_hold_for_a_native_worker() {
+    require_group_signals!("forward_facts_hold_for_a_native_worker");
     let temp = handoff_work_dir();
     let work = temp.path().join(".loom").join("work");
     let (session, agent_pid) = stalled_stage(&work);
@@ -90,6 +92,7 @@ fn init_checkpoint_repo(repo: &Path) -> String {
 /// nothing else — the agent may be mid-build with no tool call to heartbeat.
 #[test]
 fn a_report_below_the_escalation_line_only_warns() {
+    require_group_signals!("a_report_below_the_escalation_line_only_warns");
     let temp = handoff_work_dir();
     let work = temp.path().join(".loom").join("work");
     let (session, agent_pid) = stalled_stage(&work);
@@ -120,6 +123,9 @@ fn a_report_below_the_escalation_line_only_warns() {
 /// the stage re-queued — the recovery the incident never got.
 #[test]
 fn a_silence_past_the_escalation_line_hands_the_stage_off_and_requeues_it() {
+    require_group_signals!(
+        "a_silence_past_the_escalation_line_hands_the_stage_off_and_requeues_it"
+    );
     let temp = handoff_work_dir();
     let work = temp.path().join(".loom").join("work");
     let (session, agent_pid) = stalled_stage(&work);
@@ -214,6 +220,7 @@ fn a_current_trusted_blocker_owns_stall_recovery() {
 
 #[test]
 fn forged_checkpoint_does_not_own_stall_recovery() {
+    require_group_signals!("forged_checkpoint_does_not_own_stall_recovery");
     let temp = handoff_work_dir();
     let commit = init_checkpoint_repo(temp.path());
     let work = temp.path().join(".loom/work");
@@ -256,6 +263,7 @@ fn forged_checkpoint_does_not_own_stall_recovery() {
 /// a previous attempt. Acting on it would kill the successor now working.
 #[test]
 fn a_report_from_a_session_the_stage_moved_on_from_is_ignored() {
+    require_group_signals!("a_report_from_a_session_the_stage_moved_on_from_is_ignored");
     let temp = handoff_work_dir();
     let work = temp.path().join(".loom").join("work");
     let (session, agent_pid) = stalled_stage(&work);
@@ -345,6 +353,7 @@ fn report_completion_silence(work: &Path, root: &Path, session: &Session, silenc
 /// running and charged nothing.
 #[test]
 fn a_running_completion_inside_its_line_is_not_requeued() {
+    require_group_signals!("a_running_completion_inside_its_line_is_not_requeued");
     let temp = handoff_work_dir();
     let work = temp.path().join(".loom").join("work");
     let (session, agent_pid) = completing_stage(&work);
@@ -364,6 +373,7 @@ fn a_running_completion_inside_its_line_is_not_requeued() {
 /// The allowance is finite: a completion silent past its line is a stall.
 #[test]
 fn a_running_completion_past_its_line_is_requeued() {
+    require_group_signals!("a_running_completion_past_its_line_is_requeued");
     let temp = handoff_work_dir();
     let work = temp.path().join(".loom").join("work");
     let (session, agent_pid) = completing_stage(&work);

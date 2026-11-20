@@ -103,12 +103,21 @@ fn a_request_longer_than_a_card_is_denied_on_arrival() {
 
 #[test]
 fn allow_deny_and_expiry_write_their_answer_files() {
-    let h = Harness::ready(|c| c.permission_deny_after = Duration::from_millis(1500));
+    // The expiry runs from the spool line's own time, so the bound is the whole margin the
+    // answers and the "still waits" check below get on a loaded host; it stays well under the
+    // 5 s `wait_deny` gives the expiry itself.
+    let h = Harness::ready(|c| c.permission_deny_after = Duration::from_secs(3));
     let s = h.idle(Authoring);
     h.working(&s);
     let allowed = h.permission(&s, "Bash", json!({"command": "a"}));
     let denied = h.permission(&s, "Bash", json!({"command": "b"}));
     let expiring = h.permission(&s, "Bash", json!({"command": "c"}));
+    wait_until("all three cards", || {
+        let pending = |request: &str| card_status(&h, request) == Some(PermissionStatus::Pending);
+        [&allowed, &denied, &expiring]
+            .into_iter()
+            .all(|r| pending(r))
+    });
     h.wait_state(&s, SessionState::Permission);
     h.bridge
         .answer_permission(&s.id, &allowed, true, None)

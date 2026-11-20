@@ -15,6 +15,7 @@ use loom::fs::permissions::constants::{
     HOOK_BOUNDED, HOOK_COMMON, HOOK_KNOWLEDGE_ORIENT, HOOK_READ_DISCIPLINE, HOOK_READ_LEDGER,
     HOOK_SPAWN_GUARD, HOOK_SUBAGENT_PREAMBLE,
 };
+use loom::process::sandbox_probe::skip_without_process_tree;
 use serde_json::{json, Value};
 use std::fs;
 use std::io::Write;
@@ -159,6 +160,9 @@ fn updated_prompt(stdout: &str) -> String {
 
 #[test]
 fn codex_bound_spawns_receive_no_worker_brief() {
+    if skip_without_process_tree("codex_bound_spawns_receive_no_worker_brief") {
+        return;
+    }
     let (_hooks, hook) = install_spawn_guard();
     let codex_bound = [
         json!({"subagent_type": "loom-codex-forwarder", "model": "sonnet",
@@ -193,6 +197,9 @@ fn codex_bound_spawns_receive_no_worker_brief() {
 
 #[test]
 fn slow_worker_brief_still_reaches_the_spawn() {
+    if skip_without_process_tree("slow_worker_brief_still_reaches_the_spawn") {
+        return;
+    }
     let (_hooks, hook) = install_spawn_guard();
     let input = json!({"subagent_type": "loom-software-engineer", "model": "sonnet",
                        "prompt": "slow brief task"});

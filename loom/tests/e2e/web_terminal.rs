@@ -115,8 +115,11 @@ fn tmux(socket: &str, args: &[&str]) -> TmuxOutput {
     {
         Some(status) => status,
         None => {
-            let _ = child.kill();
-            child.wait().expect("reap timed out tmux command")
+            loom::process::sandbox_probe::reap::kill_and_reap(&mut child);
+            child
+                .try_wait()
+                .expect("poll timed out tmux command")
+                .expect("reap timed out tmux command")
         }
     };
     let mut stdout = String::new();

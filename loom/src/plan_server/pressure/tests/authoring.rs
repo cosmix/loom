@@ -2,6 +2,7 @@
 //! starter keeps authoring through every end, grace expiry stops the run, and the summary
 //! suspension spans the run.
 
+use crate::process::sandbox_probe::skip_without_group_signals;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
@@ -102,6 +103,9 @@ fn the_starter_keeps_authoring_through_the_chat_end_and_every_step_end() {
 #[test]
 #[serial]
 fn grace_expiry_stops_the_run_without_a_record() {
+    let false = skip_without_group_signals("grace_expiry_stops_the_run_without_a_record") else {
+        return;
+    };
     let f = Fixture::new();
     f.connect(&f.holder);
     hold_first_step(&f);
@@ -121,6 +125,11 @@ fn grace_expiry_stops_the_run_without_a_record() {
 #[test]
 #[serial]
 fn a_browser_taking_authoring_after_grace_expiry_keeps_it_at_the_run_end() {
+    let false = skip_without_group_signals(
+        "a_browser_taking_authoring_after_grace_expiry_keeps_it_at_the_run_end",
+    ) else {
+        return;
+    };
     let f = Fixture::new();
     f.connect(&f.holder);
     hold_first_step(&f);

@@ -1,11 +1,12 @@
 //! Rendering functions for TUI components.
 
+use super::handoffs::{render_handoffs, section_height};
 use crate::commands::status::ui::theme::{StatusColors, Theme};
 use crate::daemon::CompletionSummary;
 use crate::orchestrator::scheduling_report::{Alert, Severity};
 use crate::utils::format_elapsed;
 use ratatui::{
-    layout::Rect,
+    layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Row, Table},
@@ -38,16 +39,14 @@ pub fn render_scheduler_alerts(frame: &mut Frame, area: Rect, alerts: &[Alert]) 
 
 /// Render completion screen with summary of all stages.
 pub fn render_completion(frame: &mut Frame, area: Rect, summary: &CompletionSummary) {
-    use ratatui::layout::{Constraint, Direction, Layout};
-    use ratatui::text::{Line, Span};
-
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(4), // Header
-            Constraint::Length(2), // Summary
-            Constraint::Min(10),   // Stage table
-            Constraint::Length(1), // Footer
+            Constraint::Length(4),                       // Header
+            Constraint::Length(2),                       // Summary
+            Constraint::Length(section_height(summary)), // Amendments and hand-offs
+            Constraint::Min(10),                         // Stage table
+            Constraint::Length(1),                       // Footer
         ])
         .split(area);
 
@@ -148,14 +147,15 @@ pub fn render_completion(frame: &mut Frame, area: Rect, summary: &CompletionSumm
     ];
 
     let table = Table::new(rows, widths).block(table_block).header(header);
-    frame.render_widget(table, chunks[2]);
+    render_handoffs(frame, chunks[2], summary);
+    frame.render_widget(table, chunks[3]);
 
     // Footer
     let footer = Paragraph::new(Line::from(vec![
         Span::styled("q", Style::default().add_modifier(Modifier::BOLD)),
         Span::raw(" quit"),
     ]));
-    frame.render_widget(footer, chunks[3]);
+    frame.render_widget(footer, chunks[4]);
 }
 
 #[cfg(test)]
@@ -217,6 +217,66 @@ mod tests {
             assert!(screen.contains(&expected), "output: {screen}");
             assert!(!screen.contains(&id), "output: {screen}");
         }
+    }
+
+    fn screen_of(summary: &CompletionSummary) -> String {
+        let mut terminal = Terminal::new(TestBackend::new(120, 30)).unwrap();
+        terminal
+            .draw(|frame| render_completion(frame, frame.area(), summary))
+            .unwrap();
+        terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect()
+    }
+
+    #[test]
+    fn completion_screen_lists_amendments_and_left_out_tests() {
+        let mut summary = completion_summary("alpha");
+        summary.amendments = 2;
+        summary.handoffs = vec![
+            "alpha acceptance[0]: net_a -> ci: needs network".to_string(),
+            "beta acceptance[1]: net_b -> nowhere: slow (unverified)".to_string(),
+        ];
+
+        let screen = screen_of(&summary);
+
+        assert!(
+            screen.contains("Adjudicators amended 2 checks in this plan."),
+            "{screen}"
+        );
+        assert!(
+            screen.contains("Tests left out of a stage check:"),
+            "{screen}"
+        );
+        for line in &summary.handoffs {
+            assert!(screen.contains(line.as_str()), "{screen}");
+        }
+        assert!(screen.contains("alpha"), "the stage table stays: {screen}");
+    }
+
+    #[test]
+    fn completion_screen_without_handoffs_has_no_such_section() {
+        let screen = screen_of(&completion_summary("alpha"));
+
+        assert!(!screen.contains("left out"), "{screen}");
+        assert!(!screen.contains("amended"), "{screen}");
+    }
+
+    #[test]
+    fn a_long_handoff_list_collapses_into_a_count() {
+        let mut summary = completion_summary("alpha");
+        summary.handoffs = (0..9)
+            .map(|n| format!("stage-{n} acceptance[0]: t"))
+            .collect();
+
+        let screen = screen_of(&summary);
+
+        assert!(screen.contains("... and 4 more"), "{screen}");
+        assert!(!screen.contains("stage-8"), "{screen}");
     }
 
     #[test]

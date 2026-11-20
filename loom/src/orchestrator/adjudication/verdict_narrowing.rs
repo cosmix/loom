@@ -7,15 +7,19 @@
 //!
 //! A criterion that passes at the base, selects no test there, or does not
 //! build there fails because of the stage's own change: narrowing it would
-//! hide the stage's defect. Which tests a `replace` selects is not computed:
+//! hide the stage's defect. A base run counts only while the commit it ran at
+//! is still the stage's base ([`at_current_base`]). Which tests a `replace` selects is not computed:
 //! a replace without `leaves_out` is taken as selecting the same tests, and
 //! the briefing tells the judge that such an amendment is invalid.
+
+use std::path::Path;
 
 use serde::Deserialize;
 use serde_json::Value;
 
 use crate::models::dispute::{DisputeKind, DisputeVerdict};
 use crate::models::stage::{AcceptanceCriterion, Stage, TruthCheck};
+use crate::verify::contracts::changes::stage_base;
 use crate::verify::review::handoffs::{load_base_evidence, BaseEvidence, Handoff};
 
 use super::verdict::{RecordContext, ValidationOutcome};
@@ -87,13 +91,53 @@ pub(super) fn narrowing_inputs<'a>(
     if !matches!(kind, DisputeKind::Criterion { .. }) || !narrows_acceptance(&plan_patch.inner) {
         return Ok(None);
     }
-    let evidence = load_base_evidence(context.work_dir, &context.stage.id)
-        .map_err(|e| format!("the stage's base runs could not be read: {e:#}"))?;
+    // Only a `leaves_out` entry reads base runs; a replace without one needs
+    // none, so an unreadable base must not refuse it.
+    let evidence = if names_left_out(&plan_patch.inner) {
+        let evidence = load_base_evidence(context.work_dir, &context.stage.id)
+            .map_err(|e| format!("the stage's base runs could not be read: {e:#}"))?;
+        at_current_base(context.work_dir, context.stage, evidence)?
+    } else {
+        Vec::new()
+    };
     Ok(Some(NarrowingInputs {
         plan_patch: &plan_patch.inner,
         current: acceptance_json(context.stage),
         evidence,
     }))
+}
+
+/// The runs of `evidence` made at `stage`'s current base, read now with git
+/// pinned to the stage's registered git directory. A run at an earlier base
+/// (the stage has since taken in a newer one) is no evidence: the criterion
+/// may pass at the base the stage has now. `Err` when there are runs and the
+/// base cannot be read, so none of them can support a narrowing.
+pub(super) fn at_current_base(
+    work_dir: &Path,
+    stage: &Stage,
+    mut evidence: Vec<BaseEvidence>,
+) -> Result<Vec<BaseEvidence>, String> {
+    if evidence.is_empty() {
+        return Ok(evidence);
+    }
+    let base = super::locate_stage_site(work_dir, stage)
+        .and_then(|site| stage_base(&site.git, work_dir))
+        .map_err(|e| {
+            format!(
+                "the stage's current base is unknown, so no base run can support a \
+                 narrowing: {e:#}"
+            )
+        })?;
+    evidence.retain(|run| run.base == base);
+    Ok(evidence)
+}
+
+/// Whether `plan_patch` carries a `leaves_out` other than an empty list; a
+/// malformed one counts, so its parse error is still reported.
+fn names_left_out(plan_patch: &Value) -> bool {
+    plan_patch
+        .get("leaves_out")
+        .is_some_and(|raw| raw.as_array().is_none_or(|entries| !entries.is_empty()))
 }
 
 /// Whether a criterion dispute's accept amends the stage's acceptance list.
@@ -256,8 +300,9 @@ fn handoff(
         .find(|run| run.index == index && run.command == command)
         .ok_or_else(|| {
             format!(
-                "criterion {index} has no base run: run `loom check {stage_id} --criterion \
-                 {index} --at-base` and read its `Host job:` line before narrowing it"
+                "criterion {index} has no base run at the stage's current base: run `loom \
+                 check {stage_id} --criterion {index} --at-base` and read its `Host job:` line \
+                 before narrowing it"
             )
         })?;
     check_run(index, run, entry.tests.len())?;
@@ -301,56 +346,5 @@ fn check_run(index: usize, run: &BaseEvidence, left_out: usize) -> Result<(), St
 }
 
 #[cfg(test)]
-mod tests {
-    use serde_json::{json, Value};
-
-    use super::*;
-
-    fn narrowing() -> Value {
-        json!({
-            "field": "acceptance",
-            "patches": [{"op": "delete", "index": 0}],
-            "leaves_out": [{
-                "index": 0, "tests": ["net_fetch"], "runs_at": "ci", "reason": "network",
-            }],
-        })
-    }
-
-    fn base_run(timed_out: bool) -> BaseEvidence {
-        BaseEvidence {
-            index: 0,
-            command: "cargo test".to_string(),
-            passed: false,
-            executed: Some(3),
-            failed: Some(1),
-            build_failed: false,
-            timed_out,
-        }
-    }
-
-    #[test]
-    fn a_timed_out_base_run_hands_off_unverified() {
-        let current = [json!("cargo test")];
-        let check = |timed_out| {
-            check_narrowing("s1", "1", &narrowing(), &current, &[base_run(timed_out)]).unwrap()
-        };
-        assert!(check(false)[0].verified);
-        assert!(!check(true)[0].verified);
-    }
-
-    #[test]
-    fn a_bare_command_and_its_command_object_are_the_same_criterion() {
-        let entry = json!("cargo test");
-        assert!(same_entry(&json!({"command": "cargo test"}), &entry));
-        assert!(same_entry(&json!("command: cargo test"), &entry));
-        assert!(same_entry(
-            &json!("cargo test"),
-            &json!({"command": "cargo test"})
-        ));
-        assert!(!same_entry(
-            &json!({"command": "cargo test", "timeout_secs": 60}),
-            &entry
-        ));
-        assert!(!same_entry(&json!("cargo test --lib"), &entry));
-    }
-}
+#[path = "verdict_narrowing_tests.rs"]
+mod tests;

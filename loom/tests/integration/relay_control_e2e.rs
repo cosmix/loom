@@ -17,7 +17,7 @@ use loom::fs::session_files::save_session;
 use loom::models::session::{Session, SessionStatus, SessionType};
 use loom::models::stage::{Stage, StageStatus};
 use loom::plan::schema::AcceptanceCriterion;
-use loom::process::sandbox_probe::skip_unless;
+use loom::process::sandbox_probe::{skip_unless, skip_without_process_tree};
 use loom::relay::{RelayLine, RequestKind, MAX_UNCONSUMED_TICKETS};
 use loom::verify::transitions::save_stage;
 use serial_test::serial;
@@ -241,7 +241,7 @@ fn skip_without_tools(name: &str) -> bool {
         helpers::tool_available("jq") && helpers::tool_available("bash"),
         name,
         "jq or bash was not found on PATH",
-    )
+    ) || skip_without_process_tree(name)
 }
 
 fn block_command() -> String {

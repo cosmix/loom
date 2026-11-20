@@ -3,6 +3,7 @@
 //! Also: the busy line the daemon tick carries while an entry runs.
 
 use super::*;
+use crate::process::sandbox_probe::confined_commands_runnable;
 use crate::verify::contracts::test_support::{contract_worktree, plant_foreign_git_dir};
 
 /// A stage repointed its worktree's `.git` at a repository of its own whose
@@ -12,6 +13,9 @@ use crate::verify::contracts::test_support::{contract_worktree, plant_foreign_gi
 #[test]
 #[serial_test::serial]
 fn the_listing_around_a_provision_does_not_follow_a_forged_git_file() {
+    if !confined_commands_runnable() {
+        return;
+    }
     let _env = crate::test_cache_env::CacheEnv::pin();
     let tmp = TempDir::new().unwrap();
     let repo = tmp.path().canonicalize().unwrap().join("repo");
@@ -48,6 +52,9 @@ fn the_listing_around_a_provision_does_not_follow_a_forged_git_file() {
 #[test]
 #[serial_test::serial]
 fn a_directory_no_repository_registers_skips_the_comparison() {
+    if !confined_commands_runnable() {
+        return;
+    }
     let worktree = TempDir::new().unwrap();
 
     let (passed, stage) = gate(&["touch provisioned"], Vec::new(), worktree.path());
@@ -107,6 +114,9 @@ fn running_provisioning(tick: &tick::Tick) -> &crate::orchestrator::busy::Busy {
 #[test]
 #[serial_test::serial]
 fn a_running_entry_sees_the_provisioning_busy_line() {
+    if !confined_commands_runnable() {
+        return;
+    }
     let _env = crate::test_cache_env::CacheEnv::pin();
     let worktree = TempDir::new().unwrap();
     let work = work_dir_in(worktree.path());
@@ -124,6 +134,9 @@ fn a_running_entry_sees_the_provisioning_busy_line() {
 #[test]
 #[serial_test::serial]
 fn each_entry_gets_its_own_busy_wrap() {
+    if !confined_commands_runnable() {
+        return;
+    }
     let _env = crate::test_cache_env::CacheEnv::pin();
     let worktree = TempDir::new().unwrap();
     let work = work_dir_in(worktree.path());

@@ -10,6 +10,16 @@ use chrono::TimeDelta;
 use super::*;
 use crate::fs::save_session;
 use crate::models::session::{Session, SessionStatus};
+use crate::process::sandbox_probe::reap::{reap_within, REAP_DEADLINE};
+use crate::process::sandbox_probe::skip_without_process_control;
+
+/// True when these tests cannot run: they read the process table with `ps` and
+/// retire the trees they spawn with `killpg`, and a host job's profile may refuse
+/// either. Call it before anything is spawned, since a guard that cannot kill
+/// blocks on `wait`.
+pub(crate) fn cannot_run_live_trees(name: &str) -> bool {
+    skip_without_process_control(name)
+}
 
 const INVOCATION: &str = "inv-0123456789abcdef0123456789abcdef";
 
@@ -18,10 +28,12 @@ pub(crate) struct LiveTree(Child);
 impl Drop for LiveTree {
     fn drop(&mut self) {
         // SAFETY: the group was created for this child alone by process_group(0).
-        unsafe {
-            libc::killpg(self.0.id() as i32, libc::SIGKILL);
+        let killed = unsafe { libc::killpg(self.0.id() as i32, libc::SIGKILL) } == 0;
+        // A refused signal leaves the tree running, and waiting for it would never
+        // return; tests guard with `cannot_run_live_trees` before spawning.
+        if killed {
+            reap_within(&mut self.0, REAP_DEADLINE);
         }
-        let _ = self.0.wait();
     }
 }
 
@@ -89,6 +101,11 @@ pub(crate) fn nonce(tag: u64) -> String {
 
 #[test]
 fn a_same_named_same_environment_impostor_gains_nothing_from_a_live_tree() {
+    if cannot_run_live_trees(
+        "a_same_named_same_environment_impostor_gains_nothing_from_a_live_tree",
+    ) {
+        return;
+    }
     let authentic = nonce(1);
     let stolen = nonce(2);
     let unused = nonce(3);
@@ -159,23 +176,32 @@ fn live_session(work: &Path) -> Session {
     session
 }
 
+/// Whether the hold still stands `at` seconds after `start`.
+fn hold_at(
+    work: &Path,
+    session_id: &str,
+    invocation: &str,
+    start: DateTime<Utc>,
+    budget: Duration,
+    at: i64,
+) -> bool {
+    let now = start + TimeDelta::seconds(at);
+    direct_worker_holds(work, session_id, invocation, start, budget, now)
+}
+
 #[test]
 fn hold_is_bounded_and_ends_with_the_worker_at_the_same_clock_points() {
+    let false =
+        cannot_run_live_trees("hold_is_bounded_and_ends_with_the_worker_at_the_same_clock_points")
+    else {
+        return;
+    };
     let work = tempfile::TempDir::new().unwrap();
     let session = live_session(work.path());
     let invocation = nonce(4);
     let budget = Duration::from_secs(300);
     let start = Utc::now();
-    let holds = |at: i64| {
-        direct_worker_holds(
-            work.path(),
-            &session.id,
-            &invocation,
-            start,
-            budget,
-            start + TimeDelta::seconds(at),
-        )
-    };
+    let holds = |at: i64| hold_at(work.path(), &session.id, &invocation, start, budget, at);
     // No launch yet: authorization alone holds nothing, at any clock point.
     assert!(!holds(1));
 
@@ -213,6 +239,9 @@ fn hold_is_bounded_and_ends_with_the_worker_at_the_same_clock_points() {
 
 #[test]
 fn a_worker_with_no_growth_expires_after_one_idle_budget() {
+    if cannot_run_live_trees("a_worker_with_no_growth_expires_after_one_idle_budget") {
+        return;
+    }
     let work = tempfile::TempDir::new().unwrap();
     let session = live_session(work.path());
     let invocation = nonce(5);
@@ -242,6 +271,9 @@ fn a_worker_with_no_growth_expires_after_one_idle_budget() {
 
 #[test]
 fn a_session_that_ended_or_is_missing_holds_nothing() {
+    let false = cannot_run_live_trees("a_session_that_ended_or_is_missing_holds_nothing") else {
+        return;
+    };
     let work = tempfile::TempDir::new().unwrap();
     let now = Utc::now();
     let budget = Duration::from_secs(300);

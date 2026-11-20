@@ -213,8 +213,7 @@ impl Running {
                 return self.finished(status);
             }
             if Instant::now() >= deadline {
-                let _ = self.child.kill();
-                let _ = self.child.wait();
+                loom::process::sandbox_probe::reap::kill_and_reap(&mut self.child);
                 let stderr = read_lossy(&self.stderr);
                 panic!("loom still running after {limit:?}; stderr:\n{stderr}");
             }
@@ -234,8 +233,7 @@ impl Running {
 impl Drop for Running {
     fn drop(&mut self) {
         if matches!(self.child.try_wait(), Ok(None)) {
-            let _ = self.child.kill();
-            let _ = self.child.wait();
+            loom::process::sandbox_probe::reap::kill_and_reap(&mut self.child);
         }
     }
 }

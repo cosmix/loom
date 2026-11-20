@@ -129,6 +129,7 @@ impl TestRunnerAdapter for BunTest {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::process::sandbox_probe::skip_unless;
     use crate::testrun::command::{assert_one_word, HOSTILE_NAME};
     use crate::testrun::fixture_support::words;
     use crate::testrun::{classify, fixture_support, RunOutcome};
@@ -177,6 +178,20 @@ describe("suite", () => {{
         (parsed, output.status.code(), stderr.into_owned())
     }
 
+    /// Whether the installed bun matches `-t '^suite a$'` against the full name of a nested
+    /// test: bun 1.2.0 does not (the pattern selects nothing), later releases do.
+    fn bun_anchors_name_patterns(dir: &Path) -> bool {
+        let fixture = "import { describe, test, expect } from \"bun:test\";\n\
+            describe(\"suite\", () => { test(\"a\", () => expect(1).toBe(1)); });\n";
+        std::fs::write(dir.join("anchor.test.ts"), fixture).expect("write anchor fixture");
+        std::process::Command::new("bun")
+            .args(["test", "anchor.test.ts", "-t", "^suite a$"])
+            .current_dir(dir)
+            .output()
+            .map(|out| String::from_utf8_lossy(&out.stderr).contains("1 pass"))
+            .unwrap_or(false)
+    }
+
     #[test]
     fn bun_selects_only_the_exact_nested_name_when_available() {
         if std::process::Command::new("bun")
@@ -187,6 +202,15 @@ describe("suite", () => {{
             return;
         }
         let dir = tempfile::tempdir().expect("temporary project");
+        let anchors = bun_anchors_name_patterns(dir.path());
+        let why = "this bun does not anchor a --test-name-pattern at the start of the full name";
+        if skip_unless(
+            anchors,
+            "bun_selects_only_the_exact_nested_name_when_available",
+            why,
+        ) {
+            return;
+        }
         let (parsed, exit_code, stderr) = run_collision_fixture(dir.path(), "");
         assert_eq!(classify(&parsed, exit_code), RunOutcome::Passed, "{stderr}");
         assert_eq!(parsed.passed, Some(1));
@@ -206,15 +230,14 @@ describe("suite", () => {{
             runner: Some("bun-test".to_string()),
             ..crate::verify::contracts::test_support::contract()
         };
-        let refused =
-            crate::verify::contracts::freeze::judge_run(
-                &spec,
-                Some(&ADAPTER),
-                parsed,
-                exit_code,
-                None,
-            )
-                .expect_err("a failing sibling must not stand in for the missing exact test");
+        let refused = crate::verify::contracts::freeze::judge_run(
+            &spec,
+            Some(&ADAPTER),
+            parsed,
+            exit_code,
+            None,
+        )
+        .expect_err("a failing sibling must not stand in for the missing exact test");
         assert!(refused.contains("did not select"), "{refused}");
     }
 

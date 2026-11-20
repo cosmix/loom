@@ -50,3 +50,19 @@ fn a_refused_sandbox_start_is_a_blocker() {
         "a launcher that cannot be spawned is a blocker"
     );
 }
+
+#[test]
+fn a_launcher_that_never_finishes_is_a_blocker_and_is_reaped() {
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let hung = script(dir.path(), "hung.sh", "exec sleep 600");
+    let started = std::time::Instant::now();
+    let reason = start_blocker(&hung, &[]).expect("a launcher that hangs is a blocker");
+    assert!(
+        reason.contains("did not finish"),
+        "deadline missing: {reason}"
+    );
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(30),
+        "the wait must be bounded"
+    );
+}

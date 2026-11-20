@@ -41,6 +41,7 @@ fn evidence(index: usize, command: &str) -> BaseEvidence {
     BaseEvidence {
         index,
         command: command.to_string(),
+        base: "0123456789abcdef0123456789abcdef01234567".to_string(),
         passed: false,
         executed: Some(40),
         failed: Some(2),

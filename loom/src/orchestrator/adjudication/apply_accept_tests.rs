@@ -15,6 +15,7 @@ use crate::orchestrator::adjudication::tests::{
 };
 use crate::orchestrator::adjudication::{feedback, AdjudicatorRegistry};
 use crate::plan::amendment::count_amendments_for_stage;
+use crate::verify::review::handoffs::test_support::{base_of, stage_with_base};
 use crate::verify::review::handoffs::{load_handoffs, save_base_evidence, BaseEvidence};
 use crate::verify::transitions::load_stage;
 
@@ -25,7 +26,8 @@ pub(super) fn criterion(i: usize) -> String {
 }
 
 /// `root/.loom/work`, its `config.toml` naming a plan whose stage `s1` has
-/// fifteen acceptance criteria. Returns the work dir and the plan path.
+/// fifteen acceptance criteria, in a repository where `s1` has a worktree
+/// and a base ([`stage_with_base`]). Returns the work dir and the plan path.
 pub(super) fn setup(root: &Path) -> (PathBuf, PathBuf) {
     let work = root.join(".loom").join("work");
     std::fs::create_dir_all(work.join("stages")).unwrap();
@@ -53,6 +55,7 @@ pub(super) fn setup(root: &Path) -> (PathBuf, PathBuf) {
         .map(|i| AcceptanceCriterion::Simple(criterion(i)))
         .collect();
     write_stage(&work, &stage);
+    stage_with_base(root, "s1");
     (work, plan)
 }
 
@@ -87,7 +90,7 @@ fn seed_deleted_base_run(work: &Path) {
     let deleted = BaseEvidence {
         index: 14,
         command: criterion(14),
-        ..failing_base_run()
+        ..failing_base_run(work)
     };
     save_base_evidence(work, "s1", &deleted).unwrap();
 }
@@ -167,10 +170,15 @@ fn apply_replacing(work: &Path, id: u32, indices: &[usize]) {
         .iter()
         .map(|i| serde_json::json!({"op": "replace", "index": i, "value": format!("cargo test --lib fixed_{i}")}))
         .collect();
+    let inner = serde_json::json!({"field": "acceptance", "patches": patches, "reason": "r"});
+    apply_patch(work, id, indices, inner);
+}
+
+/// File and apply dispute `id` on criteria `indices`, an accept patching
+/// the acceptance with `inner`.
+pub(super) fn apply_patch(work: &Path, id: u32, indices: &[usize], inner: serde_json::Value) {
     let verdict = DisputeVerdict::Accept {
-        plan_patch: PlanPatch {
-            inner: serde_json::json!({"field": "acceptance", "patches": patches, "reason": "r"}),
-        },
+        plan_patch: PlanPatch { inner },
         citations: vec![Citation {
             file: "PLAN.md".to_string(),
             line: None,
@@ -259,10 +267,13 @@ pub(super) fn narrowing_json() -> serde_json::Value {
     })
 }
 
-pub(super) fn failing_base_run() -> BaseEvidence {
+/// Loom's run of criterion [`NARROWED`] at the base of the stage under `work`,
+/// failing one of twelve tests.
+pub(super) fn failing_base_run(work: &Path) -> BaseEvidence {
     BaseEvidence {
         index: NARROWED,
         command: criterion(NARROWED),
+        base: base_of(work),
         passed: false,
         executed: Some(12),
         failed: Some(1),
@@ -275,7 +286,7 @@ pub(super) fn failing_base_run() -> BaseEvidence {
 fn an_accepted_narrowing_records_one_handoff_and_a_replay_none() {
     let tmp = tempfile::tempdir().unwrap();
     let (work, _plan) = setup(tmp.path());
-    save_base_evidence(&work, "s1", &failing_base_run()).unwrap();
+    save_base_evidence(&work, "s1", &failing_base_run(&work)).unwrap();
     let kind = DisputeKind::criterion(CriterionField::Acceptance, vec![NARROWED]);
     write_request(&work, "s1", 1, kind);
     let DisputeVerdict::Accept {
@@ -332,7 +343,7 @@ fn a_narrowing_without_a_base_run_is_refused_and_records_nothing() {
     assert!(!verdict_file(&work.join("disputes"), "s1", 1).exists());
     assert!(load_handoffs(&work, "s1").unwrap().is_empty());
 
-    save_base_evidence(&work, "s1", &failing_base_run()).unwrap();
+    save_base_evidence(&work, "s1", &failing_base_run(&work)).unwrap();
     record_verdict_text(&work, "s1", 1, &raw, None).unwrap();
     let verdict = std::fs::read_to_string(verdict_file(&work.join("disputes"), "s1", 1)).unwrap();
     assert!(verdict.contains("leaves_out"), "{verdict}");

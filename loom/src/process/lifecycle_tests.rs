@@ -1,5 +1,6 @@
 //! Shared lifecycle fixtures: leader exits with an inheritor, reply or no reply.
 use super::{is_process_alive, OwnedProcess};
+use crate::process::sandbox_probe::skip_without_group_signals;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -70,6 +71,9 @@ fn ownership_waits_for_a_child_that_exits_after_wait_begins() {
 
 #[test]
 fn ownership_drop_retires_group_after_leader_exit() {
+    let false = skip_without_group_signals("ownership_drop_retires_group_after_leader_exit") else {
+        return;
+    };
     use std::os::unix::process::CommandExt;
     let temp = tempfile::tempdir().unwrap();
     let guard = InheritorGuard::new(temp.path());

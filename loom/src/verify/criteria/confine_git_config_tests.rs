@@ -40,7 +40,8 @@ fn git_user_ignore_and_attributes_are_readable_inside_the_boundary() {
         super::super::launcher().is_some(),
         test,
         "OS sandbox launcher absent",
-    ) {
+    ) || crate::process::sandbox_probe::skip_without_confinement()
+    {
         return;
     }
     let (home_dir, tree_dir) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());

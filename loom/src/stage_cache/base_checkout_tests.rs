@@ -6,23 +6,40 @@ fn cache_in(home: &Path) -> StageCache {
 }
 
 #[test]
-fn each_base_has_its_own_directory_beside_the_stage_cache() {
-    let cache =
-        StageCache::resolve(Path::new("/repo"), "s1", Path::new("/home/user"), None).unwrap();
-    let dir = base_checkout_dir(&cache, "abc123").unwrap();
-    let name = cache.root().file_name().unwrap();
-    let caches = cache.root().parent().unwrap();
-    let expected = caches
+fn each_base_has_its_checkout_and_cache_beside_the_stage_cache() {
+    let home = tempfile::tempdir().unwrap();
+    let cache = cache_in(home.path());
+    let root = cache.ensure().unwrap();
+    let base = "0123456789abcdef0123";
+    let dirs = ensure_base_dirs(&cache, base).unwrap();
+    let tree = root
+        .parent()
+        .unwrap()
         .with_file_name("stage-base")
-        .join(name)
-        .join("abc123");
-    assert_eq!(dir, expected);
+        .join(root.file_name().unwrap());
+    assert_eq!(dirs.checkout, tree.join(base));
+    assert_eq!(dirs.cache.root(), tree.join("cache-0123456789ab"));
+    for dir in [&dirs.checkout, &dirs.cache.root().to_path_buf()] {
+        assert!(
+            !dir.starts_with(&root),
+            "{} is writable by the stage",
+            dir.display()
+        );
+    }
+    let mode = std::fs::metadata(dirs.cache.root())
+        .unwrap()
+        .permissions()
+        .mode();
+    assert_eq!(mode & 0o777, 0o700, "the base cache is made, closed");
     assert!(
-        !dir.starts_with(cache.root()),
-        "{} is writable by the stage",
-        dir.display()
+        !dirs.checkout.exists(),
+        "the checkout itself is made by `keep`"
     );
-    assert_ne!(dir, base_checkout_dir(&cache, "def456").unwrap());
+    assert_eq!(
+        dirs.cache.ensure().unwrap(),
+        dirs.cache.root(),
+        "the base cache ensures at its own root, not the stage cache's"
+    );
 }
 
 #[test]
@@ -33,7 +50,7 @@ fn the_checkouts_are_loom_owned_and_outside_the_stage_cache() {
     // A checkout planted where the stage can write is never the one used.
     let planted = root.join("base-checkout").join("abc");
     std::fs::create_dir_all(&planted).unwrap();
-    let dir = ensure_base_checkouts(&cache, "abc").unwrap();
+    let dir = ensure_base_dirs(&cache, "abc").unwrap().checkout;
     assert!(!dir.starts_with(&root), "{}", dir.display());
     assert_eq!(dir.parent().unwrap().file_name(), root.file_name());
     let mode = std::fs::metadata(dir.parent().unwrap())
@@ -41,26 +58,31 @@ fn the_checkouts_are_loom_owned_and_outside_the_stage_cache() {
         .permissions()
         .mode();
     assert_eq!(mode & 0o777, 0o700);
-    assert!(!dir.exists(), "the checkout itself is made by `keep`");
 }
 
 #[test]
-fn checkouts_of_other_bases_are_removed() {
+fn checkouts_and_caches_of_other_bases_are_removed() {
     let home = tempfile::tempdir().unwrap();
     let cache = cache_in(home.path());
-    let old = ensure_base_checkouts(&cache, "old").unwrap();
-    std::fs::create_dir_all(old.join("build")).unwrap();
-    let kept = ensure_base_checkouts(&cache, "new").unwrap();
-    std::fs::create_dir(&kept).unwrap();
-    std::fs::write(kept.join("file"), "x").unwrap();
-    assert!(!old.exists(), "the old base's checkout is pruned");
-    assert_eq!(ensure_base_checkouts(&cache, "new").unwrap(), kept);
+    let old = ensure_base_dirs(&cache, "old").unwrap();
+    std::fs::create_dir_all(old.checkout.join("build")).unwrap();
+    let kept = ensure_base_dirs(&cache, "new").unwrap();
+    std::fs::create_dir(&kept.checkout).unwrap();
+    std::fs::write(kept.checkout.join("file"), "x").unwrap();
+    std::fs::write(kept.cache.root().join("entry"), "x").unwrap();
+    assert!(!old.checkout.exists(), "the old base's checkout is pruned");
+    assert!(!old.cache.root().exists(), "the old base's cache is pruned");
+    assert_eq!(ensure_base_dirs(&cache, "new").unwrap(), kept);
     assert!(
-        kept.join("file").exists(),
+        kept.checkout.join("file").exists(),
         "the current base's checkout stays"
     );
-    assert!(ensure_base_checkouts(&cache, "..").is_err());
-    assert!(ensure_base_checkouts(&cache, "a/b").is_err());
+    assert!(
+        kept.cache.root().join("entry").exists(),
+        "the current base's cache stays"
+    );
+    assert!(ensure_base_dirs(&cache, "..").is_err());
+    assert!(ensure_base_dirs(&cache, "a/b").is_err());
 }
 
 #[test]
@@ -72,8 +94,20 @@ fn a_symbolic_link_above_the_checkouts_is_refused() {
     std::fs::create_dir(&elsewhere).unwrap();
     let link = caches.parent().unwrap().with_file_name("stage-base");
     std::os::unix::fs::symlink(&elsewhere, &link).unwrap();
-    assert!(ensure_base_checkouts(&cache, "abc").is_err());
+    assert!(ensure_base_dirs(&cache, "abc").is_err());
     assert_eq!(std::fs::read_dir(&elsewhere).unwrap().count(), 0);
+}
+
+#[test]
+fn a_symbolic_link_at_the_base_cache_is_refused() {
+    let home = tempfile::tempdir().unwrap();
+    let cache = cache_in(home.path());
+    let dirs = ensure_base_dirs(&cache, "abc").unwrap();
+    std::fs::remove_dir(dirs.cache.root()).unwrap();
+    let elsewhere = home.path().join("elsewhere");
+    std::fs::create_dir(&elsewhere).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, dirs.cache.root()).unwrap();
+    assert!(ensure_base_dirs(&cache, "abc").is_err());
 }
 
 #[test]
@@ -81,10 +115,10 @@ fn removing_the_stage_cache_removes_its_checkouts() {
     let home = tempfile::tempdir().unwrap();
     let cache = cache_in(home.path());
     cache.ensure().unwrap();
-    let dir = ensure_base_checkouts(&cache, "abc").unwrap();
-    std::fs::create_dir(&dir).unwrap();
+    let dirs = ensure_base_dirs(&cache, "abc").unwrap();
+    std::fs::create_dir(&dirs.checkout).unwrap();
     assert!(super::super::cleanup::remove_stage_cache(&cache).unwrap());
-    assert!(!dir.parent().unwrap().exists());
+    assert!(!dirs.checkout.parent().unwrap().exists());
 }
 
 #[test]
@@ -160,4 +194,28 @@ fn a_foreign_head_makes_the_checkout_again() {
     assert!(!dir.join("build").exists(), "the old checkout is gone");
     let head = std::fs::read_to_string(dir.join(".git/HEAD")).unwrap();
     assert_eq!(head.trim(), commit);
+}
+
+#[test]
+fn a_fifo_at_head_makes_the_checkout_again_without_blocking() {
+    let (_temp, common, commit, dir) = repo();
+    keep(&dir, &common, &commit).unwrap();
+    let head = dir.join(".git/HEAD");
+    std::fs::remove_file(&head).unwrap();
+    nix::unistd::mkfifo(&head, nix::sys::stat::Mode::S_IRWXU).unwrap();
+    assert!(!keep(&dir, &common, &commit).unwrap(), "a FIFO is no HEAD");
+    assert_eq!(std::fs::read_to_string(&head).unwrap().trim(), commit);
+}
+
+#[test]
+fn an_oversized_head_makes_the_checkout_again() {
+    let (_temp, common, commit, dir) = repo();
+    keep(&dir, &common, &commit).unwrap();
+    let head = dir.join(".git/HEAD");
+    let mut text = format!("{commit}\n");
+    text.push_str(&" ".repeat(HEAD_MAX_BYTES));
+    std::fs::write(&head, &text).unwrap();
+    assert_eq!(text.trim(), commit, "only its size keeps it from matching");
+    assert!(!keep(&dir, &common, &commit).unwrap(), "an oversized HEAD");
+    assert_eq!(std::fs::read_to_string(&head).unwrap().trim(), commit);
 }

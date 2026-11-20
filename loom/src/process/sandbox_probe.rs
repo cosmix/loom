@@ -12,6 +12,19 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
+mod launcher;
+mod needs;
+pub mod reap;
+
+pub use launcher::start_blocker;
+pub use needs::{
+    bash_process_substitution_usable, plan_locks_usable, skip_without_confinement,
+    skip_without_lockfile_access, skip_without_loopback, skip_without_plan_locks,
+    skip_without_process_substitution, skip_without_process_tree, skip_without_unix_socket,
+};
+#[cfg(test)]
+pub(crate) use needs::{require_unix_socket, require_unix_socket_and_loopback};
+
 /// A per-directory answer cache, backed by a `OnceLock`-initialized map so
 /// each unique `dir` a probe is asked about is only ever measured once.
 type PathProbeCache = OnceLock<Mutex<HashMap<PathBuf, bool>>>;
@@ -178,34 +191,6 @@ pub fn confined_commands_blocker() -> Option<&'static str> {
         .map(String::as_str)
 }
 
-/// Run `program args..` with a null stdin and wait. `None` when it exits 0;
-/// otherwise the reason: its exit status and first non-empty stderr line, or
-/// the spawn error when it cannot be started.
-pub fn start_blocker(program: &Path, args: &[&str]) -> Option<String> {
-    let name = program.display();
-    let output = match std::process::Command::new(program)
-        .args(args)
-        .stdin(std::process::Stdio::null())
-        .output()
-    {
-        Ok(output) => output,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            return Some(format!("{name} not found"));
-        }
-        Err(error) => return Some(format!("{name} could not be started ({error})")),
-    };
-    if output.status.success() {
-        return None;
-    }
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let first_line = stderr
-        .lines()
-        .map(str::trim)
-        .find(|line| !line.is_empty())
-        .unwrap_or("no stderr");
-    Some(format!("{name} failed ({}: {first_line})", output.status))
-}
-
 /// Start one confined `true` the way this platform's launcher does (`bwrap` on
 /// Linux, `sandbox-exec` on macOS); `Err` names why it could not. Off those
 /// platforms confinement is not probed.
@@ -268,11 +253,76 @@ pub fn process_groups_signalable() -> bool {
         };
         let group = nix::unistd::Pid::from_raw(child.id() as i32);
         let signalled = nix::sys::signal::killpg(group, nix::sys::signal::Signal::SIGKILL).is_ok();
-        let _ = child.kill();
-        let _ = child.wait();
+        reap::kill_and_reap(&mut child);
         signalled
     })
 }
+
+/// Whether this process can allocate a pseudo-terminal pair. A host job's
+/// profile may refuse the `/dev/ptmx` open. Opens and closes one; memoized.
+pub fn pty_allocatable() -> bool {
+    static RESULT: OnceLock<bool> = OnceLock::new();
+    *RESULT.get_or_init(|| nix::pty::openpty(None, None).is_ok())
+}
+
+/// Skip decision for a test that retires a process group: true when the caller
+/// should return because this process cannot signal a child's group. Call it
+/// before the test spawns anything, since a guard that cannot kill blocks on
+/// `wait`.
+pub fn skip_without_group_signals(test_name: &str) -> bool {
+    skip_unless(
+        process_groups_signalable(),
+        test_name,
+        "this process cannot signal a child's process group",
+    )
+}
+
+/// Skip decision for a test that lists the process table and retires what it
+/// spawned: true when `ps` is refused or the child's group cannot be signalled.
+/// Call it before the test spawns anything.
+pub fn skip_without_process_control(test_name: &str) -> bool {
+    skip_unless(
+        process_tree_visible(),
+        test_name,
+        "this process cannot list the process table",
+    ) || skip_without_group_signals(test_name)
+}
+
+/// Skip decision for a test that needs a PTY: true when none can be allocated.
+pub fn skip_without_pty(test_name: &str) -> bool {
+    skip_unless(
+        pty_allocatable(),
+        test_name,
+        "this process cannot allocate a PTY",
+    )
+}
+
+/// Returns from the calling test, naming it, when this process cannot signal a
+/// child's process group. Put it first in a test that spawns a stand-in it later
+/// retires by signal; one line keeps the test under the function size limit.
+#[cfg(test)]
+macro_rules! require_group_signals {
+    ($test:literal) => {
+        if $crate::process::sandbox_probe::skip_without_group_signals($test) {
+            return;
+        }
+    };
+}
+#[cfg(test)]
+pub(crate) use require_group_signals;
+
+/// Like [`require_group_signals`], and also returns when `ps` is refused, for a
+/// test that reads the process table of the stand-in it spawned.
+#[cfg(test)]
+macro_rules! require_process_control {
+    ($test:literal) => {
+        if $crate::process::sandbox_probe::skip_without_process_control($test) {
+            return;
+        }
+    };
+}
+#[cfg(test)]
+pub(crate) use require_process_control;
 
 /// Returns true if the caller should skip: `probe_ok` is false, so the
 /// environment cannot support what `test_name` needs, for reasons that have

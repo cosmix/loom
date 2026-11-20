@@ -42,6 +42,15 @@ pub fn skip(test_name: &str) -> bool {
         eprintln!("SKIP {test_name}: the confinement test runs on Linux only");
         return true;
     }
+    // A tool absent from PATH is a plain skip even under the strict variable: that variable
+    // catches a sandbox that refuses to start, not an optional tool that is not installed.
+    if let Some(tool) = ["bwrap", "socat", "srt"]
+        .into_iter()
+        .find(|tool| !on_path(tool))
+    {
+        eprintln!("SKIP {test_name}: `{tool}` is not on PATH");
+        return true;
+    }
     static REASON: OnceLock<Option<String>> = OnceLock::new();
     let reason = REASON.get_or_init(probe_srt).as_deref();
     skip_unless(reason.is_none(), test_name, reason.unwrap_or_default())
@@ -49,12 +58,6 @@ pub fn skip(test_name: &str) -> bool {
 
 /// Why this host cannot run srt, or `None` when it can. Called on Linux only, from `skip`.
 fn probe_srt() -> Option<String> {
-    if let Some(tool) = ["bwrap", "socat", "srt"]
-        .into_iter()
-        .find(|tool| !on_path(tool))
-    {
-        return Some(format!("`{tool}` is not on PATH"));
-    }
     let dir = TempDir::new().expect("create a temp dir for the srt probe");
     let settings = dir.path().join("srt.json");
     let document = srt_document(vec![], vec![], vec![], vec![]);

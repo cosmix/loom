@@ -17,8 +17,12 @@
 //! 3. the verdict's `contracts` patches are applied, every one or none past
 //!    the per-stage amendment cap (which escalates, as for a criterion), and
 //!    each contract a patch deletes is recorded as a hand-off;
-//! 4. each file is written;
-//! 5. the stage's whole frozen set is re-frozen once (`apply_contract::refreeze`).
+//! 4. under the stage's host-job lock, every other frozen file the worktree
+//!    no longer holds as frozen is put back from its frozen copy, and each
+//!    file is written;
+//! 5. the stage's whole frozen set is re-frozen once (`apply_contract::refreeze`),
+//!    every recorded file at those vetted bytes, never at what the worktree
+//!    holds.
 //!
 //! A replay after a crash finds some files already equal to their
 //! replacement: step 1 admits them and step 4 rewrites the same bytes.
@@ -27,12 +31,15 @@ use anyhow::{bail, Result};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
+use crate::host_verify::store as job_store;
 use crate::models::dispute::{
     ContractRuling, ContractRulingKind, DisputeKind, FileReplacement, PlanPatch,
 };
 use crate::models::stage::Stage;
 use crate::plan::amendment::{AmendmentField, AmendmentPatch, AmendmentRequest};
 use crate::stage_service::contracts::Site;
+use crate::verify::contracts::drift::frozen_drift;
+use crate::verify::contracts::frozen_restore::read_frozen;
 use crate::verify::contracts::store::{contract_file, contract_files, load_freeze, FreezeRecord};
 use crate::verify::review::handoffs::Handoff;
 
@@ -45,6 +52,9 @@ use super::plan_patch::build_amendment_requests;
 #[path = "apply_contract_notice.rs"]
 mod notice;
 
+/// The bytes loom vetted for each frozen path.
+type Vetted = BTreeMap<String, Vec<u8>>;
+
 /// Apply `rulings` (and `plan_patch`) on the contract dispute `kind`.
 pub(super) fn apply(
     work_dir: &Path,
@@ -53,18 +63,11 @@ pub(super) fn apply(
     kind: &DisputeKind,
     (rulings, plan_patch): (&[ContractRuling], &PlanPatch),
 ) -> Result<()> {
-    let DisputeKind::Contract {
-        contract_ids,
-        replacements,
-    } = kind
-    else {
-        bail!(
-            "dispute {dispute} of stage '{}' is not a contract dispute",
-            stage.id
-        );
-    };
+    let (contract_ids, replacements) = contract_parts(kind, dispute, &stage.id)?;
     if !rulings.iter().any(is_accept) {
-        let body = notice::rejected(&stage.id, rulings, !replacements.is_empty());
+        let replaced = !replacements.is_empty();
+        let restore = !replaced && !frozen_set_intact(work_dir, stage);
+        let body = notice::rejected(&stage.id, rulings, replaced, restore);
         return notify_and_requeue(work_dir, stage, &body);
     }
     let Some(record) = load_freeze(work_dir, &stage.id)? else {
@@ -96,9 +99,39 @@ pub(super) fn apply(
     notify_and_requeue(work_dir, stage, &notice::accepted(&outcome))
 }
 
+/// The disputed contract ids and filed replacements of the contract dispute
+/// `kind`.
+fn contract_parts<'a>(
+    kind: &'a DisputeKind,
+    dispute: u32,
+    stage_id: &str,
+) -> Result<(&'a [String], &'a [FileReplacement])> {
+    match kind {
+        DisputeKind::Contract {
+            contract_ids,
+            replacements,
+        } => Ok((contract_ids.as_slice(), replacements.as_slice())),
+        _ => bail!("dispute {dispute} of stage '{stage_id}' is not a contract dispute"),
+    }
+}
+
+/// Whether every frozen file of `stage` provably holds its frozen bytes; a
+/// stage that cannot be checked counts as not intact.
+fn frozen_set_intact(work_dir: &Path, stage: &Stage) -> bool {
+    let intact = || -> Result<bool> {
+        let Some(record) = load_freeze(work_dir, &stage.id)? else {
+            return Ok(false);
+        };
+        let site = super::locate_stage_site(work_dir, stage)?;
+        Ok(frozen_drift(&record, &site.working_dir, &site.worktree_root)?.is_empty())
+    };
+    intact().unwrap_or(false)
+}
+
 /// The site to write `writes` at, checked before anything changes: `None`
 /// when one conflicts with the freeze record (the stage escalates), an error
-/// when the write would refuse one.
+/// when the write would refuse one, or would refuse putting back any other
+/// frozen file ([`put_back_vetted`]).
 fn checked_site(
     work_dir: &Path,
     stage: &mut Stage,
@@ -111,15 +144,18 @@ fn checked_site(
         return Ok(None);
     }
     let site = super::locate_stage_site(work_dir, stage)?;
-    for replacement in writes {
-        check_writable(&site, &replacement.file)?;
+    for file in &record.files {
+        check_writable(&site, &file.path)?;
     }
     Ok(Some(site))
 }
 
-/// Write `writes` into the worktree at `site`, then re-freeze the stage's
-/// frozen set once, recording the accepted contracts and the ids `amended`
-/// names.
+/// Write `writes` and put back every other frozen file the worktree changed,
+/// then re-freeze the stage's frozen set once at those vetted bytes,
+/// recording the accepted contracts and the ids `amended` names. Held under
+/// the stage's host-job lock, which a trial takes to lay its overlay
+/// (`child_contracts::admit_overlay`) and the daemon to undo a stopped one,
+/// so no overlay is laid or undone halfway through.
 fn write_and_refreeze(
     work_dir: &Path,
     stage: &Stage,
@@ -127,9 +163,8 @@ fn write_and_refreeze(
     rulings: &[ContractRuling],
     (writes, amended): (&[&FileReplacement], &BTreeSet<String>),
 ) -> Result<Refrozen> {
-    for replacement in writes {
-        write(site, &replacement.file, &replacement.content)?;
-    }
+    let _lock = job_store::lock_stage(work_dir, &stage.id)?;
+    let (vetted, restored) = put_back_vetted(work_dir, (record, site), writes)?;
     let accepted: BTreeSet<String> = rulings
         .iter()
         .filter(|ruling| is_accept(ruling))
@@ -139,7 +174,49 @@ fn write_and_refreeze(
         .iter()
         .filter_map(|id| contract_file(Some(record), &stage.contracts, id))
         .collect();
-    refreeze(work_dir, stage, record, (&accepted, amended), &extra, site)
+    let mut refrozen = refreeze(
+        work_dir,
+        stage,
+        record,
+        (&accepted, amended),
+        (&extra, &vetted),
+        site,
+    )?;
+    refrozen.restored = restored;
+    Ok(refrozen)
+}
+
+/// The bytes loom vetted for every file `record` froze: a written file's
+/// replacement, every other file's frozen copy. A frozen file edited after
+/// the dispute was admitted, or holding a live trial overlay, would otherwise
+/// be re-frozen as the worktree holds it. Writes each replacement, then puts
+/// back each other file whose worktree bytes differ from its frozen copy, and
+/// returns the vetted bytes by path with the paths put back.
+fn put_back_vetted(
+    work_dir: &Path,
+    (record, site): (&FreezeRecord, &Site),
+    writes: &[&FileReplacement],
+) -> Result<(Vetted, Vec<String>)> {
+    let written = |path: &str| writes.iter().find(|r| r.file == path);
+    let mut vetted = BTreeMap::new();
+    for frozen in &record.files {
+        let bytes = match written(&frozen.path) {
+            Some(replacement) => replacement.content.clone().into_bytes(),
+            None => read_frozen(work_dir, record, &frozen.path, &frozen.sha256)?,
+        };
+        vetted.insert(frozen.path.clone(), bytes);
+    }
+    let mut restored = Vec::new();
+    for drift in frozen_drift(record, &site.working_dir, &site.worktree_root)? {
+        if written(&drift.path).is_none() {
+            write(site, &drift.path, &vetted[&drift.path])?;
+            restored.push(drift.path);
+        }
+    }
+    for replacement in writes {
+        write(site, &replacement.file, replacement.content.as_bytes())?;
+    }
+    Ok((vetted, restored))
 }
 
 /// The replacement files, in `replacements` order, that `rulings` let the
@@ -279,3 +356,7 @@ fn deleted_contracts(
 #[cfg(test)]
 #[path = "apply_contract_rulings_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "apply_contract_vetted_tests.rs"]
+mod vetted_tests;

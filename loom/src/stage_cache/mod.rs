@@ -7,7 +7,8 @@
 //! The root is writable by the stage's own code, so it can poison only its own
 //! stage. [`StageCache::ensure`] refuses a root planted in advance (a symlink
 //! or another user's directory), so a stage never adopts a cache it did not
-//! create.
+//! create. A base run gets a [`StageCache`] of its own, rooted beside its base
+//! checkout where the stage cannot write (`base_checkout`).
 
 pub mod base_checkout;
 pub mod cleanup;
@@ -63,6 +64,10 @@ const ROOT_NAME_LEN: usize = 24;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StageCache {
     base: PathBuf,
+    /// The directories from `base` down to the one holding the root, made by
+    /// [`StageCache::ensure`]: [`PARENTS`] for a stage cache, the stage's
+    /// base-run tree for a base run's cache (`base_checkout`).
+    parents: Vec<String>,
     root: PathBuf,
     /// The consumer's private directory for a `Session` or `Worker` sccache
     /// socket ([`StageCache::with_socket_dir`]).
@@ -108,6 +113,7 @@ impl StageCache {
         root.push(name);
         Ok(StageCache {
             base,
+            parents: PARENTS.map(String::from).to_vec(),
             root,
             socket_dir: None,
         })
@@ -155,7 +161,8 @@ impl StageCache {
     /// path, never one resolved again later, which a stage could by then have
     /// swapped for a symlink (the root itself is the stage's to write).
     pub fn ensure(&self) -> Result<PathBuf> {
-        self.ensure_below(&PARENTS)
+        let parents: Vec<&str> = self.parents.iter().map(String::as_str).collect();
+        self.ensure_below(&parents)
     }
 
     /// The root's name, shared by the directories kept for this stage

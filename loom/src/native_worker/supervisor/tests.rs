@@ -26,7 +26,9 @@ use crate::native_worker::model::{
 use crate::native_worker::protocol::frame::{read_frame, FrameError, Transport};
 use crate::native_worker::store::{self, read_events};
 #[cfg(target_os = "linux")]
-use crate::process::sandbox_probe::{confined_commands_runnable, skip_unless};
+use crate::process::sandbox_probe::{
+    confined_commands_runnable, skip_unless, skip_without_group_signals,
+};
 
 // The frozen contract file declares the same harness privately in its own module, so these
 // tests load a second copy; revisit if the harness gains a shared declaration.
@@ -381,7 +383,9 @@ fn send_after_the_reader_closed_is_an_error() {
 #[serial_test::serial]
 fn stop_process_ends_a_sleeping_boundary_and_namespace_is_released() {
     let name = "stop_process_ends_a_sleeping_boundary_and_namespace_is_released";
-    if skip_unless(confined_commands_runnable(), name, "needs bubblewrap") {
+    if skip_unless(confined_commands_runnable(), name, "needs bubblewrap")
+        || skip_without_group_signals(name)
+    {
         return;
     }
     let tmp = tempfile::TempDir::new().expect("temp");

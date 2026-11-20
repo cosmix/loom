@@ -15,11 +15,12 @@ use super::{store, CriterionOutcome, JobRecord, JobState};
 use crate::models::dispute::{truncate_to_byte_limit, FileReplacement};
 use crate::models::stage::Stage;
 use crate::verify::contracts::completion::{self, ContractCheck};
+use crate::verify::contracts::drift::{drift_lines, expecting};
 use crate::verify::contracts::frozen_restore::undo_trial_overlay;
 use crate::verify::contracts::site::{stage_site, ContractSite};
 use crate::verify::contracts::store::load_freeze;
 use crate::verify::contracts::trial::{
-    self, trial_files, with_admitted_overlay, TrialFile, TrialReceipt, RECEIPT_FILE,
+    self, trial_files, with_admitted_overlay, Relocked, TrialFile, TrialReceipt, RECEIPT_FILE,
 };
 use crate::verify::criteria::{plan_confinement, resolve_confinement};
 use crate::verify::transitions::load_stage;
@@ -143,29 +144,22 @@ fn trial(
         root.to_path_buf(),
         working_dir.to_path_buf(),
     );
-    let prefix = site.working_dir_prefix();
-    let in_root = |file: &str| prefix.join(file).to_string_lossy().into_owned();
-    let files: Vec<(String, Vec<u8>)> = replacements
-        .iter()
-        .map(|r| (in_root(&r.file), r.content.clone().into_bytes()))
-        .collect();
-    // Every form a tool may name a replaced file by, as the freeze's gate takes them.
-    let written: Vec<String> = replacements
-        .iter()
-        .flat_map(|r| {
-            let absolute = working_dir.join(&r.file).to_string_lossy().into_owned();
-            [r.file.clone(), in_root(&r.file), absolute]
-        })
-        .collect();
+    let (files, written) = overlay_files(&site, replacements);
     let overrides = trial_files(replacements);
     let confinement = resolve_confinement(
         stage.sandbox.command_confinement,
         plan_confinement(work_dir),
     );
     let admit = || admit_overlay(work_dir, record);
-    let (check, gate) = with_admitted_overlay(root, &files, admit, || {
-        let check = contract_check(stage, tree, work_dir, &overrides)?;
+    let relock = || relock_frozen(work_dir, &stage.id, &site.working_dir_prefix());
+    let (check, gate) = with_admitted_overlay(root, &files, (admit, relock), || {
+        let mut check = contract_check(stage, tree, work_dir, &overrides)?;
         let gate = format_outcome(&site, &tree.git, confinement, &written, check.passed())?;
+        for line in drift_after_runs(work_dir, &stage.id, (working_dir, root), &overrides)? {
+            if !check.drift.contains(&line) {
+                check.drift.push(line);
+            }
+        }
         Ok((check, gate))
     })?;
     record_check(progress, &check);
@@ -176,6 +170,68 @@ fn trial(
         save_receipt(work_dir, record, overrides)?;
     }
     Ok(change)
+}
+
+/// The `(path relative to the worktree root, bytes)` the trial lays over,
+/// and every form a tool may name a replaced file by, as the freeze's gate
+/// takes them.
+fn overlay_files(
+    site: &ContractSite,
+    replacements: &[FileReplacement],
+) -> (Vec<(String, Vec<u8>)>, Vec<String>) {
+    let prefix = site.working_dir_prefix();
+    let in_root = |file: &str| prefix.join(file).to_string_lossy().into_owned();
+    let files = replacements
+        .iter()
+        .map(|r| (in_root(&r.file), r.content.clone().into_bytes()))
+        .collect();
+    let written = replacements
+        .iter()
+        .flat_map(|r| {
+            let absolute = site
+                .working_dir
+                .join(&r.file)
+                .to_string_lossy()
+                .into_owned();
+            [r.file.clone(), in_root(&r.file), absolute]
+        })
+        .collect();
+    (files, written)
+}
+
+/// The stage lock a trial restores its overlay under, and what the freeze
+/// holds then for each file, by its path under the worktree root: an
+/// accepted contract ruling rewrites and re-freezes a file under this lock
+/// (`apply_contract_rulings`), and the restore must not undo it.
+fn relock_frozen(
+    work_dir: &Path,
+    stage_id: &str,
+    prefix: &Path,
+) -> Result<Relocked<store::StageLock>> {
+    let lock = store::lock_stage(work_dir, stage_id)?;
+    let frozen = load_freeze(work_dir, stage_id)?
+        .map(|record| {
+            let files = record.files.into_iter();
+            files.map(|f| (prefix.join(&f.path), f.sha256)).collect()
+        })
+        .unwrap_or_default();
+    Ok((lock, frozen))
+}
+
+/// The frozen files that, once the runs ended, no longer hold what the trial
+/// expects: its replacement for an overlaid file, the frozen bytes for every
+/// other one. Read before the overlay's restore, which would erase a change
+/// made during the runs, so a receipt never certifies bytes that did not run.
+/// An edit made and reverted within the runs is not seen.
+fn drift_after_runs(
+    work_dir: &Path,
+    stage_id: &str,
+    (acceptance_dir, worktree_root): (&Path, &Path),
+    overrides: &[TrialFile],
+) -> Result<Vec<String>> {
+    let record = load_freeze(work_dir, stage_id)?
+        .with_context(|| format!("the contracts of stage '{stage_id}' are no longer frozen"))?;
+    drift_lines(&expecting(record, overrides), acceptance_dir, worktree_root)
 }
 
 /// A trial replaces only files the freeze record holds.

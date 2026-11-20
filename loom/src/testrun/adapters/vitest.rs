@@ -133,6 +133,7 @@ impl TestRunnerAdapter for Vitest {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::process::sandbox_probe::skip_without_lockfile_access;
     use crate::testrun::command::{assert_one_word, HOSTILE_NAME};
     use crate::testrun::fixture_support::{load, scenarios};
     use crate::testrun::{classify, RunOutcome};
@@ -249,6 +250,12 @@ mod tests {
             return;
         }
         let fixture_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/testrun/fixtures/vitest");
+        if skip_without_lockfile_access(
+            "installed_vitest_selects_only_the_exact_nested_name",
+            &fixture_dir,
+        ) {
+            return;
+        }
         let dir = tempfile::Builder::new()
             .prefix("ver01-")
             .tempdir_in(&fixture_dir)

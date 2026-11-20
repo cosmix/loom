@@ -1,4 +1,5 @@
 use super::*;
+use crate::process::sandbox_probe::skip_without_group_signals;
 use crate::test_git::{commit_file, git, TestRepo};
 
 #[test]
@@ -15,6 +16,9 @@ fn git_deadlines_are_operation_specific() {
 
 #[test]
 fn git_runner_returns_structured_timeout() {
+    let false = skip_without_group_signals("git_runner_returns_structured_timeout") else {
+        return;
+    };
     let repo = tempfile::tempdir().unwrap();
     let error = run_git_program(
         "sh",

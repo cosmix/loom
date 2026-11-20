@@ -104,6 +104,7 @@ fn historical_legacy_jobs_keep_their_original_evidence_through_pruning() {
 
 #[test]
 fn recovery_reports_legacy_groups_even_after_the_job_result_was_saved() {
+    require_guardians!("recovery_reports_legacy_groups_even_after_the_job_result_was_saved");
     let (_directory, work) = state_root();
     let mut record = running_record(STAGE, None);
     record.state = JobState::Passed;

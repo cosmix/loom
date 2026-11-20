@@ -2,12 +2,15 @@
 //! test runs the real binary against fake provider binaries on PATH and makes
 //! no provider call.
 
+#[path = "ask_contracts/eval_report.rs"]
+mod eval_report;
 #[path = "integration/helpers.rs"]
 #[allow(dead_code)]
 mod helpers;
 #[path = "ask_contracts/support.rs"]
 mod support;
 
+use loom::process::sandbox_probe::skip_without_group_signals;
 use std::time::Duration;
 
 use nix::sys::signal::{kill, Signal};
@@ -119,6 +122,9 @@ fn refuses_credential_files() {
 #[test]
 #[serial]
 fn timeout_kills_the_worker() {
+    let false = skip_without_group_signals("timeout_kills_the_worker") else {
+        return;
+    };
     let scene = Scene::new();
     scene.write("big.md", sized_doc(300_000, "last line"));
     let (pid, child) = (scene.sh("pid"), scene.sh("child"));
@@ -136,6 +142,9 @@ fn timeout_kills_the_worker() {
 #[test]
 #[serial]
 fn descendant_holding_pipes_does_not_hang() {
+    let false = skip_without_group_signals("descendant_holding_pipes_does_not_hang") else {
+        return;
+    };
     let scene = Scene::new();
     scene.write("doc.md", "text\n");
     scene.set_output(&capture("ask-claude.json"));
@@ -247,6 +256,9 @@ fn oversized_payload_is_refused() {
 #[test]
 #[serial]
 fn sigint_kills_the_worker() {
+    let false = skip_without_group_signals("sigint_kills_the_worker") else {
+        return;
+    };
     let scene = Scene::new();
     scene.write("doc.md", "text\n");
     scene.fake(
@@ -333,60 +345,4 @@ fn text_mode_separates_answer_and_usage() {
     assert_eq!(report["backend"], "claude");
     assert_eq!(report["model"], "haiku");
     assert!(report["latency_ms"].is_number(), "{report}");
-}
-
-#[test]
-#[serial]
-fn eval_bar_is_ninety_percent() {
-    let scene = Scene::new();
-    scene.write("doc.md", "text\n");
-    scene.serve_claude();
-    write_cases(&scene, "cases.json", &cases_satisfying(10, 9), "doc.md");
-    let pass = scene.eval("cases.json");
-    pass.assert_exit(0);
-    pass.assert_stdout_has("accuracy: 0.90");
-    write_cases(&scene, "cases.json", &cases_satisfying(10, 8), "doc.md");
-    let fail = scene.eval("cases.json");
-    fail.assert_exit(1);
-    fail.assert_stdout_has("accuracy: 0.80");
-}
-
-#[test]
-#[serial]
-fn eval_counts_forbidden_strings() {
-    let scene = Scene::new();
-    scene.write("doc.md", "text\n");
-    scene.serve_claude();
-    let rows = [
-        row("forbidden", &["ok"], &["OK"]),
-        row("clean", &["OK"], &["absent"]),
-    ];
-    write_cases(&scene, "cases.json", &rows, "doc.md");
-    let done = scene.eval("cases.json");
-    done.assert_exit(1);
-    done.assert_stdout_has("accuracy: 0.50");
-}
-
-#[test]
-#[serial]
-fn eval_report_carries_token_and_latency_lines() {
-    let scene = Scene::new();
-    scene.write("doc.md", "é".repeat(4000));
-    scene.serve_claude();
-    write_cases(&scene, "cases.json", &[row("one", &["ok"], &[])], "doc.md");
-    let done = scene.eval("cases.json");
-    done.assert_exit(0);
-    let lines: Vec<&str> = done.stdout.lines().map(str::trim).collect();
-    assert!(lines.contains(&CLAUDE_TOKENS), "{}", done.stdout);
-    assert!(
-        lines.contains(&"direct tokens estimate: 1000"),
-        "{}",
-        done.stdout
-    );
-    let latency = lines.iter().find(|line| line.starts_with("latency p50:"));
-    assert!(
-        latency.is_some_and(|line| line.contains("p90:")),
-        "{}",
-        done.stdout
-    );
 }

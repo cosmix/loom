@@ -3,6 +3,7 @@
 //! resolver's exit to remove, and the request is refused for any other
 //! session kind or stage.
 
+use crate::process::sandbox_probe::confined_commands_runnable;
 use std::process::Command;
 
 use chrono::Utc;
@@ -144,6 +145,9 @@ pub(super) fn assert_refused(fx: &Fixture, orchestrator: &mut Orchestrator) {
 
 #[test]
 fn merge_resolved_lands_the_merge_and_leaves_the_worktree_for_the_resolver_exit() {
+    if !confined_commands_runnable() {
+        return;
+    }
     let fx = fixture();
     let mut orchestrator = resolved_stage(&fx);
 
@@ -172,6 +176,9 @@ fn merge_resolved_lands_the_merge_and_leaves_the_worktree_for_the_resolver_exit(
 
 #[test]
 fn merge_resolved_lands_when_the_target_moved_after_the_resolution() {
+    if !confined_commands_runnable() {
+        return;
+    }
     let fx = fixture();
     let mut orchestrator = resolved_stage(&fx);
     advance_main(&fx, "later.txt", "later\n");
@@ -266,6 +273,9 @@ fn merge_resolved_is_refused_for_another_session_kind_or_stage() {
 
 #[test]
 fn merge_resolved_refuses_a_branch_that_touches_a_control_path() {
+    if !confined_commands_runnable() {
+        return;
+    }
     let fx = fixture();
     let mut orchestrator = resolved_stage(&fx);
     let worktree = worktree_of(&fx);

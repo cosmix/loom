@@ -23,13 +23,13 @@ use crate::verify::transitions::{load_stage, update_stage};
 
 use ContractRulingKind::{Accept, Reject};
 
-const ALPHA: &str = "alpha";
-const BETA: &str = "beta";
-const GAMMA: &str = "gamma";
-const Y_FILE: &str = "tests/y_contract.rs";
-const Y_CONTENT: &[u8] = b"#[test]\nfn rejects_y() { assert!(false); }\n";
-const HARNESS_FILE: &str = "tests/support/helper.rs";
-const HARNESS_CONTENT: &[u8] = b"pub fn ready() -> bool { false }\n";
+pub(super) const ALPHA: &str = "alpha";
+pub(super) const BETA: &str = "beta";
+pub(super) const GAMMA: &str = "gamma";
+pub(super) const Y_FILE: &str = "tests/y_contract.rs";
+pub(super) const Y_CONTENT: &[u8] = b"#[test]\nfn rejects_y() { assert!(false); }\n";
+pub(super) const HARNESS_FILE: &str = "tests/support/helper.rs";
+pub(super) const HARNESS_CONTENT: &[u8] = b"pub fn ready() -> bool { false }\n";
 
 fn spec(id: &str, file: &str) -> ContractSpec {
     ContractSpec {
@@ -41,7 +41,7 @@ fn spec(id: &str, file: &str) -> ContractSpec {
 
 /// `alpha` and `beta` in [`CONTRACT_FILE`], `gamma` in [`Y_FILE`], all frozen
 /// with [`HARNESS_FILE`].
-fn three_contracts() -> Fixture {
+pub(super) fn three_contracts() -> Fixture {
     let specs = vec![
         spec(ALPHA, CONTRACT_FILE),
         spec(BETA, CONTRACT_FILE),
@@ -54,7 +54,7 @@ fn three_contracts() -> Fixture {
     )
 }
 
-fn replacing(file: &str, base: &[u8]) -> FileReplacement {
+pub(super) fn replacing(file: &str, base: &[u8]) -> FileReplacement {
     FileReplacement {
         file: file.to_string(),
         content: format!("// replaced {file}\n"),
@@ -65,7 +65,7 @@ fn replacing(file: &str, base: &[u8]) -> FileReplacement {
 /// File dispute 1 over `ids` with `replacements`, record `rulings` and apply.
 /// The verdict is written as recorded, so apply sees rulings that recording
 /// would refuse (an accept a reject holds back) too.
-fn rule(
+pub(super) fn rule(
     fx: &Fixture,
     ids: &[&str],
     replacements: Vec<FileReplacement>,
@@ -75,7 +75,7 @@ fn rule(
 }
 
 /// [`rule`] with the verdict's `plan_patch`.
-fn rule_patching(
+pub(super) fn rule_patching(
     fx: &Fixture,
     (ids, replacements): (&[&str], Vec<FileReplacement>),
     rulings: &[(&str, ContractRulingKind)],
@@ -86,11 +86,11 @@ fn rule_patching(
     AdjudicatorRegistry::new().apply_verdict(&fx.work, "s1", 1)
 }
 
-fn worktree_bytes(fx: &Fixture, rel: &str) -> Vec<u8> {
+pub(super) fn worktree_bytes(fx: &Fixture, rel: &str) -> Vec<u8> {
     std::fs::read(fx.worktree.join(rel)).unwrap()
 }
 
-fn notice(fx: &Fixture) -> String {
+pub(super) fn notice(fx: &Fixture) -> String {
     feedback::read_feedback(&fx.work, "s1").unwrap().unwrap()
 }
 

@@ -1,5 +1,6 @@
 //! Bridge tests: recovery of a crashed server's sessions and its report.
 
+use crate::process::sandbox_probe::skip_without_group_signals;
 use std::fs;
 use std::os::unix::fs::DirBuilderExt;
 use std::process::{Child, Command};
@@ -31,8 +32,7 @@ impl OwnedChild {
 
 impl Drop for OwnedChild {
     fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
+        crate::process::sandbox_probe::reap::kill_and_reap(&mut self.0);
     }
 }
 
@@ -140,6 +140,10 @@ fn a_start_waits_for_recovery() {
 
 #[test]
 fn a_live_pressure_session_is_torn_down_with_its_child() {
+    let false = skip_without_group_signals("a_live_pressure_session_is_torn_down_with_its_child")
+    else {
+        return;
+    };
     let h = Harness::new(|_| {});
     let mut child = OwnedChild(Command::new("sleep").arg("30").spawn().unwrap());
     let s = recorded(&h, pressure(), Some(3_800_301));

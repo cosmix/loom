@@ -43,6 +43,9 @@ fn descendant_of(repo: &Path) -> u32 {
 #[cfg(target_os = "linux")]
 #[test]
 fn an_interrupted_claude_retires_codex_instead_of_waiting_for_it() {
+    crate::process::sandbox_probe::require_group_signals!(
+        "an_interrupted_claude_retires_codex_instead_of_waiting_for_it"
+    );
     let repo = tempfile::tempdir().unwrap();
     let root = repo.path();
     fs::write(root.join("exec"), WAITING_CODEX).unwrap();

@@ -62,6 +62,7 @@ pub fn socket_path_problem(work_dir: &Path) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::process::sandbox_probe::skip_unless;
     use tempfile::TempDir;
 
     /// A canonical temp root, so the tests hold on platforms whose temp dir
@@ -109,11 +110,11 @@ mod tests {
     #[test]
     fn socket_problem_is_none_for_a_short_root() {
         let (_dir, root) = canonical_temp();
-        assert!(
-            socket_path_fits(&root.join(SOCKET_FILE)),
-            "environment precondition: temp dir too long ({})",
-            root.display()
-        );
+        let why = format!("the temp dir is too long ({})", root.display());
+        let fits = socket_path_fits(&root.join(SOCKET_FILE));
+        if skip_unless(fits, "socket_problem_is_none_for_a_short_root", &why) {
+            return;
+        }
 
         assert_eq!(socket_path_problem(&root), None);
     }
@@ -129,11 +130,11 @@ mod tests {
         std::os::unix::fs::symlink(&real, &link).unwrap();
 
         assert!(!socket_path_fits(&link.join(SOCKET_FILE)));
-        assert!(
-            socket_path_fits(&real.join(SOCKET_FILE)),
-            "environment precondition: temp dir too long ({})",
-            root.display()
-        );
+        let why = format!("the temp dir is too long ({})", root.display());
+        let fits = socket_path_fits(&real.join(SOCKET_FILE));
+        if skip_unless(fits, "socket_problem_measures_the_resolved_path", &why) {
+            return;
+        }
 
         assert_eq!(socket_path_problem(&link), None);
     }

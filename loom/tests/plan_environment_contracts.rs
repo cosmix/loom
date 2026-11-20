@@ -7,6 +7,7 @@
 #[allow(dead_code)]
 mod helpers;
 
+use loom::process::sandbox_probe::skip_without_confinement;
 use std::fs;
 use std::os::unix::fs::{symlink, PermissionsExt};
 use std::path::Path;
@@ -34,6 +35,9 @@ fn worktree_with_web() -> TempDir {
 
 #[test]
 fn provision_runs_in_its_working_dir() {
+    if skip_without_confinement() {
+        return;
+    }
     let worktree = worktree_with_web();
 
     let result = run_provision(&[entry("web", "pwd > provisioned.txt")], worktree.path());

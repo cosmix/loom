@@ -1,5 +1,6 @@
 use super::*;
 use crate::plan::schema::StageDefinition;
+use crate::process::sandbox_probe::skip_without_group_signals;
 use crate::verify::goal_backward::run_goal_backward_verification;
 use tempfile::TempDir;
 
@@ -56,6 +57,9 @@ fn failed_analyzers_fail_helper_and_goal_gate() {
 
 #[test]
 fn timed_out_analyzer_is_unavailable_analysis() {
+    let false = skip_without_group_signals("timed_out_analyzer_is_unavailable_analysis") else {
+        return;
+    };
     if !crate::process::sandbox_probe::confined_commands_runnable() {
         return;
     }

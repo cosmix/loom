@@ -38,8 +38,7 @@ impl OwnedChild {
 
 impl Drop for OwnedChild {
     fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
+        loom::process::sandbox_probe::reap::kill_and_reap(&mut self.0);
     }
 }
 

@@ -271,3 +271,7 @@ fn completion_info(stage: Stage) -> StageCompletionInfo {
 #[cfg(test)]
 #[path = "status_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "status_handoffs_tests.rs"]
+mod handoff_tests;

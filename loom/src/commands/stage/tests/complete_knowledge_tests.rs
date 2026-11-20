@@ -1,4 +1,5 @@
 use super::*;
+use crate::process::sandbox_probe::skip_without_confinement;
 
 /// A knowledge session completing with an untracked file in the knowledge
 /// directory is told to commit first, and relays nothing.
@@ -157,6 +158,9 @@ fn test_complete_knowledge_stage_sets_merged_true() {
 #[test]
 #[serial]
 fn test_complete_knowledge_stage_with_passing_acceptance() {
+    if skip_without_confinement() {
+        return;
+    }
     let temp_dir = setup_work_dir();
     initialize_zero_commit_repo(temp_dir.path());
     let work_dir_path = temp_dir.path().join(".loom").join("work");

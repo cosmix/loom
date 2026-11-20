@@ -10,6 +10,7 @@ mod plans;
 #[path = "criteria_authoring_contracts/support.rs"]
 mod support;
 
+use loom::process::sandbox_probe::skip_without_confinement;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -340,6 +341,9 @@ fn dry_run_reads_the_committed_tree() {
 
 #[test]
 fn dry_run_provisions_before_the_criteria() {
+    if skip_without_confinement() {
+        return;
+    }
     let (_repo, path, mut report) =
         committed_plan(&v2_plan(&provision("touch provisioned.txt"), ""));
     let mut seen = Vec::new();

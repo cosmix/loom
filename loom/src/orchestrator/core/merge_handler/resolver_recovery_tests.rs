@@ -1,6 +1,7 @@
 //! A resolver the daemon launched outlives both a failed publication and a
 //! daemon restart, and a launch that died gives its stage back.
 
+use crate::process::sandbox_probe::skip_without_group_signals;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -39,8 +40,7 @@ struct KillOnDrop(Arc<Mutex<Option<std::process::Child>>>);
 impl Drop for KillOnDrop {
     fn drop(&mut self) {
         if let Some(mut child) = self.0.lock().unwrap().take() {
-            let _ = child.kill();
-            let _ = child.wait();
+            crate::process::sandbox_probe::reap::kill_and_reap(&mut child);
         }
     }
 }
@@ -49,6 +49,11 @@ impl Drop for KillOnDrop {
 /// unreadable by then, as it is for a disk that filled up.
 #[test]
 fn a_failed_publication_keeps_the_resolver_tracked_and_counted() {
+    let false =
+        skip_without_group_signals("a_failed_publication_keeps_the_resolver_tracked_and_counted")
+    else {
+        return;
+    };
     let repo = repo_with_conflicting_stage_branches(&[STAGE]);
     let mut orchestrator = orchestrator_with_conflict(repo.path(), STAGE);
     let work = orchestrator.config.work_dir.clone();

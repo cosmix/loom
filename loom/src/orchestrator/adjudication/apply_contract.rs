@@ -1,13 +1,15 @@
 //! The re-freeze an accepted contract ruling ends with (DESIGN D15), driven
 //! by `apply_contract_rulings.rs`.
 //!
-//! The stage's whole frozen set (contract and harness files) is re-frozen at
-//! its current worktree content, deleted harness files dropped, and every
-//! accepted contract and every contract the record no longer describes get
-//! their files and run directories recorded (see `refrozen_contracts`).
+//! The stage's whole frozen set (contract and harness files) is re-frozen,
+//! every recorded file at the bytes loom vetted (an accepted replacement or
+//! its frozen copy), a new contract or harness file as the worktree holds it,
+//! and every accepted contract and every contract the record no longer
+//! describes get their files and run directories recorded (see
+//! `refrozen_contracts`).
 
 use anyhow::Result;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use crate::models::stage::Stage;
@@ -26,37 +28,48 @@ mod replacement;
 pub(super) use replacement::FAIL_AFTER_WRITE;
 pub(super) use replacement::{check_writable, conflict, write};
 
-/// What a re-freeze froze: the paths and their bytes, and the paths dropped
-/// because the worktree no longer holds them.
+/// What a re-freeze froze: the paths and their bytes, and the frozen paths
+/// put back from their frozen copies because the worktree had changed them.
 pub(super) struct Refrozen {
     pub(super) files: Vec<(String, Vec<u8>)>,
-    pub(super) dropped: Vec<String>,
+    pub(super) restored: Vec<String>,
 }
 
-/// Re-freeze the stage's whole frozen set as the worktree holds it now
-/// (`frozen_set::read_frozen_set`): every contract file of the (amended)
-/// stage, every harness match listed afresh, every path `record` holds, and
-/// `extra`, the accepted contracts' files from before the amendment. A
-/// recorded or harness path deleted from the worktree leaves the freeze. The
+/// Re-freeze the stage's whole frozen set: every contract file of the
+/// (amended) stage, every harness match listed afresh, every path `record`
+/// holds, and `extra`, the accepted contracts' files from before the
+/// amendment. Each path in `vetted` (every path `record` holds) is frozen at
+/// those bytes; only a path the record lacks (a new contract or harness file)
+/// is frozen as the worktree holds it (`frozen_set::read_frozen_set`). The
 /// store publishes the new generation whole or not at all, so an interrupted
-/// re-freeze leaves the prior snapshot committed; a retry re-reads the
-/// worktree. `accepted` are the contracts ruled accept, `amended` the ids the
-/// verdict's patches replaced or inserted.
+/// re-freeze leaves the prior snapshot committed. `accepted` are the
+/// contracts ruled accept, `amended` the ids the verdict's patches replaced
+/// or inserted. Returned with no path `restored`; the caller fills it.
 pub(super) fn refreeze(
     work_dir: &Path,
     stage: &Stage,
     record: &FreezeRecord,
     (accepted, amended): (&BTreeSet<String>, &BTreeSet<String>),
-    extra: &[String],
+    (extra, vetted): (&[String], &BTreeMap<String, Vec<u8>>),
     site: &Site,
 ) -> Result<Refrozen> {
     let mut recorded: Vec<String> = extra.to_vec();
     recorded.extend(record.files.iter().map(|file| file.path.clone()));
     let contracts = refrozen_contracts(stage, record, accepted, amended, site)?;
     let harness = harness_files(&site.git, &site.working_dir, &stage.harness)?;
-    let files = read_frozen_set(&site.working_dir, &stage.contracts, &harness, &recorded)?;
-    let dropped = contract_store::refreeze_set(work_dir, &stage.id, &files, &contracts)?;
-    Ok(Refrozen { files, dropped })
+    let read = read_frozen_set(&site.working_dir, &stage.contracts, &harness, &recorded)?;
+    let mut merged: BTreeMap<String, Vec<u8>> = read.into_iter().collect();
+    merged.extend(
+        vetted
+            .iter()
+            .map(|(path, bytes)| (path.clone(), bytes.clone())),
+    );
+    let files: Vec<(String, Vec<u8>)> = merged.into_iter().collect();
+    contract_store::refreeze_set(work_dir, &stage.id, &files, &contracts)?;
+    Ok(Refrozen {
+        files,
+        restored: Vec::new(),
+    })
 }
 
 /// The contracts the re-freeze records: the accepted ones, and every one the

@@ -9,6 +9,7 @@ mod helpers;
 #[allow(dead_code)]
 mod support;
 
+use loom::process::sandbox_probe::skip_without_group_signals;
 use std::time::Duration;
 
 use nix::sys::signal::{kill, Signal};
@@ -50,6 +51,9 @@ fn a_case_path_resolves_against_a_cases_file_in_a_subdirectory() {
 #[test]
 #[serial]
 fn sigterm_kills_the_workers_process_group() {
+    let false = skip_without_group_signals("sigterm_kills_the_workers_process_group") else {
+        return;
+    };
     let scene = Scene::new();
     scene.write("doc.md", "text\n");
     let (pid, child) = (scene.sh("pid"), scene.sh("child"));
@@ -71,6 +75,9 @@ fn sigterm_kills_the_workers_process_group() {
 #[test]
 #[serial]
 fn an_interrupted_eval_starts_no_further_case() {
+    let false = skip_without_group_signals("an_interrupted_eval_starts_no_further_case") else {
+        return;
+    };
     let scene = Scene::new();
     scene.write("doc.md", "text\n");
     scene.fake(

@@ -1,10 +1,16 @@
 //! Capability probe failures at the session launch boundary.
 
 use super::capsule::probe_capsule_support;
+use crate::process::sandbox_probe::skip_without_group_signals;
 use std::os::unix::fs::PermissionsExt;
 
 #[test]
 fn failed_and_hanging_help_probes_refuse_with_diagnostics() {
+    let false =
+        skip_without_group_signals("failed_and_hanging_help_probes_refuse_with_diagnostics")
+    else {
+        return;
+    };
     let temp = tempfile::TempDir::new().unwrap();
     let executable = temp.path().join("claude");
     for (body, expected) in [

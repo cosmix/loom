@@ -25,6 +25,11 @@ fn gone_or_zombie(pid: i32) -> bool {
 #[cfg(target_os = "linux")]
 #[test]
 fn group_kill_reaches_grandchild() {
+    let false =
+        crate::process::sandbox_probe::skip_without_group_signals("group_kill_reaches_grandchild")
+    else {
+        return;
+    };
     let mut child = Command::new("sh")
         .args(["-c", "sleep 30 & echo $!; wait"])
         .stdout(Stdio::piped())
@@ -54,14 +59,18 @@ fn group_kill_reaches_grandchild() {
 
 #[test]
 fn deadline_wait_returns_none() {
+    let false =
+        crate::process::sandbox_probe::skip_without_group_signals("deadline_wait_returns_none")
+    else {
+        return;
+    };
     let mut child = Command::new("sleep").arg("30").spawn().unwrap();
     let started = Instant::now();
 
     let outcome = crate::process::wait_with_deadline(&mut child, Duration::from_millis(100));
     let elapsed = started.elapsed();
 
-    let _ = child.kill();
-    let _ = child.wait();
+    crate::process::sandbox_probe::reap::kill_and_reap(&mut child);
     assert!(
         outcome.unwrap().is_none(),
         "a running child reported an exit"

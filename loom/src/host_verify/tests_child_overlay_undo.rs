@@ -1,5 +1,6 @@
-//! The undo of a stopped trial's overlay through the runner's own entry,
-//! `signals::kill_groups`, on a record with no process groups, and the
+//! The undo of a stopped trial's overlay through the runner's own entries,
+//! `signals::kill_groups` and `recover_after_restart`, on a record with no
+//! process groups, and the
 //! admission a trial's child takes before its first write. Neither needs a
 //! confined child: the tests write the overlay bytes themselves.
 
@@ -9,7 +10,7 @@ use std::os::unix::fs::PermissionsExt;
 use serial_test::serial;
 
 use super::child_contracts::admit_overlay;
-use super::signals::kill_groups;
+use super::signals::{kill_groups, recover_after_restart};
 use super::tests_child_contracts::{Fixture, STAGE};
 use super::{store, JobRecord, JobState};
 use crate::verify::contracts::test_support::{CONTRACT_CONTENT, CONTRACT_FILE};
@@ -82,6 +83,22 @@ fn retiring_a_stale_trial_keeps_a_newer_running_trials_overlay() {
     // A newer running job that overlays nothing does not keep the stale one's.
     let _check = fx.job(true, &[]);
     kill_groups(&fx.work_dir, STAGE, &stale.id);
+    assert_eq!(fx.contract_file(), (CONTRACT_CONTENT.to_vec(), MODE));
+}
+
+/// A daemon restart finds a trial `Running` whose child died with its overlay
+/// live: `recover_after_restart` interrupts it and puts the frozen bytes back.
+#[test]
+#[serial]
+fn recovery_after_a_restart_undoes_a_running_trials_overlay() {
+    let fx = fixture();
+    let record = fx.job(true, &[(CONTRACT_FILE, OVERLAY)]);
+    write_contract_file(&fx, OVERLAY);
+
+    let interrupted = recover_after_restart(&fx.work_dir).unwrap();
+
+    assert_eq!(interrupted.len(), 1, "{interrupted:?}");
+    assert_eq!(interrupted[0].id, record.id);
     assert_eq!(fx.contract_file(), (CONTRACT_CONTENT.to_vec(), MODE));
 }
 

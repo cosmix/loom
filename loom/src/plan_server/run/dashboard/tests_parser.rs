@@ -3,6 +3,7 @@
 use super::super::*;
 use super::{fake, STARTUP, URL};
 use crate::commands::status::web::startup_lines;
+use crate::process::sandbox_probe::skip_without_group_signals;
 use std::fs;
 use tempfile::TempDir;
 
@@ -105,6 +106,11 @@ fn startup_url_reads_a_concrete_remote_bind_across_lines() {
 
 #[test]
 fn child_bound_to_one_remote_address_yields_its_bootstrap_url() {
+    let false =
+        skip_without_group_signals("child_bound_to_one_remote_address_yields_its_bootstrap_url")
+    else {
+        return;
+    };
     let temp = TempDir::new().unwrap();
     let printed: String = remote_lines()
         .iter()

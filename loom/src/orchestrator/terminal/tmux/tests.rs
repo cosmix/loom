@@ -2,6 +2,7 @@
 
 use super::socket::tests::TmuxTmpDirGuard;
 use super::*;
+use crate::process::sandbox_probe::skip_without_group_signals;
 use serial_test::serial;
 use std::path::PathBuf;
 
@@ -137,6 +138,9 @@ fn new_session_argv_sets_the_history_options_before_the_session_exists() {
 
 #[test]
 fn tmux_control_runner_returns_structured_timeout() {
+    let false = skip_without_group_signals("tmux_control_runner_returns_structured_timeout") else {
+        return;
+    };
     let mut command = Command::new("sh");
     command.args(["-c", "sleep 60"]);
     let error = run_tmux_command(

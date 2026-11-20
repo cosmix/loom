@@ -1,6 +1,7 @@
 //! `settle_commit::record` over throwaway repositories: what a settle commits, what it leaves
 //! alone, when it does not commit at all, and how it treats hooks it knows nothing about.
 
+use crate::process::sandbox_probe::skip_without_group_signals;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -302,6 +303,11 @@ fn the_hook_does_not_see_literal_pathspecs() {
 
 #[test]
 fn a_hook_past_the_deadline_is_terminated_and_its_lock_released() {
+    let false =
+        skip_without_group_signals("a_hook_past_the_deadline_is_terminated_and_its_lock_released")
+    else {
+        return;
+    };
     let dir = repo();
     let root = dir.path();
     pre_commit(root, "sleep 30\n");

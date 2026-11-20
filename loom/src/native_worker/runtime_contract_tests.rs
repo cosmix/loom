@@ -54,7 +54,9 @@ mod bwrap {
     use crate::native_worker::boundary::{
         identity_for, spawn_payload, spawn_payload_with_codex_home, verify_quiescent, Quiescence,
     };
-    use crate::process::sandbox_probe::{confined_commands_runnable, skip_unless};
+    use crate::process::sandbox_probe::{
+        confined_commands_runnable, skip_unless, skip_without_group_signals,
+    };
 
     const NEEDS_BWRAP: &str = "needs a working bubblewrap pid namespace";
 
@@ -76,7 +78,9 @@ mod bwrap {
     #[serial_test::serial]
     fn boundary_kill_stops_detached_descendant() {
         let name = "boundary_kill_stops_detached_descendant";
-        if skip_unless(confined_commands_runnable(), name, NEEDS_BWRAP) {
+        if skip_unless(confined_commands_runnable(), name, NEEDS_BWRAP)
+            || skip_without_group_signals(name)
+        {
             return;
         }
         let (_tmp, worktree) = canonical_tempdir();
@@ -111,7 +115,9 @@ mod bwrap {
     #[serial_test::serial]
     fn quiescence_detects_surviving_namespace_member() {
         let name = "quiescence_detects_surviving_namespace_member";
-        if skip_unless(confined_commands_runnable(), name, NEEDS_BWRAP) {
+        if skip_unless(confined_commands_runnable(), name, NEEDS_BWRAP)
+            || skip_without_group_signals(name)
+        {
             return;
         }
         let (_tmp, worktree) = canonical_tempdir();
@@ -142,7 +148,9 @@ mod bwrap {
     #[serial_test::serial]
     fn boundary_codex_home_is_private() {
         let name = "boundary_codex_home_is_private";
-        if skip_unless(confined_commands_runnable(), name, NEEDS_BWRAP) {
+        if skip_unless(confined_commands_runnable(), name, NEEDS_BWRAP)
+            || skip_without_group_signals(name)
+        {
             return;
         }
         let (_home_tmp, home) = canonical_tempdir();

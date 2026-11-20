@@ -1,3 +1,4 @@
+use crate::process::sandbox_probe::{require_unix_socket, require_unix_socket_and_loopback};
 use std::fs;
 use std::io::{ErrorKind, Read, Write};
 use std::net::{IpAddr, SocketAddr, TcpListener, TcpStream};
@@ -234,6 +235,7 @@ fn open_tunnel(path: &Path) -> UnixStream {
 #[test]
 fn allowed_connect_tunnels_bytes() {
     let (_dir, path) = socket_dir();
+    require_unix_socket_and_loopback!("allowed_connect_tunnels_bytes", &path);
     let (_handle, calls) = proxy(&path, Limits::default());
     let mut stream = open_tunnel(&path);
     stream.write_all(b" world").expect("send");
@@ -246,6 +248,7 @@ fn allowed_connect_tunnels_bytes() {
 #[test]
 fn refused_host_gets_403_and_never_connects() {
     let (_dir, path) = socket_dir();
+    require_unix_socket_and_loopback!("refused_host_gets_403_and_never_connects", &path);
     let (_handle, calls) = proxy(&path, Limits::default());
     for target in ["evil.net:443", "api.openai.com:80", "127.0.0.1:443"] {
         let reply = exchange(
@@ -260,6 +263,7 @@ fn refused_host_gets_403_and_never_connects() {
 #[test]
 fn get_request_gets_405() {
     let (_dir, path) = socket_dir();
+    require_unix_socket_and_loopback!("get_request_gets_405", &path);
     let (_handle, calls) = proxy(&path, Limits::default());
     let reply = exchange(&path, b"GET http://api.openai.com/ HTTP/1.1\r\n\r\n");
     assert!(
@@ -273,6 +277,7 @@ fn get_request_gets_405() {
 #[test]
 fn oversized_head_gets_431() {
     let (_dir, path) = socket_dir();
+    require_unix_socket_and_loopback!("oversized_head_gets_431", &path);
     let (_handle, _calls) = proxy(&path, Limits::default());
     let reply = exchange(&path, &[b'a'; 9000]);
     assert!(reply.starts_with("HTTP/1.1 431 "), "{reply}");
@@ -281,6 +286,7 @@ fn oversized_head_gets_431() {
 #[test]
 fn malformed_request_line_gets_400() {
     let (_dir, path) = socket_dir();
+    require_unix_socket_and_loopback!("malformed_request_line_gets_400", &path);
     let (_handle, calls) = proxy(&path, Limits::default());
     for request in [
         "CONNECT api.openai.com:443\r\n\r\n",
@@ -300,6 +306,7 @@ fn malformed_request_line_gets_400() {
 #[test]
 fn stalled_head_gets_400() {
     let (_dir, path) = socket_dir();
+    require_unix_socket_and_loopback!("stalled_head_gets_400", &path);
     let limits = Limits {
         head_timeout: Duration::from_millis(200),
         ..Limits::default()
@@ -314,6 +321,7 @@ fn stalled_head_gets_400() {
 #[test]
 fn cap_gets_503() {
     let (_dir, path) = socket_dir();
+    require_unix_socket_and_loopback!("cap_gets_503", &path);
     let limits = Limits {
         max_connections: 1,
         ..Limits::default()
@@ -335,6 +343,7 @@ fn cap_gets_503() {
 #[test]
 fn localhost_resolves_to_502() {
     let (_dir, path) = socket_dir();
+    require_unix_socket!("localhost_resolves_to_502", &path);
     let _handle = start(&path, &["localhost"]).expect("start");
     let reply = exchange(&path, b"CONNECT localhost:443 HTTP/1.1\r\n\r\n");
     assert!(reply.starts_with("HTTP/1.1 502 Bad Gateway\r\n"), "{reply}");
@@ -343,6 +352,7 @@ fn localhost_resolves_to_502() {
 #[test]
 fn drop_removes_socket_and_joins_threads() {
     let (_dir, path) = socket_dir();
+    require_unix_socket_and_loopback!("drop_removes_socket_and_joins_threads", &path);
     let (handle, _calls) = proxy(&path, Limits::default());
     let mut tunnel = open_tunnel(&path);
     drop(handle);
@@ -361,6 +371,7 @@ fn drop_removes_socket_and_joins_threads() {
 #[test]
 fn start_refuses_open_directory() {
     let (dir, path) = socket_dir();
+    require_unix_socket!("start_refuses_open_directory", &path);
     fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o755)).expect("chmod");
     let err = start(&path, &ALLOWED).err().expect("refused");
     assert!(err.to_string().contains("mode 755"), "{err:#}");
@@ -378,6 +389,7 @@ fn start_refuses_long_path() {
 #[test]
 fn start_refuses_existing_path() {
     let (_dir, path) = socket_dir();
+    require_unix_socket!("start_refuses_existing_path", &path);
     fs::write(&path, b"").expect("create");
     let err = start(&path, &ALLOWED).err().expect("refused");
     assert!(err.to_string().contains("already exists"), "{err:#}");

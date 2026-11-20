@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 
 use super::*;
 use crate::models::session::SessionType;
+use crate::orchestrator::monitor::direct_worker::live_tests::cannot_run_live_trees;
 use crate::orchestrator::terminal::native::create_wrapper_script;
 use crate::process::OwnedProcess;
 
@@ -248,6 +249,11 @@ fn wrapper_tee_runs_under(agent: u32) -> bool {
 /// call, that must.
 #[test]
 fn the_session_wrapper_reads_as_a_command_only_while_a_tool_call_runs() {
+    let false =
+        cannot_run_live_trees("the_session_wrapper_reads_as_a_command_only_while_a_tool_call_runs")
+    else {
+        return;
+    };
     let temp = tempfile::TempDir::new().unwrap();
     let dir = temp.path();
     let mut session = Session::new_adjudication("wrapped-stage");
@@ -292,6 +298,11 @@ fn portable_cpu_time_parser_rejects_unknown_and_counts_days() {
 #[cfg(target_os = "linux")]
 #[test]
 fn a_reaped_child_leaves_its_work_in_the_command_total() {
+    let false = crate::process::sandbox_probe::skip_without_group_signals(
+        "a_reaped_child_leaves_its_work_in_the_command_total",
+    ) else {
+        return;
+    };
     let mut shell = std::process::Command::new("sh")
         .args([
             "-c",
@@ -315,8 +326,7 @@ fn a_reaped_child_leaves_its_work_in_the_command_total() {
         std::thread::sleep(Duration::from_millis(5));
     };
     let after = command_cpu_ticks(&[pid]);
-    let _ = shell.kill();
-    let _ = shell.wait();
+    crate::process::sandbox_probe::reap::kill_and_reap(&mut shell);
     assert!(finished, "the child never finished");
     assert!(peak > 0, "the child's work was never sampled");
     assert!(after.unwrap() >= peak, "{after:?} fell below {peak}");

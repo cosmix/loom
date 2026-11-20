@@ -1,4 +1,5 @@
 use super::*;
+use crate::process::sandbox_probe::skip_without_process_substitution;
 use tempfile::TempDir;
 
 #[test]
@@ -260,6 +261,9 @@ fn wrapper_tees_claude_stderr_into_the_session_log() {
 /// refusal live, and loom still has it on disk afterwards.
 #[test]
 fn wrapper_stderr_capture_survives_execution() {
+    if skip_without_process_substitution("wrapper_stderr_capture_survives_execution") {
+        return;
+    }
     let temp_dir = TempDir::new().unwrap();
     let work_dir = temp_dir.path();
     let session_id = "session-exec-stderr-1";
@@ -297,6 +301,11 @@ fn wrapper_stderr_capture_survives_execution() {
 
 #[test]
 fn wrapper_executes_with_minimal_environment_and_no_ambient_secret() {
+    if skip_without_process_substitution(
+        "wrapper_executes_with_minimal_environment_and_no_ambient_secret",
+    ) {
+        return;
+    }
     let temp_dir = TempDir::new().unwrap();
     let output_path = temp_dir.path().join("stage-environment.txt");
     let output_arg = escape(output_path.display().to_string().into());

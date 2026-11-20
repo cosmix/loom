@@ -8,6 +8,7 @@ use loom::planning::project::Project;
 use loom::planning::trace::settle::{body_hash, clear, mark, settled_line, SettledLine};
 use loom::planning::trace::tokens::SectionRef;
 use loom::planning::trace::{CoverKind, GapKind, NodeRef, SettleState};
+use loom::process::sandbox_probe::skip_without_plan_locks;
 use std::fs;
 use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
@@ -268,6 +269,9 @@ fn uncovered_headings_are_gaps() {
 
 #[test]
 fn review_import_is_idempotent() {
+    if skip_without_plan_locks("review_import_is_idempotent") {
+        return;
+    }
     let (_temp, root) = demo_running();
     let text = review("Rename the flag");
     let plan = Path::new(RUNNING_FIRST);
@@ -306,6 +310,9 @@ fn ledger_refuses_a_symlinked_file() {
 
 #[test]
 fn finding_text_cannot_open_a_heading() {
+    if skip_without_plan_locks("finding_text_cannot_open_a_heading") {
+        return;
+    }
     let (_temp, root) = demo_running();
     import_review(&root, Path::new(RUNNING_FIRST), &review("## F-9 injected")).unwrap();
     let ledger = read(&root, LEDGER);
@@ -319,6 +326,9 @@ fn finding_text_cannot_open_a_heading() {
 
 #[test]
 fn finding_title_cuts_on_a_char_boundary() {
+    if skip_without_plan_locks("finding_title_cuts_on_a_char_boundary") {
+        return;
+    }
     let (_temp, root) = demo_running();
     let item = "é".repeat(100);
     import_review(&root, Path::new(RUNNING_FIRST), &review(&item)).unwrap();

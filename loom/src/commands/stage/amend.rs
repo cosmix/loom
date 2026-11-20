@@ -26,6 +26,11 @@ const DEFAULT_REASON: &str = "operator amendment via loom stage amend";
 /// testable without mutating the process environment: an absent (or blank)
 /// path is the only acceptable state. A stage that could amend its own plan
 /// could rewrite the checks it is judged by.
+///
+/// This is a guard against a session that runs the command by mistake, not a
+/// security boundary: a session can unset the variables it is checked by. The
+/// boundary is the session's write denies on the state directory (`.loom`),
+/// which stop `apply_amendment` from writing whatever the environment says.
 pub fn refuse_stage_session(worktree_path: Option<&str>) -> Result<()> {
     let Some(path) = worktree_path.map(str::trim).filter(|p| !p.is_empty()) else {
         return Ok(());
@@ -35,6 +40,21 @@ pub fn refuse_stage_session(worktree_path: Option<&str>) -> Result<()> {
          stage may not change its own checks. `loom stage amend` is an operator command; \
          dispute a wrong check instead."
     )
+}
+
+/// Refuse when the session identity variables (`LOOM_STAGE_ID`,
+/// `LOOM_SESSION_ID`) are set: a session that unset `LOOM_WORKTREE_PATH` still
+/// carries them. Blank values name no session.
+pub fn refuse_session_identity(stage_id: Option<&str>, session_id: Option<&str>) -> Result<()> {
+    let named = |value: Option<&str>| value.is_some_and(|v| !v.trim().is_empty());
+    if named(stage_id) || named(session_id) {
+        bail!(
+            "This process runs inside a loom session (LOOM_STAGE_ID or LOOM_SESSION_ID is set), \
+             so it cannot amend the plan: a stage may not change its own checks. `loom stage \
+             amend` is an operator command; dispute a wrong check instead."
+        );
+    }
+    Ok(())
 }
 
 /// `loom stage amend` — repair one of a stage's `acceptance`, `wiring`,
@@ -51,6 +71,10 @@ pub fn amend(
     reason: Option<String>,
 ) -> Result<()> {
     refuse_stage_session(std::env::var("LOOM_WORKTREE_PATH").ok().as_deref())?;
+    refuse_session_identity(
+        std::env::var("LOOM_STAGE_ID").ok().as_deref(),
+        std::env::var("LOOM_SESSION_ID").ok().as_deref(),
+    )?;
     let reason = reason.unwrap_or_else(|| DEFAULT_REASON.to_string());
 
     let work_dir = crate::commands::common::work_dir_path()?;
@@ -84,3 +108,7 @@ pub fn amend(
         Err(err) => Err(err).with_context(|| format!("Failed to amend stage '{stage_id}'")),
     }
 }
+
+#[cfg(test)]
+#[path = "amend_identity_tests.rs"]
+mod identity_tests;

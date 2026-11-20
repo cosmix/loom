@@ -55,10 +55,10 @@ pub(in super::super) fn conflict(
     })
 }
 
-/// Write `text` over the recorded frozen file `file` (relative to the stage's
+/// Write `bytes` over the recorded frozen file `file` (relative to the stage's
 /// working directory), keeping the file's permission bits. Refuses a symlink
 /// target and a symlinked parent.
-pub(in super::super) fn write(site: &Site, file: &str, text: &str) -> Result<()> {
+pub(in super::super) fn write(site: &Site, file: &str, bytes: &[u8]) -> Result<()> {
     let target = target(site, file)?;
     if let Some(parent) = target.parent().filter(|p| !p.as_os_str().is_empty()) {
         let root = safe_open_dirfd(&site.worktree_root)?;
@@ -66,7 +66,7 @@ pub(in super::super) fn write(site: &Site, file: &str, text: &str) -> Result<()>
             .with_context(|| format!("refusing to write {}", target.display()))?;
     }
     let mode = existing_mode(&site.worktree_root.join(&target));
-    restore_no_follow(&site.worktree_root, &target, text.as_bytes(), mode)
+    restore_no_follow(&site.worktree_root, &target, bytes, mode)
         .with_context(|| format!("refusing to write {}", target.display()))?;
     #[cfg(test)]
     if FAIL_AFTER_WRITE.with(|fail| fail.replace(false)) {

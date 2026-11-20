@@ -4,6 +4,7 @@ use crate::fs::session_files::load_session_exact;
 use crate::models::session::SessionStatus;
 use crate::models::stage::StageStatus;
 use crate::orchestrator::terminal::native::write_test_pid_identity;
+use crate::process::sandbox_probe::skip_without_group_signals;
 use crate::subagent_lifecycle::model::{
     CodexEvidence, CodexEvidenceKind, CodexEvidenceOutcome, CodexExecution, LifecycleProducer,
     LifecycleRecord, LifecycleState, WorkerIdentity, LIFECYCLE_VERSION,
@@ -99,6 +100,9 @@ fn corrupt_child_journal(work: &Path) {
 
 #[test]
 fn active_child_forbids_takedown() {
+    let false = skip_without_group_signals("active_child_forbids_takedown") else {
+        return;
+    };
     let mut fixture = fixture(2);
     let pid = spawn_orphan_process();
     write_test_pid_identity(&fixture.work, &fixture.session, pid).unwrap();
@@ -130,6 +134,9 @@ fn active_child_forbids_takedown() {
 
 #[test]
 fn unknown_child_escalates_without_kill() {
+    let false = skip_without_group_signals("unknown_child_escalates_without_kill") else {
+        return;
+    };
     let mut fixture = fixture(2);
     let pid = spawn_orphan_process();
     write_test_pid_identity(&fixture.work, &fixture.session, pid).unwrap();
@@ -170,6 +177,9 @@ fn lifecycle_disposition_covers_no_children_active_and_unknown_journals() {
 #[test]
 #[serial_test::serial]
 fn park_native_active_worker_forbids_takedown() {
+    let false = skip_without_group_signals("park_native_active_worker_forbids_takedown") else {
+        return;
+    };
     let mut fixture = fixture(2);
     let pid = spawn_orphan_process();
     let _process = crate::host_verify::submit::native_hold_tests::ProcessGuard(pid);
@@ -195,6 +205,10 @@ fn park_native_active_worker_forbids_takedown() {
 #[test]
 #[serial_test::serial]
 fn park_native_unverified_worker_escalates_ownership() {
+    let false = skip_without_group_signals("park_native_unverified_worker_escalates_ownership")
+    else {
+        return;
+    };
     let mut fixture = fixture(2);
     let pid = spawn_orphan_process();
     let _process = crate::host_verify::submit::native_hold_tests::ProcessGuard(pid);

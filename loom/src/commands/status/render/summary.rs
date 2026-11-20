@@ -67,17 +67,23 @@ fn write_completion_summary<W: Write>(w: &mut W, summary: &CompletionSummary) ->
     write_handoffs(w, summary)
 }
 
+/// The heading above the tests left out of a stage check; the TUI completion
+/// screen shows the same wording.
+pub(crate) const HANDOFFS_HEADING: &str = "Tests left out of a stage check:";
+
+/// The sentence naming how many checks adjudicators amended; the TUI completion
+/// screen shows the same wording.
+pub(crate) fn amendments_line(amendments: usize) -> String {
+    format!("Adjudicators amended {amendments} checks in this plan.")
+}
+
 /// The amendment count and the tests left out of stage checks, when there are any.
 fn write_handoffs<W: Write>(w: &mut W, summary: &CompletionSummary) -> io::Result<()> {
     if summary.amendments > 0 {
-        writeln!(
-            w,
-            "Adjudicators amended {} checks in this plan.",
-            summary.amendments
-        )?;
+        writeln!(w, "{}", amendments_line(summary.amendments))?;
     }
     if !summary.handoffs.is_empty() {
-        writeln!(w, "Tests left out of a stage check:")?;
+        writeln!(w, "{HANDOFFS_HEADING}")?;
         for line in &summary.handoffs {
             writeln!(w, "  {line}")?;
         }

@@ -1,8 +1,12 @@
 use super::*;
+use crate::process::sandbox_probe::skip_without_confinement;
 use std::env;
 
 #[test]
 fn test_before_after_stage_checks_pass() {
+    if skip_without_confinement() {
+        return;
+    }
     // Simulate a "before" check: command exits 1 (feature doesn't exist yet)
     let before_checks = vec![TruthCheck {
         command: "exit 1".to_string(),
@@ -24,6 +28,9 @@ fn test_before_after_stage_checks_pass() {
 
 #[test]
 fn test_before_stage_checks_fail_when_precondition_not_met() {
+    if skip_without_confinement() {
+        return;
+    }
     // Before check expects exit 1, but command exits 0 (feature already exists)
     let before_checks = vec![TruthCheck {
         command: "exit 0".to_string(),
@@ -46,6 +53,9 @@ fn test_before_stage_checks_fail_when_precondition_not_met() {
 
 #[test]
 fn test_after_stage_checks_pass() {
+    if skip_without_confinement() {
+        return;
+    }
     // Simulate an "after" check: command exits 0 (feature works)
     let after_checks = vec![TruthCheck {
         command: "echo 'feature works'".to_string(),
@@ -127,6 +137,9 @@ fn test_before_after_empty_checks() {
 
 #[test]
 fn test_before_stage_stdout_not_contains() {
+    if skip_without_confinement() {
+        return;
+    }
     // Before check: stdout should NOT contain "FeatureX" (feature doesn't exist)
     let checks = vec![TruthCheck {
         command: "echo 'no features here'".to_string(),
@@ -148,6 +161,9 @@ fn test_before_stage_stdout_not_contains() {
 
 #[test]
 fn test_after_stage_multiple_checks() {
+    if skip_without_confinement() {
+        return;
+    }
     let checks = vec![
         TruthCheck {
             command: "echo 'test passed'".to_string(),

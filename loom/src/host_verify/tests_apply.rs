@@ -14,6 +14,7 @@ fn fixture() -> Fixture {
 }
 
 #[test]
+#[serial_test::serial]
 fn a_passing_job_completes_the_stage_and_records_the_receipt() {
     let fx = fixture();
     let record = fx.passed();
@@ -59,6 +60,7 @@ fn a_passing_job_completes_the_stage_and_records_the_receipt() {
 }
 
 #[test]
+#[serial_test::serial]
 fn a_failing_job_writes_tool_failed_with_every_label() {
     let fx = fixture();
     let outcomes = [
@@ -90,6 +92,7 @@ fn a_failing_job_writes_tool_failed_with_every_label() {
 }
 
 #[test]
+#[serial_test::serial]
 fn a_cancelled_or_interrupted_job_writes_no_checkpoint() {
     let fx = fixture();
     for state in [JobState::Cancelled, JobState::Interrupted] {
@@ -106,6 +109,7 @@ fn a_cancelled_or_interrupted_job_writes_no_checkpoint() {
 }
 
 #[test]
+#[serial_test::serial]
 fn a_head_that_moved_after_the_run_is_rejected() {
     let fx = fixture();
     let record = fx.passed();
@@ -121,6 +125,7 @@ fn a_head_that_moved_after_the_run_is_rejected() {
 }
 
 #[test]
+#[serial_test::serial]
 fn a_policy_amended_after_the_run_is_rejected() {
     let fx = fixture();
     let record = fx.passed();
@@ -131,6 +136,7 @@ fn a_policy_amended_after_the_run_is_rejected() {
 }
 
 #[test]
+#[serial_test::serial]
 fn a_passing_job_of_a_session_that_lost_the_stage_is_rejected() {
     let fx = fixture();
     let record = fx.passed();
@@ -148,6 +154,7 @@ fn a_passing_job_of_a_session_that_lost_the_stage_is_rejected() {
 }
 
 #[test]
+#[serial_test::serial]
 fn a_failing_job_of_a_session_that_lost_the_stage_is_ignored() {
     let fx = fixture();
     let record = fx.finished(

@@ -14,6 +14,7 @@
 mod app;
 pub(crate) mod daemon_client;
 mod event_handler;
+mod handoffs;
 pub(crate) mod ledger;
 mod renderer;
 mod state;

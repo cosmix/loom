@@ -11,6 +11,7 @@ use loom::orchestrator::terminal::native::create_wrapper_script;
 use loom::orchestrator::terminal::tmux::{
     await_tmux_session_pid, socket_name, socket_path_for, spawn_in_tmux, TmuxBackend,
 };
+use loom::process::sandbox_probe::skip_without_group_signals;
 use nix::sys::signal::{kill, Signal};
 use nix::unistd::Pid;
 use serial_test::serial;
@@ -69,7 +70,8 @@ fn tmux_bind_supported(dir: &Path) -> Result<(), String> {
 /// `LOOM_E2E_REQUIRE_TMUX=1`, so CI can demand a real run.
 pub(crate) fn skip_unless_tmux_can_bind(dir: &Path, test_name: &str) -> bool {
     match tmux_bind_supported(dir) {
-        Ok(()) => false,
+        // The tests retire the pane's process by signal.
+        Ok(()) => skip_without_group_signals(test_name),
         Err(err) => {
             if std::env::var("LOOM_E2E_REQUIRE_TMUX").as_deref() == Ok("1") {
                 panic!(

@@ -2,6 +2,7 @@
 //! on the readiness pipe, plus the spawn guard and the daemon's command line.
 
 use super::*;
+use crate::process::sandbox_probe::skip_without_group_signals;
 use nix::sys::signal::Signal;
 use std::ffi::OsStr;
 use std::os::unix::process::ExitStatusExt;
@@ -12,8 +13,7 @@ struct Reaped(Child);
 
 impl Drop for Reaped {
     fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
+        crate::process::sandbox_probe::reap::kill_and_reap(&mut self.0);
     }
 }
 
@@ -55,6 +55,9 @@ fn launch_failure(script: &str, timing: ReadyTiming) -> String {
 
 #[test]
 fn a_ready_child_that_stays_alive_is_accepted() {
+    let false = skip_without_group_signals("a_ready_child_that_stays_alive_is_accepted") else {
+        return;
+    };
     let dir = TempDir::new().expect("temp dir");
     let log = dir.path().join("orchestrator.log");
     let (mut child, reader) = spawn_script("printf '\\001'; exec sleep 30", &log);
@@ -99,6 +102,9 @@ fn ready_then_abort_names_the_signal_and_the_log_tail() {
 
 #[test]
 fn a_silent_child_times_out_and_is_reaped() {
+    let false = skip_without_group_signals("a_silent_child_times_out_and_is_reaped") else {
+        return;
+    };
     let dir = TempDir::new().expect("temp dir");
     let log = dir.path().join("orchestrator.log");
     let (mut child, reader) = spawn_script("exec sleep 30", &log);
@@ -115,6 +121,11 @@ fn a_silent_child_times_out_and_is_reaped() {
 
 #[test]
 fn a_timed_out_child_reports_what_it_wrote_on_termination() {
+    let false =
+        skip_without_group_signals("a_timed_out_child_reports_what_it_wrote_on_termination")
+    else {
+        return;
+    };
     let script = "trap 'printf LASTWORDS; exit 1' TERM; while :; do sleep 0.1; done";
 
     let error = launch_failure(script, timing(300, 100));
@@ -128,6 +139,11 @@ fn a_timed_out_child_reports_what_it_wrote_on_termination() {
 
 #[test]
 fn a_pipe_closed_while_the_child_lives_terminates_and_reaps_it() {
+    let false =
+        skip_without_group_signals("a_pipe_closed_while_the_child_lives_terminates_and_reaps_it")
+    else {
+        return;
+    };
     let dir = TempDir::new().expect("temp dir");
     let log = dir.path().join("orchestrator.log");
     let (mut child, reader) = spawn_script("exec >&- 2>&-; exec sleep 30", &log);

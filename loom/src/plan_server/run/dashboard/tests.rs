@@ -1,4 +1,5 @@
 use super::*;
+use crate::process::sandbox_probe::skip_without_group_signals;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::sync::Barrier;
@@ -118,6 +119,9 @@ fn assert_dead(pid: i32) {
 
 #[test]
 fn response_reveals_token_only_to_holder() {
+    let false = skip_without_group_signals("response_reveals_token_only_to_holder") else {
+        return;
+    };
     let (temp, ctx) = context();
     let bin = live_fake(temp.path());
     let holder = BrowserId::mint().unwrap();
@@ -143,6 +147,9 @@ fn response_reveals_token_only_to_holder() {
 
 #[test]
 fn two_calls_reuse_child_and_installation() {
+    let false = skip_without_group_signals("two_calls_reuse_child_and_installation") else {
+        return;
+    };
     let (temp, ctx) = context();
     let bin = live_fake(temp.path());
     install_dashboard(&ctx);
@@ -173,6 +180,9 @@ fn two_calls_reuse_child_and_installation() {
 
 #[test]
 fn concurrent_first_calls_start_one_child() {
+    let false = skip_without_group_signals("concurrent_first_calls_start_one_child") else {
+        return;
+    };
     let (temp, ctx) = context();
     let bin = live_fake(temp.path());
     let barrier = Barrier::new(2);
@@ -201,6 +211,10 @@ fn concurrent_first_calls_start_one_child() {
 
 #[test]
 fn shutdown_drain_kills_child_and_prevents_restart() {
+    let false = skip_without_group_signals("shutdown_drain_kills_child_and_prevents_restart")
+    else {
+        return;
+    };
     let (temp, ctx) = context();
     let bin = live_fake(temp.path());
     assert_eq!(call(&ctx, &bin).status, 200);
@@ -215,6 +229,9 @@ fn shutdown_drain_kills_child_and_prevents_restart() {
 
 #[test]
 fn shutdown_abort_kills_child() {
+    let false = skip_without_group_signals("shutdown_abort_kills_child") else {
+        return;
+    };
     let (temp, ctx) = context();
     let bin = live_fake(temp.path());
     assert_eq!(call(&ctx, &bin).status, 200);
@@ -228,6 +245,9 @@ fn shutdown_abort_kills_child() {
 
 #[test]
 fn timeout_returns_502_and_reaps_child() {
+    let false = skip_without_group_signals("timeout_returns_502_and_reaps_child") else {
+        return;
+    };
     let (temp, ctx) = context();
     let bin = fake(temp.path(), "exec sleep 60");
     let response = post_dashboard_with_bin(
@@ -251,6 +271,9 @@ fn timeout_returns_502_and_reaps_child() {
 
 #[test]
 fn startup_stops_after_twenty_lines() {
+    let false = skip_without_group_signals("startup_stops_after_twenty_lines") else {
+        return;
+    };
     let (temp, ctx) = context();
     let bin = fake(temp.path(), &format!(
         "i=0; while [ \"$i\" -lt 20 ]; do echo waiting; i=$((i+1)); done\nprintf '%s\\n' '{STARTUP}'\nexec sleep 60"
@@ -264,6 +287,10 @@ fn startup_stops_after_twenty_lines() {
 
 #[test]
 fn child_arguments_follow_host_and_terminal_backend() {
+    let false = skip_without_group_signals("child_arguments_follow_host_and_terminal_backend")
+    else {
+        return;
+    };
     let temp = TempDir::new().unwrap();
     let bin = live_fake(temp.path());
     let child = start_dashboard(
@@ -315,6 +342,9 @@ fn ssh_hint_uses_dashboard_port_and_is_omitted_locally() {
 
 #[test]
 fn native_backend_omits_terminals() {
+    let false = skip_without_group_signals("native_backend_omits_terminals") else {
+        return;
+    };
     let (temp, ctx) = context();
     fs::write(
         temp.path().join(".loom/work/config.toml"),

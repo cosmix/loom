@@ -68,7 +68,7 @@ impl Dispute {
     }
 
     /// The spool line and relay payload: the RPC without its stage and session.
-    fn queued(&self) -> StageRequest {
+    pub(super) fn queued(&self) -> StageRequest {
         let reason = self.reason.clone();
         let evidence_commit = self.evidence_commit.clone();
         match &self.kind {

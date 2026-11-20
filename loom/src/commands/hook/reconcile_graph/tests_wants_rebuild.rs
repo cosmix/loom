@@ -5,6 +5,7 @@
 use super::lock::{decide, read_lock, update_lock, LockDecision, LockState};
 use super::tests::{degraded_pack, leave};
 use super::*;
+use crate::process::sandbox_probe::require_process_control;
 use serial_test::serial;
 use std::os::unix::process::ExitStatusExt;
 use std::sync::atomic::AtomicBool;
@@ -29,8 +30,7 @@ struct Reaped(std::process::Child);
 
 impl Drop for Reaped {
     fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
+        crate::process::sandbox_probe::reap::kill_and_reap(&mut self.0);
     }
 }
 
@@ -252,6 +252,7 @@ fn pending_is_never_lost_across_threads() {
 
 #[test]
 fn cancel_skips_a_decoy_process() {
+    require_process_control!("cancel_skips_a_decoy_process");
     let temp = TempDir::new().unwrap();
     let lock_path = lock_in(&temp);
     let mut decoy = Reaped(Command::new("sleep").arg("30").spawn().unwrap());
@@ -272,6 +273,7 @@ fn cancel_skips_a_decoy_process() {
 
 #[test]
 fn cancel_signals_a_holder_that_is_the_reconciler() {
+    require_process_control!("cancel_signals_a_holder_that_is_the_reconciler");
     let temp = TempDir::new().unwrap();
     let lock_path = lock_in(&temp);
     let mut holder = fake_reconciler();
@@ -286,6 +288,7 @@ fn cancel_signals_a_holder_that_is_the_reconciler() {
 
 #[test]
 fn cancel_leaves_a_process_that_started_after_the_lease() {
+    require_process_control!("cancel_leaves_a_process_that_started_after_the_lease");
     let temp = TempDir::new().unwrap();
     let lock_path = lock_in(&temp);
     let mut newcomer = fake_reconciler();
@@ -299,33 +302,6 @@ fn cancel_leaves_a_process_that_started_after_the_lease() {
         "a reused pid must survive"
     );
     assert_eq!(read_lock(&lock_path).unwrap().pid, 0);
-}
-
-#[test]
-fn cancel_with_no_holder_writes_nothing() {
-    let temp = TempDir::new().unwrap();
-    let lock_path = lock_in(&temp);
-
-    cancel::cancel_holder(&lock_path, unix_now());
-    assert!(!lock_path.exists());
-
-    seed(&lock_path, 100, 0, 2, false);
-    cancel::cancel_holder(&lock_path, unix_now());
-    assert_eq!(std::fs::read_to_string(&lock_path).unwrap(), "100 0 2 0\n");
-}
-
-#[test]
-fn cancel_with_a_dead_holder_leaves_the_lease_for_an_immediate_takeover() {
-    let temp = TempDir::new().unwrap();
-    let lock_path = lock_in(&temp);
-    let now = unix_now();
-    seed(&lock_path, now, u32::MAX, 1, false);
-
-    cancel::cancel_holder(&lock_path, now);
-
-    assert_eq!(read_lock(&lock_path).unwrap().pid, u32::MAX);
-    let decision = decide(&lock_path, now, 600, 1800, crate::process::is_process_alive);
-    assert_eq!(decision, LockDecision::Spawn);
 }
 
 #[test]
@@ -397,3 +373,6 @@ fn successful_spawn_keeps_the_lease_claimed() {
 
     assert_eq!(read_lock(&lock_path).unwrap().pid, me);
 }
+
+#[path = "tests_wants_rebuild_cancel.rs"]
+mod cancel_tests;

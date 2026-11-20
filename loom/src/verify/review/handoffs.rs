@@ -27,6 +27,10 @@ pub struct BaseEvidence {
     pub index: usize,
     /// The command that ran; evidence applies only while the criterion is unchanged.
     pub command: String,
+    /// The base commit the run checked out; evidence applies only while it
+    /// is still the stage's base, so a run before the stage took in a newer
+    /// base says nothing about the current one.
+    pub base: String,
     pub passed: bool,
     /// Tests the run executed, when the runner's summary was parsed.
     pub executed: Option<u64>,
@@ -168,6 +172,10 @@ fn same_key(a: &Handoff, b: &Handoff) -> bool {
 }
 
 #[cfg(test)]
+#[path = "handoffs_test_support.rs"]
+pub(crate) mod test_support;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -175,6 +183,7 @@ mod tests {
         BaseEvidence {
             index,
             command: command.to_string(),
+            base: "b1".to_string(),
             passed,
             executed: Some(10),
             failed: Some(if passed { 0 } else { 1 }),

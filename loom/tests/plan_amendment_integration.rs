@@ -5,6 +5,7 @@
 //! amendment path concurrently. The plan-versions flock must serialise
 //! these calls and assign strictly-monotonic version numbers.
 
+use loom::process::sandbox_probe::skip_without_plan_locks;
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -111,6 +112,9 @@ fn read_audit_versions(work_dir: &Path) -> Vec<u64> {
 // --------------------------------------------------------------------------
 #[test]
 fn concurrent_amendments_produce_strictly_increasing_versions() {
+    if skip_without_plan_locks("concurrent_amendments_produce_strictly_increasing_versions") {
+        return;
+    }
     let env = setup();
     let work_dir = Arc::new(env.work_dir.clone());
     let plan_path = Arc::new(env.plan_path.clone());
@@ -149,6 +153,9 @@ fn concurrent_amendments_produce_strictly_increasing_versions() {
 // --------------------------------------------------------------------------
 #[test]
 fn stage_file_reflects_latest_amendment_after_each_commit() {
+    if skip_without_plan_locks("stage_file_reflects_latest_amendment_after_each_commit") {
+        return;
+    }
     let env = setup();
     for i in 0..5 {
         let r = apply_amendment(
@@ -174,6 +181,9 @@ fn stage_file_reflects_latest_amendment_after_each_commit() {
 // --------------------------------------------------------------------------
 #[test]
 fn audit_rows_appear_in_completion_order() {
+    if skip_without_plan_locks("audit_rows_appear_in_completion_order") {
+        return;
+    }
     let env = setup();
     let work_dir = Arc::new(env.work_dir.clone());
     let plan_path = Arc::new(env.plan_path.clone());
@@ -217,6 +227,9 @@ fn audit_rows_appear_in_completion_order() {
 // --------------------------------------------------------------------------
 #[test]
 fn count_amendments_matches_concurrent_successes() {
+    if skip_without_plan_locks("count_amendments_matches_concurrent_successes") {
+        return;
+    }
     let env = setup();
     let work_dir = Arc::new(env.work_dir.clone());
     let plan_path = Arc::new(env.plan_path.clone());

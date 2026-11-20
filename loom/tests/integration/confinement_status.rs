@@ -73,6 +73,15 @@ fn skip_test(test_name: &str, scratch: &Path) -> bool {
         eprintln!("SKIP {test_name}: the srt checks run on Linux only");
         return true;
     }
+    // A tool absent from PATH is a plain skip even under the strict variable: that variable
+    // catches a sandbox that refuses to start, not an optional tool that is not installed.
+    if let Some(tool) = ["bwrap", "socat", "srt"]
+        .into_iter()
+        .find(|tool| !on_path(tool))
+    {
+        eprintln!("SKIP {test_name}: `{tool}` is not on PATH");
+        return true;
+    }
     let reason = srt_unavailable(scratch);
     skip_unless(
         reason.is_none(),
@@ -83,12 +92,6 @@ fn skip_test(test_name: &str, scratch: &Path) -> bool {
 
 /// Why this host cannot run srt, or `None` when it can. Called on Linux only.
 fn srt_unavailable(scratch: &Path) -> Option<String> {
-    if let Some(tool) = ["bwrap", "socat", "srt"]
-        .into_iter()
-        .find(|tool| !on_path(tool))
-    {
-        return Some(format!("`{tool}` is not on PATH"));
-    }
     let settings = scratch.join("probe.srt.json");
     fs::write(&settings, srt_settings(&[], &[]).to_string()).unwrap();
     let output = Command::new("srt")

@@ -135,6 +135,8 @@ fn check_accepts_write(
     facts: &DisputeFacts,
 ) -> Result<(), String> {
     let written = files_to_write(rulings, &facts.files, &facts.filed);
+    // A written harness file proves every accept changes something only
+    // because `files_to_write` writes a harness file when every ruling accepts.
     if written
         .iter()
         .any(|file| !facts.files.values().any(|held| held == file))

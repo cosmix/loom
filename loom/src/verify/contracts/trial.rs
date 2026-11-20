@@ -7,9 +7,13 @@
 //! [`with_overlay`] writes into the stage worktree, which the stage session
 //! can also write, so every target is checked for a symlink at each component
 //! before anything is written, the writes and restores go through the
-//! no-follow writer, and the earlier bytes and mode come back whether the run
-//! passed, failed or unwound.
+//! no-follow writer, and the restore runs whether the run passed, failed or
+//! unwound. The restore is conditional: under the stage lock it writes a saved
+//! file back only if the file still holds its overlay bytes and the freeze does
+//! not record it at those bytes; a missing file stays missing and a file
+//! holding other bytes is left alone.
 
+use std::marker::PhantomData;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
@@ -17,7 +21,7 @@ use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 
 use super::store::{validate_relative, FreezeRecord, MAX_FROZEN_FILE_BYTES};
-use crate::fs::safe_read::read_bounded;
+use crate::fs::safe_read::{is_not_found, read_bounded};
 use crate::fs::safe_replace::{open_parent, restore_no_follow};
 use crate::host_verify::{store as job_store, JobKind, JobRecord, JobState};
 use crate::models::dispute::FileReplacement;
@@ -72,27 +76,52 @@ pub fn refuse_unfrozen(
     }
 }
 
-/// A file's bytes and mode from before the overlay.
+/// A file's bytes and mode from before the overlay, and the sha256 of the
+/// replacement laid over it.
 struct Saved {
     rel: PathBuf,
     bytes: Vec<u8>,
     mode: u32,
+    overlay: String,
 }
+
+/// What a trial's restore runs under: a lock, and the `(path relative to the
+/// worktree root, sha256)` each frozen file is frozen at, read under it.
+pub type Relocked<G> = (G, Vec<(PathBuf, String)>);
 
 /// Restores the files it holds when dropped, so an unwinding run still
-/// leaves the worktree as it was.
-struct Restore<'a> {
+/// leaves the worktree as it was. `lock` is taken for the restore: the
+/// writers that may replace and re-freeze a frozen file during the run (an
+/// accepted contract ruling) hold the same lock.
+struct Restore<'a, L: Fn() -> Result<Relocked<G>>, G> {
     root: &'a Path,
     saved: Vec<Saved>,
+    lock: L,
+    _guard: PhantomData<fn() -> G>,
 }
 
-impl Restore<'_> {
-    /// Put every saved file back; the first failure names its file, and the
-    /// remaining files are still restored.
+impl<L: Fn() -> Result<Relocked<G>>, G> Restore<'_, L, G> {
+    /// Put back every saved file that still holds its overlay bytes while the
+    /// freeze holds other bytes for it. A file holding anything else was
+    /// written during the run (an edit, which the run's drift check reports),
+    /// and one frozen at the overlay bytes was replaced and re-frozen by an
+    /// accepted ruling: both are left alone. The first failure names its
+    /// file, and the remaining files are still tried.
     fn finish(&mut self) -> Result<()> {
+        if self.saved.is_empty() {
+            return Ok(());
+        }
+        let (_guard, frozen) =
+            (self.lock)().context("cannot lock the stage to restore a trial overlay")?;
         let mut first = None;
         for saved in std::mem::take(&mut self.saved) {
-            let restored = restore_no_follow(self.root, &saved.rel, &saved.bytes, saved.mode)
+            let refrozen = frozen
+                .iter()
+                .any(|(rel, sha256)| *rel == saved.rel && *sha256 == saved.overlay);
+            if refrozen {
+                continue;
+            }
+            let restored = restore_if_overlaid(self.root, &saved)
                 .with_context(|| format!("cannot restore the frozen file {}", saved.rel.display()));
             if let Err(error) = restored {
                 first.get_or_insert(error);
@@ -102,7 +131,7 @@ impl Restore<'_> {
     }
 }
 
-impl Drop for Restore<'_> {
+impl<L: Fn() -> Result<Relocked<G>>, G> Drop for Restore<'_, L, G> {
     fn drop(&mut self) {
         if let Err(error) = self.finish() {
             tracing::error!(error = %format!("{error:#}"), "a trial overlay was not restored");
@@ -110,46 +139,68 @@ impl Drop for Restore<'_> {
     }
 }
 
+/// Write `saved`'s earlier bytes back when the file still hashes to its
+/// overlay; a missing file is left missing.
+fn restore_if_overlaid(root: &Path, saved: &Saved) -> Result<()> {
+    let current = match read_bounded(root, &saved.rel, MAX_FROZEN_FILE_BYTES) {
+        Ok(current) => current,
+        Err(error) if is_not_found(&error) => return Ok(()),
+        Err(error) => return Err(error),
+    };
+    if sha256_hex(&current) != saved.overlay {
+        return Ok(());
+    }
+    restore_no_follow(root, &saved.rel, &saved.bytes, saved.mode)
+}
+
 /// Lay each `(path, bytes)` (relative to `worktree_root`) over its existing
-/// regular file, call `run`, then restore every file's earlier bytes and mode
-/// whatever `run` returned, and on unwind. A missing file, a symlinked target
-/// or a symlinked parent is refused before anything is written. Returns
-/// `run`'s result; a failed restore is an error naming the file.
+/// regular file, call `run`, then restore each file's earlier bytes and mode
+/// whatever `run` returned, and on unwind. The restore is conditional: under
+/// the stage lock a saved file is written back only if it still holds its
+/// overlay bytes and the freeze does not record it at those bytes; a missing
+/// file stays missing and a file holding other bytes is left alone. A missing
+/// file, a symlinked target or a symlinked parent is refused before anything
+/// is written. Returns `run`'s result; a failed restore is an error naming
+/// the file.
 pub fn with_overlay<T>(
     worktree_root: &Path,
     files: &[(String, Vec<u8>)],
     run: impl FnOnce() -> Result<T>,
 ) -> Result<T> {
-    with_admitted_overlay(worktree_root, files, || Ok(()), run)
+    with_admitted_overlay(
+        worktree_root,
+        files,
+        (|| Ok(()), || Ok(((), Vec::new()))),
+        run,
+    )
 }
 
-/// [`with_overlay`], calling `admit` after the files are checked and before
-/// the first write: an `Err` writes nothing and is returned, and the value it
-/// returns (a lock) is held until every file is written, then dropped before
-/// `run`.
-pub fn with_admitted_overlay<T, G>(
+/// [`with_overlay`], calling `admit` before the files are checked and read:
+/// an `Err` writes nothing and is returned, and the value it returns (a lock)
+/// is held until every file is written, then dropped before `run`. The earlier
+/// bytes are read under it, so an overlay another holder of the lock lays or
+/// undoes is never saved halfway as the file's original. `relock` is held
+/// while the files are restored, and a file is restored only while it holds
+/// its replacement bytes and is not frozen at them, so a frozen file another
+/// holder of the lock rewrote or re-froze during the run keeps that state.
+pub fn with_admitted_overlay<T, G, H>(
     worktree_root: &Path,
     files: &[(String, Vec<u8>)],
-    admit: impl FnOnce() -> Result<G>,
+    (admit, relock): (impl FnOnce() -> Result<G>, impl Fn() -> Result<Relocked<H>>),
     run: impl FnOnce() -> Result<T>,
 ) -> Result<T> {
-    let saved = files
-        .iter()
-        .map(|(path, _)| snapshot(worktree_root, path))
-        .collect::<Result<Vec<_>>>()?;
-    let admitted = admit()?;
+    // Declared before the admission so an unwind drops the admission's lock
+    // first: the restore takes the same lock.
     let mut restore = Restore {
         root: worktree_root,
-        saved: Vec::with_capacity(saved.len()),
+        saved: Vec::with_capacity(files.len()),
+        lock: relock,
+        _guard: PhantomData,
     };
-    for (saved, (_, bytes)) in saved.into_iter().zip(files) {
-        let written = restore_no_follow(worktree_root, &saved.rel, bytes, saved.mode)
-            .with_context(|| format!("cannot lay the replacement over {}", saved.rel.display()));
-        // Held before the error is returned: a partial write is restored too.
-        restore.saved.push(saved);
-        written?;
-    }
+    let admitted = admit()?;
+    let laid = lay(worktree_root, files, &mut restore.saved);
     drop(admitted);
+    laid?;
     let result = run();
     match (restore.finish(), result) {
         (Ok(()), result) => result,
@@ -158,9 +209,28 @@ pub fn with_admitted_overlay<T, G>(
     }
 }
 
+/// Snapshot every file, then write each replacement, pushing a file onto
+/// `saved` once its replacement is written; nothing is written unless every
+/// snapshot succeeds.
+fn lay(root: &Path, files: &[(String, Vec<u8>)], saved: &mut Vec<Saved>) -> Result<()> {
+    let snapshots = files
+        .iter()
+        .map(|(path, bytes)| snapshot(root, path, bytes))
+        .collect::<Result<Vec<_>>>()?;
+    for (snapshot, (_, bytes)) in snapshots.into_iter().zip(files) {
+        // The write is atomic (a rename), so a failed one leaves the file as it was.
+        restore_no_follow(root, &snapshot.rel, bytes, snapshot.mode).with_context(|| {
+            format!("cannot lay the replacement over {}", snapshot.rel.display())
+        })?;
+        saved.push(snapshot);
+    }
+    Ok(())
+}
+
 /// The current bytes and permission bits of the regular file `path`, which
-/// must be reached without a symlink at any component.
-fn snapshot(root: &Path, path: &str) -> Result<Saved> {
+/// must be reached without a symlink at any component, saved to be put back
+/// over `overlay`.
+fn snapshot(root: &Path, path: &str, overlay: &[u8]) -> Result<Saved> {
     validate_relative(path)?;
     let rel = PathBuf::from(path);
     let refused = || format!("refusing to trial a replacement of {path}");
@@ -175,6 +245,7 @@ fn snapshot(root: &Path, path: &str) -> Result<Saved> {
         bytes,
         // Setuid, setgid and sticky bits are not carried onto the rewrite.
         mode: metadata.permissions().mode() & 0o777,
+        overlay: sha256_hex(overlay),
     })
 }
 
@@ -197,6 +268,15 @@ pub fn receipt_covers(
             receipt.head
         ));
     }
+    receipt_files_cover(receipt, replacements).map_err(|problem| format!("{problem}: {RUN}"))
+}
+
+/// Whether `receipt` ran exactly the `(frozen file, sha256)` set
+/// `replacements`, whatever HEAD it ran at; the error says how it differs.
+pub fn receipt_files_cover(
+    receipt: &TrialReceipt,
+    replacements: &[(String, String)],
+) -> Result<(), String> {
     let unfiled = receipt
         .files
         .iter()
@@ -205,7 +285,7 @@ pub fn receipt_covers(
         let trialled: Vec<&str> = receipt.files.iter().map(|f| f.path.as_str()).collect();
         return Err(format!(
             "the passing trial replaced {}: the filing must name the same --replacement values \
-             as the trial: {RUN}",
+             as the trial",
             trialled.join(", ")
         ));
     }
@@ -223,7 +303,7 @@ pub fn receipt_covers(
         return Ok(());
     }
     Err(format!(
-        "the passing trial did not run these replacement bytes: {}: {RUN}",
+        "the passing trial did not run these replacement bytes: {}",
         uncovered.join(", ")
     ))
 }

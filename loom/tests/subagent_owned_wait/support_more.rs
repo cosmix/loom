@@ -280,8 +280,7 @@ impl WatchChild {
 impl Drop for WatchChild {
     fn drop(&mut self) {
         if let Some(mut child) = self.child.take() {
-            let _ = child.kill();
-            let _ = child.wait();
+            loom::process::sandbox_probe::reap::kill_and_reap(&mut child);
         }
         if let Some(reader) = self.reader.take() {
             let _ = reader.join();

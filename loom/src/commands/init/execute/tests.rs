@@ -4,6 +4,7 @@ use super::warn_on_long_socket_path;
 use super::{execute, stop_daemon_and_prune};
 use crate::git::target_guard::test_support::held_repo;
 use crate::git::target_guard::RECORD_FILE;
+use crate::process::sandbox_probe::{skip_unless, skip_without_unix_socket};
 use serial_test::serial;
 use std::path::{Path, PathBuf};
 
@@ -92,6 +93,14 @@ fn a_work_root_whose_socket_path_cannot_fit_is_warned_about() {
     let long = root.join("l".repeat(crate::daemon::SUN_PATH_MAX));
     std::fs::create_dir(&short).unwrap();
     std::fs::create_dir(&long).unwrap();
+    let fits = crate::daemon::socket_path_fits(&short.join(crate::daemon::SOCKET_FILE));
+    if skip_unless(
+        fits,
+        "a_work_root_whose_socket_path_cannot_fit_is_warned_about",
+        "the temp dir is too long for a short work root's socket path to fit",
+    ) {
+        return;
+    }
 
     let message = warn_on_long_socket_path(&long).expect("a long work root is warned about");
 
@@ -111,6 +120,9 @@ fn init_clean_proceeds_past_a_dead_viewer_socket() {
     let _env = TmuxTmpDirGuard::set(socket_root.path());
     let repo = crate::git::target_guard::test_support::repo();
     let socket = socket_path_for(&viewer_socket_name(&repo.work));
+    if skip_without_unix_socket("init_clean_proceeds_past_a_dead_viewer_socket", &socket) {
+        return;
+    }
     std::fs::create_dir_all(socket.parent().unwrap()).unwrap();
     drop(std::os::unix::net::UnixListener::bind(&socket).unwrap());
 

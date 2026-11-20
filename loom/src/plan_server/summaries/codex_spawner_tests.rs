@@ -1,3 +1,4 @@
+use crate::process::sandbox_probe::skip_without_group_signals;
 use std::os::unix::process::ExitStatusExt;
 use std::time::Duration;
 
@@ -263,6 +264,11 @@ fn a_changed_configuration_outranks_a_requested_stop() {
 
 #[test]
 fn stop_all_closes_the_registry_and_stops_every_registered_job() {
+    let false =
+        skip_without_group_signals("stop_all_closes_the_registry_and_stops_every_registered_job")
+    else {
+        return;
+    };
     let root = tempfile::TempDir::new().expect("temp dir");
     let mut child = std::process::Command::new("sleep")
         .arg("30")

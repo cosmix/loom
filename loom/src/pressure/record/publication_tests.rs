@@ -1,6 +1,7 @@
 use super::publication::{AFTER_APPEND, AFTER_COMPARISON, WRITE_LIMIT};
 use super::tests::{plan_file, record_line, END};
 use super::*;
+use crate::process::sandbox_probe::skip_unless;
 use std::io::Write;
 use std::os::unix::fs::symlink;
 
@@ -210,6 +211,16 @@ fn oversized_result_and_special_mode_are_refused_before_mutation() -> Result<()>
     assert_eq!(fs::metadata(&path)?.len(), MAX_PLAN_BYTES);
     fs::write(&path, END)?;
     fs::set_permissions(&path, fs::Permissions::from_mode(0o2640))?;
+    // The kernel drops the setgid bit of a file whose group the caller is not in.
+    let kept = fs::metadata(&path)?.mode() & 0o2000 != 0;
+    let why = "chmod could not set the setgid bit on a file this process created";
+    if skip_unless(
+        kept,
+        "oversized_result_and_special_mode_are_refused_before_mutation",
+        why,
+    ) {
+        return Ok(());
+    }
     assert!(append_record(&path, &line)
         .unwrap_err()
         .to_string()

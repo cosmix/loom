@@ -263,11 +263,8 @@ fn a_host_rewrite_of_packed_refs_drops_its_bind_and_the_look_catches_the_plant()
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
     while !ready.exists() {
         if std::time::Instant::now() > deadline {
-            let _ = session.kill();
-            panic!(
-                "the session never started: {:?}",
-                session.wait_with_output()
-            );
+            crate::process::sandbox_probe::reap::kill_and_reap(&mut session);
+            panic!("the session never started within 30 s");
         }
         std::thread::sleep(std::time::Duration::from_millis(20));
     }

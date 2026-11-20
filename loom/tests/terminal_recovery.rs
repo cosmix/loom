@@ -5,6 +5,7 @@
 #[allow(dead_code)]
 mod helpers;
 
+use loom::process::sandbox_probe::skip_without_pty;
 use std::fs::File;
 use std::os::unix::process::ExitStatusExt;
 use std::path::Path;
@@ -43,6 +44,9 @@ fn killed_tui_helper() {
 
 #[test]
 fn fresh_process_recovers_only_the_marked_pty() {
+    if skip_without_pty("fresh_process_recovers_only_the_marked_pty") {
+        return;
+    }
     let scratch = tempfile::tempdir().unwrap();
     let base = scratch.path();
     let work = loom::fs::work_dir::WorkDir::new(base).unwrap();

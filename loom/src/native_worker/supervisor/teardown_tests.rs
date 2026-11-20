@@ -10,7 +10,9 @@ use super::{settle_unrecorded, stop_unrecorded};
 use crate::native_worker::boundary::{kill_namespace, spawn_payload, Quiescence, SpawnedBoundary};
 use crate::native_worker::model::{NativeEvent, Outcome};
 use crate::native_worker::store::read_events;
-use crate::process::sandbox_probe::{confined_commands_runnable, skip_unless};
+use crate::process::sandbox_probe::{
+    confined_commands_runnable, skip_unless, skip_without_group_signals,
+};
 use crate::process::OwnedProcess;
 use crate::verify::criteria::pid_namespace::members;
 
@@ -28,6 +30,7 @@ fn held_boundary(worktree: &Path) -> (SpawnedBoundary, OwnedProcess) {
 
 fn no_boundary(name: &str) -> bool {
     skip_unless(confined_commands_runnable(), name, "needs bubblewrap")
+        || skip_without_group_signals(name)
 }
 
 /// Without an identity the namespace is still killed by the pid and inode

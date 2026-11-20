@@ -11,7 +11,7 @@ use super::tests::{
 };
 use super::*;
 use crate::models::dispute::{applied_marker, CriterionField, DisputeKind, DisputeVerdict};
-use crate::models::stage::AcceptanceCriterion;
+use crate::models::stage::{AcceptanceCriterion, StageStatus};
 use crate::orchestrator::adjudication::tests::{write_request, write_verdict};
 use crate::orchestrator::adjudication::{feedback, AdjudicatorRegistry};
 use crate::plan::amendment::count_amendments_for_stage;
@@ -20,7 +20,7 @@ use crate::verify::review::handoffs::{load_handoffs, save_base_evidence, BaseEvi
 use crate::verify::transitions::load_stage;
 
 /// The accepted narrowing of criterion [`NARROWED`], written as dispute 1 of `s1`.
-fn write_narrowing(work: &Path) {
+pub(super) fn write_narrowing(work: &Path) {
     let DisputeVerdict::Accept {
         citations,
         reasoning,
@@ -55,7 +55,7 @@ fn with_plan_missing(plan: &Path, apply: impl FnOnce() -> anyhow::Result<()>) {
 fn a_handoff_recorded_before_an_interrupted_amendment_survives_the_replay() {
     let tmp = tempfile::tempdir().unwrap();
     let (work, plan) = setup(tmp.path());
-    save_base_evidence(&work, "s1", &failing_base_run()).unwrap();
+    save_base_evidence(&work, "s1", &failing_base_run(&work)).unwrap();
     write_narrowing(&work);
     let apply = || AdjudicatorRegistry::new().apply_verdict(&work, "s1", 1);
 
@@ -73,7 +73,7 @@ fn a_handoff_recorded_before_an_interrupted_amendment_survives_the_replay() {
 fn a_replay_after_the_amendment_keeps_the_recorded_handoff() {
     let tmp = tempfile::tempdir().unwrap();
     let (work, _plan) = setup(tmp.path());
-    save_base_evidence(&work, "s1", &failing_base_run()).unwrap();
+    save_base_evidence(&work, "s1", &failing_base_run(&work)).unwrap();
     write_narrowing(&work);
     let apply = || AdjudicatorRegistry::new().apply_verdict(&work, "s1", 1);
     apply().unwrap();
@@ -95,7 +95,7 @@ fn a_narrowing_whose_base_run_now_passes_amends_nothing_and_asks_for_evidence() 
     let passing = BaseEvidence {
         passed: true,
         failed: Some(0),
-        ..failing_base_run()
+        ..failing_base_run(&work)
     };
     save_base_evidence(&work, "s1", &passing).unwrap();
     let before = std::fs::read(&plan).unwrap();
@@ -113,6 +113,11 @@ fn a_narrowing_whose_base_run_now_passes_amends_nothing_and_asks_for_evidence() 
         AcceptanceCriterion::Simple(criterion(NARROWED))
     );
     assert_eq!(stage.tally.evidence_rounds, 1);
+    assert_eq!(
+        stage.status,
+        StageStatus::Queued,
+        "the refused amendment requeues the stage for a fresh base run"
+    );
     let feedback = feedback::read_feedback(&work, "s1").unwrap().unwrap();
     for expected in ["passes at the base", "--at-base", "Dispute 1"] {
         assert!(

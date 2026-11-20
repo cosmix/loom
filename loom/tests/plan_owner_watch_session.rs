@@ -3,6 +3,7 @@
 //! path, so a plain file stands in for the socket. The hook runs with no inherited `LOOM_*`
 //! variable.
 
+use loom::process::sandbox_probe::skip_without_group_signals;
 use std::fs;
 use std::os::unix::fs::MetadataExt;
 use std::os::unix::process::{CommandExt, ExitStatusExt};
@@ -27,8 +28,7 @@ struct Reaped(Child);
 
 impl Drop for Reaped {
     fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
+        loom::process::sandbox_probe::reap::kill_and_reap(&mut self.0);
     }
 }
 
@@ -88,17 +88,27 @@ fn wait_for(what: &str, mut done: impl FnMut() -> bool) {
     }
 }
 
+/// A `sleep 300` leading a process group of its own.
+fn sleeper_in_its_own_group() -> Command {
+    let mut sleep = Command::new("sleep");
+    sleep.arg("300").process_group(0);
+    sleep
+}
+
 #[test]
 fn owner_watch_survives_a_sighup_to_the_group_it_started_in() {
+    let false =
+        skip_without_group_signals("owner_watch_survives_a_sighup_to_the_group_it_started_in")
+    else {
+        return;
+    };
     let tmp = tempfile::tempdir().unwrap();
     let base = tmp.path().canonicalize().unwrap();
     let dir = consistent_session(&base);
 
     // As in the launch script, the watch joins a group another process leads. A process leading
     // its own group could not call setsid.
-    let mut sleep = Command::new("sleep");
-    sleep.arg("300").process_group(0);
-    let mut leader = Reaped(silent(sleep));
+    let mut leader = Reaped(silent(sleeper_in_its_own_group()));
     let group = i32::try_from(leader.0.id()).unwrap();
     let mut hook = Command::new(env!("CARGO_BIN_EXE_loom"));
     hook.args(["plan", "hook", "OwnerWatch", "--session-dir"])

@@ -1,5 +1,6 @@
 //! Whole runs: the record, Stop, a Codex abort, a failed session, the fallback and the release.
 
+use crate::process::sandbox_probe::skip_without_group_signals;
 use std::time::Duration;
 
 use serial_test::serial;
@@ -132,6 +133,11 @@ fn each_step_starts_a_pressure_session_with_its_slots_and_marker() {
 #[test]
 #[serial]
 fn a_stop_in_round_one_writes_no_record_and_deletes_the_report() {
+    let false =
+        skip_without_group_signals("a_stop_in_round_one_writes_no_record_and_deletes_the_report")
+    else {
+        return;
+    };
     let f = Fixture::new();
     f.codex("report", "");
     f.codex("sleep", "30");
@@ -218,6 +224,10 @@ fn a_codex_abort_stops_the_run_and_shows_the_log_tail() {
 #[test]
 #[serial]
 fn a_session_failing_before_its_marker_stops_the_run() {
+    let false = skip_without_group_signals("a_session_failing_before_its_marker_stops_the_run")
+    else {
+        return;
+    };
     let f = Fixture::new();
     f.codex("sleep", "30");
     let died = "The session stopped unexpectedly";

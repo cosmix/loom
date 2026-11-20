@@ -144,7 +144,13 @@ fn a_total_that_fell_and_stays_earns_no_credit() {
 /// sees the observation already on record, not a sudden absence of work.
 #[test]
 fn a_command_that_exits_mid_sample_keeps_its_recorded_observation() {
+    use super::super::direct_worker::live_tests::cannot_run_live_trees;
     use super::super::foreground::observe_commands;
+    let false =
+        cannot_run_live_trees("a_command_that_exits_mid_sample_keeps_its_recorded_observation")
+    else {
+        return;
+    };
     let work = tempfile::TempDir::new().unwrap();
     let now = Utc::now();
     let later = now + TimeDelta::seconds(60);

@@ -25,9 +25,10 @@ pub(super) fn sh(script: &str) -> Vec<OsString> {
     vec!["-c".into(), script.into()]
 }
 
-/// Skip a test that starts a boundary.
+/// Skip a test that starts a boundary; its stand-in payload is retired by signal.
 pub(super) fn no_boundary(name: &str) -> bool {
-    skip_unless(confined_commands_runnable(), name, NEEDS_BWRAP)
+    let blocked = skip_unless(confined_commands_runnable(), name, NEEDS_BWRAP);
+    blocked || crate::process::sandbox_probe::skip_without_group_signals(name)
 }
 
 /// Skip a test that only builds the argument list: it needs `bwrap` on PATH.

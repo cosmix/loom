@@ -207,6 +207,10 @@ fn guarded_retirement_stops_a_bubblewrap_session() {
     ) {
         return;
     }
+    // The heartbeat loop runs until retirement signals its group.
+    if skip_without_guardians("guarded_retirement_stops_a_bubblewrap_session") {
+        return;
+    }
     run_confined_heartbeat();
 }
 
