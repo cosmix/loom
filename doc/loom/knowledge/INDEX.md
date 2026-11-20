@@ -143,7 +143,7 @@
 | [codex-worker-briefing](mistakes/codex-worker-briefing.md) |  | 258 |
 | [completion-broker-credential](mistakes/completion-broker-credential.md) |  | 225 |
 | [completion-runner-blocks](mistakes/completion-runner-blocks.md) |  | 216 |
-| [completion-runtime](mistakes/completion-runtime.md) | Churn | 104 |
+| [completion-runtime](mistakes/completion-runtime.md) | Churn | 114 |
 | [computed-values-and-hidden-couplings](mistakes/computed-values-and-hidden-couplings.md) | Values | 284 |
 | [concurrency-and-locking](mistakes/concurrency-and-locking.md) |  | 207 |
 | [consolidation-drift](mistakes/consolidation-drift.md) |  | 139 |

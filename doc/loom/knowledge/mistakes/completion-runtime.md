@@ -102,3 +102,13 @@ Three things hid the cause:
 **Prevention:** a contract is never skipped or exempted ([Verification Design Priorities](../conventions/dispute-and-adjudication.md#verification-design-priorities)). A contract about confinement asserts on the policy loom generates and launches nothing. A non-contract test that launches a confined command probes that a trivial one starts (`confined_runs_start()`, `seatbelt_unavailable()` in `tests/planning_summary_seatbelt.rs`) and skips otherwise, and that skip must be fatal in CI. A contract that cannot run where completion runs is fixed with a `--replacement`; a plain accept changes nothing. A test handed to another stage needs a stage that can run it.
 
 **Fix:** none in the tree yet; the stage was force-completed at `346e6628e`.
+
+## Confined Cargo Criteria Failed on the Per-User Git Ignore File
+
+**What happened:** on macOS every cargo criterion in a host job failed in seconds with `failed to determine package fingerprint for build script ... Could not read repository exclude: Operation not permitted`. It was recorded as an unfixable environment limit and attributed to `<repo>/.git/info/exclude`, and stages disputed their cargo criteria instead.
+
+**Why:** the Seatbelt criterion profile allows metadata reads everywhere but denied the content of `~/.config/git/ignore`, git's default per-user excludes file. Cargo's git library fails on any open error other than `ENOENT` and reports it as the repository exclude. `.git/info` was granted all along.
+
+**Prevention:** diagnose a sandbox denial by running the command under the exact generated profile and widening it until it passes (allow-all reads, then single paths), before attributing it to the path the error message names. Hiding a file (denying metadata) does not help a tool that fails on `EPERM`; grant the read.
+
+**Fix:** `confine_seatbelt.rs` grants literal reads of `$HOME/.config/git/ignore` and `attributes` (`READABLE_IN_GIT_CONFIG`), regression `confine_git_config_tests.rs`.
