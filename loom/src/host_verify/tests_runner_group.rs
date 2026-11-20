@@ -1,7 +1,9 @@
-//! Criterion group retirement after command exit and through real confinement.
+//! Criterion group retirement after command exit and through real confinement,
+//! and the probe every guardian test asks first.
 
-use std::os::unix::process::CommandExt;
+use std::os::unix::process::{CommandExt, ExitStatusExt};
 use std::process::{Command, Stdio};
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 #[cfg(target_os = "linux")]
@@ -19,8 +21,78 @@ use crate::verify::criteria::GroupAnchor;
 #[cfg(target_os = "linux")]
 use crate::verify::criteria::{set_spawn_observer, spawn_confined, CommandSpec, SpawnObserver};
 
+/// Why this process cannot run criterion guardians, or `None` when it can.
+/// A guardian records the boot identity and its own start time, and stops its
+/// group with SIGKILL. A macOS host job's Seatbelt profile allows `process*`
+/// but no `signal`, so a kill from inside it is refused: the guardian never
+/// stops, and dropping its `GroupAnchor` then waits on it without a deadline.
+/// The Claude Code sandbox denies the boot-identity sysctl instead.
+fn guardian_blocker() -> Option<String> {
+    if let Err(error) = crate::process::boot_id::os_boot_id() {
+        return Some(format!("cannot read the boot identity: {error:#}"));
+    }
+    // Ends by itself if the kill is refused, so nothing waits on it.
+    let mut child = match Command::new("sleep")
+        .arg("5")
+        .process_group(0)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+    {
+        Ok(child) => child,
+        Err(error) => return Some(format!("cannot start a probe child: {error}")),
+    };
+    if crate::process::process_start_time(child.id()).is_none() {
+        return Some("cannot read a child's start time".to_string());
+    }
+    let group = nix::unistd::Pid::from_raw(i32::try_from(child.id()).expect("a pid fits i32"));
+    if let Err(errno) = nix::sys::signal::killpg(group, nix::sys::signal::Signal::SIGKILL) {
+        return Some(format!(
+            "cannot SIGKILL a process group of its own: {errno}"
+        ));
+    }
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while Instant::now() < deadline {
+        if let Ok(Some(status)) = child.try_wait() {
+            let killed = status.signal() == Some(libc::SIGKILL);
+            return (!killed)
+                .then(|| format!("the probe child's group outlived SIGKILL: {status}"));
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    Some("a SIGKILL to a process group of its own was not delivered".to_string())
+}
+
+/// Whether the calling test must skip: see [`guardian_blocker`]. Memoized, as
+/// the answer is a fact about the sandbox.
+pub(super) fn skip_without_guardians(test: &str) -> bool {
+    static BLOCKER: OnceLock<Option<String>> = OnceLock::new();
+    let blocker = BLOCKER.get_or_init(guardian_blocker);
+    crate::process::sandbox_probe::skip_unless(
+        blocker.is_none(),
+        test,
+        blocker.as_deref().unwrap_or_default(),
+    )
+}
+
+/// Return from the calling test unless [`skip_without_guardians`] allows it.
+macro_rules! require_guardians {
+    ($test:literal) => {
+        if $crate::host_verify::tests_runner_group::skip_without_guardians(concat!(
+            module_path!(),
+            "::",
+            $test
+        )) {
+            return;
+        }
+    };
+}
+pub(super) use require_guardians;
+
 #[test]
 fn recovery_stops_descendants_after_the_criterion_command_exits() {
+    require_guardians!("recovery_stops_descendants_after_the_criterion_command_exits");
     let (_dir, work) = state_root();
     let record = running_record(STAGE, None);
     save_current(&work, &record).unwrap();
@@ -58,6 +130,7 @@ fn recovery_stops_descendants_after_the_criterion_command_exits() {
 
 #[test]
 fn guardian_retires_its_group_when_the_host_child_dies() {
+    require_guardians!("guardian_retires_its_group_when_the_host_child_dies");
     let (_dir, work) = state_root();
     let record = running_record(STAGE, None);
     save_current(&work, &record).unwrap();
@@ -87,6 +160,7 @@ fn guardian_retires_its_group_when_the_host_child_dies() {
 
 #[test]
 fn recovery_refuses_a_guardian_whose_recorded_start_changed() {
+    require_guardians!("recovery_refuses_a_guardian_whose_recorded_start_changed");
     let (_dir, work) = state_root();
     let record = running_record(STAGE, None);
     save_current(&work, &record).unwrap();

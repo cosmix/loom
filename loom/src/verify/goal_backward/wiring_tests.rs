@@ -65,6 +65,9 @@ mod tests {
 
     #[test]
     fn test_verify_wiring_tests_success() {
+        if !crate::process::sandbox_probe::confined_commands_runnable() {
+            return;
+        }
         let test = WiringTest {
             name: "echo test".to_string(),
             command: "echo hello".to_string(),
@@ -97,6 +100,9 @@ mod tests {
 
     #[test]
     fn test_verify_wiring_tests_exit_code_failure() {
+        if !crate::process::sandbox_probe::confined_commands_runnable() {
+            return;
+        }
         let test = WiringTest {
             name: "false test".to_string(),
             command: "false".to_string(),
@@ -124,6 +130,9 @@ mod tests {
 
     #[test]
     fn test_verify_wiring_tests_stdout_contains_failure() {
+        if !crate::process::sandbox_probe::confined_commands_runnable() {
+            return;
+        }
         let test = WiringTest {
             name: "missing pattern".to_string(),
             command: "echo hello".to_string(),
@@ -153,6 +162,9 @@ mod tests {
 
     #[test]
     fn test_verify_wiring_tests_stdout_not_contains_failure() {
+        if !crate::process::sandbox_probe::confined_commands_runnable() {
+            return;
+        }
         let test = WiringTest {
             name: "forbidden pattern".to_string(),
             command: "echo error".to_string(),
@@ -182,6 +194,9 @@ mod tests {
 
     #[test]
     fn test_verify_wiring_tests_stderr_empty_failure() {
+        if !crate::process::sandbox_probe::confined_commands_runnable() {
+            return;
+        }
         let test = WiringTest {
             name: "stderr check".to_string(),
             command: "sh -c 'echo error >&2'".to_string(),

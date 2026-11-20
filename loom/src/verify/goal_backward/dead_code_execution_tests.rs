@@ -13,6 +13,9 @@ fn check(command: &str) -> DeadCodeCheck {
 
 #[test]
 fn failed_analyzers_fail_helper_and_goal_gate() {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     let dir = TempDir::new().unwrap();
     for (command, passed) in [
         ("printf clean", true),
@@ -53,6 +56,9 @@ fn failed_analyzers_fail_helper_and_goal_gate() {
 
 #[test]
 fn timed_out_analyzer_is_unavailable_analysis() {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     let dir = TempDir::new().unwrap();
     // exec keeps the sleep in the managed child process group.
     let gaps = run_with_timeout(
@@ -69,6 +75,9 @@ fn timed_out_analyzer_is_unavailable_analysis() {
 
 #[test]
 fn incomplete_analyzer_output_cannot_certify_absence() {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     let dir = TempDir::new().unwrap();
     let gaps = run_dead_code_check(
         &check("head -c 10485761 /dev/zero; printf unused"),

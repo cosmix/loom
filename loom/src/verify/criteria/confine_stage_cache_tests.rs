@@ -53,9 +53,9 @@ fn short_temp() -> (tempfile::TempDir, PathBuf) {
 
 fn launcher_absent(test: &str) -> bool {
     skip_unless(
-        super::launcher().is_some(),
+        crate::process::sandbox_probe::confined_commands_runnable(),
         test,
-        "OS sandbox launcher absent",
+        "confined commands cannot start",
     )
 }
 

@@ -52,6 +52,9 @@ fn a_selection_that_cannot_start_is_a_note() {
 
 #[test]
 fn an_oversized_selection_fails_exec_and_becomes_a_note() {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     let root = TempDir::new().unwrap();
     let stage = Stage::default();
     let probe = CriteriaProbe {
@@ -76,11 +79,7 @@ fn an_oversized_selection_fails_exec_and_becomes_a_note() {
 /// package's sibling packages resolve as they do for acceptance at the root.
 #[test]
 fn a_probe_with_a_tree_root_reads_sibling_packages() {
-    if crate::process::sandbox_probe::skip_unless(
-        crate::verify::criteria::host_launcher().is_some(),
-        "a_probe_with_a_tree_root_reads_sibling_packages",
-        "OS sandbox launcher absent",
-    ) {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
         return;
     }
     let root = TempDir::new().unwrap();

@@ -36,6 +36,9 @@ fn no_match_stage(plan_version: u32) -> Stage {
 
 #[test]
 fn zero_test_criterion_fails_in_v2() {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     let dir = TempDir::new().unwrap();
     let stage = no_match_stage(2);
 
@@ -56,6 +59,9 @@ fn zero_test_criterion_fails_in_v2() {
 
 #[test]
 fn zero_test_criterion_passes_in_v1() {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     let dir = TempDir::new().unwrap();
     let stage = no_match_stage(1);
 

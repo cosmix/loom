@@ -65,11 +65,24 @@ fn diagnostics(output: &Output) -> String {
     )
 }
 
-/// Why this host cannot run srt, or `None` when it can.
-fn srt_unavailable(scratch: &Path) -> Option<String> {
+/// Whether `test_name` must skip. Off Linux it prints the reason and skips
+/// without consulting `LOOM_TEST_REQUIRE_SANDBOX_FREE`, since the srt checks do
+/// not apply there; on Linux `skip_unless` decides from `srt_unavailable`.
+fn skip_test(test_name: &str, scratch: &Path) -> bool {
     if !cfg!(target_os = "linux") {
-        return Some("the srt checks run on Linux only".to_string());
+        eprintln!("SKIP {test_name}: the srt checks run on Linux only");
+        return true;
     }
+    let reason = srt_unavailable(scratch);
+    skip_unless(
+        reason.is_none(),
+        test_name,
+        reason.as_deref().unwrap_or_default(),
+    )
+}
+
+/// Why this host cannot run srt, or `None` when it can. Called on Linux only.
+fn srt_unavailable(scratch: &Path) -> Option<String> {
     if let Some(tool) = ["bwrap", "socat", "srt"]
         .into_iter()
         .find(|tool| !on_path(tool))
@@ -160,13 +173,8 @@ fn loom_status(repo: &Path, loom_home: &Path, settings: Option<&Path>) -> Output
 #[test]
 fn loom_status_runs_with_the_state_dir_write_denied_and_changes_nothing() {
     let scratch = TempDir::new().unwrap();
-    let reason = srt_unavailable(scratch.path());
     let test_name = "loom_status_runs_with_the_state_dir_write_denied_and_changes_nothing";
-    if skip_unless(
-        reason.is_none(),
-        test_name,
-        reason.as_deref().unwrap_or_default(),
-    ) {
+    if skip_test(test_name, scratch.path()) {
         return;
     }
     let repo_dir = init_test_repo();

@@ -336,6 +336,9 @@ fn refused_dispute_writes_no_request() {
 
 #[test]
 fn freeze_refuses_unformatted_contract_files() {
+    if !loom::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     let temp = TempDir::new().unwrap();
     let crate_dir = temp.path().canonicalize().unwrap();
     write(

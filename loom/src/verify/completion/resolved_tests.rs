@@ -131,14 +131,10 @@ fn record_emitted(_: OutputStream, line: &str) {
 #[test]
 #[serial_test::serial]
 fn a_pass_a_check_cached_does_not_answer_the_landing_gate() {
-    let _env = crate::test_cache_env::CacheEnv::pin();
-    if crate::process::sandbox_probe::skip_unless(
-        crate::verify::criteria::host_launcher().is_some(),
-        "a_pass_a_check_cached_does_not_answer_the_landing_gate",
-        "OS sandbox launcher absent",
-    ) {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
         return;
     }
+    let _env = crate::test_cache_env::CacheEnv::pin();
     let temp = TempDir::new().unwrap();
     let root = temp.path().join("repo");
     std::fs::create_dir_all(&root).unwrap();

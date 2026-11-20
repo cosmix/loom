@@ -1,25 +1,30 @@
-//! Contract tests for the per-stage build-cache root. The confined tests pin
-//! the process `HOME` and `PATH` (hence `#[serial]`): the runner builds a
-//! confined command's environment and read roots from loom's own.
+//! Contract tests for the per-stage build-cache root. The confined tests
+//! assert on the policy loom generates and launch nothing; `kernel_tests`
+//! launches the same commands where the OS sandbox runs. They pin the process
+//! `HOME` and `PATH` (hence `#[serial]`): the policy's environment and read
+//! roots come from loom's own.
 
-use crate::models::stage::CommandConfinement;
-use crate::process::sandbox_probe::skip_unless;
 use crate::stage_cache::{seed_read_roots, toolchain_read_roots};
 use crate::stage_cache::{Consumer, DeveloperTools, StageCache};
-use crate::verify::criteria::{host_launcher, run_spec_in_stage, CommandSpec, CriterionResult};
 use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+
+#[path = "contract_policy.rs"]
+pub(super) mod policy;
+use policy::{
+    binds, credential_fixture, granted, policy_for, profile, profile_rules, seed_fixture,
+    toolchain_fixture,
+};
 
 /// Variables a pinned host environment drops, so seeds resolve from `HOME`.
 const UNSET: &str = "GOMODCACHE GOPATH GRADLE_USER_HOME CCACHE_DIR XDG_CACHE_HOME MAVEN_OPTS";
 
 /// Pins `HOME`, prepends to `PATH` and unsets [`UNSET`]; restores on drop.
-struct HostEnvGuard(Vec<(&'static str, Option<OsString>)>);
+pub(super) struct HostEnvGuard(Vec<(&'static str, Option<OsString>)>);
 
 impl HostEnvGuard {
-    fn pin(home: &Path, path_prefix: &[PathBuf]) -> Self {
+    pub(super) fn pin(home: &Path, path_prefix: &[PathBuf]) -> Self {
         let names = ["HOME", "PATH"].into_iter().chain(UNSET.split(' '));
         let saved = names.map(|name| (name, std::env::var_os(name))).collect();
         let host_path = std::env::var_os("PATH").unwrap_or_default();
@@ -44,13 +49,13 @@ impl Drop for HostEnvGuard {
 }
 
 /// A TempDir and its canonical path (macOS temp paths start at a symlink).
-fn temp() -> (tempfile::TempDir, PathBuf) {
+pub(super) fn temp() -> (tempfile::TempDir, PathBuf) {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().canonicalize().unwrap();
     (dir, path)
 }
 
-fn stage(repo: &Path, home: &Path) -> StageCache {
+pub(super) fn stage(repo: &Path, home: &Path) -> StageCache {
     StageCache::resolve(repo, "alpha", home, None).unwrap()
 }
 
@@ -62,7 +67,7 @@ fn consumers() -> [(Consumer, &'static str); 3] {
     ]
 }
 
-fn host_env(home: &Path, extra: &[(&str, &str)]) -> BTreeMap<String, OsString> {
+pub(super) fn host_env(home: &Path, extra: &[(&str, &str)]) -> BTreeMap<String, OsString> {
     let mut env = BTreeMap::from([("HOME".to_string(), OsString::from(home))]);
     for (name, value) in extra {
         env.insert(name.to_string(), OsString::from(value));
@@ -74,26 +79,11 @@ fn var(env: &BTreeMap<String, OsString>, name: &str) -> Option<String> {
     env.get(name).map(|v| v.to_string_lossy().into_owned())
 }
 
-fn shown(path: &Path) -> String {
+pub(super) fn shown(path: &Path) -> String {
     path.display().to_string()
 }
 
-fn sandbox_absent(test: &str) -> bool {
-    skip_unless(
-        host_launcher().is_some(),
-        test,
-        "OS sandbox launcher absent",
-    )
-}
-
-fn run_confined(script: &str, tree: &Path, cache: &StageCache) -> CriterionResult {
-    let spec = CommandSpec::shell(script);
-    let timeout = Duration::from_secs(60);
-    let confined = CommandConfinement::Confined;
-    run_spec_in_stage(&spec, Some(tree), Some(tree), timeout, confined, cache).unwrap()
-}
-
-fn write_file(path: &Path, contents: &str) {
+pub(super) fn write_file(path: &Path, contents: &str) {
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(path, contents).unwrap();
 }
@@ -143,89 +133,87 @@ fn stage_root_is_stable_and_outside_the_tree() {
 #[test]
 #[serial_test::serial]
 fn stage_env_wins_over_per_command_scratch() {
-    if sandbox_absent("stage_env_wins_over_per_command_scratch") {
-        return;
-    }
     let ((_r, repo), (_h, home), (_t, tree)) = (temp(), temp(), temp());
     let cache = stage(&repo, &home);
+    let Some(policy) = policy_for("stage_env_wins_over_per_command_scratch", &tree, &cache) else {
+        return;
+    };
     let expected = "GOCACHE=go-build XDG_CACHE_HOME=xdg UV_CACHE_DIR=uv \
         BUN_INSTALL_CACHE_DIR=bun npm_config_cache=npm CCACHE_DIR=ccache \
         GRADLE_USER_HOME=gradle SCCACHE_DIR=sccache";
-    let pairs: Vec<(&str, &str)> = expected
+    let root = cache.root().canonicalize().unwrap();
+    for (name, child) in expected
         .split_whitespace()
-        .map(|pair| pair.split_once('=').unwrap())
-        .collect();
-    let script: Vec<String> = pairs
-        .iter()
-        .map(|(name, _)| format!("printf '{name}=%s\\n' \"${name}\""))
-        .collect();
-    let result = run_confined(&script.join("; "), &tree, &cache);
-    assert!(result.success, "{result:?}");
-    for (name, child) in pairs {
-        let line = format!("{name}={}", shown(&cache.root().join(child)));
-        let found = result.stdout.lines().any(|l| l == line);
-        assert!(found, "{line} missing from\n{}", result.stdout);
+        .map(|p| p.split_once('=').unwrap())
+    {
+        let want = shown(&root.join(child));
+        assert_eq!(policy.env.get(name), Some(&want), "{name}");
     }
 }
 
 #[test]
 #[serial_test::serial]
 fn stage_cache_persists_across_confined_commands() {
-    if sandbox_absent("stage_cache_persists_across_confined_commands") {
-        return;
-    }
     let ((_r, repo), (_h, home), (_t, tree)) = (temp(), temp(), temp());
     let cache = stage(&repo, &home);
-    let write = "mkdir -p \"$GOCACHE\" && printf persisted > \"$GOCACHE/probe\"";
-    let first = run_confined(write, &tree, &cache);
-    assert!(first.success, "the root must be writable inside: {first:?}");
-    let probe = cache.root().join("go-build/probe");
-    assert_eq!(std::fs::read_to_string(&probe).unwrap(), "persisted");
-    let second = run_confined("cat \"$GOCACHE/probe\"", &tree, &cache.clone());
-    assert!(second.success, "the root must survive commands: {second:?}");
-    assert_eq!(second.stdout, "persisted");
+    let name = "stage_cache_persists_across_confined_commands";
+    let Some(policy) = policy_for(name, &tree, &cache) else {
+        return;
+    };
+    let root = cache.root().canonicalize().unwrap();
+    if cfg!(target_os = "macos") {
+        let profile = profile(&policy);
+        let allowed = profile_rules(profile, "(allow file-write* ");
+        let at = allowed.iter().find(|(_, path)| path == &root);
+        let at = at.expect("the cache root is writable").0;
+        for (denied_at, denied) in profile_rules(profile, "(deny file-write* ") {
+            let covers = root.starts_with(&denied);
+            assert!(!(denied_at > at && covers), "{denied:?} denies {root:?}");
+        }
+    } else {
+        let writable = binds(&policy, "--bind");
+        let at = writable.iter().find(|(_, path)| path == &root);
+        let at = at.expect("--bind root root").0;
+        for (later, path) in binds(&policy, "--ro-bind") {
+            assert!(
+                later < at || !root.starts_with(&path),
+                "{path:?} shadows it"
+            );
+        }
+    }
 }
 
 #[test]
 #[serial_test::serial]
 fn host_caches_stay_read_only() {
     let ((_r, repo), (_h, home), (_t, tree)) = (temp(), temp(), temp());
-    let seeds = [
-        "go/pkg/mod/cache/download",
-        ".m2/repository",
-        ".gradle/caches",
-    ];
-    let seeds = seeds.map(|seed| home.join(seed));
-    let dirs = [
-        seeds[0].clone(),
-        seeds[1].clone(),
-        seeds[2].join("modules-2"),
-    ];
-    for dir in &dirs {
-        write_file(&dir.join("sentinel"), "SENTINEL\n");
-    }
+    let (seeds, _dirs) = seed_fixture(&home);
     let granted = seed_read_roots(&host_env(&home, &[]));
     for seed in &seeds {
         assert!(granted.contains(seed), "{seed:?} missing from {granted:?}");
     }
-    if sandbox_absent("host_caches_stay_read_only") {
-        return;
-    }
-    let script: Vec<String> = dirs
-        .iter()
-        .map(|dir| {
-            let dir = shown(dir);
-            format!("cat '{dir}/sentinel' || exit 10; printf x > '{dir}/written' && echo WROTE")
-        })
-        .collect();
     let cache = stage(&repo, &home);
     let _env = HostEnvGuard::pin(&home, &[]);
-    let result = run_confined(&format!("{}; echo DONE", script.join("; ")), &tree, &cache);
-    assert!(result.success, "every seed must be readable: {result:?}");
-    assert_eq!(result.stdout.matches("SENTINEL").count(), 3, "{result:?}");
-    assert!(result.stdout.contains("DONE") && !result.stdout.contains("WROTE"));
-    for dir in dirs {
-        assert!(!dir.join("written").exists(), "{dir:?} was written");
+    let Some(policy) = policy_for("host_caches_stay_read_only", &tree, &cache) else {
+        return;
+    };
+    for seed in &seeds {
+        if cfg!(target_os = "macos") {
+            let profile = profile(&policy);
+            let writes = profile.match_indices("(allow file-write*");
+            let last_allow = writes.map(|(at, _)| at).max().expect("a write rule");
+            let denied = profile_rules(profile, "(deny file-write* ");
+            let at = denied.iter().find(|(_, path)| path == seed);
+            let at = at
+                .unwrap_or_else(|| panic!("{seed:?} is not denied in {profile}"))
+                .0;
+            assert!(at > last_allow, "{seed:?} is denied before a write rule");
+        } else {
+            let read_only = binds(&policy, "--ro-bind");
+            assert!(read_only.iter().any(|(_, path)| path == seed), "{seed:?}");
+            let writable = binds(&policy, "--bind");
+            assert!(!writable.iter().any(|(_, path)| path == seed), "{seed:?}");
+        }
     }
 }
 
@@ -281,44 +269,35 @@ fn host_job_go_test_never_reuses_cached_results() {
 #[test]
 #[serial_test::serial]
 fn path_toolchains_are_readable() {
-    use std::os::unix::fs::PermissionsExt;
     let ((_r, repo), (_h, home), (_t, tree)) = (temp(), temp(), temp());
-    let install = home.join(".bun/install/global/node_modules/x/bin/faketool");
-    let other = home.join("tools/bin/othertool");
-    for (tool, word) in [(&install, "TOOL_OK"), (&other, "OTHER_OK")] {
-        write_file(tool, &format!("#!/bin/sh\necho {word}\n"));
-        std::fs::set_permissions(tool, std::fs::Permissions::from_mode(0o755)).unwrap();
-    }
-    let local_bin = home.join(".local/bin");
-    std::fs::create_dir_all(&local_bin).unwrap();
-    std::os::unix::fs::symlink(&install, local_bin.join("faketool")).unwrap();
-    let entries = [local_bin.clone(), home.join("tools/bin")];
+    let (targets, entries) = toolchain_fixture(&home);
     let path = std::env::join_paths(&entries).unwrap();
     let roots = toolchain_read_roots(&host_env(&home, &[("PATH", path.to_str().unwrap())]));
-    for target in [&install, &other, &local_bin.join("faketool")] {
+    for target in &targets {
         let covered = roots
             .iter()
             .any(|root| target.starts_with(root) && root.starts_with(&home) && root != &home);
         assert!(covered, "{target:?} is not readable through {roots:?}");
     }
-    if sandbox_absent("path_toolchains_are_readable") {
-        return;
-    }
     let cache = stage(&repo, &home);
     let _env = HostEnvGuard::pin(&home, &entries);
-    let result = run_confined("faketool && othertool", &tree, &cache);
-    assert!(result.success, "{result:?}");
-    assert!(result.stdout.contains("TOOL_OK") && result.stdout.contains("OTHER_OK"));
+    let Some(policy) = policy_for("path_toolchains_are_readable", &tree, &cache) else {
+        return;
+    };
+    let readable = granted(&policy);
+    for root in &roots {
+        assert!(
+            readable.contains(root),
+            "{root:?} not granted in {readable:?}"
+        );
+    }
 }
 
 #[test]
 #[serial_test::serial]
 fn credential_dirs_on_path_stay_hidden() {
     let ((_r, repo), (_h, home), (_t, tree)) = (temp(), temp(), temp());
-    write_file(&home.join(".ssh/key"), "SECRET_KEY\n");
-    std::fs::create_dir_all(home.join(".aws/bin")).unwrap();
-    write_file(&home.join("tools/bin/marker"), "MARKER_OK\n");
-    let entries = [".ssh", ".aws/bin", "tools/bin"].map(|entry| home.join(entry));
+    let entries = credential_fixture(&home);
     let path = std::env::join_paths(&entries).unwrap();
     let roots = toolchain_read_roots(&host_env(&home, &[("PATH", path.to_str().unwrap())]));
     assert!(roots.contains(&entries[2]), "control missing: {roots:?}");
@@ -328,17 +307,21 @@ fn credential_dirs_on_path_stay_hidden() {
             assert!(!overlaps, "{root:?} exposes {credential:?}");
         }
     }
-    if sandbox_absent("credential_dirs_on_path_stay_hidden") {
-        return;
-    }
     let cache = stage(&repo, &home);
     let _env = HostEnvGuard::pin(&home, &entries);
-    let marker = shown(&entries[2].join("marker"));
-    let key = shown(&home.join(".ssh/key"));
-    let result = run_confined(&format!("cat '{marker}'; cat '{key}'"), &tree, &cache);
-    assert!(result.stdout.contains("MARKER_OK"), "control: {result:?}");
-    assert!(!result.stdout.contains("SECRET_KEY"), "{result:?}");
-    assert!(!result.success, "reading the key must fail: {result:?}");
+    let name = "credential_dirs_on_path_stay_hidden";
+    let Some(policy) = policy_for(name, &tree, &cache) else {
+        return;
+    };
+    let readable = granted(&policy);
+    assert!(readable.contains(&entries[2]), "control: {readable:?}");
+    for credential in [home.join(".ssh"), home.join(".aws")] {
+        for path in &readable {
+            let parent = credential.starts_with(path) && path.starts_with(&home);
+            let hit = path.starts_with(&credential) || parent;
+            assert!(!hit, "{path:?} grants {credential:?}");
+        }
+    }
 }
 
 #[test]

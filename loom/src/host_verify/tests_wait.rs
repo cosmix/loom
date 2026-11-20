@@ -146,6 +146,25 @@ fn result(job: &JobRecord, criteria: Vec<CriterionOutcome>) -> JobResult {
     }
 }
 
+/// Write `text` into the FIFO at `path` once a reader has it open (ENXIO before).
+fn hand_over_through_fifo(path: &std::path::Path, text: &str) {
+    use std::os::unix::fs::OpenOptionsExt;
+    let deadline = std::time::Instant::now() + Duration::from_secs(60);
+    let mut open = std::fs::OpenOptions::new();
+    open.write(true).custom_flags(libc::O_NONBLOCK);
+    let mut fifo = loop {
+        match open.open(path) {
+            Ok(file) => break file,
+            Err(error) => {
+                let waiting = error.raw_os_error() == Some(libc::ENXIO);
+                assert!(waiting && std::time::Instant::now() < deadline, "{error}");
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        }
+    };
+    fifo.write_all(text.as_bytes()).unwrap();
+}
+
 #[derive(Clone, Default)]
 struct Shared(Rc<RefCell<Vec<u8>>>);
 
@@ -360,13 +379,15 @@ fn a_terminal_outcome_leaves_a_newer_request_the_other_waiter_wrote() {
     fx.request("r1");
     save_current(&fx.work_dir, &fx.job(OLD_JOB, JobState::Running, &["r1"])).unwrap();
     let passed = fx.job(OLD_JOB, JobState::Passed, &["r1"]);
-    let state = std::fs::read_to_string(fx.state_file())
-        .unwrap()
-        .replace("r1", "r2");
     let (work_dir, state_file) = (fx.work_dir.clone(), fx.state_file());
+    let first = std::fs::read_to_string(&state_file).unwrap();
+    // A FIFO in the state's place: r2 lands only after the waiter's one read.
+    std::fs::remove_file(&state_file).unwrap();
+    nix::unistd::mkfifo(&state_file, nix::sys::stat::Mode::S_IRWXU).unwrap();
     let other_waiter = std::thread::spawn(move || {
-        std::thread::sleep(Duration::from_millis(300));
-        std::fs::write(state_file, state).unwrap();
+        hand_over_through_fifo(&state_file, &first);
+        std::fs::remove_file(&state_file).unwrap();
+        std::fs::write(&state_file, first.replace("r1", "r2")).unwrap();
         save_result(&work_dir, STAGE, &result(&passed, Vec::new())).unwrap();
         save_current(&work_dir, &passed).unwrap();
     });

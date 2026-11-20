@@ -6,6 +6,9 @@ use crate::verify::criteria::executor::run_single_criterion;
 
 #[test]
 fn test_run_single_criterion_with_working_dir() {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     // Create temp dir and verify command runs in it
     let temp_dir = std::env::temp_dir();
     let command = if cfg!(target_family = "unix") {

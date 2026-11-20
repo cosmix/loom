@@ -6,6 +6,9 @@ use crate::verify::criteria::executor::{run_single_criterion, run_single_criteri
 
 #[test]
 fn test_run_single_criterion_success() {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     let command = if cfg!(target_family = "unix") {
         "echo 'hello world'"
     } else {
@@ -23,6 +26,9 @@ fn test_run_single_criterion_success() {
 
 #[test]
 fn test_run_single_criterion_failure() {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     let command = if cfg!(target_family = "unix") {
         "exit 42"
     } else {
@@ -38,6 +44,9 @@ fn test_run_single_criterion_failure() {
 
 #[test]
 fn test_run_single_criterion_timeout() {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     // Only run on Unix - sleep command behavior differs on Windows
     if cfg!(target_family = "unix") {
         // Use a very short timeout (100ms) with a command that sleeps for 10 seconds

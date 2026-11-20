@@ -70,6 +70,9 @@ mod tests {
 
     #[test]
     fn probe_preserves_executor_capture_incompleteness() {
+        if !crate::process::sandbox_probe::confined_commands_runnable() {
+            return;
+        }
         let temp = tempfile::TempDir::new().unwrap();
         let stage = Stage::default();
         let probe = CriteriaProbe {

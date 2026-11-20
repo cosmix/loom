@@ -9,6 +9,9 @@ use crate::verify::criteria::runner::run_acceptance;
 
 #[test]
 fn test_run_acceptance_with_worktree_variable() {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     // Create a temp directory to use as the working dir
     let temp_dir = tempdir().expect("failed to create temp dir");
 
@@ -34,6 +37,9 @@ fn test_run_acceptance_with_worktree_variable() {
 
 #[test]
 fn test_run_acceptance_with_project_root_variable() {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     // Create a temp directory with a Cargo.toml to trigger PROJECT_ROOT detection
     let temp_dir = tempdir().expect("failed to create temp dir");
     fs::write(temp_dir.path().join("Cargo.toml"), "[package]").expect("failed to write Cargo.toml");
@@ -58,6 +64,9 @@ fn test_run_acceptance_with_project_root_variable() {
 
 #[test]
 fn test_run_acceptance_with_stage_id_variable() {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     let mut stage = Stage::new("test".to_string(), None);
 
     if cfg!(target_family = "unix") {
@@ -76,6 +85,9 @@ fn test_run_acceptance_with_stage_id_variable() {
 
 #[test]
 fn test_run_acceptance_variables_in_setup() {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     let temp_dir = tempdir().expect("failed to create temp dir");
 
     let mut stage = Stage::new("test".to_string(), None);
@@ -96,6 +108,9 @@ fn test_run_acceptance_variables_in_setup() {
 
 #[test]
 fn test_run_acceptance_unknown_variable_unchanged() {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     let mut stage = Stage::new("test".to_string(), None);
 
     if cfg!(target_family = "unix") {

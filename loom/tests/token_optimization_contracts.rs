@@ -245,6 +245,9 @@ loom:
 
 #[test]
 fn acceptance_rejects_forbidden_stdout_cold_and_warm() {
+    if !loom::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     let repo = helpers::init_test_repo();
     let cache = scratch();
     let stage = stage_with_truth("printf forbidden", &[], false);
@@ -261,6 +264,9 @@ fn acceptance_rejects_forbidden_stdout_cold_and_warm() {
 
 #[test]
 fn acceptance_keeps_positive_stdout_and_empty_stderr_contracts_truthful() {
+    if !loom::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     let repo = helpers::init_test_repo();
     let cache = scratch();
     let config = cached_config(cache.path());
@@ -282,6 +288,9 @@ fn acceptance_keeps_positive_stdout_and_empty_stderr_contracts_truthful() {
 
 #[test]
 fn acceptance_cache_misses_when_context_changes_after_a_pass() {
+    if !loom::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     let repo = helpers::init_test_repo();
     let cache = scratch();
     let context = repo.path().join("context.txt");

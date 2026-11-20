@@ -17,6 +17,7 @@ use super::tests_complete_support::Fixture;
 use super::tests_runner::{
     guarded_criterion, queue, shell, state_root, tick_until, write_stage, Criterion, PASS, STAGE,
 };
+use super::tests_runner_group::require_guardians;
 use super::{new_job_id, JobKind, JobRecord, JobState};
 use crate::models::stage::StageType;
 use crate::models::stage::{AcceptanceCriterion, Stage, TruthCheck};
@@ -191,6 +192,7 @@ pub(super) fn running_record(stage_id: &str, pid: Option<u32>) -> JobRecord {
 
 #[test]
 fn recovery_interrupts_running_jobs_and_leaves_queued_ones_alone() {
+    require_guardians!("recovery_interrupts_running_jobs_and_leaves_queued_ones_alone");
     let (_dir, work) = state_root();
     // A live process that is not this job's child: recovery must not signal it.
     let mut stranger = Criterion::spawn();
@@ -219,6 +221,7 @@ fn recovery_interrupts_running_jobs_and_leaves_queued_ones_alone() {
 
 #[test]
 fn recovery_does_not_signal_a_reused_or_legacy_group() {
+    require_guardians!("recovery_does_not_signal_a_reused_or_legacy_group");
     let (_dir, work) = state_root();
     let record = running_record(STAGE, None);
     save_current(&work, &record).unwrap();
@@ -249,6 +252,7 @@ fn recovery_does_not_signal_a_reused_or_legacy_group() {
 
 #[test]
 fn recovery_retries_an_interruption_written_before_cleanup() {
+    require_guardians!("recovery_retries_an_interruption_written_before_cleanup");
     let (_dir, work) = state_root();
     let mut record = running_record(STAGE, None);
     record.state = JobState::Interrupted;
@@ -267,6 +271,7 @@ fn recovery_retries_an_interruption_written_before_cleanup() {
 
 #[test]
 fn recovery_retires_a_superseded_jobs_guardian() {
+    require_guardians!("recovery_retires_a_superseded_jobs_guardian");
     let (_dir, work) = state_root();
     let mut old = running_record(STAGE, None);
     save_current(&work, &old).unwrap();
@@ -327,6 +332,7 @@ fn cancelled(record: &mut JobRecord, pid: u32) {
 
 #[test]
 fn recovery_stops_a_job_cancelled_while_no_daemon_ran() {
+    require_guardians!("recovery_stops_a_job_cancelled_while_no_daemon_ran");
     let (_dir, work) = state_root();
     let mut record = running_record(STAGE, None);
     save_current(&work, &record).unwrap();

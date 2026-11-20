@@ -11,11 +11,7 @@ const TREE_CANARY: &str = "[ \"$(cat ../sibling/file)\" = shared ] && printf roo
 
 #[test]
 fn a_package_working_directory_uses_its_whole_tree_and_nothing_beside_it() {
-    if crate::process::sandbox_probe::skip_unless(
-        super::launcher().is_some(),
-        "a_package_working_directory_uses_its_whole_tree_and_nothing_beside_it",
-        "OS sandbox launcher absent",
-    ) {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
         return;
     }
     let parent = tempfile::tempdir().unwrap();
@@ -90,11 +86,7 @@ printf 'HOST_CANARY_%s\n' "$mode"
 
 #[test]
 fn actual_host_launcher_denies_sibling_read_write_and_network() {
-    if crate::process::sandbox_probe::skip_unless(
-        super::launcher().is_some(),
-        "actual_host_launcher_denies_sibling_read_write_and_network",
-        "OS sandbox launcher absent",
-    ) {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
         return;
     }
     let root = tempfile::tempdir().unwrap();
@@ -154,11 +146,7 @@ fn run_canary(
 #[serial_test::serial]
 fn actual_host_launcher_builds_cargo_offline_with_private_cache_state() {
     let _toolchain = crate::verify::test_support::ToolchainReadRoot::from_runner();
-    if crate::process::sandbox_probe::skip_unless(
-        super::launcher().is_some(),
-        "actual_host_launcher_builds_cargo_offline_with_private_cache_state",
-        "OS sandbox launcher absent",
-    ) {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
         return;
     }
     let root = tempfile::tempdir().unwrap();
@@ -195,11 +183,7 @@ fn actual_host_launcher_builds_cargo_offline_with_private_cache_state() {
 #[test]
 fn private_cargo_home_uses_read_only_sources_and_hides_credentials() {
     use crate::verify::criteria::confine::{host, prepare_confined};
-    if crate::process::sandbox_probe::skip_unless(
-        super::launcher().is_some(),
-        "private_cargo_home_uses_read_only_sources_and_hides_credentials",
-        "OS sandbox launcher absent",
-    ) {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
         return;
     }
     let root = tempfile::tempdir().unwrap();
@@ -242,6 +226,9 @@ fn private_cargo_home_uses_read_only_sources_and_hides_credentials() {
 #[cfg(target_os = "linux")]
 #[test]
 fn provisioning_exposes_only_the_resolver_symlink_target_read_only() {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     let root = tempfile::tempdir().unwrap();
     let cwd = root.path().join("worktree");
     let resolver = cwd.join("resolv.conf");
@@ -294,6 +281,9 @@ fn provisioning_exposes_only_the_resolver_symlink_target_read_only() {
 #[cfg(target_os = "linux")]
 #[test]
 fn provisioning_and_confined_commands_read_the_host_dns_configuration() {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     let cwd = tempfile::tempdir().unwrap();
     let spec = CommandSpec::shell("cat /etc/resolv.conf");
     let timeout = Duration::from_secs(15);
@@ -330,11 +320,7 @@ fn a_dangling_resolver_symlink_binds_nothing() {
 #[cfg(target_os = "linux")]
 #[test]
 fn temporary_directories_are_private_and_writable() {
-    if crate::process::sandbox_probe::skip_unless(
-        super::launcher().is_some(),
-        "temporary_directories_are_private_and_writable",
-        "OS sandbox launcher absent",
-    ) {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
         return;
     }
     let cwd = tempfile::tempdir().unwrap();

@@ -30,9 +30,9 @@ fn tree_below_cargo_files(manifest: &str, config: &str) -> (TempDir, PathBuf) {
 
 fn launcher_absent(test: &str) -> bool {
     skip_unless(
-        super::super::launcher().is_some(),
+        crate::process::sandbox_probe::confined_commands_runnable(),
         test,
-        "OS sandbox launcher absent",
+        "confined commands cannot start",
     )
 }
 

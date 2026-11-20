@@ -42,21 +42,22 @@ const STDERR_LINES: usize = 40;
 /// `srt -c true` fails, as it does where a nested sandbox refuses the
 /// namespaces or the sockets srt needs.
 pub(crate) fn skip(test_name: &str) -> bool {
+    if !cfg!(target_os = "linux") {
+        eprintln!("SKIP {test_name}: the confinement e2e runs on Linux only");
+        return true;
+    }
     let reason = srt_unavailable();
     skip_unless(reason.is_none(), test_name, reason.unwrap_or_default())
 }
 
 /// Why this host cannot run srt, or `None` when it can. Memoized: it is a
-/// fact about the host, and every test asks.
+/// fact about the host, and every test asks. Called on Linux only, from `skip`.
 fn srt_unavailable() -> Option<&'static str> {
     static REASON: OnceLock<Option<String>> = OnceLock::new();
     REASON.get_or_init(probe_srt).as_deref()
 }
 
 fn probe_srt() -> Option<String> {
-    if !cfg!(target_os = "linux") {
-        return Some("the confinement e2e runs on Linux only".to_string());
-    }
     if let Some(tool) = ["bwrap", "socat", "srt"]
         .into_iter()
         .find(|tool| !on_path(tool))

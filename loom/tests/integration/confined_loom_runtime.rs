@@ -11,6 +11,9 @@ const SESSION: &str = "knowledge-session";
 
 #[test]
 fn knowledge_completion_finds_loom_with_minimal_path() {
+    if !loom::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     let binary_dir = std::path::Path::new(loom_bin_path()).parent().unwrap();
     for path in [
         "/usr/bin:/bin".to_string(),

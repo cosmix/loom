@@ -101,6 +101,9 @@ fn problems_for(temp: &TempDir) -> Vec<String> {
 #[test]
 #[serial_test::serial]
 fn an_unformatted_file_gives_one_problem_naming_the_check() {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     let problems = problems_for(&crate_with("pub fn  add(a:u32,b:u32)->u32{a+b}\n"));
     assert_eq!(problems.len(), 1, "{problems:?}");
     assert!(problems[0].contains("`cargo fmt --check`"), "{problems:?}");
@@ -109,6 +112,9 @@ fn an_unformatted_file_gives_one_problem_naming_the_check() {
 #[test]
 #[serial_test::serial]
 fn a_formatted_file_gives_no_problem() {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     let formatted = "pub fn add(a: u32, b: u32) -> u32 {\n    a + b\n}\n";
     let problems = problems_for(&crate_with(formatted));
     assert!(problems.is_empty(), "{problems:?}");

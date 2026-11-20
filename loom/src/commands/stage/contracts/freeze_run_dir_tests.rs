@@ -131,6 +131,9 @@ fn freeze_red(root: &Path) -> FrozenContract {
 
 #[test]
 fn a_sub_workspace_contract_freezes_red_and_completes_green_from_its_config_dir() {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     if bun_missing() {
         return;
     }

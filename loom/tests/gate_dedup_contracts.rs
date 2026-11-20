@@ -59,6 +59,9 @@ fn refreeze_drops_deleted_harness_files() {
 #[test]
 #[serial]
 fn check_criterion_runs_only_named_criteria() {
+    if !loom::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     let fx = hv_support::build_fixture(&["touch ran-0", "touch ran-1", "touch ran-2"]);
     let mut command = helpers::loom_cmd();
     command

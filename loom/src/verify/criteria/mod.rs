@@ -75,7 +75,7 @@ pub use config::{
     DEFAULT_COMMAND_TIMEOUT, DEFAULT_EXTENDED_CRITERION_TIMEOUT,
 };
 #[cfg(test)]
-pub(crate) use confine::host_launcher;
+pub(crate) use confine::{confined_policy, host_launcher, ConfinedPolicy};
 pub(crate) use confine::{confined_stage_cache, stage_cache_for};
 #[cfg(target_os = "linux")]
 pub(crate) use confine::{

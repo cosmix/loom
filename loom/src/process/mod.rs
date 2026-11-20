@@ -394,6 +394,8 @@ pub fn is_process_alive(pid: u32) -> bool {
 #[cfg(test)]
 mod group_contract_tests;
 #[cfg(test)]
+mod sandbox_probe_contract_tests;
+#[cfg(test)]
 mod tests;
 
 #[cfg(all(test, unix))]

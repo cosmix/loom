@@ -155,11 +155,7 @@ fn provisioning_binds_no_git_metadata() {
     let repo = linked_worktrees();
     let tree = repo.root.join(".worktrees/a");
     assert_eq!(git_dirs(&tree, NetworkAccess::Provision), None);
-    if crate::process::sandbox_probe::skip_unless(
-        super::super::launcher().is_some(),
-        "provisioning_binds_no_git_metadata",
-        "OS sandbox launcher absent",
-    ) {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
         return;
     }
     let admin = repo.root.join(".git/worktrees/a");
@@ -179,10 +175,13 @@ fn provisioning_binds_no_git_metadata() {
 
 #[test]
 fn confined_git_reads_a_linked_worktree_and_writes_nothing() {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     if crate::process::sandbox_probe::skip_unless(
-        crate::verify::criteria::host_launcher().is_some() && which::which("git").is_ok(),
+        which::which("git").is_ok(),
         "confined_git_reads_a_linked_worktree_and_writes_nothing",
-        "OS sandbox launcher or git absent",
+        "git absent",
     ) {
         return;
     }

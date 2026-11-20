@@ -20,6 +20,10 @@ mod contract_tests;
 #[cfg(test)]
 mod host_env_tests;
 #[cfg(test)]
+mod kernel_tests;
+#[cfg(test)]
+mod policy_contract_tests;
+#[cfg(test)]
 mod session_contract_tests;
 #[cfg(test)]
 mod tests;

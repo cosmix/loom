@@ -69,10 +69,13 @@ fn only_the_branch_head_names_changes_a_linked_worktree_fingerprint() {
 #[test]
 #[serial]
 fn a_script_running_git_is_cached_until_head_changes() {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     if crate::process::sandbox_probe::skip_unless(
-        crate::verify::criteria::host_launcher().is_some() && which::which("git").is_ok(),
+        which::which("git").is_ok(),
         "a_script_running_git_is_cached_until_head_changes",
-        "OS sandbox launcher or git absent",
+        "git absent",
     ) {
         return;
     }

@@ -35,18 +35,20 @@ const STDERR_LINES: usize = 40;
 /// Whether `test_name` must skip because this host cannot run srt. A skip prints its reason;
 /// `LOOM_TEST_REQUIRE_SANDBOX_FREE=1` turns it into a panic so the operator run cannot pass by
 /// skipping. In the criteria runner and in a session the nested sandbox cannot start, so the
-/// test skips there.
+/// test skips there. Off Linux the test is not applicable, so it skips without the strict env
+/// turning that into a failure.
 pub fn skip(test_name: &str) -> bool {
+    if !cfg!(target_os = "linux") {
+        eprintln!("SKIP {test_name}: the confinement test runs on Linux only");
+        return true;
+    }
     static REASON: OnceLock<Option<String>> = OnceLock::new();
     let reason = REASON.get_or_init(probe_srt).as_deref();
     skip_unless(reason.is_none(), test_name, reason.unwrap_or_default())
 }
 
-/// Why this host cannot run srt, or `None` when it can.
+/// Why this host cannot run srt, or `None` when it can. Called on Linux only, from `skip`.
 fn probe_srt() -> Option<String> {
-    if !cfg!(target_os = "linux") {
-        return Some("the confinement test runs on Linux only".to_string());
-    }
     if let Some(tool) = ["bwrap", "socat", "srt"]
         .into_iter()
         .find(|tool| !on_path(tool))
