@@ -286,3 +286,13 @@ knowledge-distill the rewrite, or the stage changes it. Raise a cap to the measu
 **Prevention:** a gap found in the mechanism a plan already changes goes into that plan, with its cost stated. Leave out only what has no known fix, and name it as an open limit. Judge scope against [Verification Design Priorities](../conventions/dispute-and-adjudication.md#verification-design-priorities).
 
 **Fix:** the plan scope took both gaps back in.
+
+## Plan Exploration Spawned Default-Tier Explorers; Operator Wanted Haiku and Codex High
+
+**What happened:** While writing a plan for the open GitHub issues, the plan author spawned three Explore agents at the default sonnet tier with broad multi-issue briefs. The operator stopped that: exploration for plan authoring runs as a group of haiku Explore agents at effort high, one narrow brief per issue or seam. The operator first asked for codex terra and sol at effort high, then switched the plan to Claude only once it was clear the native Codex lane is unavailable on macOS (`native_worker/boundary/probe.rs` refuses non-Linux hosts).
+
+**Why:** The default Explore tier was applied without asking; locate-and-quote sweeps with a detailed brief need no sonnet. Codex lanes planned on a host where the lane is unavailable only reroute to Claude at run time.
+
+**Prevention:** For plan exploration, brief haiku Explore agents (effort high) with exact files, symbols and questions, one seam each. Before licensing codex in a plan, check `loom hook codex-backend` and whether the native lane qualifies on the host; on macOS without a working lane, plan `implementers: ["claude"]`. Keep integration-verify and code review on opus.
+
+**Fix:** Stopped the sonnet explorers and respawned six haiku explorers at effort high; rewrote the plan's lanes to Claude only.

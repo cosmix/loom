@@ -4,7 +4,7 @@
 
 ## Stage Build Cache: One Root Per Stage For Every Confined Consumer
 
-A stage has ONE persistent build-cache root outside its worktree, `StageCache` (`loom/src/stage_cache/mod.rs`). Its session, its Linux codex workers and every confined host job (contract freeze, `loom check`, stage completion, provisioning, before-stage checks) point each tool's cache there, so a stage's code can poison only its own cache. Host caches are read-only seeds where a tool layers them. Cargo and rustup are the exception: their homes also hold toolchains and credentials, so `sandbox/package_caches.rs` still grants them to sessions and the Cargo home stays the host's path (see [execution containment](execution-containment.md#read-this-first-what-containment-means-in-loom)).
+A stage has ONE persistent build-cache root outside its worktree, `StageCache` (`loom/src/stage_cache/mod.rs`). Its session, its Linux codex workers and every confined run (the host jobs for contract freeze, `loom check`, stage completion and before-stage checks, plus provisioning, which the orchestrator's pre-spawn gate runs confined with `NetworkAccess::Provision`, `orchestrator/core/provision_gate.rs`) point each tool's cache there, so a stage's code can poison only its own cache. Host caches are read-only seeds where a tool layers them. Cargo and rustup are the exception: their homes also hold toolchains and credentials, so `sandbox/package_caches.rs` still grants them to sessions and the Cargo home stays the host's path (see [execution containment](execution-containment.md#read-this-first-what-containment-means-in-loom)).
 
 ### Root and lifecycle
 
