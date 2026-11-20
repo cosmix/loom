@@ -1,6 +1,8 @@
 //! Cargo fingerprints registry packages by their absolute source path, so every
-//! confined command for one tree must see one Cargo home. On Linux it is the
-//! host's own path, which keeps a target directory warmed outside the boundary warm.
+//! confined command must see the host's own Cargo home path, the one the
+//! session's builds use: any other path rebuilds every dependency ("the path to
+//! the source changed"), and a target directory shared with the session's
+//! builds alternates between two builds.
 use super::NetworkAccess;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -56,7 +58,47 @@ fn every_confined_command_for_one_tree_shares_one_cargo_home() {
     assert_ne!(first_scratch.path(), second_scratch.path());
     let home = effective_cargo_home(&first);
     assert_eq!(home, effective_cargo_home(&second));
-    assert!(!home.starts_with(tree.canonicalize().unwrap()));
+    assert_eq!(
+        home, cargo,
+        "the session builds against the host Cargo home"
+    );
+}
+
+/// Seatbelt cannot remap the host Cargo home, so the command reads it in
+/// place: sources and Cargo's state files readable, nothing writable, the
+/// config and credentials files absent.
+#[cfg(target_os = "macos")]
+#[test]
+fn macos_cargo_home_is_the_host_path_read_only() {
+    if !launcher_available("macos_cargo_home_is_the_host_path_read_only") {
+        return;
+    }
+    let root = tempfile::tempdir().unwrap();
+    let tree = root.path().join("worktree");
+    std::fs::create_dir(&tree).unwrap();
+    let cargo = host_cargo_home(root.path());
+    std::fs::write(cargo.join("config.toml"), "[build]\njobs = 1\n").unwrap();
+    std::fs::write(cargo.join(".package-cache"), "").unwrap();
+    let line = r#"set -eu
+[[ $(cat "$CARGO_HOME/registry/src/sentinel") == extracted ]]
+cat "$CARGO_HOME/.package-cache"
+printf changed 2>/dev/null > "$CARGO_HOME/registry/src/sentinel" && exit 1
+touch "$CARGO_HOME/git/new" 2>/dev/null && exit 1
+touch "$CARGO_HOME/.package-cache" "$CARGO_HOME/.global-cache" 2>/dev/null && exit 1
+[[ -e "$CARGO_HOME/config.toml" || -e "$CARGO_HOME/credentials.toml" ]] && exit 1
+printf CARGO_HOME_PASSED"#;
+    let original = confined_shell(&tree, &cargo, line);
+    let (mut wrapped, scratch, _) = super::wrap(&original, None, NetworkAccess::Denied).unwrap();
+    assert_eq!(effective_cargo_home(&wrapped), cargo);
+    scratch.populate().unwrap();
+    let output = wrapped.output().unwrap();
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("CARGO_HOME_PASSED"),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(!cargo.join(".global-cache").exists());
+    assert!(!cargo.join("git/new").exists());
 }
 
 /// The bind sequence that keeps the host path: a private writable directory
@@ -126,10 +168,10 @@ impl Drop for LinkedHome {
     }
 }
 
-/// A command whose Cargo home is linked rather than mounted, as under Seatbelt.
+/// A command whose tree lies inside its Cargo home, so the home is linked.
 #[cfg(unix)]
-fn linked_scratch(root: &Path, cargo: &Path) -> (super::CargoScratch, LinkedHome, Command) {
-    let tree = root.join("worktree");
+fn linked_scratch(cargo: &Path) -> (super::CargoScratch, LinkedHome, Command) {
+    let tree = cargo.join("worktree");
     std::fs::create_dir_all(&tree).unwrap();
     let mut command = Command::new("true");
     command.current_dir(&tree).env("CARGO_HOME", cargo);
@@ -151,7 +193,7 @@ fn populating_a_linked_home_removes_everything_it_does_not_manage() {
     use std::os::unix::fs::PermissionsExt;
     let root = tempfile::tempdir().unwrap();
     let cargo = host_cargo_home(root.path());
-    let (scratch, home, _) = linked_scratch(root.path(), &cargo);
+    let (scratch, home, _) = linked_scratch(&cargo);
     let outside = root.path().join("outside");
     std::fs::create_dir(&outside).unwrap();
     std::fs::write(outside.join("kept"), "kept").unwrap();
@@ -184,7 +226,7 @@ fn populating_a_linked_home_removes_everything_it_does_not_manage() {
 fn populating_a_linked_home_replaces_a_real_source_directory_with_its_link() {
     let root = tempfile::tempdir().unwrap();
     let cargo = host_cargo_home(root.path());
-    let (scratch, home, _) = linked_scratch(root.path(), &cargo);
+    let (scratch, home, _) = linked_scratch(&cargo);
     private_directory(&home.0, 0o700);
     std::fs::create_dir_all(home.0.join("registry/src")).unwrap();
     std::fs::write(home.0.join("registry/src/sentinel"), "tampered").unwrap();
@@ -204,7 +246,7 @@ fn populating_a_linked_home_replaces_a_real_source_directory_with_its_link() {
 fn a_linked_home_that_is_a_symlink_is_refused() {
     let root = tempfile::tempdir().unwrap();
     let cargo = host_cargo_home(root.path());
-    let (scratch, home, _) = linked_scratch(root.path(), &cargo);
+    let (scratch, home, _) = linked_scratch(&cargo);
     let elsewhere = root.path().join("elsewhere");
     private_directory(&elsewhere, 0o700);
     std::fs::write(elsewhere.join("config.toml"), "kept").unwrap();
@@ -224,7 +266,7 @@ fn linked_sources_point_at_the_roots_the_launcher_grants() {
     let cargo = host_cargo_home(root.path());
     let alias = root.path().join("cargo-alias");
     std::os::unix::fs::symlink(&cargo, &alias).unwrap();
-    let (scratch, home, command) = linked_scratch(root.path(), &alias);
+    let (scratch, home, command) = linked_scratch(&alias);
     scratch.populate().unwrap();
     let roots = super::read_roots(&command);
     for name in ["registry", "git"] {

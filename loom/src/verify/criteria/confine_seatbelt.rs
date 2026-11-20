@@ -77,7 +77,42 @@ fn seatbelt_path_rules(
     profile.push_str(&protected::seatbelt_rules(&paths, quote_checked(&named)?));
     let hidden = ancestors::hidden_above(tree, &readable);
     profile.push_str(&ancestors::seatbelt_rules(&hidden, quote_checked(&hidden)?));
+    if let Some(home) = scratch.host_cargo_home() {
+        profile.push_str(&host_cargo_home_rules(home)?);
+    }
     Ok(profile)
+}
+
+/// Files in a Cargo home that never reach a confined command, as Bubblewrap's
+/// private home keeps them out: the user's config and registry credentials.
+const HIDDEN_IN_CARGO_HOME: [&str; 4] =
+    ["config", "config.toml", "credentials", "credentials.toml"];
+
+/// Rules for the host Cargo home read in place. Its lock and last-use files are
+/// readable, so Cargo opens them and only warns when it cannot write them;
+/// nothing in the home is writable. Its config and credentials files are
+/// hidden by name, metadata included: Cargo fails on a config file it can see
+/// but not read. Each existing file is hidden at its path and its target.
+fn host_cargo_home_rules(home: &Path) -> Result<String> {
+    let home = home.canonicalize().unwrap_or_else(|_| home.to_path_buf());
+    let mut rules = String::new();
+    for name in super::super::scratch::linked_home::STATE_FILES {
+        let state = quote(&home.join(name))?;
+        rules.push_str(&format!("(allow file-read* (literal {state}))"));
+    }
+    let mut hidden = Vec::new();
+    for path in HIDDEN_IN_CARGO_HOME.map(|name| home.join(name)) {
+        if path.symlink_metadata().is_err() {
+            continue;
+        }
+        match path.canonicalize() {
+            Ok(target) if target != path => hidden.push(target),
+            _ => {}
+        }
+        hidden.push(path);
+    }
+    rules.push_str(&ancestors::seatbelt_rules(&hidden, quote_checked(&hidden)?));
+    Ok(rules)
 }
 
 pub(super) fn platform_command(

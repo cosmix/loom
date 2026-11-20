@@ -5,9 +5,9 @@
 //! home, is filled at spawn. No repository inputs or host credentials are copied.
 //!
 //! Cargo fingerprints registry packages by their absolute source path, so the
-//! Cargo home must not change from one command to the next: a fresh one per
-//! command marks every dependency dirty and rebuilds it. Temporary and package
-//! manager cache directories stay per command.
+//! Cargo home is the host's own path wherever the launcher allows it: another
+//! path rebuilds every dependency ("the path to the source changed"). Temporary
+//! and package manager cache directories stay per command.
 //!
 //! uv and Bun read their configured caches, `UV_CACHE_DIR` and
 //! `BUN_INSTALL_CACHE_DIR`, from this scratch. Under bubblewrap each is an
@@ -29,7 +29,7 @@ use super::host::cargo_home;
 
 #[cfg(unix)]
 #[path = "confine_linked_home.rs"]
-mod linked_home;
+pub(super) mod linked_home;
 #[path = "confine_scratch/reclaim.rs"]
 mod reclaim;
 
@@ -48,12 +48,13 @@ enum CargoHome {
     /// keep the paths the session's own `cargo` builds against and a target
     /// directory warmed outside the boundary stays warm inside it.
     Mounted(PathBuf),
-    /// A directory linking the host's `registry` and `git`, used where the
-    /// host's Cargo home path cannot be remapped (Seatbelt, or a Cargo home
-    /// overlapping the tree). From [`CargoScratch::prepare`] it is stable per
-    /// working tree, outside it, persists across commands and is never removed:
-    /// one small directory per tree. From [`CargoScratch::prepare_private`] it
-    /// is `<scratch>/cargo` and goes with the scratch.
+    /// The host's Cargo home read in place, read-only, where the launcher cannot
+    /// remap it (Seatbelt); Cargo only warns that its lock and last-use writes fail.
+    Host(PathBuf),
+    /// A directory linking the host's `registry` and `git`, for a Cargo home
+    /// overlapping the tree: from [`CargoScratch::prepare`] one persistent
+    /// directory per tree, outside it; from [`CargoScratch::prepare_private`]
+    /// `<scratch>/cargo`, removed with the scratch.
     Linked {
         home: PathBuf,
         sources: Vec<(&'static str, PathBuf)>,
@@ -81,6 +82,7 @@ impl CargoScratch {
         let host = cargo_home(command);
         let cargo = match host {
             Some(host) if mount && !overlaps(&host, tree) => CargoHome::Mounted(host),
+            Some(host) if !private && !overlaps(&host, tree) => CargoHome::Host(host),
             host => CargoHome::Linked {
                 home: if private {
                     directory.path().join("cargo")
@@ -144,7 +146,7 @@ impl CargoScratch {
     pub(super) fn cargo_mount(&self) -> Option<(PathBuf, &Path)> {
         match &self.cargo {
             CargoHome::Mounted(home) => Some((self.path().join("cargo"), home)),
-            CargoHome::Linked { .. } => None,
+            CargoHome::Linked { .. } | CargoHome::Host(_) => None,
         }
     }
 
@@ -153,13 +155,24 @@ impl CargoScratch {
     pub(crate) fn linked_cargo_home(&self) -> Option<&Path> {
         match &self.cargo {
             CargoHome::Linked { home, .. } => Some(home),
-            CargoHome::Mounted(_) => None,
+            CargoHome::Mounted(_) | CargoHome::Host(_) => None,
+        }
+    }
+
+    /// The host Cargo home the command reads in place ([`CargoHome::Host`]).
+    #[cfg(target_os = "macos")]
+    pub(super) fn host_cargo_home(&self) -> Option<&Path> {
+        match &self.cargo {
+            CargoHome::Host(home) => Some(home),
+            CargoHome::Mounted(_) | CargoHome::Linked { .. } => None,
         }
     }
 
     pub(super) fn apply_environment(&self, command: &mut Command) {
         let cargo = match &self.cargo {
-            CargoHome::Mounted(home) | CargoHome::Linked { home, .. } => home,
+            CargoHome::Mounted(home) | CargoHome::Host(home) | CargoHome::Linked { home, .. } => {
+                home
+            }
         };
         command.env("CARGO_HOME", cargo);
         for key in ["TMPDIR", "TMP", "TEMP"] {
@@ -200,6 +213,7 @@ impl CargoScratch {
         match &self.cargo {
             CargoHome::Mounted(_) => std::fs::create_dir_all(self.path().join("cargo"))
                 .context("create private Cargo home"),
+            CargoHome::Host(_) => Ok(()),
             #[cfg(unix)]
             CargoHome::Linked { home, sources } => linked_home::populate(home, sources),
             #[cfg(not(unix))]

@@ -210,7 +210,7 @@ fn private_cargo_home_uses_read_only_sources_and_hides_credentials() {
     std::fs::write(cargo.join("registry/sentinel"), "untouched").unwrap();
     std::fs::write(cargo.join("credentials.toml"), "secret").unwrap();
     let line = format!(
-        "cat \"$CARGO_HOME/registry/sentinel\" && ! echo changed > \"$CARGO_HOME/registry/sentinel\" && ! cat '{}' && touch \"$CARGO_HOME/.package-cache\" \"$CARGO_HOME/.global-cache\"",
+        "cat \"$CARGO_HOME/registry/sentinel\" && ! echo changed > \"$CARGO_HOME/registry/sentinel\" && ! cat '{}' && {{ touch \"$CARGO_HOME/.package-cache\" \"$CARGO_HOME/.global-cache\" 2>/dev/null || true; }}",
         cargo.join("credentials.toml").display());
     let spec = CommandSpec::shell(line);
     let mut prepared =

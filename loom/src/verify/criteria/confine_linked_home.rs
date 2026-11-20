@@ -26,7 +26,7 @@ use std::path::{Path, PathBuf};
 
 /// Cargo's own state in its home: the package cache locks and the global cache
 /// database with its transient SQLite journal. Kept only as regular files.
-const STATE_FILES: [&str; 4] = [
+pub(crate) const STATE_FILES: [&str; 4] = [
     ".package-cache",
     ".package-cache-mutate",
     ".global-cache",
