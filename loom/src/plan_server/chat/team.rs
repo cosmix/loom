@@ -8,7 +8,7 @@ use crate::plan_session::bridge::team::TeammateStatus;
 use crate::plan_session::bridge::Bridge;
 use crate::plan_session::kind::SessionDir;
 use crate::plan_session::model::{ChatDelta, Item};
-use crate::plan_session::scope::{self, SessionScope, TeamRun};
+use crate::plan_session::scope::{self, KickoffGrant, KickoffSize, SessionScope, TeamRun};
 use crate::planning::guidance::team_scope;
 
 /// The offers whose session runs as an agent team inside a team scope.
@@ -35,17 +35,32 @@ pub(super) fn extra_env(
     )])
 }
 
-/// Write the session's scope after its guidance. A team scope the guidance wrote stays: it holds
-/// the documents of the project snapshot the opening named them from. A provider that wrote none
-/// gets one built here.
+/// The size a kickoff offer starts with: `kickoff` is a feature, `kickoff-small` a standalone plan.
+pub(super) fn offer_size(offer: Option<&str>) -> Option<KickoffSize> {
+    match offer {
+        Some("kickoff") => Some(KickoffSize::Feature),
+        Some("kickoff-small") => Some(KickoffSize::Plan),
+        _ => None,
+    }
+}
+
+/// Write the session's scope after its guidance. A kickoff scope carries the offer's size; a
+/// continued kickoff holding a `resume` grant gets the scope with that grant already held. A team
+/// scope the guidance wrote stays: it holds the documents of the project snapshot the opening
+/// named them from. A provider that wrote none gets one built here.
 pub(super) fn prepare_scope(
     ctx: &PlanContext,
     dir: &SessionDir,
     offer: Option<&str>,
     feature: Option<&str>,
+    resume: Option<&KickoffGrant>,
 ) -> anyhow::Result<()> {
-    if matches!(offer, Some("kickoff" | "kickoff-small")) {
-        return scope::write(dir, &SessionScope::kickoff(ctx.root())?);
+    if let Some(size) = offer_size(offer) {
+        let scope = match resume {
+            Some(grant) => SessionScope::kickoff_resumed(ctx.root(), grant.size, &grant.name)?,
+            None => SessionScope::kickoff(ctx.root(), size)?,
+        };
+        return scope::write(dir, &scope);
     }
     let Some(offer) = offer.filter(|offer| is_team(Some(offer))) else {
         return Ok(());
@@ -79,11 +94,11 @@ pub(super) fn observe_kickoff(
         ..
     } = delta
     {
-        if let Some(id) = bridge
+        let kickoff = bridge
             .chat_session_id()
-            .filter(|id| is_kickoff(ctx, state, id))
-        {
-            let view = lock(&state.kickoff).observe(&id, markdown);
+            .and_then(|id| kickoff_size(ctx, state, &id).map(|size| (id, size)));
+        if let Some((id, size)) = kickoff {
+            let view = lock(&state.kickoff).observe(&id, size, markdown);
             if let Some(view) = view {
                 // The draft first: a browser that hears the shape finds it stored.
                 draft_cmd::on_shape(ctx, state, &id, view.shape.clone());
@@ -93,15 +108,17 @@ pub(super) fn observe_kickoff(
     }
 }
 
-fn is_kickoff(ctx: &PlanContext, state: &ChatState, id: &str) -> bool {
+/// The size of `id`'s kickoff scope, `None` for any other scope; read once per session.
+fn kickoff_size(ctx: &PlanContext, state: &ChatState, id: &str) -> Option<KickoffSize> {
     let mut scopes = lock(&state.kickoff_scopes);
     *scopes.entry(id.to_owned()).or_insert_with(|| {
         let dir = SessionDir::new(ctx.runtime().sessions.join(id));
         match scope::load(&dir) {
-            Ok(scope) => matches!(scope, SessionScope::Kickoff(_)),
+            Ok(SessionScope::Kickoff(kickoff)) => Some(kickoff.size),
+            Ok(_) => None,
             Err(error) => {
                 tracing::debug!(session = %id, %error, "cannot read kickoff scope");
-                false
+                None
             }
         }
     })

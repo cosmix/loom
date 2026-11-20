@@ -30,6 +30,8 @@ const OMITTED: &str = "(earlier messages omitted)";
 pub struct DraftContinuation<'a> {
     /// The effective name of the work: the user's rename, else the agent's.
     pub name: Option<&'a str>,
+    /// The confirmed document's path, when the draft's work was confirmed.
+    pub target: Option<&'a str>,
     pub problem: &'a str,
     pub decisions: &'a [String],
     pub questions: &'a [String],
@@ -47,6 +49,13 @@ pub fn continuation_message(draft: &DraftContinuation<'_>) -> String {
     let mut text = String::from(INTRO);
     if let Some(name) = draft.name {
         let _ = write!(text, "\nThe work is named `{name}`.");
+    }
+    if let Some(target) = draft.target {
+        let _ = write!(
+            text,
+            "\nThe confirmed document `{target}` exists and may be unfinished. Read it and \
+             finish it; do not start it again."
+        );
     }
     for name in draft.unavailable {
         let name = clean_name(name);
@@ -134,6 +143,7 @@ mod tests {
     fn draft<'a>(messages: &'a [String], unavailable: &'a [String]) -> DraftContinuation<'a> {
         DraftContinuation {
             name: Some("microvm-test-env"),
+            target: None,
             problem: "Tests need isolation.",
             decisions: &[],
             questions: &[],
@@ -162,6 +172,20 @@ mod tests {
         assert!(text.contains("Open questions:\n> Which?"));
         assert!(text.contains("> first\n> second line"));
         assert!(!text.contains(OMITTED));
+    }
+
+    #[test]
+    fn a_confirmed_target_is_named_after_the_work_and_only_then() {
+        let mut input = draft(&[], &[]);
+        assert!(!continuation_message(&input).contains("confirmed document"));
+        input.target = Some("doc/plans/PLAN-x.md");
+
+        let text = continuation_message(&input);
+
+        let named = "The work is named `microvm-test-env`.\nThe confirmed document \
+                     `doc/plans/PLAN-x.md` exists and may be unfinished. Read it and finish it; \
+                     do not start it again.";
+        assert!(text.contains(named), "{text}");
     }
 
     #[test]

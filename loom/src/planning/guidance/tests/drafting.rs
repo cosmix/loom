@@ -6,7 +6,10 @@ use crate::planning::guidance::{draft_run, plugin, GuidanceModels, SessionGuidan
 #[test]
 fn kickoff_brief_derives_step_and_skill_without_a_target_or_feature() {
     let (_temp, project) = drafting_fixture();
-    for (small, step) in [(false, "Kickoff"), (true, "Kickoff, small work")] {
+    for (small, step) in [
+        (false, "Kickoff, feature"),
+        (true, "Kickoff, standalone plan"),
+    ] {
         let text =
             brief::common_brief(&AuthoringStart::Kickoff { small }, &project, Some("f")).unwrap();
         let (_, block) = text.split_once("## Starting point\n\n").unwrap();

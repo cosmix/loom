@@ -6,10 +6,13 @@ import {
   MessageCircleQuestion,
   Telescope,
 } from "lucide-react";
+import { useAtomValue } from "jotai";
 import { useId, type ReactNode } from "react";
 
-import type { KickoffShape } from "@/plan/api/schema-kickoff";
+import type { KickoffShape, KickoffSize } from "@/plan/api/schema-kickoff";
+import { sessionAtom } from "@/plan/chat/model";
 import { Untrusted } from "@/plan/chat/visible-controls";
+import { kindOf } from "@/plan/new/kickoff-state";
 import { WriteKickoff } from "@/plan/new/write-kickoff";
 import { StateMark } from "@/plan/ui/activity-glyphs";
 
@@ -39,7 +42,9 @@ export function TakingShape({
   /** The proposal, shown between the heading and the shape rows. */
   children?: ReactNode;
 }) {
-  const size = shape?.size ?? null;
+  const session = useAtomValue(sessionAtom);
+  // The start offer says the size; the agent's shape cannot change it.
+  const size = kindOf(shape?.size ?? null, session?.offer ?? null);
   const questions = shape?.questions ?? [];
 
   // Design section 8: this panel stays in the UI face; the transcript uses the reading face.
@@ -59,7 +64,7 @@ export function TakingShape({
       {children}
       <ShapeIdentity shape={shape} />
       <QuestionsRow questions={questions} />
-      {shape?.size === "feature" && <ShapeSections sections={shape.sections} />}
+      {size === "feature" && shape !== null && <ShapeSections sections={shape.sections} />}
       {shape !== null && <ShapeFoot size={size} name={shape.name} target={target} />}
     </aside>
   );
@@ -203,7 +208,7 @@ function ShapeFoot({
   name,
   target,
 }: {
-  size: KickoffShape["size"];
+  size: KickoffSize | null;
   name: string | null;
   target: string | null;
 }) {

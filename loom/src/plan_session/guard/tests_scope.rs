@@ -51,7 +51,10 @@ fn missing_scope_keeps_authoring_doc_writes_open() -> Result<()> {
 #[test]
 fn kickoff_reloads_the_feature_grant_without_widening_it() -> Result<()> {
     let f = Fixture::new(SessionKind::Authoring)?;
-    scope::write(&f.session, &SessionScope::kickoff(&f.root)?)?;
+    scope::write(
+        &f.session,
+        &SessionScope::kickoff(&f.root, KickoffSize::Feature)?,
+    )?;
     let policy = load_policy(f.session.path())?;
 
     for rel in [
@@ -83,7 +86,10 @@ fn kickoff_reloads_the_feature_grant_without_widening_it() -> Result<()> {
 #[test]
 fn kickoff_plan_grants_only_the_plan_and_paths_inside_its_bundle() -> Result<()> {
     let f = Fixture::new(SessionKind::Authoring)?;
-    scope::write(&f.session, &SessionScope::kickoff(&f.root)?)?;
+    scope::write(
+        &f.session,
+        &SessionScope::kickoff(&f.root, KickoffSize::Plan)?,
+    )?;
     let policy = load_policy(f.session.path())?;
     scope::arm_kickoff(&f.session, &f.root, KickoffSize::Plan, "x")?;
 
@@ -160,8 +166,9 @@ fn knowledge_writes_stay_denied_under_every_scope() -> Result<()> {
     let reason = "doc/loom/knowledge is written with `loom knowledge`";
     let scopes = [
         SessionScope::Open,
-        SessionScope::kickoff(&f.root)?,
+        SessionScope::kickoff(&f.root, KickoffSize::Feature)?,
         SessionScope::Kickoff(KickoffScope {
+            size: KickoffSize::Feature,
             existing: Vec::new(),
             grant: Some(KickoffGrant {
                 size: KickoffSize::Feature,
@@ -169,6 +176,7 @@ fn knowledge_writes_stay_denied_under_every_scope() -> Result<()> {
             }),
         }),
         SessionScope::Kickoff(KickoffScope {
+            size: KickoffSize::Plan,
             existing: Vec::new(),
             grant: Some(KickoffGrant {
                 size: KickoffSize::Plan,

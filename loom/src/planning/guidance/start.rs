@@ -116,7 +116,7 @@ impl AuthoringStart {
     /// The action label displayed on the opening message.
     pub fn label(&self) -> String {
         match self {
-            Self::Kickoff { small: false } => "New work".into(),
+            Self::Kickoff { small: false } => "New feature".into(),
             Self::Kickoff { small: true } => "New standalone plan".into(),
             Self::Offer(offer) => offer.label(),
             Self::Refine { target, .. } => format!("Refine {}", target.display()),

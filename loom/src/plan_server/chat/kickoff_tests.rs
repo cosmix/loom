@@ -207,16 +207,19 @@ fn unusable_names_are_removed() {
 #[test]
 fn tracker_resets_shape_and_target_for_a_new_session() {
     let mut tracker = KickoffTracker::default();
-    tracker.observe("first", &block("{}"));
+    tracker.observe("first", KickoffSize::Feature, &block("{}"));
     tracker.confirm("first", "doc/plans/PLAN-first.md");
 
-    let view = tracker.observe("second", &block("{}"));
+    let view = tracker.observe("second", KickoffSize::Feature, &block("{}"));
 
     assert_eq!(
         view,
         Some(KickoffView {
             session: "second".into(),
-            shape: KickoffShape::default(),
+            shape: KickoffShape {
+                size: Some(KickoffSize::Feature),
+                ..KickoffShape::default()
+            },
             target: None,
         })
     );
@@ -225,10 +228,13 @@ fn tracker_resets_shape_and_target_for_a_new_session() {
 #[test]
 fn new_session_resets_even_when_its_text_has_no_shape() {
     let mut tracker = KickoffTracker::default();
-    tracker.observe("first", &block("{}"));
+    tracker.observe("first", KickoffSize::Feature, &block("{}"));
     tracker.confirm("first", "doc/plans/PLAN-first.md");
 
-    assert_eq!(tracker.observe("second", "Discussion"), None);
+    assert_eq!(
+        tracker.observe("second", KickoffSize::Feature, "Discussion"),
+        None
+    );
     assert_eq!(tracker.view(), None);
     assert_eq!(tracker.confirm("first", "doc/plans/PLAN-first.md"), None);
 }
@@ -236,12 +242,16 @@ fn new_session_resets_even_when_its_text_has_no_shape() {
 #[test]
 fn confirmed_target_survives_later_shape_updates() {
     let mut tracker = KickoffTracker::default();
-    tracker.observe("session", &block("{}"));
+    tracker.observe("session", KickoffSize::Feature, &block("{}"));
     let target = "doc/product/new-work/index.md";
     let confirmed = tracker.confirm("session", target).unwrap();
 
     let updated = tracker
-        .observe("session", &block(r#"{"problem":"Updated"}"#))
+        .observe(
+            "session",
+            KickoffSize::Feature,
+            &block(r#"{"problem":"Updated"}"#),
+        )
         .unwrap();
 
     assert_eq!(confirmed.target.as_deref(), Some(target));
@@ -253,13 +263,21 @@ fn confirmed_target_survives_later_shape_updates() {
 #[test]
 fn identical_sanitized_shape_does_not_publish_again() {
     let mut tracker = KickoffTracker::default();
-    let first = tracker.observe("session", &block(r#"{"problem":"A problem"}"#));
+    let first = tracker.observe(
+        "session",
+        KickoffSize::Feature,
+        &block(r#"{"problem":"A problem"}"#),
+    );
     assert!(first.is_some());
     tracker.confirm("session", "doc/plans/PLAN-new-work.md");
     let before = tracker.view();
 
     assert_eq!(
-        tracker.observe("session", &block(r#"{"problem":" A problem "}"#)),
+        tracker.observe(
+            "session",
+            KickoffSize::Feature,
+            &block(r#"{"problem":" A problem "}"#)
+        ),
         None
     );
     assert_eq!(tracker.view(), before);
@@ -268,9 +286,12 @@ fn identical_sanitized_shape_does_not_publish_again() {
 #[test]
 fn invalid_update_preserves_the_current_view() {
     let mut tracker = KickoffTracker::default();
-    let before = tracker.observe("session", &block("{}"));
+    let before = tracker.observe("session", KickoffSize::Feature, &block("{}"));
 
-    assert_eq!(tracker.observe("session", &block("invalid")), None);
+    assert_eq!(
+        tracker.observe("session", KickoffSize::Feature, &block("invalid")),
+        None
+    );
     assert_eq!(tracker.view(), before);
 }
 
@@ -278,7 +299,7 @@ fn invalid_update_preserves_the_current_view() {
 fn confirmation_requires_a_view_for_the_same_session() {
     let mut tracker = KickoffTracker::default();
     assert_eq!(tracker.confirm("session", "doc/plans/PLAN-new.md"), None);
-    let before = tracker.observe("session", &block("{}"));
+    let before = tracker.observe("session", KickoffSize::Feature, &block("{}"));
 
     assert_eq!(tracker.confirm("other", "doc/plans/PLAN-other.md"), None);
     assert_eq!(tracker.view(), before);
@@ -287,13 +308,15 @@ fn confirmation_requires_a_view_for_the_same_session() {
 #[test]
 fn clear_only_removes_the_matching_session() {
     let mut tracker = KickoffTracker::default();
-    let before = tracker.observe("session", &block("{}"));
+    let before = tracker.observe("session", KickoffSize::Feature, &block("{}"));
 
     tracker.clear("other");
     assert_eq!(tracker.view(), before);
     tracker.clear("session");
     assert_eq!(tracker.view(), None);
-    assert!(tracker.observe("session", &block("{}")).is_some());
+    assert!(tracker
+        .observe("session", KickoffSize::Feature, &block("{}"))
+        .is_some());
 }
 
 #[test]
@@ -306,13 +329,43 @@ fn a_seeded_session_shows_its_shape_and_name_before_any_block() {
         ..KickoffShape::default()
     };
 
-    let seeded = tracker.seed("new", shape.clone());
+    let seeded = tracker.seed("new", KickoffSize::Plan, shape.clone());
 
     assert_eq!(seeded.session, "new");
     assert_eq!(seeded.shape, shape);
     assert_eq!(tracker.view().map(|view| view.shape), Some(shape));
     let repeated = r#"{"size":"plan","name":"agent-name","problem":"P"}"#;
-    assert_eq!(tracker.observe("new", &block(repeated)), None);
+    assert_eq!(
+        tracker.observe("new", KickoffSize::Plan, &block(repeated)),
+        None
+    );
     tracker.clear("new");
     assert_eq!(tracker.view(), None);
+}
+
+#[test]
+fn the_sessions_size_overwrites_the_blocks_size_and_a_size_only_change_publishes_nothing() {
+    let mut tracker = KickoffTracker::default();
+    let feature = KickoffSize::Feature;
+    let plan_block = block(r#"{"size":"plan","problem":"P"}"#);
+
+    let view = tracker.observe("session", feature, &plan_block).unwrap();
+
+    assert_eq!(view.shape.size, Some(feature));
+    let feature_block = block(r#"{"size":"feature","problem":"P"}"#);
+    assert_eq!(tracker.observe("session", feature, &feature_block), None);
+}
+
+#[test]
+fn a_seeded_shape_takes_the_drafts_size_over_its_own() {
+    let mut tracker = KickoffTracker::default();
+    let shape = KickoffShape {
+        size: Some(KickoffSize::Plan),
+        problem: "P".into(),
+        ..KickoffShape::default()
+    };
+
+    let seeded = tracker.seed("new", KickoffSize::Feature, shape);
+
+    assert_eq!(seeded.shape.size, Some(KickoffSize::Feature));
 }

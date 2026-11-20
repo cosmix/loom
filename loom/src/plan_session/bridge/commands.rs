@@ -222,6 +222,24 @@ impl Bridge {
         ended.unwrap_or(Err(BridgeError::NoSession))
     }
 
+    /// `end` whose final write must finish within `bound` instead of the configured
+    /// `final_write_bound`. A later call may lower the bound, never raise it.
+    pub fn end_within(
+        &self,
+        id: &str,
+        mode: EndMode,
+        cause: EndCause,
+        bound: Duration,
+    ) -> Result<Vec<String>, BridgeError> {
+        let ended = self.with_session(id, |session, step| {
+            let texts = session.request_end(mode, cause, step)?;
+            session.bound_end(bound);
+            Ok(texts)
+        });
+        self.flush();
+        ended.unwrap_or(Err(BridgeError::NoSession))
+    }
+
     /// Record a process started for the session (kept by a marker end, terminated otherwise).
     pub fn record_child(
         &self,

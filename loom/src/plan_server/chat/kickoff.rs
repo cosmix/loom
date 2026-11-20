@@ -1,4 +1,5 @@
 use crate::plan_server::wire::kickoff::{KickoffShape, KickoffView};
+use crate::plan_session::scope::KickoffSize;
 use crate::planning::kinds::is_feature_name;
 
 const MAX_BODY_BYTES: usize = 16 * 1024;
@@ -104,9 +105,10 @@ pub(super) fn within_limits(shape: &KickoffShape) -> bool {
 
 /// Latest taking-shape state of the running chat.
 ///
-/// `current` holds the agent's shape exactly as parsed, so `observe` can tell a repeated block
-/// from a new one. The user names the work in the conversation and the agent writes the name into
-/// its block, so the name is only ever the agent's.
+/// `current` holds the agent's shape as parsed, with the size the session started with written
+/// over the agent's own, so `observe` can tell a repeated block from a new one. The size is the
+/// offer's and never the agent's; the user names the work in the conversation and the agent writes
+/// the name into its block, so the name is only ever the agent's.
 #[derive(Default)]
 pub(super) struct KickoffTracker {
     session: Option<String>,
@@ -114,13 +116,20 @@ pub(super) struct KickoffTracker {
 }
 
 impl KickoffTracker {
-    /// Feed an assistant text item, resetting first when its session changes.
-    pub(super) fn observe(&mut self, session: &str, markdown: &str) -> Option<KickoffView> {
+    /// Feed an assistant text item, resetting first when its session changes. Every published
+    /// shape carries `size`, whatever the block says.
+    pub(super) fn observe(
+        &mut self,
+        session: &str,
+        size: KickoffSize,
+        markdown: &str,
+    ) -> Option<KickoffView> {
         if self.session.as_deref() != Some(session) {
             self.session = Some(session.to_owned());
             self.current = None;
         }
-        let shape = parse_shape(markdown)?;
+        let mut shape = parse_shape(markdown)?;
+        shape.size = Some(size);
         if self
             .current
             .as_ref()
@@ -148,8 +157,14 @@ impl KickoffTracker {
         Some(view.clone())
     }
 
-    /// Start `session` from an earlier draft's shape.
-    pub(super) fn seed(&mut self, session: &str, shape: KickoffShape) -> KickoffView {
+    /// Start `session` from an earlier draft's shape, carrying the draft's `size`.
+    pub(super) fn seed(
+        &mut self,
+        session: &str,
+        size: KickoffSize,
+        mut shape: KickoffShape,
+    ) -> KickoffView {
+        shape.size = Some(size);
         let view = KickoffView {
             session: session.to_owned(),
             shape,

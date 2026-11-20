@@ -12,7 +12,7 @@ use loom::plan_session::hook_cli;
 use loom::plan_session::kind::{SessionDir, SessionKind};
 use loom::plan_session::owner_watch::{self, read_holder_pid, OwnerProbe};
 use loom::plan_session::sandbox::{write_session_sandbox, SandboxInputs};
-use loom::plan_session::scope::{self, SessionScope};
+use loom::plan_session::scope::{self, KickoffSize, SessionScope};
 use loom::plan_session::spool::{SpoolReader, SPOOL_EVENTS};
 use loom::planning::project::Project;
 use loom::planning::runtime::runtime_paths_under;
@@ -52,7 +52,11 @@ fn kickoff_settings() -> Value {
     let session = SessionDir::new(runtime.sessions.join("s1"));
     fs::create_dir_all(session.path()).unwrap();
     fs::set_permissions(session.path(), fs::Permissions::from_mode(0o700)).unwrap();
-    scope::write(&session, &SessionScope::kickoff(&root).unwrap()).unwrap();
+    scope::write(
+        &session,
+        &SessionScope::kickoff(&root, KickoffSize::Feature).unwrap(),
+    )
+    .unwrap();
     let loom_bin = PathBuf::from(env!("CARGO_BIN_EXE_loom"));
     let inputs = SandboxInputs {
         project_root: &root,

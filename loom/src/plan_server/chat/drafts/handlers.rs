@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use super::{get, list, views, ChatState, DETAIL_PREFIX};
+use super::{get, list, views, written, ChatState, DETAIL_PREFIX};
 use crate::plan_server::request::{ApiRequest, ApiResponse};
 use crate::plan_server::wire::kickoff::{KickoffDraftDetail, KickoffDraftList};
 
@@ -42,12 +42,20 @@ pub(super) fn detail(req: &ApiRequest<'_>) -> ApiResponse {
         return ApiResponse::error(404, "not_found", "no such kickoff draft");
     };
     let view = views(req.ctx, std::slice::from_ref(&draft)).remove(0);
+    // A target the grant check refuses lists nothing: the detail is still the draft's.
+    let (written, committed) = draft
+        .target
+        .as_deref()
+        .and_then(|target| written(req.ctx.root(), target).ok())
+        .map_or((Vec::new(), false), |found| (found.paths, found.committed));
     ApiResponse::json(
         200,
         &KickoffDraftDetail {
             draft: view,
             shape: draft.shape,
             messages: draft.messages,
+            written,
+            committed,
         },
     )
 }

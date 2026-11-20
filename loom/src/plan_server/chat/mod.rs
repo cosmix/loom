@@ -3,17 +3,22 @@
 mod background;
 mod dispatch;
 mod draft_cmd;
+mod draft_continue;
 mod drafts;
 mod fetch_cmd;
 pub mod guidance;
 mod kickoff;
 mod kickoff_cmd;
 pub mod lease;
+mod lines;
+mod message;
 pub mod pins;
 mod publish;
 mod release;
 mod team;
 
+#[cfg(test)]
+mod kickoff_fix_contracts;
 #[cfg(test)]
 mod start_contract_tests;
 #[cfg(test)]
@@ -35,6 +40,7 @@ use std::time::Duration;
 
 use self::guidance::{ChecklistGuidance, GuidanceSlot};
 use self::lease::AuthoringLeases;
+use self::lines::{describe, ended_line, started_line};
 use self::pins::TextPins;
 use super::authoring::{AuthoringEvent, FreeReason};
 use super::context::PlanContext;
@@ -44,12 +50,10 @@ use super::lifecycle;
 use super::shutdown::ShutdownHook;
 use super::wire::{chat::ChatFrame, message::PlanMessage, team::DraftTeamView};
 use crate::plan_session::bridge::host::SessionHost;
-use crate::plan_session::bridge::registry::read_record;
-use crate::plan_session::bridge::{
-    Bridge, BridgeConfig, BridgeEvent, EndCause, EndMode, EndOutcome, TurnPins, TEARDOWN_FAILED,
-};
-use crate::plan_session::kind::{SessionDir, SessionKind};
+use crate::plan_session::bridge::{Bridge, BridgeConfig, BridgeEvent, EndCause, EndMode, TurnPins};
+use crate::plan_session::kind::SessionKind;
 use crate::plan_session::model::{ChatDelta, SessionView};
+use crate::plan_session::scope::KickoffSize;
 use crate::plan_session::tmux_host::TmuxHost;
 use crate::planning::runtime::RuntimePaths;
 
@@ -64,7 +68,8 @@ struct ChatState {
     /// reserve and listing check cannot fall in between (`release::give_back`).
     starting: Mutex<()>,
     kickoff: Mutex<kickoff::KickoffTracker>,
-    kickoff_scopes: Mutex<HashMap<String, bool>>,
+    /// The size of each session's kickoff scope, `None` for a session with another scope.
+    kickoff_scopes: Mutex<HashMap<String, Option<KickoffSize>>>,
     team: Mutex<Option<DraftTeamView>>,
     /// Held across every read-modify-write of a draft file (`drafts`).
     drafts: Mutex<()>,
@@ -279,9 +284,14 @@ fn follow_sessions(
             BridgeEvent::Team { id, teammates } => {
                 team::publish_draft_team(&ctx, &state, id, teammates);
             }
-            BridgeEvent::Ended { id, kind, outcome } => {
+            BridgeEvent::Ended {
+                id,
+                kind,
+                outcome,
+                cause,
+            } => {
                 team::clear(&state, id);
-                draft_cmd::ended(&ctx, &state, id);
+                draft_cmd::ended(&ctx, &state, id, *cause);
                 let (name, socket) = describe(&bridge, &runtime, id, kind);
                 lifecycle::line(&ended_line(id, kind, &name, &socket, outcome));
                 let starter = state.take_starter(id);
@@ -293,63 +303,6 @@ fn follow_sessions(
             _ => {}
         }
     }));
-}
-
-/// The session's display name and tmux socket: the chat's view, else its record.
-fn describe(
-    bridge: &Bridge,
-    runtime: &RuntimePaths,
-    id: &str,
-    kind: &SessionKind,
-) -> (String, String) {
-    let snapshot = bridge.chat_snapshot(false);
-    let previous = snapshot.previous.map(|ended| ended.session);
-    if let Some(view) = snapshot
-        .session
-        .into_iter()
-        .chain(previous)
-        .find(|v| v.id == id)
-    {
-        return (view.name, view.socket);
-    }
-    let record = read_record(&SessionDir::new(runtime.sessions.join(id)));
-    let socket = record.map(|record| record.socket).unwrap_or_default();
-    (kind.label().to_owned(), socket)
-}
-
-fn started_line(kind: &SessionKind, name: &str, socket: &str) -> String {
-    format!(
-        "session started: {} \"{}\" (watch: tmux -L {} attach -r)",
-        lifecycle::safe(kind.label()),
-        lifecycle::safe(name),
-        lifecycle::safe(socket)
-    )
-}
-
-/// A failed teardown keeps the session and retries it, so it gets its own line.
-fn ended_line(
-    id: &str,
-    kind: &SessionKind,
-    name: &str,
-    socket: &str,
-    outcome: &EndOutcome,
-) -> String {
-    let outcome = match outcome {
-        EndOutcome::Failed(why) if why.starts_with(TEARDOWN_FAILED) => {
-            let (id, socket) = (lifecycle::safe(id), lifecycle::safe(socket));
-            return format!("{TEARDOWN_FAILED}: session {id}, socket {socket}");
-        }
-        EndOutcome::Failed(why) => format!("failed: {why}"),
-        EndOutcome::Closed => "closed".to_owned(),
-        EndOutcome::Marker => "marker".to_owned(),
-        EndOutcome::TornDown => "torn down".to_owned(),
-    };
-    format!(
-        "session ended: {} \"{}\" ({})",
-        lifecycle::safe(kind.label()),
-        lifecycle::safe(name),
-        lifecycle::safe(&outcome)
-    )
 }
 
 /// Recovery runs before the first chat can start (the bridge refuses starts until it ends).
@@ -376,23 +329,4 @@ fn spawn_recovery(ctx: &PlanContext, bridge: &Arc<Bridge>) {
 /// poisoned lock is still usable.
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
-}
-
-#[cfg(test)]
-mod line_tests {
-    use super::{ended_line, started_line, EndOutcome, SessionKind};
-
-    #[test]
-    fn the_terminal_lines_name_the_socket_and_neutralise_escapes() {
-        let (kind, socket) = (SessionKind::Authoring, "loom-plan-3f9a");
-        let started = started_line(&kind, "chat \x1b]0;owned\x07", socket);
-        assert!(started.starts_with("session started: authoring \"chat "));
-        assert!(started.ends_with("(watch: tmux -L loom-plan-3f9a attach -r)"));
-        assert!(!started.contains(['\x1b', '\x07']), "{started:?}");
-        let failed = EndOutcome::Failed("teardown failed: kill-server failed".into());
-        let line = ended_line("id-1", &kind, "chat", socket, &failed);
-        assert_eq!(line, "teardown failed: session id-1, socket loom-plan-3f9a");
-        let closed = ended_line("id", &SessionKind::Summary, "s", "x", &EndOutcome::Closed);
-        assert_eq!(closed, "session ended: summary \"s\" (closed)");
-    }
 }

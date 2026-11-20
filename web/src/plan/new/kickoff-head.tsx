@@ -14,8 +14,6 @@ export const KIND_WORD: Record<KickoffSize, string> = {
   plan: "Standalone plan",
 };
 
-export const KIND_UNDECIDED = "Kind not decided";
-
 /** The head's title before the conversation names the work. */
 const NEW_TITLE: Record<KickoffSize, string> = {
   feature: "New feature",

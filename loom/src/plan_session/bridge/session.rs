@@ -13,7 +13,7 @@ use super::background::BackgroundTasks;
 use super::commands::Out;
 use super::host::LaunchSpec;
 use super::registry::SessionRecord;
-use super::{team::TeamTracker, EndMode, EndOutcome, RecoveryReport};
+use super::{team::TeamTracker, EndCause, EndMode, EndOutcome, RecoveryReport};
 use crate::plan_session::attachments::Attachment;
 use crate::plan_session::commands::{CommandCell, CommandClass, CommandTable};
 use crate::plan_session::kind::{SessionDir, SessionKind};
@@ -185,6 +185,11 @@ pub(super) struct EndPlan {
     pub(super) deny_new: Option<(DenyReason, &'static str)>,
     /// The reason teardown denies what is still pending.
     pub(super) reason: DenyReason,
+    /// The final write's own bound, when the end set one (`Bridge::end_within`); else the
+    /// configured `final_write_bound` applies.
+    pub(super) bound: Option<Duration>,
+    /// Who asked for the end, reported on `BridgeEvent::Ended`.
+    pub(super) cause: EndCause,
 }
 
 /// `received_at`, event, request id and a hash of the payload of an applied spool event.

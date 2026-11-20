@@ -5,17 +5,30 @@ use std::fs;
 use serde_json::json;
 
 use super::super::drafts;
-use super::super::tests::{browser, ok_result, wait_for};
+use super::super::tests::{browser, ok_result, wait_for, wait_until, Fixture};
 use super::super::ChatState;
 use super::drafts::{
-    continue_cmd, discard_cmd, draft_file, set_aside_cmd, start_cmd, start_kickoff, stored,
-    working, write_draft, OLD,
+    continue_cmd, discard_cmd, discard_files_cmd, draft_file, end_now, idle, set_aside_cmd,
+    start_cmd, start_kickoff, stored, working, write_draft, OLD,
 };
-use super::kickoff::block;
+use super::kickoff::{block, confirm, ready_proposal};
 use super::{fixture, record_guidance, refused};
 use crate::plan_server::authoring::Refusal;
+use crate::plan_session::scope::{self, KickoffGrant, KickoffSize, SessionScope};
 
 const UNKNOWN: &str = "There is no such unfinished kickoff";
+const PLAN: &str = "doc/plans/PLAN-demo-work.md";
+
+/// A plan draft whose confirmed document is `PLAN`; the document exists when `written`.
+fn plan_draft(f: &Fixture, written: bool) -> std::path::PathBuf {
+    write_draft(f, OLD, json!({"size": "plan", "target": PLAN}));
+    let document = f.ctx.root().join(PLAN);
+    if written {
+        fs::create_dir_all(document.parent().unwrap()).unwrap();
+        fs::write(&document, "# Plan\n").unwrap();
+    }
+    document
+}
 
 #[test]
 fn discard_is_refused_for_a_browser_that_does_not_hold_authoring() {
@@ -171,4 +184,162 @@ fn discard_deletes_an_ended_draft_and_refuses_a_live_one() {
         f.command(&tab, discard_cmd("not-a-session")),
         refused("\"not-a-session\" is not a kickoff session id")
     );
+}
+
+#[test]
+fn discard_that_would_leave_written_files_behind_is_refused() {
+    let f = fixture(false);
+    let tab = f.connect(&browser());
+    let document = plan_draft(&f, true);
+
+    assert_eq!(
+        f.command(&tab, discard_files_cmd(OLD, false)),
+        refused("This draft wrote files; delete them too or keep the draft")
+    );
+    assert!(draft_file(&f, OLD).exists() && document.exists());
+
+    assert_eq!(f.command(&tab, discard_files_cmd(OLD, true)), ok_result());
+    assert!(!draft_file(&f, OLD).exists() && !document.exists());
+}
+
+#[test]
+fn discard_of_a_draft_whose_files_are_gone_removes_only_the_draft() {
+    let f = fixture(false);
+    let tab = f.connect(&browser());
+    plan_draft(&f, false);
+
+    assert_eq!(f.command(&tab, discard_files_cmd(OLD, false)), ok_result());
+
+    assert!(!draft_file(&f, OLD).exists());
+}
+
+#[test]
+fn an_ended_session_is_finished_only_when_the_agent_asked() {
+    let f = fixture(false);
+    let tab = f.connect(&browser());
+    let s = start_kickoff(&f, &tab, start_cmd("kickoff", Some("idea"), Vec::new()));
+    working(&f, &s);
+    block(&f, &s, &tab, json!({"name": "fresh", "problem": "P"}));
+    idle(&f, &s);
+    assert_eq!(
+        f.command(&tab, confirm(KickoffSize::Feature, "fresh")),
+        ok_result()
+    );
+    let document = f.ctx.root().join("doc/product/fresh/index.md");
+    fs::create_dir_all(document.parent().unwrap()).unwrap();
+    fs::write(&document, "# Fresh\n").unwrap();
+
+    end_now(&f, &s);
+
+    wait_until("the ended draft", || stored(&f, &s.id)["live"] == false);
+    assert_eq!(stored(&f, &s.id)["finished"], false);
+    let listed = drafts::list(&f.ctx, &ChatState::default());
+    assert_eq!(listed.len(), 1, "the unfinished draft stays: {listed:?}");
+    assert!(!listed[0].live);
+}
+
+#[test]
+fn continuing_a_draft_with_its_document_resumes_the_grant_and_keeps_the_target() {
+    let f = fixture(false);
+    let tab = f.connect(&browser());
+    plan_draft(&f, true);
+    let calls = record_guidance(&f);
+
+    assert_eq!(f.command(&tab, continue_cmd(OLD)), ok_result());
+
+    let id = wait_for("the continuation", || f.bridge.chat_session_id());
+    let first = calls.calls.lock().unwrap()[0].1.clone().unwrap();
+    let said = format!("The confirmed document `{PLAN}` exists and may be unfinished.");
+    assert!(first.contains(&said), "{first}");
+    let SessionScope::Kickoff(kickoff) = scope::load(&f.launched(&id).dir).unwrap() else {
+        panic!("a kickoff scope");
+    };
+    let grant = KickoffGrant {
+        size: KickoffSize::Plan,
+        name: "demo-work".into(),
+    };
+    assert_eq!(kickoff.grant, Some(grant));
+    assert_eq!(stored(&f, &id)["target"], PLAN, "the new draft keeps it");
+    let view = f.connect(&browser()).opened;
+    let view = view.iter().find(|frame| frame["type"] == "kickoff");
+    assert_eq!(
+        view.unwrap()["target"],
+        PLAN,
+        "the Write button reads written"
+    );
+    assert!(!draft_file(&f, OLD).exists());
+}
+
+#[test]
+fn continuing_a_draft_whose_document_is_gone_holds_no_grant() {
+    let f = fixture(false);
+    let tab = f.connect(&browser());
+    plan_draft(&f, false);
+    let calls = record_guidance(&f);
+
+    assert_eq!(f.command(&tab, continue_cmd(OLD)), ok_result());
+
+    let id = wait_for("the continuation", || f.bridge.chat_session_id());
+    let first = calls.calls.lock().unwrap()[0].1.clone().unwrap();
+    assert!(!first.contains("The confirmed document"), "{first}");
+    let SessionScope::Kickoff(kickoff) = scope::load(&f.launched(&id).dir).unwrap() else {
+        panic!("a kickoff scope");
+    };
+    assert_eq!(kickoff.grant, None);
+    assert_eq!(kickoff.size, KickoffSize::Plan);
+}
+
+#[test]
+fn continuing_a_draft_with_only_its_bundle_resumes_the_grant_without_claiming_a_document() {
+    let f = fixture(false);
+    let tab = f.connect(&browser());
+    plan_draft(&f, false);
+    let bundle = f.ctx.root().join("doc/plans/briefs/demo-work");
+    fs::create_dir_all(&bundle).unwrap();
+    fs::write(bundle.join("a.md"), "# Brief\n").unwrap();
+    let calls = record_guidance(&f);
+
+    assert_eq!(f.command(&tab, continue_cmd(OLD)), ok_result());
+
+    let id = wait_for("the continuation", || f.bridge.chat_session_id());
+    let first = calls.calls.lock().unwrap()[0].1.clone().unwrap();
+    assert!(!first.contains("The confirmed document"), "{first}");
+    let SessionScope::Kickoff(kickoff) = scope::load(&f.launched(&id).dir).unwrap() else {
+        panic!("a kickoff scope");
+    };
+    let grant = KickoffGrant {
+        size: KickoffSize::Plan,
+        name: "demo-work".into(),
+    };
+    assert_eq!(
+        kickoff.grant,
+        Some(grant),
+        "the bundle can still be written"
+    );
+}
+
+#[test]
+fn a_second_kickoff_cannot_confirm_a_name_another_draft_holds() {
+    let f = fixture(false);
+    let tab = f.connect(&browser());
+    write_draft(
+        &f,
+        OLD,
+        json!({"size": "feature", "target": "doc/product/fresh/index.md"}),
+    );
+    let s = ready_proposal(&f, &tab, "kickoff");
+
+    let refusal = f.command(&tab, confirm(KickoffSize::Feature, "fresh"));
+
+    assert_eq!(
+        refusal,
+        refused(
+            "Another unfinished kickoff already holds doc/product/fresh/index.md. Continue or delete it from the draft shelf first."
+        )
+    );
+    let SessionScope::Kickoff(kickoff) = scope::load(&s.dir).unwrap() else {
+        panic!("kickoff scope missing");
+    };
+    assert_eq!(kickoff.grant, None, "nothing was armed");
+    assert!(draft_file(&f, OLD).exists());
 }

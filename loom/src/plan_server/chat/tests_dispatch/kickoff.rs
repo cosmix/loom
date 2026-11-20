@@ -87,7 +87,10 @@ pub(super) fn block(f: &Fixture, s: &LaunchSpec, tab: &Tab, shape: Value) -> Val
 
 #[test]
 fn both_kickoff_offers_write_an_unarmed_scope_without_team_environment() {
-    for id in ["kickoff", "kickoff-small"] {
+    for (id, size) in [
+        ("kickoff", KickoffSize::Feature),
+        ("kickoff-small", KickoffSize::Plan),
+    ] {
         let f = fixture(false);
         let tab = f.connect(&browser());
         let s = launch(&f, &tab, id, None);
@@ -95,10 +98,25 @@ fn both_kickoff_offers_write_an_unarmed_scope_without_team_environment() {
         let SessionScope::Kickoff(kickoff) = scope::load(&s.dir).unwrap() else {
             panic!("kickoff scope missing");
         };
+        assert_eq!(kickoff.size, size, "the offer's size");
         assert_eq!(kickoff.grant, None);
         assert!(kickoff.existing.contains(&"doc/product/demo".into()));
         assert!(s.extra_env.is_empty());
     }
+}
+
+#[test]
+fn a_standalone_kickoff_keeps_plan_size_whatever_its_block_says() {
+    let f = fixture(false);
+    let tab = f.connect(&browser());
+    let s = launch(&f, &tab, "kickoff-small", None);
+    opening(&f, &s);
+    f.spool(&s, "UserPromptSubmit", json!({"prompt": "opening"}));
+    f.wait_state(&s, SessionState::Working);
+
+    let view = shape(&f, &s, &tab, "A small piece of work");
+
+    assert_eq!(view["shape"]["size"], "plan");
 }
 
 #[test]
@@ -147,8 +165,8 @@ fn a_non_holder_cannot_confirm_the_kickoff() {
     assert_eq!(kickoff.grant, None);
 }
 
-fn ready_proposal(f: &Fixture, tab: &Tab) -> LaunchSpec {
-    let s = launch(f, tab, "kickoff", None);
+pub(super) fn ready_proposal(f: &Fixture, tab: &Tab, offer: &str) -> LaunchSpec {
+    let s = launch(f, tab, offer, None);
     opening(f, &s);
     f.spool(&s, "UserPromptSubmit", json!({"prompt": "opening"}));
     f.wait_state(&s, SessionState::Working);
@@ -162,9 +180,8 @@ fn ready_proposal(f: &Fixture, tab: &Tab) -> LaunchSpec {
 fn confirmation_arms_one_target_sends_one_message_and_publishes_the_target() {
     let f = fixture(false);
     let tab = f.connect(&browser());
-    let s = ready_proposal(&f, &tab);
-    let expected =
-        "The user confirmed the feature \"fresh\" and asked you to write it now. You may now create doc/product/fresh/index.md";
+    let s = ready_proposal(&f, &tab, "kickoff");
+    let expected = "The user confirmed the feature \"fresh\" and asked you to write it now. You may now create doc/product/fresh/index.md";
 
     assert_eq!(
         f.command(&tab, confirm(KickoffSize::Feature, "fresh")),
@@ -197,13 +214,13 @@ fn confirmation_arms_one_target_sends_one_message_and_publishes_the_target() {
 
 #[test]
 fn confirmation_makes_the_named_feature_or_plan_the_sessions_owner() {
-    for (size, feature, plan) in [
-        (KickoffSize::Feature, Some("fresh"), None),
-        (KickoffSize::Plan, None, Some("fresh")),
+    for (offer, size, feature, plan) in [
+        ("kickoff", KickoffSize::Feature, Some("fresh"), None),
+        ("kickoff-small", KickoffSize::Plan, None, Some("fresh")),
     ] {
         let f = fixture(false);
         let tab = f.connect(&browser());
-        let s = ready_proposal(&f, &tab);
+        let s = ready_proposal(&f, &tab, offer);
 
         assert_eq!(f.command(&tab, confirm(size, "fresh")), ok_result());
 
@@ -228,7 +245,7 @@ fn confirmation_makes_the_named_feature_or_plan_the_sessions_owner() {
 fn a_standalone_plan_confirmation_names_its_document_and_brief_bundle() {
     let f = fixture(false);
     let tab = f.connect(&browser());
-    let s = ready_proposal(&f, &tab);
+    let s = ready_proposal(&f, &tab, "kickoff-small");
 
     assert_eq!(
         f.command(&tab, confirm(KickoffSize::Plan, "fresh")),
@@ -238,8 +255,10 @@ fn a_standalone_plan_confirmation_names_its_document_and_brief_bundle() {
     wait_until("the confirmation paste", || {
         f.host.delivered_to(&s.socket).len() == 2
     });
-    assert_eq!(f.host.delivered_to(&s.socket)[1],
-        "The user confirmed the standalone plan \"fresh\" and asked you to write it now. You may now create doc/plans/PLAN-fresh.md and files inside doc/plans/briefs/fresh/");
+    assert_eq!(
+        f.host.delivered_to(&s.socket)[1],
+        "The user confirmed the standalone plan \"fresh\" and asked you to write it now. You may now create doc/plans/PLAN-fresh.md and files inside doc/plans/briefs/fresh/"
+    );
     assert!(scope::load(&s.dir)
         .unwrap()
         .allows_write(std::path::Path::new(
@@ -333,7 +352,7 @@ fn text_proposals_are_broadcast_replayed_on_open_and_cleared_at_session_end() {
 fn replacing_a_text_item_publishes_the_latest_kickoff_shape() {
     let f = fixture(false);
     let tab = f.connect(&browser());
-    let s = ready_proposal(&f, &tab);
+    let s = ready_proposal(&f, &tab, "kickoff");
     let state = f.ctx.extensions().get::<ChatState>().unwrap();
     let turn_id = f
         .bridge

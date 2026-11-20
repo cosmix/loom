@@ -192,4 +192,6 @@ fn session_model<'a>(
 }
 
 #[cfg(test)]
+mod opening_size_contracts;
+#[cfg(test)]
 mod tests;

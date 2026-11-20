@@ -26,6 +26,7 @@ mod owner;
 mod recording;
 mod regressions;
 mod scopes;
+mod set_aside;
 mod start;
 mod team;
 mod wiring;

@@ -80,9 +80,9 @@ fn authoring_opening(
 
 fn kickoff_opening(small: bool) -> String {
     let step = if small {
-        "Kickoff, small work"
+        "Kickoff, standalone plan"
     } else {
-        "Kickoff"
+        "Kickoff, feature"
     };
     three_lines(
         step,

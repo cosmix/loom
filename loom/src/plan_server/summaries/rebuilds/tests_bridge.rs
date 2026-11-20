@@ -153,6 +153,7 @@ pub(super) fn ended_with(id: &str, kind: SessionKind, outcome: EndOutcome) -> Br
         id: id.into(),
         kind,
         outcome,
+        cause: None,
     }
 }
 

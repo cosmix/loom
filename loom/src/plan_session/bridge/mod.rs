@@ -14,6 +14,7 @@ mod commands;
 mod denied;
 mod done_fence;
 mod driver;
+mod end_plan;
 mod ending;
 mod error;
 mod fetches;
@@ -40,6 +41,8 @@ mod agent_end_contract_tests;
 mod background_contract_tests;
 #[cfg(test)]
 mod closing_contract_tests;
+#[cfg(test)]
+mod end_within_contracts;
 #[cfg(test)]
 mod fake_host;
 #[cfg(test)]
@@ -170,6 +173,9 @@ pub enum BridgeEvent {
         id: String,
         kind: SessionKind,
         outcome: EndOutcome,
+        /// Who asked for the end; `None` when nobody did (the process died, a `SessionEnd`, a
+        /// session recovered at server start).
+        cause: Option<EndCause>,
     },
 }
 /// How a session ended. A `Marker` end keeps the session's children and its directory until

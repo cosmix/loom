@@ -24,7 +24,7 @@ const drafts: Drafts = [
   {
     session: B,
     name: null,
-    size: null,
+    size: "feature",
     problem: null,
     started_at: "2026-11-04T10:47:11Z",
     updated_at: "2026-11-04T10:48:00Z",

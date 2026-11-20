@@ -186,6 +186,7 @@ impl FakeSessions {
             id: id.to_owned(),
             kind,
             outcome,
+            cause: None,
         };
         let listeners = self.listeners.lock().unwrap().clone();
         listeners.iter().for_each(|listener| listener(&event));

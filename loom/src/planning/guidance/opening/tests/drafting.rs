@@ -5,7 +5,10 @@ use crate::planning::guidance::DraftRun;
 #[test]
 fn kickoff_openings_name_the_skill_and_confirmation_without_a_feature_target() {
     let (_temp, project) = drafting_fixture();
-    for (small, step) in [(false, "Kickoff"), (true, "Kickoff, small work")] {
+    for (small, step) in [
+        (false, "Kickoff, feature"),
+        (true, "Kickoff, standalone plan"),
+    ] {
         let opening =
             opening_message(&AuthoringStart::Kickoff { small }, &project, Some("f")).unwrap();
 

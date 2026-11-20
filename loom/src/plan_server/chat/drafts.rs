@@ -3,9 +3,15 @@
 //! A draft is written when a kickoff starts and rewritten on every change of what the user
 //! typed, what the agent proposed, the user's rename, the confirmed target and the session's
 //! end. Every read-modify-write holds `ChatState::drafts`: the bridge listener, the dispatch
-//! thread and the `Ended` handler all write. A draft whose confirmed document exists has landed
-//! and is deleted on the next listing or write.
+//! thread and the `Ended` handler all write. A draft lands, and is deleted on the next listing
+//! or write, only when its session finished: the agent's done fence ended it (`finished`) and
+//! the confirmed document exists, or a locked spelling of that document exists. A draft whose
+//! session was set aside, interrupted or lost stays listed even when its document exists, so it
+//! can be continued or deleted.
 
+mod delete;
+#[cfg(test)]
+mod delete_tests;
 mod encode;
 mod handlers;
 mod store;
@@ -17,6 +23,7 @@ use anyhow::Result;
 use chrono::{DateTime, SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
 
+pub(super) use self::delete::{remove_written, written};
 use self::store::Files;
 use super::{lock, ChatState};
 use crate::fs::safe_fs::{safe_create_dir_all, safe_replace_outside_workdir};
@@ -29,6 +36,7 @@ use crate::plan_server::wire::kickoff::{KickoffDraftView, KickoffShape};
 use crate::plan_server::wire::message::PlanMessage;
 use crate::plan_session::attachments::{AttachmentInput, MAX_ATTACHMENTS};
 use crate::plan_session::bridge::Bridge;
+use crate::plan_session::scope::KickoffSize;
 use crate::planning::paths::check_relpath_syntax;
 
 /// The directory of the draft files, inside the runtime directory.
@@ -57,6 +65,11 @@ pub(super) struct Draft {
     pub(super) session: String,
     pub(super) started_at: String,
     pub(super) updated_at: String,
+    /// The size the kickoff was started with, from its offer; the agent's block never changes it.
+    pub(super) size: KickoffSize,
+    /// Whether the session ended because the agent's done fence asked.
+    #[serde(default)]
+    pub(super) finished: bool,
     /// The texts the user typed, oldest first.
     #[serde(default)]
     pub(super) messages: Vec<String>,
@@ -74,8 +87,8 @@ pub(super) struct Draft {
 }
 
 /// What a new draft starts from: nothing but the typed text, or an earlier draft's content.
-#[derive(Default)]
 pub(super) struct Seed {
+    pub(super) size: KickoffSize,
     pub(super) messages: Vec<String>,
     pub(super) attachments: Vec<AttachmentInput>,
     pub(super) shape: Option<KickoffShape>,
@@ -97,6 +110,8 @@ impl Draft {
             session: session.to_owned(),
             started_at: at.clone(),
             updated_at: at,
+            size: seed.size,
+            finished: false,
             messages: Vec::new(),
             shape: seed.shape,
             attachments: seed.attachments,
@@ -132,7 +147,7 @@ impl Draft {
         KickoffDraftView {
             session: self.session.clone(),
             name: self.name().map(str::to_owned),
-            size: shape.and_then(|shape| shape.size),
+            size: self.size,
             problem: shape
                 .map(|shape| shape.problem.clone())
                 .filter(|problem| !problem.is_empty()),
@@ -284,6 +299,20 @@ pub(super) fn remove(ctx: &PlanContext, state: &ChatState, session: &str) -> boo
         publish(ctx, state);
     }
     removed
+}
+
+/// The session of another stored draft that holds `target` as its confirmed document, if any.
+pub(super) fn holder_of(
+    ctx: &PlanContext,
+    state: &ChatState,
+    target: &str,
+    except: &str,
+) -> Option<String> {
+    let held = |draft: &Draft| draft.session != except && draft.target.as_deref() == Some(target);
+    stored(ctx, state)
+        .into_iter()
+        .find(held)
+        .map(|draft| draft.session)
 }
 
 /// The session that is the running chat, if any.

@@ -17,8 +17,8 @@ fn put(root: &Path, relative: &str) -> Result<()> {
     Ok(())
 }
 
-fn start(root: &Path, dir: &SessionDir) -> Result<()> {
-    write(dir, &SessionScope::kickoff(root)?)
+fn start(root: &Path, dir: &SessionDir, size: KickoffSize) -> Result<()> {
+    write(dir, &SessionScope::kickoff(root, size)?)
 }
 
 fn assert_denied(scope: &SessionScope, path: &str, expected: &str) {
@@ -42,7 +42,7 @@ fn open_allows_everything_without_peer_tools() {
 #[test]
 fn kickoff_denies_documents_until_confirmation() -> Result<()> {
     let root = tempdir()?;
-    let scope = SessionScope::kickoff(root.path())?;
+    let scope = SessionScope::kickoff(root.path(), KickoffSize::Feature)?;
     for path in [
         "doc/product/new/index.md",
         "doc/plans/PLAN-new.md",
@@ -58,7 +58,7 @@ fn kickoff_denies_documents_until_confirmation() -> Result<()> {
 #[test]
 fn feature_grant_allows_only_its_index() -> Result<()> {
     let (root, dir) = fixture()?;
-    start(root.path(), &dir)?;
+    start(root.path(), &dir, KickoffSize::Feature)?;
     let armed = arm_kickoff(&dir, root.path(), KickoffSize::Feature, "new-feature")?;
     assert_eq!(
         armed.document,
@@ -81,7 +81,7 @@ fn feature_grant_allows_only_its_index() -> Result<()> {
 #[test]
 fn plan_grant_allows_its_document_and_strict_bundle_descendants() -> Result<()> {
     let (root, dir) = fixture()?;
-    start(root.path(), &dir)?;
+    start(root.path(), &dir, KickoffSize::Plan)?;
     let armed = arm_kickoff(&dir, root.path(), KickoffSize::Plan, "new-plan")?;
     assert_eq!(armed.document, Path::new("doc/plans/PLAN-new-plan.md"));
     assert_eq!(armed.bundle, Some("doc/plans/briefs/new-plan".into()));
@@ -107,9 +107,9 @@ fn plan_grant_allows_its_document_and_strict_bundle_descendants() -> Result<()> 
 #[test]
 fn arm_refuses_invalid_names() -> Result<()> {
     let (root, dir) = fixture()?;
-    start(root.path(), &dir)?;
     for name in ["Uppercase", "with/slash", "..", "", "archive", "briefs"] {
         for size in [KickoffSize::Feature, KickoffSize::Plan] {
+            start(root.path(), &dir, size)?;
             let result = arm_kickoff(&dir, root.path(), size, name);
             assert_eq!(result, Err(ArmRefusal::InvalidName(name.into())));
         }
@@ -123,7 +123,7 @@ fn assert_clash(size: KickoffSize, name: &str, file: &str, clash: &str) -> Resul
         if present_at_start {
             put(root.path(), file)?;
         }
-        start(root.path(), &dir)?;
+        start(root.path(), &dir, size)?;
         if present_at_start {
             fs::remove_dir_all(root.path().join("doc"))?;
         } else {
@@ -183,7 +183,7 @@ fn arm_refuses_an_existing_bundle_case_insensitively() -> Result<()> {
 fn a_bundle_named_like_a_plan_is_not_a_plan_slug_clash() -> Result<()> {
     let (root, dir) = fixture()?;
     fs::create_dir_all(root.path().join("doc/plans/feature/briefs/PLAN-new.md"))?;
-    start(root.path(), &dir)?;
+    start(root.path(), &dir, KickoffSize::Plan)?;
     assert!(arm_kickoff(&dir, root.path(), KickoffSize::Plan, "new").is_ok());
     Ok(())
 }
@@ -192,7 +192,8 @@ fn a_bundle_named_like_a_plan_is_not_a_plan_slug_clash() -> Result<()> {
 fn snapshot_includes_bundles_below_nested_briefs_directories() -> Result<()> {
     let root = tempdir()?;
     fs::create_dir_all(root.path().join("doc/plans/feature/archive/briefs/nested"))?;
-    let SessionScope::Kickoff(scope) = SessionScope::kickoff(root.path())? else {
+    let SessionScope::Kickoff(scope) = SessionScope::kickoff(root.path(), KickoffSize::Feature)?
+    else {
         unreachable!()
     };
     assert_eq!(
@@ -208,7 +209,7 @@ fn snapshot_includes_bundles_below_nested_briefs_directories() -> Result<()> {
 #[test]
 fn arm_refuses_a_second_grant() -> Result<()> {
     let (root, dir) = fixture()?;
-    start(root.path(), &dir)?;
+    start(root.path(), &dir, KickoffSize::Feature)?;
     arm_kickoff(&dir, root.path(), KickoffSize::Feature, "first")?;
     let result = arm_kickoff(&dir, root.path(), KickoffSize::Plan, "second");
     assert_eq!(result, Err(ArmRefusal::AlreadyConfirmed));
@@ -243,7 +244,7 @@ fn snapshot_records_links_without_listing_their_targets() -> Result<()> {
         outside.path(),
         root.path().join("doc/plans/feature/briefs/linked"),
     )?;
-    let scope = SessionScope::kickoff(root.path())?;
+    let scope = SessionScope::kickoff(root.path(), KickoffSize::Feature)?;
     let SessionScope::Kickoff(kickoff) = &scope else {
         unreachable!()
     };
@@ -260,11 +261,64 @@ fn snapshot_records_links_without_listing_their_targets() -> Result<()> {
     write(&dir, &scope)?;
     let result = arm_kickoff(&dir, root.path(), KickoffSize::Feature, "linked");
     assert_eq!(result, Err(ArmRefusal::Exists("doc/product/linked".into())));
+    start(root.path(), &dir, KickoffSize::Plan)?;
     let result = arm_kickoff(&dir, root.path(), KickoffSize::Plan, "linked");
     assert_eq!(
         result,
         Err(ArmRefusal::Exists("doc/plans/PLAN-linked.md".into()))
     );
+    Ok(())
+}
+
+#[test]
+fn arm_refuses_a_size_other_than_the_one_started() -> Result<()> {
+    for (started, other) in [
+        (KickoffSize::Feature, KickoffSize::Plan),
+        (KickoffSize::Plan, KickoffSize::Feature),
+    ] {
+        let (root, dir) = fixture()?;
+        start(root.path(), &dir, started)?;
+        let result = arm_kickoff(&dir, root.path(), other, "new");
+        assert_eq!(result, Err(ArmRefusal::WrongSize(started)));
+        assert_eq!(load(&dir)?, SessionScope::kickoff(root.path(), started)?);
+    }
+    assert_eq!(
+        ArmRefusal::WrongSize(KickoffSize::Feature).to_string(),
+        "This kickoff was started as a feature."
+    );
+    assert_eq!(
+        ArmRefusal::WrongSize(KickoffSize::Plan).to_string(),
+        "This kickoff was started as a standalone plan."
+    );
+    Ok(())
+}
+
+#[test]
+fn a_resumed_kickoff_may_write_its_existing_target_and_nothing_else() -> Result<()> {
+    let (root, dir) = fixture()?;
+    put(root.path(), "doc/plans/PLAN-half.md")?;
+    put(root.path(), "doc/plans/briefs/half/unit.md")?;
+    let scope = SessionScope::kickoff_resumed(root.path(), KickoffSize::Plan, "half")?;
+    for path in ["doc/plans/PLAN-half.md", "doc/plans/briefs/half/unit.md"] {
+        assert_eq!(scope.allows_write(Path::new(path)), Ok(()));
+    }
+    for path in ["doc/plans/PLAN-other.md", "doc/product/half/index.md"] {
+        assert_denied(&scope, path, "only doc/plans/PLAN-half.md");
+    }
+    write(&dir, &scope)?;
+    let result = arm_kickoff(&dir, root.path(), KickoffSize::Plan, "other");
+    assert_eq!(result, Err(ArmRefusal::AlreadyConfirmed));
+    assert_eq!(load(&dir)?, scope);
+    Ok(())
+}
+
+#[test]
+fn a_resumed_kickoff_refuses_an_invalid_name() -> Result<()> {
+    let root = tempdir()?;
+    for name in ["Uppercase", "with/slash", "..", "", "archive"] {
+        let result = SessionScope::kickoff_resumed(root.path(), KickoffSize::Feature, name);
+        assert!(result.is_err(), "{name:?}");
+    }
     Ok(())
 }
 

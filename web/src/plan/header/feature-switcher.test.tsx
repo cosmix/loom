@@ -51,7 +51,7 @@ function show({
   kickoff?: string | null;
   kickoffSize?: "feature" | "plan" | null;
   offer?: string | null;
-  drafts?: { session: string; name: string | null; size: "feature" | "plan" | null }[];
+  drafts?: { session: string; name: string | null; size: "feature" | "plan" }[];
 } = {}) {
   const store = createStore();
   if (offer !== null) {
@@ -155,6 +155,18 @@ it("falls back to the start offer for the size until the conversation settles on
 
   const button = screen.getByRole("button", { name: "planner-search, switch feature" });
   expect(button.querySelector(".plan-eyebrow")?.textContent).toBe("Planning · new plan");
+});
+
+it("keeps the offer's size when the conversation's shape says the other", () => {
+  show({
+    pathname: "/new?session=kickoff",
+    kickoff: "planner-search",
+    kickoffSize: "plan",
+    offer: "kickoff",
+  });
+
+  const button = screen.getByRole("button", { name: "planner-search, switch feature" });
+  expect(button.querySelector(".plan-eyebrow")?.textContent).toBe("Planning · new feature");
 });
 
 it("shows a draft's name and size on /new?session= its id", () => {

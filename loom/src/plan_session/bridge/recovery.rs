@@ -163,6 +163,7 @@ impl Bridge {
             id: record.id.clone(),
             kind: record.kind.clone(),
             outcome: EndOutcome::TornDown,
+            cause: None,
         };
         self.lock().outbox.push(Out::Event(ended));
         Found::TornDown(RecoveredSession {

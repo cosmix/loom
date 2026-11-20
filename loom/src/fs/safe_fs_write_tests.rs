@@ -65,3 +65,114 @@ fn write_operations_reject_hard_links_without_changing_bytes_or_mode() {
         );
     }
 }
+
+/// A directory outside the project holding one file, `keep.md`, that every removal must leave.
+fn outside_keep() -> (tempfile::TempDir, std::path::PathBuf) {
+    let outside = tempfile::tempdir().unwrap();
+    let keep = outside.path().join("keep.md");
+    std::fs::write(&keep, b"keep").unwrap();
+    (outside, keep)
+}
+
+fn remove_tree(root: &Path, relpath: &str) -> Result<()> {
+    let dir = safe_open_dirfd(root)?;
+    safe_remove_tree_in_workdir(dir.as_raw_fd(), Path::new(relpath))
+}
+
+#[test]
+fn remove_tree_unlinks_symlink_entries_without_following_them() {
+    let (outside, keep) = outside_keep();
+    let root = tempfile::tempdir().unwrap();
+    let tree = root.path().join("doc/plans/briefs/demo");
+    std::fs::create_dir_all(tree.join("sub/deeper")).unwrap();
+    std::fs::write(tree.join("a.md"), b"a").unwrap();
+    std::fs::write(tree.join("sub/deeper/b.md"), b"b").unwrap();
+    std::os::unix::fs::symlink(outside.path(), tree.join("sub/dir-link")).unwrap();
+    std::os::unix::fs::symlink(&keep, tree.join("file-link")).unwrap();
+
+    remove_tree(root.path(), "doc/plans/briefs/demo").unwrap();
+
+    assert!(std::fs::symlink_metadata(&tree).is_err(), "tree remains");
+    assert!(root.path().join("doc/plans/briefs").is_dir());
+    assert_eq!(std::fs::read(&keep).unwrap(), b"keep");
+    // A second removal of the missing tree is not an error.
+    remove_tree(root.path(), "doc/plans/briefs/demo").unwrap();
+}
+
+#[test]
+fn remove_tree_unlinks_a_symlinked_target_as_a_link() {
+    let (outside, keep) = outside_keep();
+    let root = tempfile::tempdir().unwrap();
+    std::os::unix::fs::symlink(outside.path(), root.path().join("bundle")).unwrap();
+
+    remove_tree(root.path(), "bundle").unwrap();
+
+    assert!(std::fs::symlink_metadata(root.path().join("bundle")).is_err());
+    assert_eq!(std::fs::read(&keep).unwrap(), b"keep");
+}
+
+#[test]
+fn remove_tree_refuses_a_symlinked_parent_and_touches_nothing() {
+    for portable in [false, true] {
+        let (outside, keep) = outside_keep();
+        let root = tempfile::tempdir().unwrap();
+        std::os::unix::fs::symlink(outside.path(), root.path().join("parent")).unwrap();
+        std::fs::create_dir(outside.path().join("inner")).unwrap();
+        std::fs::write(outside.path().join("inner/x.md"), b"x").unwrap();
+        let path = root.path().to_owned();
+        let result = std::thread::spawn(move || {
+            if portable {
+                force_disable_openat2_for_tests();
+            }
+            remove_tree(&path, "parent/inner").is_err()
+        })
+        .join()
+        .unwrap();
+
+        assert!(
+            result,
+            "a symlinked parent was traversed (portable={portable})"
+        );
+        assert!(outside.path().join("inner/x.md").exists());
+        assert_eq!(std::fs::read(&keep).unwrap(), b"keep");
+        assert!(std::fs::symlink_metadata(root.path().join("parent")).is_ok());
+    }
+}
+
+#[test]
+fn remove_tree_refuses_parent_dir_and_absolute_paths() {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::create_dir(root.path().join("a")).unwrap();
+    assert!(remove_tree(root.path(), "a/../a").is_err());
+    assert!(remove_tree(root.path(), "/tmp").is_err());
+    assert!(root.path().join("a").is_dir());
+}
+
+#[test]
+fn remove_tree_stops_past_the_entry_limit_and_reports_the_count() {
+    let root = tempfile::tempdir().unwrap();
+    let tree = root.path().join("big");
+    std::fs::create_dir(&tree).unwrap();
+    for i in 0..4097 {
+        std::fs::write(tree.join(format!("{i}")), b"").unwrap();
+    }
+    let error = format!("{:#}", remove_tree(root.path(), "big").unwrap_err());
+    assert!(error.contains("stopped after 0 removed entries"), "{error}");
+    assert!(error.contains("more than 4096 entries"), "{error}");
+}
+
+#[test]
+fn remove_empty_dir_reports_whether_it_removed() {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(root.path().join("full")).unwrap();
+    std::fs::write(root.path().join("full/x.md"), b"x").unwrap();
+    std::fs::create_dir(root.path().join("empty")).unwrap();
+    let dir = safe_open_dirfd(root.path()).unwrap();
+    let fd = dir.as_raw_fd();
+
+    assert!(!safe_remove_empty_dir_in_workdir(fd, Path::new("full")).unwrap());
+    assert!(root.path().join("full/x.md").exists());
+    assert!(safe_remove_empty_dir_in_workdir(fd, Path::new("empty")).unwrap());
+    assert!(!root.path().join("empty").exists());
+    assert!(!safe_remove_empty_dir_in_workdir(fd, Path::new("empty")).unwrap());
+}

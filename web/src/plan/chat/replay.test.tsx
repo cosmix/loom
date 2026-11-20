@@ -268,3 +268,15 @@ it("chat replayed session sends attachments, shows the turn footer and restores 
   replay(store, idleFrame);
   await restoreFile(chat);
 });
+
+it("the recorded kickoff commands carry the stop-now and delete-files flags", () => {
+  const setAside = chatCommandSchema.parse(
+    commandsFixture.find((command) => command.command === "set_aside_kickoff"),
+  );
+  const discard = chatCommandSchema.parse(
+    commandsFixture.find((command) => command.command === "discard_kickoff"),
+  );
+
+  expect(setAside).toMatchObject({ command: "set_aside_kickoff", now: expect.any(Boolean) });
+  expect(discard).toMatchObject({ command: "discard_kickoff", delete_files: expect.any(Boolean) });
+});

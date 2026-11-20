@@ -228,16 +228,17 @@ export function askFetchesAgain(store: Store) {
   return sendChatCommand(store, { command: "ask_fetches_again" });
 }
 
-export function setAsideKickoff(store: Store, session: string) {
-  return sendChatCommand(store, { command: "set_aside_kickoff", session });
+/** `now` is "Stop now": it tears the session down even while an earlier set-aside is closing. */
+export function setAsideKickoff(store: Store, session: string, now = false) {
+  return sendChatCommand(store, { command: "set_aside_kickoff", session, now });
 }
 
 export function continueKickoff(store: Store, session: string) {
   return sendChatCommand(store, { command: "continue_kickoff", session });
 }
 
-export function discardKickoff(store: Store, session: string) {
-  return sendChatCommand(store, { command: "discard_kickoff", session });
+export function discardKickoff(store: Store, session: string, deleteFiles: boolean) {
+  return sendChatCommand(store, { command: "discard_kickoff", session, delete_files: deleteFiles });
 }
 
 export function interruptChat(store: Store) {

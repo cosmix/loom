@@ -56,7 +56,7 @@ function useNewWork(): { name: string | null; size: "feature" | "plan" | null } 
   const drafts = useAtomValue(kickoffDraftsAtom);
   if (session === null) return { name: null, size: null };
   if (kickoff?.session === session) {
-    // Before the conversation settles a size, the kickoff's start offer says it, as on the page head.
+    // The kickoff's start offer says the size, as on the page head; the shape's size is the fallback.
     const offer = chat?.id === session ? chat.offer : null;
     return { name: kickoff.shape.name, size: kindOf(kickoff.shape.size, offer) };
   }

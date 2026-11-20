@@ -11,11 +11,15 @@ import type { Store } from "@/state/store";
  */
 export const kickoffSessionAtom = atom<string | null>(null);
 
-/** The size the conversation settled, else the one the kickoff was started as. */
+/**
+ * The size the kickoff was started as: the offer wins (`kickoff` is a feature, `kickoff-small` a
+ * standalone plan), so a shape the agent wrote cannot turn one into the other. Only when the offer
+ * is neither does the shape's size stand.
+ */
 export function kindOf(size: KickoffSize | null, offer: string | null): KickoffSize | null {
-  if (size !== null) return size;
   if (offer === "kickoff-small") return "plan";
-  return offer === "kickoff" ? "feature" : null;
+  if (offer === "kickoff") return "feature";
+  return size;
 }
 
 /** Whether the chat session is the kickoff the address names (`/new?session=<id>`). */
