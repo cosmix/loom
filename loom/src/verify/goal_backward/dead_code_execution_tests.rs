@@ -22,8 +22,14 @@ fn failed_analyzers_fail_helper_and_goal_gate() {
         ("kill -TERM $$", false),
     ] {
         let check = check(command);
-        let result =
-            run_dead_code_check(&check, dir.path(), None, CommandConfinement::default()).unwrap();
+        let result = run_dead_code_check(
+            &check,
+            dir.path(),
+            None,
+            CommandConfinement::default(),
+            None,
+        )
+        .unwrap();
         assert_eq!(result.is_empty(), passed, "helper: {command}");
         let stage = StageDefinition {
             id: "analyzer".into(),
@@ -37,6 +43,7 @@ fn failed_analyzers_fail_helper_and_goal_gate() {
             dir.path(),
             None,
             CommandConfinement::default(),
+            None,
             1,
         )
         .unwrap();
@@ -53,6 +60,7 @@ fn timed_out_analyzer_is_unavailable_analysis() {
         dir.path(),
         None,
         CommandConfinement::default(),
+        None,
         Duration::from_millis(25),
     )
     .unwrap();
@@ -67,6 +75,7 @@ fn incomplete_analyzer_output_cannot_certify_absence() {
         dir.path(),
         None,
         CommandConfinement::default(),
+        None,
     )
     .unwrap();
     assert!(gaps

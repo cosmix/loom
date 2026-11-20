@@ -7,7 +7,8 @@ use std::time::Duration;
 
 use super::result::{GapType, VerificationGap};
 use crate::plan::schema::{CommandConfinement, DeadCodeCheck};
-use crate::verify::criteria::{run_spec_in_optional_tree, CommandSpec};
+use crate::stage_cache::StageCache;
+use crate::verify::criteria::{run_spec_in_optional_stage, CommandSpec};
 
 /// Default timeout for build commands that detect dead code (120 seconds)
 pub(crate) const DEAD_CODE_TIMEOUT: Duration = Duration::from_secs(120);
@@ -20,7 +21,8 @@ pub(crate) const DEAD_CODE_TIMEOUT: Duration = Duration::from_secs(120);
 ///
 /// `tree` is the stage worktree root the command may use in full (`None`: the
 /// working directory is the tree). `confinement` is the stage's resolved level
-/// for plan-authored commands.
+/// for plan-authored commands; a confined run also uses `cache`, the stage's
+/// build caches.
 ///
 /// Returns a Vec of VerificationGap for each violation found.
 pub fn run_dead_code_check(
@@ -28,8 +30,16 @@ pub fn run_dead_code_check(
     working_dir: &Path,
     tree: Option<&Path>,
     confinement: CommandConfinement,
+    cache: Option<&StageCache>,
 ) -> Result<Vec<VerificationGap>> {
-    run_with_timeout(check, working_dir, tree, confinement, DEAD_CODE_TIMEOUT)
+    run_with_timeout(
+        check,
+        working_dir,
+        tree,
+        confinement,
+        cache,
+        DEAD_CODE_TIMEOUT,
+    )
 }
 
 fn run_with_timeout(
@@ -37,13 +47,15 @@ fn run_with_timeout(
     working_dir: &Path,
     tree: Option<&Path>,
     confinement: CommandConfinement,
+    cache: Option<&StageCache>,
     timeout: Duration,
 ) -> Result<Vec<VerificationGap>> {
     let mut gaps = Vec::new();
 
     // Run the command and capture all output
     let spec = CommandSpec::shell(check.command.as_str());
-    let result = run_spec_in_optional_tree(&spec, tree, Some(working_dir), timeout, confinement)?;
+    let working_dir = Some(working_dir);
+    let result = run_spec_in_optional_stage(&spec, tree, working_dir, timeout, confinement, cache)?;
 
     for failure in evaluate(&AssertionSpec::default(), &result).failures {
         gaps.push(VerificationGap::new(
@@ -90,8 +102,14 @@ mod tests {
         };
 
         let working_dir = env::current_dir().unwrap();
-        let result =
-            run_dead_code_check(&check, &working_dir, None, CommandConfinement::default()).unwrap();
+        let result = run_dead_code_check(
+            &check,
+            &working_dir,
+            None,
+            CommandConfinement::default(),
+            None,
+        )
+        .unwrap();
 
         assert!(
             result.is_empty(),
@@ -108,8 +126,14 @@ mod tests {
         };
 
         let working_dir = env::current_dir().unwrap();
-        let result =
-            run_dead_code_check(&check, &working_dir, None, CommandConfinement::default()).unwrap();
+        let result = run_dead_code_check(
+            &check,
+            &working_dir,
+            None,
+            CommandConfinement::default(),
+            None,
+        )
+        .unwrap();
 
         assert_eq!(result.len(), 1, "Expected one gap for the unused function");
         assert!(result[0]
@@ -127,8 +151,14 @@ mod tests {
         };
 
         let working_dir = env::current_dir().unwrap();
-        let result =
-            run_dead_code_check(&check, &working_dir, None, CommandConfinement::default()).unwrap();
+        let result = run_dead_code_check(
+            &check,
+            &working_dir,
+            None,
+            CommandConfinement::default(),
+            None,
+        )
+        .unwrap();
 
         assert_eq!(
             result.len(),
@@ -150,8 +180,14 @@ mod tests {
         };
 
         let working_dir = env::current_dir().unwrap();
-        let result =
-            run_dead_code_check(&check, &working_dir, None, CommandConfinement::default()).unwrap();
+        let result = run_dead_code_check(
+            &check,
+            &working_dir,
+            None,
+            CommandConfinement::default(),
+            None,
+        )
+        .unwrap();
 
         assert_eq!(result.len(), 2, "Expected two gaps for two violations");
     }
@@ -165,8 +201,14 @@ mod tests {
         };
 
         let working_dir = env::current_dir().unwrap();
-        let result =
-            run_dead_code_check(&check, &working_dir, None, CommandConfinement::default()).unwrap();
+        let result = run_dead_code_check(
+            &check,
+            &working_dir,
+            None,
+            CommandConfinement::default(),
+            None,
+        )
+        .unwrap();
 
         assert!(result.is_empty(), "Expected no gaps for empty output");
     }

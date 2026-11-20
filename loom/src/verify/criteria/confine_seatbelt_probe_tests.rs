@@ -43,7 +43,7 @@ pub(super) fn report(spec: &CommandSpec, tree: &Path) -> String {
 /// The `-p` argument of the command the confined run spawns, built through
 /// the same preparation as `run_spec_with_timeout`.
 fn confined_profile(spec: &CommandSpec, tree: &Path) -> anyhow::Result<String> {
-    let prepared = prepare_confined(spec, Some(tree), None, CommandConfinement::Confined)?;
+    let prepared = prepare_confined(spec, Some(tree), None, CommandConfinement::Confined, None)?;
     let wrapped = prepared
         .wrapped
         .as_ref()

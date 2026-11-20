@@ -1,3 +1,4 @@
+use super::overlay::{cache_lowers, overlay_supported};
 use super::*;
 
 #[test]
@@ -14,8 +15,8 @@ fn host_caches_are_selected_and_commands_do_not_share_writable_state() {
     command.env("HOME", fixture.path());
     let lowers = cache_lowers(&command);
     assert_eq!(lowers, vec![("uv-cache", uv.clone()), ("bun-cache", bun)]);
-    let first = CargoScratch::prepare(&command, &tree, true).unwrap();
-    let second = CargoScratch::prepare(&command, &tree, true).unwrap();
+    let first = CargoScratch::prepare(&command, &tree, true, false).unwrap();
+    let second = CargoScratch::prepare(&command, &tree, true, false).unwrap();
     first.populate().unwrap();
     second.populate().unwrap();
     assert_ne!(first.path(), second.path());

@@ -214,11 +214,11 @@ fn private_cargo_home_uses_read_only_sources_and_hides_credentials() {
         cargo.join("credentials.toml").display());
     let spec = CommandSpec::shell(line);
     let mut prepared =
-        prepare_confined(&spec, Some(&cwd), None, CommandConfinement::Inherit).unwrap();
+        prepare_confined(&spec, Some(&cwd), None, CommandConfinement::Inherit, None).unwrap();
     crate::process::apply_stage_environment(&mut prepared.command);
     prepared.command.env("CARGO_HOME", &cargo);
     let (wrapped, scratch, _) =
-        host::wrap(&prepared.command, None, host::NetworkAccess::Denied).unwrap();
+        host::wrap(&prepared.command, None, host::NetworkAccess::Denied, None).unwrap();
     prepared.wrapped = Some(wrapped);
     prepared.scratch = Some(scratch);
     let result = crate::verify::criteria::executor::run_prepared_with_timeout(
@@ -257,7 +257,7 @@ fn provisioning_exposes_only_the_resolver_symlink_target_read_only() {
         "[[ $(cat resolv.conf) == 'nameserver 127.0.0.53' ]] && ! echo changed > resolv.conf && ! cat ../secret",
     ]);
     crate::process::apply_stage_environment(&mut original);
-    let scratch = super::CargoScratch::prepare(&original, &cwd, true).unwrap();
+    let scratch = super::CargoScratch::prepare(&original, &cwd, true, false).unwrap();
     scratch.populate().unwrap();
     let wrapped = super::platform_command(
         &original,
@@ -266,7 +266,7 @@ fn provisioning_exposes_only_the_resolver_symlink_target_read_only() {
         std::path::Path::new("/bin/bash"),
         &scratch,
         super::NetworkAccess::Provision,
-        None,
+        &Default::default(),
     )
     .unwrap();
     // Inject a resolver symlink outside /etc so this reproduces the missing
@@ -298,7 +298,8 @@ fn provisioning_and_confined_commands_read_the_host_dns_configuration() {
     let spec = CommandSpec::shell("cat /etc/resolv.conf");
     let timeout = Duration::from_secs(15);
     let provision =
-        crate::verify::criteria::run_provision_with_timeout(&spec, cwd.path(), timeout).unwrap();
+        crate::verify::criteria::run_provision_with_timeout(&spec, cwd.path(), timeout, None)
+            .unwrap();
     let confined = run_spec_with_timeout(
         &spec,
         Some(cwd.path()),

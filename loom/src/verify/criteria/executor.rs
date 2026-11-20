@@ -10,6 +10,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::models::stage::CommandConfinement;
+use crate::stage_cache::StageCache;
 
 use super::config::DEFAULT_COMMAND_TIMEOUT;
 use super::confine::{self, CommandSpec, PreparedCommand};
@@ -68,7 +69,7 @@ pub fn run_spec_with_timeout(
     timeout: Duration,
     confinement: CommandConfinement,
 ) -> Result<CriterionResult> {
-    let prepared = confine::prepare_confined(spec, working_dir, None, confinement)?;
+    let prepared = confine::prepare_confined(spec, working_dir, None, confinement, None)?;
     run_prepared_with_timeout(prepared, timeout)
 }
 
@@ -83,18 +84,46 @@ pub fn run_spec_in_optional_tree(
     timeout: Duration,
     confinement: CommandConfinement,
 ) -> Result<CriterionResult> {
-    let prepared = confine::prepare_confined(spec, working_dir, tree, confinement)?;
+    run_spec_in_optional_stage(spec, tree, working_dir, timeout, confinement, None)
+}
+
+/// [`run_spec_in_optional_tree`] for a command of a stage: confined, it also
+/// reads and writes `cache`, the stage's build caches, through their variables.
+pub fn run_spec_in_stage(
+    spec: &CommandSpec,
+    tree: Option<&Path>,
+    working_dir: Option<&Path>,
+    timeout: Duration,
+    confinement: CommandConfinement,
+    cache: &StageCache,
+) -> Result<CriterionResult> {
+    run_spec_in_optional_stage(spec, tree, working_dir, timeout, confinement, Some(cache))
+}
+
+/// [`run_spec_in_stage`] when the stage's cache is known (`Some`), else
+/// [`run_spec_in_optional_tree`].
+pub fn run_spec_in_optional_stage(
+    spec: &CommandSpec,
+    tree: Option<&Path>,
+    working_dir: Option<&Path>,
+    timeout: Duration,
+    confinement: CommandConfinement,
+    cache: Option<&StageCache>,
+) -> Result<CriterionResult> {
+    let prepared = confine::prepare_confined(spec, working_dir, tree, confinement, cache)?;
     run_prepared_with_timeout(prepared, timeout)
 }
 
 /// Execute an approved provision entry with network access and the same
-/// filesystem, environment, timeout and process-retirement protections.
+/// filesystem, environment, timeout and process-retirement protections, and
+/// the stage's build caches when `cache` names them.
 pub(crate) fn run_provision_with_timeout(
     spec: &CommandSpec,
     working_dir: &Path,
     timeout: Duration,
+    cache: Option<&StageCache>,
 ) -> Result<CriterionResult> {
-    let prepared = confine::prepare_provision(spec, working_dir)?;
+    let prepared = confine::prepare_provision(spec, working_dir, cache)?;
     run_prepared_with_timeout(prepared, timeout)
 }
 

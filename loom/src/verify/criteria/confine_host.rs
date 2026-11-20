@@ -8,14 +8,26 @@
 //! A missing or unusable OS facility fails before executing repository code.
 //! A command may start below its working tree's root (a package of a monorepo);
 //! the whole tree stays visible so sibling packages and shared stores resolve.
+//! A stage's cache root (`crate::stage_cache`) is writable too; its variables
+//! replace the per-command caches and their overlays. Host build-cache seeds and
+//! toolchains installed under the home are readable for every command.
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+
+use crate::stage_cache::{Consumer, StageCache};
 
 pub(super) use super::scratch::CargoScratch;
 
 #[path = "confine_git.rs"]
 pub(super) mod git_roots;
+
+#[path = "confine_read_roots.rs"]
+mod roots;
+#[cfg(any(target_os = "linux", test))]
+pub(crate) use roots::read_roots;
+use roots::read_roots_beside;
+pub(crate) use roots::{cargo_home, command_environment, environment_path};
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 #[path = "confine_protected.rs"]
@@ -41,12 +53,24 @@ pub(crate) enum NetworkAccess {
     Provision,
 }
 
+/// What a boundary grants beyond the tree and the command's scratch.
+#[derive(Default)]
+pub(super) struct Grants<'a> {
+    /// A linked worktree's Git metadata, read-only.
+    pub(super) git: Option<&'a git_roots::GitDirs>,
+    /// The canonical stage cache root: writable, and on macOS the only place
+    /// the host-job sccache socket may be bound and reached.
+    pub(super) cache_root: Option<&'a Path>,
+}
+
 /// Wrap `original` to start in its working directory with read-write access to
-/// `tree`, the working tree containing it (the working directory when `None`).
+/// `tree`, the working tree containing it (the working directory when `None`),
+/// and to `cache`, the stage's build-cache root, when given.
 pub(super) fn wrap(
     original: &Command,
     tree: Option<&Path>,
     network: NetworkAccess,
+    cache: Option<&StageCache>,
 ) -> Result<(Command, CargoScratch, Option<git_roots::GitDirs>)> {
     let cwd = original
         .get_current_dir()
@@ -56,9 +80,14 @@ pub(super) fn wrap(
     let tree = confined_tree(tree, &cwd)?;
     let git = git_roots::git_dirs(&tree, network);
     let resolved_program = resolve_program(original, &cwd)?;
+    let cache_root = cache.map(canonical_cache_root).transpose()?;
     // Only bubblewrap can bind a private directory at the host's Cargo home path.
     let mount = cfg!(target_os = "linux");
-    let scratch = CargoScratch::prepare(original, &tree, mount)?;
+    let scratch = CargoScratch::prepare(original, &tree, mount, cache.is_some())?;
+    let grants = Grants {
+        git: git.as_ref(),
+        cache_root: cache_root.as_deref(),
+    };
     let mut command = platform_command(
         original,
         &tree,
@@ -66,11 +95,25 @@ pub(super) fn wrap(
         &resolved_program,
         &scratch,
         network,
-        git.as_ref(),
+        &grants,
     )?;
-    apply_environment(&mut command, original, &scratch);
+    apply_environment(
+        &mut command,
+        original,
+        &scratch,
+        cache.map(|cache| (cache, &*tree)),
+    );
+    if let Some(cache) = cache.filter(|_| network == NetworkAccess::Provision) {
+        apply_provision_proxy(&mut command, original, cache, &tree);
+    }
+    prepare_spawn(&mut command, &cwd);
+    Ok((command, scratch, git))
+}
+
+/// Start in `cwd` with no input, piped output and a process group of its own.
+fn prepare_spawn(command: &mut Command, cwd: &Path) {
     command
-        .current_dir(&cwd)
+        .current_dir(cwd)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -79,16 +122,24 @@ pub(super) fn wrap(
         use std::os::unix::process::CommandExt;
         command.process_group(0);
     }
-    Ok((command, scratch, git))
 }
 
 /// `original`'s environment with private tool state from `scratch`. Git reads
 /// no global config: the user's is unreadable inside the boundary, and Git
-/// fails on a config file it cannot open (Seatbelt denies the read).
-fn apply_environment(command: &mut Command, original: &Command, scratch: &CargoScratch) {
+/// fails on a config file it cannot open (Seatbelt denies the read). A stage
+/// cache, with its tree, replaces the scratch's package-manager caches.
+fn apply_environment(
+    command: &mut Command,
+    original: &Command,
+    scratch: &CargoScratch,
+    stage: Option<(&StageCache, &Path)>,
+) {
     command.env_clear();
     command.envs(original.get_envs().filter_map(|(k, v)| v.map(|v| (k, v))));
     scratch.apply_environment(command);
+    if let Some((cache, tree)) = stage {
+        apply_stage_cache(command, original, cache, tree);
+    }
     command.env("GIT_CONFIG_GLOBAL", "/dev/null");
     if cfg!(target_os = "linux") {
         // Bubblewrap mounts a private /tmp, so temporary files need no scratch
@@ -98,6 +149,45 @@ fn apply_environment(command: &mut Command, original: &Command, scratch: &CargoS
             command.env(key, "/tmp");
         }
     }
+}
+
+/// The stage cache's variables for a host job, applied after the per-command
+/// scratch so the stage's caches win. `PATH` and the developer-tools variables
+/// are already on `original` (`confine.rs::apply_confined_environment`), where
+/// the program is resolved.
+pub(super) fn apply_stage_cache(
+    command: &mut Command,
+    original: &Command,
+    cache: &StageCache,
+    tree: &Path,
+) {
+    let host = command_environment(original);
+    command.envs(cache.environment(Consumer::HostJob, tree, &host, None));
+}
+
+/// Provisioning fetches dependencies, so Go keeps the host's proxy chain after
+/// the seed instead of a host job's `off`; nothing else differs.
+fn apply_provision_proxy(
+    command: &mut Command,
+    original: &Command,
+    cache: &StageCache,
+    tree: &Path,
+) {
+    let host = command_environment(original);
+    let session = cache.environment(Consumer::Session, tree, &host, None);
+    if let Some(proxy) = session.get("GOPROXY") {
+        command.env("GOPROXY", proxy);
+    }
+}
+
+/// Create the stage cache root when missing and return its canonical path,
+/// the form Seatbelt matches and bubblewrap binds.
+fn canonical_cache_root(cache: &StageCache) -> Result<PathBuf> {
+    cache.ensure().context("prepare the stage build cache")?;
+    cache
+        .root()
+        .canonicalize()
+        .context("resolve the stage build cache")
 }
 
 fn resolve_program(original: &Command, cwd: &Path) -> Result<PathBuf> {
@@ -127,67 +217,18 @@ fn confined_tree(tree: Option<&Path>, cwd: &Path) -> Result<PathBuf> {
     Ok(tree)
 }
 
-pub(super) fn environment_path(command: &Command, key: &str) -> Option<PathBuf> {
-    command
-        .get_envs()
-        .find_map(|(name, value)| (name == key).then_some(value).flatten().map(PathBuf::from))
-}
-
-pub(super) fn cargo_home(command: &Command) -> Option<PathBuf> {
-    environment_path(command, "CARGO_HOME")
-        .or_else(|| environment_path(command, "HOME").map(|home| home.join(".cargo")))
-}
-
-pub(crate) fn read_roots(command: &Command) -> Vec<PathBuf> {
-    let mut roots: Vec<PathBuf> = [
-        "/usr",
-        "/bin",
-        "/sbin",
-        "/lib",
-        "/lib64",
-        "/etc",
-        "/System",
-        "/Library",
-        "/dev",
-        "/opt/homebrew",
-        "/private/var/db/timezone",
-    ]
-    .into_iter()
-    .map(PathBuf::from)
-    .collect();
-    if let Some(home) = environment_path(command, "HOME") {
-        roots.extend([
-            home.join(".rustup"),
-            home.join(".bun/bin"),
-            home.join(".bun/install/cache"),
-            home.join(".cache/uv"),
-            home.join("Library/Caches/uv"),
-            home.join(".local/share/uv/python"),
-        ]);
-    }
-    if let Some(rustup) = environment_path(command, "RUSTUP_HOME") {
-        roots.push(rustup);
-    }
-    if let Some(cargo) = cargo_home(command) {
-        roots.extend([cargo.join("bin"), cargo.join("registry"), cargo.join("git")]);
-    }
-    // Expose only the running binary, not its installation directory (which
-    // can contain unrelated user files). The preparer owns this environment entry.
-    if let Some(executable) = environment_path(command, "LOOM_BIN") {
-        roots.push(executable);
-    }
-    #[cfg(target_os = "macos")]
-    roots.extend(developer_tools::developer_tools().iter().cloned());
-    roots.into_iter().filter(|p| p.exists()).collect()
-}
-
 /// The working tree, the command's scratch, and its Cargo home when that is a
-/// persistent per-tree directory.
+/// persistent per-tree directory, and the stage cache root when granted.
 #[cfg(any(target_os = "macos", target_os = "linux"))]
-fn writable_roots<'a>(tree: &'a Path, scratch: &'a CargoScratch) -> Vec<&'a Path> {
+fn writable_roots<'a>(
+    tree: &'a Path,
+    scratch: &'a CargoScratch,
+    grants: &Grants<'a>,
+) -> Vec<&'a Path> {
     [tree, scratch.path()]
         .into_iter()
         .chain(scratch.linked_cargo_home())
+        .chain(grants.cache_root)
         .collect()
 }
 
@@ -199,19 +240,24 @@ fn platform_command(
     program: &Path,
     scratch: &CargoScratch,
     network: NetworkAccess,
-    git: Option<&git_roots::GitDirs>,
+    grants: &Grants<'_>,
 ) -> Result<Command> {
     let mut command = bubblewrap(network, None)?;
-    for writable in writable_roots(tree, scratch) {
-        command.arg("--bind").arg(writable).arg(writable);
+    let writable = writable_roots(tree, scratch, grants);
+    for root in &writable {
+        command.arg("--bind").arg(root).arg(root);
     }
     command.arg("--chdir").arg(cwd);
-    bind_read_roots(&mut command, original, scratch);
+    bind_roots(
+        &mut command,
+        read_roots_beside(original, &writable),
+        scratch,
+    );
     for (source, upper, work, target) in scratch.cache_overlays() {
         command.arg("--overlay-src").arg(source);
         command.arg("--overlay").arg(upper).arg(work).arg(target);
     }
-    for root in git.into_iter().flat_map(|git| &git.roots) {
+    for root in grants.git.into_iter().flat_map(|git| &git.roots) {
         command.arg("--ro-bind").arg(root).arg(root);
     }
     protected::bind(&mut command, &protected::protected(tree));
@@ -255,8 +301,14 @@ pub(crate) fn bubblewrap(network: NetworkAccess, tmpfs_bytes: Option<[u64; 2]>) 
 /// home binds after every other root in case one contains it.
 #[cfg(target_os = "linux")]
 pub(crate) fn bind_read_roots(command: &mut Command, original: &Command, scratch: &CargoScratch) {
+    bind_roots(command, read_roots(original), scratch);
+}
+
+/// [`bind_read_roots`] over `read_roots`, already chosen.
+#[cfg(target_os = "linux")]
+fn bind_roots(command: &mut Command, read_roots: Vec<PathBuf>, scratch: &CargoScratch) {
     let mount = scratch.cargo_mount();
-    let (cargo_roots, roots): (Vec<_>, Vec<_>) = read_roots(original)
+    let (cargo_roots, roots): (Vec<_>, Vec<_>) = read_roots
         .into_iter()
         .filter(|p| p != Path::new("/dev"))
         .partition(|root| {
@@ -302,7 +354,7 @@ fn platform_command(
     _: &Path,
     _: &CargoScratch,
     _: NetworkAccess,
-    _: Option<&git_roots::GitDirs>,
+    _: &Grants<'_>,
 ) -> Result<Command> {
     anyhow::bail!("confined verification is unsupported on this platform")
 }
@@ -330,6 +382,10 @@ mod tool_tests;
 #[cfg(test)]
 #[path = "confine_cargo_home_tests.rs"]
 mod cargo_home_tests;
+
+#[cfg(test)]
+#[path = "confine_stage_cache_tests.rs"]
+mod stage_cache_tests;
 
 #[cfg(all(test, target_os = "linux"))]
 #[path = "confine_scratch/warm_cache_tests.rs"]

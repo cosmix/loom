@@ -1,36 +1,29 @@
-//! Xcode developer-tools root for the macOS Seatbelt read rules.
+//! Xcode developer-tools roots for the macOS Seatbelt read rules, from the same
+//! lookup that puts the developer directories on a confined command's `PATH`
+//! ([`DeveloperTools::detect`]), so the two never disagree.
 
 use std::path::PathBuf;
-use std::process::Command;
 
-/// The Xcode Developer directory `xcode-select` reports, resolved once.
-pub(super) fn developer_tools() -> &'static Option<PathBuf> {
-    static ROOT: std::sync::OnceLock<Option<PathBuf>> = std::sync::OnceLock::new();
-    ROOT.get_or_init(|| {
-        let mut command = Command::new("/usr/bin/xcode-select");
-        command.env_clear().arg("--print-path");
-        let output = crate::process::run_bounded(&mut command, std::time::Duration::from_secs(2))
-            .ok()?
-            .completed()?;
-        if !output.status.success() {
-            return None;
+use crate::stage_cache::DeveloperTools;
+
+/// The selected developer directory, widened to Xcode's `Contents` directory
+/// (whose sibling paths its frameworks link into), and the SDK when it lies
+/// outside it. Empty when the tools are not detected.
+pub(super) fn developer_tools() -> Vec<PathBuf> {
+    let Some(tools) = DeveloperTools::detect() else {
+        return Vec::new();
+    };
+    let mut roots = Vec::new();
+    if let Ok(path) = tools.developer_dir.canonicalize() {
+        let contents = path
+            .parent()
+            .filter(|parent| path.ends_with("Developer") && parent.ends_with("Contents"));
+        roots.push(contents.map_or(path.clone(), PathBuf::from));
+    }
+    if let Ok(sdk) = tools.sdk_root.canonicalize() {
+        if !roots.iter().any(|root| sdk.starts_with(root)) {
+            roots.push(sdk);
         }
-        let path = PathBuf::from(String::from_utf8(output.stdout).ok()?.trim());
-        let path = path
-            .is_absolute()
-            .then(|| path.canonicalize().ok())
-            .flatten()?;
-        // Xcode's selected Developer directory links frameworks in sibling Contents paths.
-        Some(
-            if path.file_name().is_some_and(|name| name == "Developer")
-                && path
-                    .parent()
-                    .is_some_and(|parent| parent.file_name().is_some_and(|name| name == "Contents"))
-            {
-                path.parent()?.to_path_buf()
-            } else {
-                path
-            },
-        )
-    })
+    }
+    roots
 }

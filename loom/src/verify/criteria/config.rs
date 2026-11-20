@@ -9,6 +9,7 @@ use std::time::Duration;
 use anyhow::{bail, ensure, Result};
 
 use crate::models::stage::{CommandConfinement, Stage, TruthCheck};
+use crate::stage_cache::StageCache;
 
 use super::cache::CachePolicy;
 use super::result::CriterionResult;
@@ -61,6 +62,11 @@ pub struct CriteriaConfig {
     /// `None` confines each command to its own working directory.
     pub tree_root: Option<PathBuf>,
 
+    /// The build-cache root of the stage whose tree this run verifies: confined
+    /// commands write it and run with its variables. `None` keeps each
+    /// command's caches private and empty.
+    pub stage_cache: Option<StageCache>,
+
     /// Told each criterion's 0-based index and result as it finishes, before
     /// the next one starts. `None` by default.
     pub observer: Option<CriterionObserver>,
@@ -97,6 +103,7 @@ impl Default for CriteriaConfig {
             cache: CachePolicy::from_env(),
             cache_dir: None,
             tree_root: None,
+            stage_cache: None,
             observer: None,
             only: None,
         }
@@ -135,6 +142,12 @@ impl CriteriaConfig {
     /// containing their working directory.
     pub fn with_tree_root(mut self, tree_root: Option<&Path>) -> Self {
         self.tree_root = tree_root.map(Path::to_path_buf);
+        self
+    }
+
+    /// Give confined commands the stage's build caches.
+    pub fn with_stage_cache(mut self, stage_cache: Option<StageCache>) -> Self {
+        self.stage_cache = stage_cache;
         self
     }
 

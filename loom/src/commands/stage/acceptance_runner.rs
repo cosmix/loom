@@ -11,7 +11,7 @@ use super::criterion_output::format_criterion_result;
 use crate::git::worktree::find_repo_root_from_cwd;
 use crate::models::stage::Stage;
 use crate::verify::criteria::{
-    plan_confinement, run_acceptance_with_config, CriteriaConfig, CriterionResult,
+    plan_confinement, run_acceptance_with_config, stage_cache_for, CriteriaConfig, CriterionResult,
 };
 pub(crate) use crate::verify::execution_paths::{resolve_acceptance_dir, StageExecutionPaths};
 
@@ -127,6 +127,7 @@ pub(crate) fn run_selected_acceptance(
         .with_plan_confinement(plan_confinement(work_dir))
         .with_cache_dir(work_dir)
         .with_tree_root(paths.worktree_root.as_deref())
+        .with_stage_cache(Some(stage_cache_for(work_dir, stage_id)?))
         .with_only(only.cloned());
     let result = run_acceptance_with_config(stage, acceptance_dir, &config)
         .context("Failed to run acceptance criteria")?;

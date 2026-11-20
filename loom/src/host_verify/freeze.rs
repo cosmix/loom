@@ -54,7 +54,7 @@ use crate::verify::contracts::freeze::{
 use crate::verify::contracts::refusal::run_output_line;
 use crate::verify::contracts::site::ContractSite;
 use crate::verify::contracts::store::load_freeze;
-use crate::verify::criteria::{plan_confinement, resolve_confinement};
+use crate::verify::criteria::{confined_stage_cache, plan_confinement, resolve_confinement};
 use crate::verify::transitions::load_stage;
 
 #[path = "freeze_format.rs"]
@@ -263,6 +263,7 @@ fn run_contracts(
     outcomes: &mut Vec<CriterionOutcome>,
 ) -> Result<Vec<ContractRunReport>> {
     let mut reports = Vec::new();
+    let cache = confined_stage_cache(work_dir, &stage.id, confinement)?;
     run_memoized(
         &stage.contracts,
         |contract| prepare_planned(&site.worktree_root, &site.working_dir, planned, contract),
@@ -273,6 +274,7 @@ fn run_contracts(
                 contract,
                 prepared,
                 confinement,
+                cache.as_ref(),
                 |line| println!("{line}"),
             )
         },

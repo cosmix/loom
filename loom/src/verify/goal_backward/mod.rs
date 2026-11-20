@@ -26,6 +26,7 @@ pub use wiring_tests::verify_wiring_tests;
 use crate::context::worktree_graph::build_for_worktree;
 use crate::models::dispute::CriterionField;
 use crate::plan::schema::{CommandConfinement, StageDefinition};
+use crate::stage_cache::StageCache;
 use anyhow::{Context, Result};
 use std::path::Path;
 
@@ -33,17 +34,18 @@ use std::path::Path;
 ///
 /// `tree` is the stage worktree root those commands may use in full (`None`:
 /// `working_dir` is the tree). `confinement` is the stage's resolved level for
-/// the plan-authored commands this runs (truth checks, wiring tests, dead-code checks). `plan_version`
+/// the plan-authored commands this runs (truth checks, wiring tests, dead-code checks);
+/// confined, they also use `cache`, the stage's build caches. `plan_version`
 /// is the plan's `loom.version`, which selects the wiring rules.
 pub fn run_goal_backward_verification(
     stage_def: &StageDefinition,
     working_dir: &Path,
     tree: Option<&Path>,
     confinement: CommandConfinement,
+    cache: Option<&StageCache>,
     plan_version: u32,
 ) -> Result<GoalBackwardResult> {
     let mut gaps = Vec::new();
-
     // 1. Verify artifacts (files exist with implementation)
     if !stage_def.artifacts.is_empty() {
         gaps.extend(verify_artifacts(&stage_def.artifacts, working_dir)?);
@@ -57,16 +59,18 @@ pub fn run_goal_backward_verification(
         working_dir,
         tree,
         confinement,
+        cache,
         plan_version,
     )?);
 
     // 4. Run dead code check if configured
-    if let Some(dead_code_check) = &stage_def.dead_code_check {
+    if let Some(check) = &stage_def.dead_code_check {
         gaps.extend(run_dead_code_check(
-            dead_code_check,
+            check,
             working_dir,
             tree,
             confinement,
+            cache,
         )?);
     }
 
@@ -92,6 +96,7 @@ fn wiring_gaps(
     working_dir: &Path,
     tree: Option<&Path>,
     confinement: CommandConfinement,
+    cache: Option<&StageCache>,
     plan_version: u32,
 ) -> Result<Vec<VerificationGap>> {
     let mut gaps = Vec::new();
@@ -100,8 +105,8 @@ fn wiring_gaps(
         gaps.extend(indexed_gaps(CriterionField::Wiring, index, found));
     }
     for (index, test) in stage_def.wiring_tests.iter().enumerate() {
-        let found =
-            verify_wiring_tests(std::slice::from_ref(test), working_dir, tree, confinement)?;
+        let tests = std::slice::from_ref(test);
+        let found = verify_wiring_tests(tests, working_dir, tree, confinement, cache)?;
         gaps.extend(indexed_gaps(CriterionField::WiringTests, index, found));
     }
     Ok(gaps)
@@ -171,6 +176,7 @@ mod tests {
             tmp.path(),
             None,
             CommandConfinement::default(),
+            None,
             1,
         )
         .unwrap();

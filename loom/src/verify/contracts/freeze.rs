@@ -17,6 +17,7 @@ use crate::verify::contracts::collection::{
 use crate::verify::contracts::format_gate::{format_problems, static_problems};
 use crate::verify::contracts::site::ContractSite;
 use crate::verify::contracts::{is_contract_or_harness, normalize};
+use crate::verify::criteria::confined_stage_cache;
 
 /// How long one contract test may run.
 const CONTRACT_TIMEOUT: Duration = Duration::from_secs(300);
@@ -221,12 +222,16 @@ pub(crate) fn check_formatting(
     contracts_compile: bool,
 ) -> Result<()> {
     let stage = &site.stage;
+    // The worktree's state directory links to the repository's own.
+    let state = site.worktree_root.join(".loom/work");
+    let cache = confined_stage_cache(&state, &stage.id, confinement)?;
     let mut problems = format_problems(
         &stage.acceptance,
         &stage.setup,
         &site.worktree_root,
         &site.working_dir,
         confinement,
+        cache.as_ref(),
     )?;
     problems.extend(static_problems(
         stage,
@@ -235,6 +240,7 @@ pub(crate) fn check_formatting(
         confinement,
         written,
         contracts_compile,
+        cache.as_ref(),
     )?);
     refuse(
         &stage.id,

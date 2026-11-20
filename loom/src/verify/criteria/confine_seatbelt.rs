@@ -4,8 +4,8 @@ use anyhow::Result;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use super::NetworkAccess;
-use super::{ancestors, git_roots, protected, read_roots, writable_roots, CargoScratch};
+use super::{ancestors, protected, read_roots_beside, writable_roots, CargoScratch};
+use super::{environment_path, Grants, NetworkAccess};
 
 /// `path` as an SBPL string literal. JSON escapes each character below
 /// U+0020 (`\u0001`, `\b`), and SBPL's string reader does not document those
@@ -35,20 +35,26 @@ fn quote_checked(paths: &[PathBuf]) -> Result<impl Fn(&Path) -> String> {
 }
 
 /// Seatbelt read, write and deny rules for the tree, scratch, Cargo home, git
-/// roots and the command's own read-only roots.
+/// roots, stage cache and the command's own read-only roots.
 fn seatbelt_path_rules(
     original: &Command,
     tree: &Path,
     scratch: &CargoScratch,
-    git: Option<&git_roots::GitDirs>,
+    grants: &Grants<'_>,
 ) -> Result<String> {
     let mut profile = String::new();
-    let writable = writable_roots(tree, scratch);
+    let writable = writable_roots(tree, scratch, grants);
+    let read_only = read_roots_beside(original, &writable);
     let readable = writable.iter().map(|path| path.to_path_buf());
-    let readable = readable.chain(git.into_iter().flat_map(|git| git.roots.iter().cloned()));
-    let readable: Vec<PathBuf> = read_roots(original)
+    let git_roots = grants
+        .git
         .into_iter()
+        .flat_map(|git| git.roots.iter().cloned());
+    let readable: Vec<PathBuf> = read_only
+        .iter()
+        .cloned()
         .chain(readable)
+        .chain(git_roots)
         .map(|root| root.canonicalize().unwrap_or(root))
         .collect();
     for root in &readable {
@@ -62,25 +68,68 @@ fn seatbelt_path_rules(
         "(allow file-write* (subpath {}))(allow file-write-data (literal \"/dev/null\"))",
         writable.join(")(subpath ")
     ));
-    for root in read_roots(original)
-        .into_iter()
-        .filter(|p| p != Path::new("/dev"))
-    {
+    for root in read_only.iter().filter(|p| *p != Path::new("/dev")) {
         profile.push_str(&format!(
             "(deny file-write* (subpath {}))",
             quote(&root.canonicalize()?)?
         ));
     }
+    profile.push_str(&named_rules(original, tree, scratch, grants, &readable)?);
+    Ok(profile)
+}
+
+/// Rules naming single paths, after the root rules they refine: the tree's
+/// protected paths, files hidden above it and in the host's Cargo and Maven
+/// homes, and the stage cache's host-job sccache socket.
+fn named_rules(
+    original: &Command,
+    tree: &Path,
+    scratch: &CargoScratch,
+    grants: &Grants<'_>,
+    readable: &[PathBuf],
+) -> Result<String> {
+    let mut profile = String::new();
     let paths = protected::protected(tree);
     let named = [&paths.read_only, &paths.hidden_files, &paths.hidden_dirs];
     let named: Vec<PathBuf> = named.into_iter().flatten().cloned().collect();
     profile.push_str(&protected::seatbelt_rules(&paths, quote_checked(&named)?));
-    let hidden = ancestors::hidden_above(tree, &readable);
+    let hidden = ancestors::hidden_above(tree, readable);
     profile.push_str(&ancestors::seatbelt_rules(&hidden, quote_checked(&hidden)?));
     if let Some(home) = scratch.host_cargo_home() {
         profile.push_str(&host_cargo_home_rules(home)?);
     }
+    if let Some(home) = environment_path(original, "HOME") {
+        profile.push_str(&hidden_rules(
+            &HIDDEN_IN_M2.map(|name| home.join(".m2").join(name)),
+        )?);
+    }
+    if let Some(root) = grants.cache_root {
+        profile.push_str(&sccache_socket_rule(root)?);
+    }
     Ok(profile)
+}
+
+/// Maven files that never reach a confined command: the user's settings, which
+/// can hold repository credentials. Maven fails on a settings file it can see
+/// but not read, so they are hidden like the Cargo config files.
+const HIDDEN_IN_M2: [&str; 2] = ["settings.xml", "settings-security.xml"];
+
+/// The host-job sccache server socket in the stage cache root
+/// (`SCCACHE_SERVER_UDS`), the only Unix socket a confined command may bind or
+/// connect to: the session's and the workers' servers run compilers outside
+/// this boundary. The variable names the root as given, which can differ from
+/// the canonical `root` by a `/private` or firmlink prefix, so each spelling
+/// gets the rule.
+fn sccache_socket_rule(root: &Path) -> Result<String> {
+    let mut rules = String::new();
+    for socket in ancestors::seatbelt_spellings(&root.join("h.sock")) {
+        let socket = quote(&socket)?;
+        rules.push_str(&format!(
+            "(allow network-bind network-outbound (local unix-socket (path-literal {socket})))\
+             (allow network-outbound (remote unix-socket (path-literal {socket})))"
+        ));
+    }
+    Ok(rules)
 }
 
 /// Files in a Cargo home that never reach a confined command, as Bubblewrap's
@@ -100,19 +149,27 @@ fn host_cargo_home_rules(home: &Path) -> Result<String> {
         let state = quote(&home.join(name))?;
         rules.push_str(&format!("(allow file-read* (literal {state}))"));
     }
+    rules.push_str(&hidden_rules(
+        &HIDDEN_IN_CARGO_HOME.map(|name| home.join(name)),
+    )?);
+    Ok(rules)
+}
+
+/// Rules hiding each existing file of `paths`, metadata included, at its path
+/// and at its symlink target.
+fn hidden_rules(paths: &[PathBuf]) -> Result<String> {
     let mut hidden = Vec::new();
-    for path in HIDDEN_IN_CARGO_HOME.map(|name| home.join(name)) {
+    for path in paths {
         if path.symlink_metadata().is_err() {
             continue;
         }
         match path.canonicalize() {
-            Ok(target) if target != path => hidden.push(target),
+            Ok(target) if &target != path => hidden.push(target),
             _ => {}
         }
-        hidden.push(path);
+        hidden.push(path.clone());
     }
-    rules.push_str(&ancestors::seatbelt_rules(&hidden, quote_checked(&hidden)?));
-    Ok(rules)
+    Ok(ancestors::seatbelt_rules(&hidden, quote_checked(&hidden)?))
 }
 
 pub(super) fn platform_command(
@@ -123,7 +180,7 @@ pub(super) fn platform_command(
     program: &Path,
     scratch: &CargoScratch,
     network: NetworkAccess,
-    git: Option<&git_roots::GitDirs>,
+    grants: &Grants<'_>,
 ) -> Result<Command> {
     let launcher = Path::new("/usr/bin/sandbox-exec");
     if !launcher.is_file() {
@@ -134,7 +191,7 @@ pub(super) fn platform_command(
     if network == NetworkAccess::Provision {
         profile.push_str("(allow network-outbound)");
     }
-    profile.push_str(&seatbelt_path_rules(original, tree, scratch, git)?);
+    profile.push_str(&seatbelt_path_rules(original, tree, scratch, grants)?);
     let mut command = Command::new(launcher);
     command
         .arg("-p")

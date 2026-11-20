@@ -359,6 +359,7 @@ fn freeze_refuses_unformatted_contract_files() {
         &crate_dir,
         &crate_dir,
         CommandConfinement::Confined,
+        None,
     )
     .unwrap();
     assert_eq!(
