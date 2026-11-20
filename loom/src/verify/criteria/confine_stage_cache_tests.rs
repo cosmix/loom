@@ -14,7 +14,9 @@ use std::time::Duration;
 use crate::models::stage::CommandConfinement;
 use crate::process::sandbox_probe::skip_unless;
 use crate::stage_cache::{DeveloperTools, StageCache};
-use crate::verify::criteria::{run_spec_in_stage, CommandSpec, CriterionResult};
+use crate::verify::criteria::{
+    run_spec_in_optional_tree, run_spec_in_stage, CommandSpec, CriterionResult,
+};
 
 /// Sets `HOME` for the test's duration and restores it on drop.
 struct HomeGuard(Option<OsString>);
@@ -135,6 +137,36 @@ fn a_stage_command_resolves_git_in_the_developer_directory() {
     assert!(result.success, "{result:?}");
     let git = PathBuf::from(result.stdout.trim());
     assert!(git.starts_with(&developer.developer_dir), "{result:?}");
+}
+
+/// Without a stage cache (a plan dry run) a confined command still resolves
+/// the developer directory's tools and sees `SDKROOT`: through the shim every
+/// `cc` of a cold build would start an `xcodebuild` lookup.
+#[cfg(target_os = "macos")]
+#[test]
+#[serial_test::serial]
+fn a_command_without_a_stage_cache_resolves_git_in_the_developer_directory() {
+    let test = "a_command_without_a_stage_cache_resolves_git_in_the_developer_directory";
+    let detected = DeveloperTools::detect();
+    if skip_unless(detected.is_some(), test, "no macOS developer tools") || launcher_absent(test) {
+        return;
+    }
+    let developer = detected.unwrap();
+    let (_t, tree) = temp();
+    let spec = CommandSpec::shell("command -v git && printf '%s\\n' \"$SDKROOT\"");
+    let timeout = Duration::from_secs(60);
+    let confined = CommandConfinement::Confined;
+    let result =
+        run_spec_in_optional_tree(&spec, Some(&tree), Some(&tree), timeout, confined).unwrap();
+    assert!(result.success, "{result:?}");
+    let mut lines = result.stdout.lines();
+    let git = PathBuf::from(lines.next().unwrap_or_default());
+    assert!(git.starts_with(&developer.developer_dir), "{result:?}");
+    assert_eq!(
+        lines.next().map(PathBuf::from),
+        Some(developer.sdk_root),
+        "{result:?}"
+    );
 }
 
 /// The host-job socket in the stage root can be bound and reached; any other

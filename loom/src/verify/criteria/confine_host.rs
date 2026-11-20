@@ -29,7 +29,7 @@ mod roots;
 #[cfg(any(target_os = "linux", test))]
 pub(crate) use roots::read_roots;
 use roots::read_roots_beside;
-pub(crate) use roots::{cargo_home, command_environment, environment_path};
+pub(crate) use roots::{cargo_home, environment_path};
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 #[path = "confine_protected.rs"]

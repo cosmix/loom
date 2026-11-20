@@ -43,7 +43,6 @@ pub(crate) fn host_launcher() -> Option<std::path::PathBuf> {
 }
 
 use anyhow::{Context, Result};
-use std::collections::BTreeMap;
 use std::ffi::{OsStr, OsString};
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -54,7 +53,7 @@ use std::os::unix::process::CommandExt;
 
 use crate::fs::work_dir::WorkDir;
 use crate::models::stage::CommandConfinement;
-use crate::stage_cache::{Consumer, DeveloperTools, StageCache};
+use crate::stage_cache::{DeveloperTools, StageCache};
 
 /// A one-shot command whose environment and working directory are already
 /// fixed. Cache fingerprinting records its stable inputs and wrapper policy;
@@ -238,7 +237,7 @@ fn prepare(
     match confinement {
         // Rebuild the child's environment from the documented host allowlist so
         // plan-authored commands never inherit loom's ambient credentials.
-        CommandConfinement::Confined => apply_confined_environment(&mut cmd, cache)?,
+        CommandConfinement::Confined => apply_confined_environment(&mut cmd)?,
         // Explicit plan opt-in: the command genuinely needs what loom was given.
         CommandConfinement::Inherit => {}
     }
@@ -274,55 +273,35 @@ fn prepare(
 
 /// The running executable is a runtime dependency of `loom ...` criteria.
 /// Derive it from this process, never from a caller-supplied `LOOM_BIN`.
-/// With a stage cache, the real macOS developer tools come next on `PATH`,
-/// before the program is resolved, so a bare `git` or `cc` skips the xcrun
-/// shim, whose cache the boundary denies.
-fn apply_confined_environment(command: &mut Command, cache: Option<&StageCache>) -> Result<()> {
+/// The real macOS developer tools come next on `PATH`, before the program is
+/// resolved, so a bare `git` or `cc` skips the xcrun shim, whose cache the
+/// boundary denies. Every confined command gets them, a stage cache or not:
+/// through the shim, each `cc` starts an `xcodebuild` lookup, and a cold
+/// build with C dependencies outruns its timeout.
+fn apply_confined_environment(command: &mut Command) -> Result<()> {
     crate::process::apply_stage_environment(command);
     let executable = std::env::current_exe().context("resolve the running Loom executable")?;
     let directory = executable
         .parent()
         .context("Loom executable has no parent directory")?;
-    // Only a stage-cache run asks for the developer tools; `detect` looks
-    // them up once per process and caches the answer.
-    let developer = cache
-        .and_then(|cache| {
-            let tools = DeveloperTools::detect()?;
-            Some(developer_environment(command, cache, &tools))
-        })
+    let host_path = command
+        .get_envs()
+        .find_map(|(key, value)| (key == "PATH").then_some(value).flatten())
+        .map(OsStr::to_os_string);
+    // `detect` looks the tools up once per process and caches the answer.
+    let developer = DeveloperTools::detect()
+        .map(|tools| tools.environment(host_path.as_ref()))
         .unwrap_or_default();
     let path = developer
         .get("PATH")
-        .map(OsString::as_os_str)
-        .or_else(|| {
-            command
-                .get_envs()
-                .find_map(|(key, value)| (key == "PATH").then_some(value).flatten())
-        })
-        .unwrap_or_else(|| OsStr::new("/usr/bin:/bin"));
+        .or(host_path.as_ref())
+        .map_or(OsStr::new("/usr/bin:/bin"), OsString::as_os_str);
     let directories = std::iter::once(directory.to_path_buf())
         .chain(std::env::split_paths(path).filter(|entry| entry != directory));
     let path = std::env::join_paths(directories).context("build the confined command PATH")?;
     command.envs(&developer);
     command.env("PATH", path).env("LOOM_BIN", executable);
     Ok(())
-}
-
-/// Variables the stage cache sets for the macOS developer tools.
-const DEVELOPER_VARIABLES: [&str; 3] = ["PATH", "SDKROOT", "DEVELOPER_DIR"];
-
-/// The developer-tools part of the stage cache's host-job environment.
-fn developer_environment(
-    command: &Command,
-    cache: &StageCache,
-    tools: &DeveloperTools,
-) -> BTreeMap<String, OsString> {
-    let host = host::command_environment(command);
-    // Only the developer variables are kept, and none depends on the tree.
-    let tree = Path::new("/");
-    let mut environment = cache.environment(Consumer::HostJob, tree, &host, Some(tools));
-    environment.retain(|name, _| DEVELOPER_VARIABLES.contains(&name.as_str()));
-    environment
 }
 
 /// The build cache of stage `stage_id` in the repository whose state

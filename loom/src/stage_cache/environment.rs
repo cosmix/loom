@@ -222,6 +222,17 @@ impl StageCache {
     }
 }
 
+impl DeveloperTools {
+    /// The real developer toolchain ahead of `host_path` on `PATH`, plus
+    /// `SDKROOT` and `DEVELOPER_DIR`, for a confined command with or without
+    /// a stage cache.
+    pub fn environment(&self, host_path: Option<&OsString>) -> BTreeMap<String, OsString> {
+        let mut vars = Vars(BTreeMap::new());
+        developer_tools(&mut vars, self, host_path);
+        vars.0
+    }
+}
+
 /// `PATH` with the developer toolchain and `usr/bin` ahead of the host's,
 /// plus `SDKROOT` and `DEVELOPER_DIR`, identical for every consumer.
 fn developer_tools(vars: &mut Vars, developer: &DeveloperTools, host_path: Option<&OsString>) {
