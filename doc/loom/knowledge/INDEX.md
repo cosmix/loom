@@ -12,7 +12,7 @@
 | [entry-points.md](entry-points.md) | Key files agents should read first | 86 |
 | [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 200 |
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 250 |
-| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 258 |
+| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 262 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 116 |
 | [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 248 |
 
@@ -22,7 +22,7 @@
 
 | Topic | Blurb | Lines |
 | --- | --- | --- |
-| [adjudication-lifecycle](architecture/adjudication-lifecycle.md) |  | 166 |
+| [adjudication-lifecycle](architecture/adjudication-lifecycle.md) |  | 167 |
 | [codex-concurrency](architecture/codex-concurrency.md) | Limits | 112 |
 | [codex-plugin](architecture/codex-plugin.md) |  | 353 |
 | [completion-recovery](architecture/completion-recovery.md) | Proof | 38 |
@@ -33,8 +33,10 @@
 | [context-retrieval-routing](architecture/context-retrieval-routing.md) |  | 75 |
 | [context-retrieval-state](architecture/context-retrieval-state.md) | Layers | 179 |
 | [contract-collection](architecture/contract-collection.md) |  | 70 |
-| [contract-phase](architecture/contract-phase.md) | Freeze | 277 |
+| [contract-phase](architecture/contract-phase.md) | Freeze | 282 |
+| [contract-trial](architecture/contract-trial.md) | loom check --contracts, replacement trial receipt, overlay undo, env-red refusal | 22 |
 | [core-abstractions](architecture/core-abstractions.md) | Graph | 135 |
+| [criterion-narrowing-evidence](architecture/criterion-narrowing-evidence.md) | base-run evidence, leaves_out narrowing rules, hand-offs | 36 |
 | [daemon-launch](architecture/daemon-launch.md) |  | 71 |
 | [daemon-owned-commits](architecture/daemon-owned-commits.md) |  | 151 |
 | [directory-structure](architecture/directory-structure.md) | Tree | 50 |
@@ -120,9 +122,10 @@
 | [code-style-and-structure](conventions/code-style-and-structure.md) |  | 298 |
 | [commits](conventions/commits.md) | Format | 24 |
 | [config-plan-and-gate-rules](conventions/config-plan-and-gate-rules.md) |  | 31 |
-| [dispute-and-adjudication](conventions/dispute-and-adjudication.md) |  | 146 |
+| [dispute-and-adjudication](conventions/dispute-and-adjudication.md) |  | 155 |
 | [git-and-build-workflow](conventions/git-and-build-workflow.md) |  | 237 |
 | [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) |  | 134 |
+| [host-job-test-guards](conventions/host-job-test-guards.md) | macOS host-job denials, sandbox_probe guards, strict-CI skips | 34 |
 | [model-and-effort-config](conventions/model-and-effort-config.md) |  | 147 |
 | [plan-web](conventions/plan-web.md) |  | 215 |
 | [plan-yaml-and-hooks](conventions/plan-yaml-and-hooks.md) |  | 186 |
@@ -142,7 +145,7 @@
 | [codex-navigation](mistakes/codex-navigation.md) | Reader | 202 |
 | [codex-worker-briefing](mistakes/codex-worker-briefing.md) |  | 258 |
 | [completion-broker-credential](mistakes/completion-broker-credential.md) |  | 225 |
-| [completion-runner-blocks](mistakes/completion-runner-blocks.md) |  | 216 |
+| [completion-runner-blocks](mistakes/completion-runner-blocks.md) |  | 221 |
 | [completion-runtime](mistakes/completion-runtime.md) | Churn | 124 |
 | [computed-values-and-hidden-couplings](mistakes/computed-values-and-hidden-couplings.md) | Values | 284 |
 | [concurrency-and-locking](mistakes/concurrency-and-locking.md) |  | 207 |
@@ -152,6 +155,7 @@
 | [daemon-singleton](mistakes/daemon-singleton.md) |  | 141 |
 | [detached-spawn-in-tests](mistakes/detached-spawn-in-tests.md) |  | 65 |
 | [dev-install](mistakes/dev-install.md) | Daemon | 58 |
+| [dispute-guards-delivery](mistakes/dispute-guards-delivery.md) | host-job hangs, parallel worker collisions, scaffold wording, hook quirks | 51 |
 | [doctrine-and-acceptance](mistakes/doctrine-and-acceptance.md) |  | 392 |
 | [hooks-shell-portability](mistakes/hooks-shell-portability.md) |  | 402 |
 | [host-verify-group-containment](mistakes/host-verify-group-containment.md) |  | 47 |
@@ -227,6 +231,7 @@
 | [codex-heartbeat-starvation](concerns/codex-heartbeat-starvation.md) |  | 22 |
 | [consolidation-followups](concerns/consolidation-followups.md) |  | 148 |
 | [contract-autonomy-followups](concerns/contract-autonomy-followups.md) |  | 70 |
+| [dispute-guards-followups](concerns/dispute-guards-followups.md) | open review suggestions: trial, overlay undo, narrowing, prompt text | 38 |
 | [handoff-followups](concerns/handoff-followups.md) |  | 57 |
 | [knowledge-cli-gaps](concerns/knowledge-cli-gaps.md) |  | 108 |
 | [loom-ask-and-read-gate](concerns/loom-ask-and-read-gate.md) |  | 108 |
@@ -239,9 +244,9 @@
 | [planning-document-model-followups](concerns/planning-document-model-followups.md) |  | 170 |
 | [planning-guidance-followups](concerns/planning-guidance-followups.md) |  | 43 |
 | [planning-session-sandbox-limits](concerns/planning-session-sandbox-limits.md) |  | 238 |
-| [platform-and-commit-gaps](concerns/platform-and-commit-gaps.md) |  | 246 |
+| [platform-and-commit-gaps](concerns/platform-and-commit-gaps.md) |  | 247 |
 | [runtime-and-session-safety](concerns/runtime-and-session-safety.md) |  | 137 |
-| [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) |  | 379 |
+| [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) |  | 392 |
 | [source-graph-known-gaps](concerns/source-graph-known-gaps.md) | Limits | 94 |
 | [source-graph-review-backlog](concerns/source-graph-review-backlog.md) | Todo | 295 |
 | [stage-build-cache-gaps](concerns/stage-build-cache-gaps.md) | Open reviewer suggestions and residuals of the stage build cache | 25 |

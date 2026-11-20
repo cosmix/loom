@@ -227,7 +227,7 @@ session) resolve model and effort per key: per-invocation value → project conf
 
 ## Verification v2 Conventions
 
-Plan authoring for `version: 2`, shell-quoting adapter commands, relay `RequestKind` additions, wave briefs and the pre-commit gate: [plan-yaml-and-hooks](conventions/plan-yaml-and-hooks.md).
+Plan authoring for `version: 2`, shell-quoting adapter commands, relay `RequestKind` additions, wave briefs and the pre-commit gate: [plan-yaml-and-hooks](conventions/plan-yaml-and-hooks.md). Tests that launch confined commands, signal, allocate PTYs or bind sockets probe `process/sandbox_probe.rs` and skip in a macOS host job, while CI fails a skip: [host-job-test-guards](conventions/host-job-test-guards.md).
 
 ## Configuration, Plan and Gate Rules
 
