@@ -41,12 +41,19 @@ pub(crate) fn read_roots(command: &Command) -> Vec<PathBuf> {
 /// then the host seeds and toolchain roots its environment names, less any
 /// that is, contains or lies inside one of the canonical `writable` roots. A
 /// launcher applies read-only roots after the writable ones, so such a root
-/// would make part of the tree, or all of it, read-only.
-pub(crate) fn read_roots_beside(command: &Command, writable: &[&Path]) -> Vec<PathBuf> {
+/// would make part of the tree, or all of it, read-only. Seeds resolve from
+/// `seed_env`, loom's own host environment, when a stage cache names them
+/// from it, else from the command's environment; toolchain roots always come
+/// from the command's own `PATH`.
+pub(crate) fn read_roots_beside(
+    command: &Command,
+    writable: &[&Path],
+    seed_env: Option<&BTreeMap<String, OsString>>,
+) -> Vec<PathBuf> {
     let mut roots = installation_roots(command);
     let mut environment = command_environment(command);
     drop_loom_directory(&mut environment);
-    let host_roots = seed_read_roots(&environment)
+    let host_roots = seed_read_roots(seed_env.unwrap_or(&environment))
         .into_iter()
         .chain(toolchain_read_roots(&environment));
     for root in host_roots {

@@ -116,6 +116,7 @@ fn run_hook(fx: &Fixture, output: &Output) -> Output {
         .env("LOOM_WORK_DIR", &fx.work_dir)
         .env("XDG_RUNTIME_DIR", &fx.xdg)
         .env("HOME", &fx.home)
+        .env_remove("XDG_CACHE_HOME")
         .env("LOOM_BIN", helpers::loom_bin_path())
         .env("LOOM_HOOK_PATH", &real_path)
         .env("PATH", &real_path)

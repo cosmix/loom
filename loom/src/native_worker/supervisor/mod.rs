@@ -5,6 +5,8 @@ mod preflight;
 mod teardown;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_stage_cache;
 
 use std::collections::VecDeque;
 use std::os::fd::AsRawFd;

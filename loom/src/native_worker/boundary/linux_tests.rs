@@ -61,3 +61,19 @@ fn a_seed_overlapping_the_root_or_the_worktree_is_skipped_and_repeats_collapse()
     );
     assert_eq!(args.last().map(String::as_str), Some("/cache/root"));
 }
+
+#[test]
+fn the_root_binds_from_its_canonical_path_at_the_path_the_environment_names() {
+    let args = stage_cache_args(
+        Path::new("/given/root"),
+        Path::new("/canonical/root"),
+        Path::new("/repo/wt"),
+        &[],
+        std::iter::empty(),
+    );
+    let args: Vec<String> = args
+        .iter()
+        .map(|arg| arg.to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(args, ["--bind", "/canonical/root", "/given/root"]);
+}

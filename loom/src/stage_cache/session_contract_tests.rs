@@ -14,7 +14,7 @@ use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-/// Host package caches a session must no longer be granted.
+/// Host package caches a session is never granted.
 const HOST_CACHES: [&str; 5] = [
     "~/go/pkg",
     "~/.cache/go-build",
@@ -69,7 +69,10 @@ fn session_wrapper_exports_the_stage_cache() {
     let home_dir = short_home();
     let worktree = tree.join("work tree");
     std::fs::create_dir_all(&worktree).unwrap();
-    let cache = StageCache::resolve(&repo, "alpha", home_dir.path(), None).unwrap();
+    let socket_dir = short_home();
+    let cache = StageCache::resolve(&repo, "alpha", home_dir.path(), None)
+        .unwrap()
+        .with_socket_dir(socket_dir.path());
     let host = BTreeMap::from([
         ("HOME".to_string(), OsString::from(home_dir.path())),
         (
@@ -95,7 +98,8 @@ fn session_wrapper_exports_the_stage_cache() {
     assert!(!proxy.ends_with(",off"), "HostJob GOPROXY: {proxy}");
     let goflags = exported.get("GOFLAGS").map(String::as_str);
     assert!(!goflags.unwrap_or("").contains("-count=1"), "{goflags:?}");
-    assert!(exported["SCCACHE_SERVER_UDS"].ends_with("/s.sock"));
+    let socket = socket_dir.path().join("s.sock").display().to_string();
+    assert_eq!(exported["SCCACHE_SERVER_UDS"], socket);
     assert!(!exports.contains("h.sock"), "HostJob socket: {exports}");
 }
 

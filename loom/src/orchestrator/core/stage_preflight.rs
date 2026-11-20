@@ -8,6 +8,7 @@ use crate::hooks::find_hooks_dir;
 use crate::models::failure::FailureType;
 use crate::models::session::Session;
 use crate::models::stage::Stage;
+use crate::verify::goal_backward::VerificationGap;
 use anyhow::Result;
 /// Helpers shared by the worktree spawn path. Write-ahead session handling,
 /// live-session adoption, and Blocked-transition cleanup live in
@@ -115,25 +116,9 @@ impl Orchestrator {
         let stage_id = stage.id.clone();
 
         println!("  Running before-stage checks for '{stage_id}'...");
-        match crate::verify::before_after::run_before_stage_checks(
-            &stage.before_stage,
-            &before_stage_check_dir(stage, worktree_path),
-            Some(worktree_path),
-        ) {
+        match self.run_before_stage_checks(stage, worktree_path) {
             Ok(gaps) if !gaps.is_empty() => {
-                for gap in &gaps {
-                    eprintln!("  ✗ Before-stage: {}", gap.description);
-                    eprintln!("    → {}", gap.suggestion);
-                }
-                eprintln!(
-                    "Before-stage verification failed for '{stage_id}' - pre-conditions not met"
-                );
-
-                let evidence = gaps.iter().map(|gap| gap.description.clone()).collect();
-                self.block_stage(
-                    &stage_id,
-                    StageBlock::new(FailureType::TestFailure, evidence),
-                );
+                self.block_on_before_stage_gaps(&stage_id, &gaps);
                 Ok(false)
             }
             Ok(_) => {
@@ -147,6 +132,36 @@ impl Orchestrator {
             }
         }
     }
+
+    /// Before-stage checks always run confined, so they share the stage's cache.
+    fn run_before_stage_checks(
+        &self,
+        stage: &Stage,
+        worktree_path: &std::path::Path,
+    ) -> Result<Vec<VerificationGap>> {
+        let cache = crate::verify::criteria::stage_cache_for(&self.config.work_dir, &stage.id)?;
+        crate::verify::before_after::run_before_stage_checks(
+            &stage.before_stage,
+            &before_stage_check_dir(stage, worktree_path),
+            Some(worktree_path),
+            Some(&cache),
+        )
+    }
+
+    fn block_on_before_stage_gaps(&mut self, stage_id: &str, gaps: &[VerificationGap]) {
+        for gap in gaps {
+            eprintln!("  ✗ Before-stage: {}", gap.description);
+            eprintln!("    → {}", gap.suggestion);
+        }
+        eprintln!("Before-stage verification failed for '{stage_id}' - pre-conditions not met");
+
+        let evidence = gaps.iter().map(|gap| gap.description.clone()).collect();
+        self.block_stage(
+            stage_id,
+            StageBlock::new(FailureType::TestFailure, evidence),
+        );
+    }
+
     fn has_prior_stage_work(
         &self,
         stage: &Stage,

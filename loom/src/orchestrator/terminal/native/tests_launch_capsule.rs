@@ -28,14 +28,14 @@ fn mode(path: &Path) -> u32 {
 /// every fact is fixed and passes the preflight: all capsule flags
 /// supported, this build's hooks and the loom binary in the temp dir outside
 /// the repository and scratch roots, and a known hook PATH.
-struct Fixture {
-    temp: TempDir,
-    repo: PathBuf,
-    work_dir: PathBuf,
-    host: LaunchHost,
+pub(super) struct Fixture {
+    pub(super) temp: TempDir,
+    pub(super) repo: PathBuf,
+    pub(super) work_dir: PathBuf,
+    pub(super) host: LaunchHost,
 }
 
-fn fixture() -> Fixture {
+pub(super) fn fixture() -> Fixture {
     let temp = TempDir::new().unwrap();
     let repo = temp.path().join("repo");
     let work_dir = repo.join(".loom").join("work");
@@ -94,7 +94,7 @@ fn try_launch(fixture: &Fixture, kind: SessionType) -> Result<(Session, String)>
 }
 
 /// [`try_launch`] for a caller-built `stage`.
-fn try_launch_stage(
+pub(super) fn try_launch_stage(
     fixture: &Fixture,
     kind: SessionType,
     stage: &Stage,
@@ -124,12 +124,12 @@ fn try_launch_stage(
     Ok((session, std::fs::read_to_string(wrapper).unwrap()))
 }
 
-fn launch(fixture: &Fixture, kind: SessionType) -> (Session, String) {
+pub(super) fn launch(fixture: &Fixture, kind: SessionType) -> (Session, String) {
     try_launch(fixture, kind)
         .unwrap_or_else(|error| panic!("a {kind} launch must succeed: {error:#}"))
 }
 
-fn capsule_of(fixture: &Fixture, session: &Session) -> Value {
+pub(super) fn capsule_of(fixture: &Fixture, session: &Session) -> Value {
     let path = session_settings_path(&fixture.work_dir, &session.id);
     serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
 }

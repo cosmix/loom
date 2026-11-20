@@ -43,7 +43,8 @@ impl Fixture {
             .current_dir(cwd)
             .env("LOOM_VERIFY_BUDGET_POLICY", policy)
             .env("LOOM_WORK_DIR", &self.work_dir)
-            .env("HOME", &self.home);
+            .env("HOME", &self.home)
+            .env_remove("XDG_CACHE_HOME");
         isolate_git(&mut command);
         command
     }

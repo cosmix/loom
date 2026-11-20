@@ -61,6 +61,19 @@ const HOST_ENV_ALLOWLIST: &[&str] = &[
     // operator, and so another `commit.gpgsign`.
     "XDG_CONFIG_HOME",
     "GIT_CONFIG_GLOBAL",
+    // Where the host's build caches live, read by the stage cache as
+    // read-only seeds (`stage_cache::host_env_from_process`); `XDG_CACHE_HOME`
+    // also places the stage cache root, so the daemon and the CLI resolve the
+    // same one. `GOPROXY` and `GOFLAGS` are forwarded too; the capture
+    // drops a `GOPROXY` with URL userinfo. `MAVEN_OPTS` stays out: it can
+    // carry proxy passwords.
+    "GOPATH",
+    "GOMODCACHE",
+    "CCACHE_DIR",
+    "GRADLE_USER_HOME",
+    "XDG_CACHE_HOME",
+    "GOPROXY",
+    "GOFLAGS",
 ];
 
 const LOOM_CONTROL_ALLOWLIST: &[&str] = &["LOOM_HOOKS_DIR", "LOOM_TERMINAL"];
@@ -95,10 +108,16 @@ impl DaemonEnvironment {
         let variables = source
             .into_iter()
             .map(|(key, value)| (key.into(), value.into()))
-            .filter(|(key, _)| is_allowed(key))
+            .filter(|(key, value)| is_allowed(key) && !is_credential_proxy(key, value))
             .collect();
         Self { variables }
     }
+}
+
+/// A `GOPROXY` carrying URL userinfo is a credential: it never enters the
+/// daemon's environment.
+fn is_credential_proxy(key: &OsString, value: &OsString) -> bool {
+    key == "GOPROXY" && crate::stage_cache::goproxy_has_userinfo(value)
 }
 
 /// The allowlisted subset of this process's environment: exactly what the
@@ -239,6 +258,38 @@ mod tests {
                 "{name:?} reaches a stage session"
             );
         }
+    }
+
+    #[test]
+    fn build_cache_settings_are_captured_and_maven_opts_is_not() {
+        let forwarded = [
+            "GOPATH",
+            "GOMODCACHE",
+            "CCACHE_DIR",
+            "GRADLE_USER_HOME",
+            "XDG_CACHE_HOME",
+            "GOPROXY",
+            "GOFLAGS",
+        ];
+        for name in forwarded {
+            assert!(is_allowed(OsStr::new(name)), "{name} is forwarded");
+        }
+        assert!(
+            !is_allowed(OsStr::new("MAVEN_OPTS")),
+            "MAVEN_OPTS can carry a proxy password"
+        );
+    }
+
+    #[test]
+    fn a_goproxy_with_userinfo_is_not_captured() {
+        let captured = |proxy: &str| {
+            DaemonEnvironment::capture_from([("GOPROXY", proxy)])
+                .variables
+                .len()
+        };
+        assert_eq!(captured("https://user:secret@proxy.example,direct"), 0);
+        assert_eq!(captured("user:token@proxy.example,direct"), 0);
+        assert_eq!(captured("https://proxy.example/a@b,direct"), 1);
     }
 
     #[test]

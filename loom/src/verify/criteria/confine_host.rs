@@ -12,10 +12,12 @@
 //! replace the per-command caches and their overlays. Host build-cache seeds and
 //! toolchains installed under the home are readable for every command.
 use anyhow::{Context, Result};
+use std::collections::BTreeMap;
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use crate::stage_cache::{Consumer, StageCache};
+use crate::stage_cache::{go_proxy, host_env_from_process, Consumer, StageCache};
 
 pub(super) use super::scratch::CargoScratch;
 
@@ -63,6 +65,15 @@ pub(super) struct Grants<'a> {
     pub(super) cache_root: Option<&'a Path>,
 }
 
+impl Grants<'_> {
+    /// The environment the stage cache's seeds are named from, when there is a
+    /// stage cache: loom's own, so a seed's read root and the variable naming
+    /// it agree.
+    pub(super) fn seed_env(&self) -> Option<BTreeMap<String, OsString>> {
+        self.cache_root.map(|_| host_env_from_process())
+    }
+}
+
 /// Wrap `original` to start in its working directory with read-write access to
 /// `tree`, the working tree containing it (the working directory when `None`),
 /// and to `cache`, the stage's build-cache root, when given.
@@ -80,7 +91,15 @@ pub(super) fn wrap(
     let tree = confined_tree(tree, &cwd)?;
     let git = git_roots::git_dirs(&tree, network);
     let resolved_program = resolve_program(original, &cwd)?;
-    let cache_root = cache.map(canonical_cache_root).transpose()?;
+    let cache_root = cache
+        .map(|cache| cache.ensure().context("prepare the stage build cache"))
+        .transpose()?;
+    // Grant, bind and variables name the one canonical root: the configured
+    // one can reach it through a symlink the boundary would not recreate.
+    let cache = cache
+        .zip(cache_root.as_ref())
+        .map(|(cache, root)| cache.clone().at_root(root.clone()));
+    let cache = cache.as_ref();
     // Only bubblewrap can bind a private directory at the host's Cargo home path.
     let mount = cfg!(target_os = "linux");
     let scratch = CargoScratch::prepare(original, &tree, mount, cache.is_some())?;
@@ -97,14 +116,12 @@ pub(super) fn wrap(
         network,
         &grants,
     )?;
-    apply_environment(
-        &mut command,
-        original,
-        &scratch,
-        cache.map(|cache| (cache, &*tree)),
-    );
-    if let Some(cache) = cache.filter(|_| network == NetworkAccess::Provision) {
-        apply_provision_proxy(&mut command, original, cache, &tree);
+    apply_environment(&mut command, original, &scratch, cache, &tree);
+    if cache.is_some() && network == NetworkAccess::Provision {
+        // Provisioning fetches, so Go takes the session's proxy chain
+        // after the seed instead of a host job's `off`.
+        let proxy = go_proxy(Consumer::Session, &host_env_from_process());
+        command.env("GOPROXY", proxy);
     }
     prepare_spawn(&mut command, &cwd);
     Ok((command, scratch, git))
@@ -127,18 +144,24 @@ fn prepare_spawn(command: &mut Command, cwd: &Path) {
 /// `original`'s environment with private tool state from `scratch`. Git reads
 /// no global config: the user's is unreadable inside the boundary, and Git
 /// fails on a config file it cannot open (Seatbelt denies the read). A stage
-/// cache, with its tree, replaces the scratch's package-manager caches.
+/// cache replaces the scratch's package-manager caches: its variables come
+/// after the scratch's so the stage's caches win. `PATH` and the
+/// developer-tools variables are already on `original`
+/// (`confine.rs::apply_confined_environment`), where the program is resolved;
+/// seeds resolve from loom's own environment.
 fn apply_environment(
     command: &mut Command,
     original: &Command,
     scratch: &CargoScratch,
-    stage: Option<(&StageCache, &Path)>,
+    cache: Option<&StageCache>,
+    tree: &Path,
 ) {
     command.env_clear();
     command.envs(original.get_envs().filter_map(|(k, v)| v.map(|v| (k, v))));
     scratch.apply_environment(command);
-    if let Some((cache, tree)) = stage {
-        apply_stage_cache(command, original, cache, tree);
+    if let Some(cache) = cache {
+        let host = host_env_from_process();
+        command.envs(cache.environment(Consumer::HostJob, tree, &host, None));
     }
     command.env("GIT_CONFIG_GLOBAL", "/dev/null");
     if cfg!(target_os = "linux") {
@@ -151,45 +174,6 @@ fn apply_environment(
     }
 }
 
-/// The stage cache's variables for a host job, applied after the per-command
-/// scratch so the stage's caches win. `PATH` and the developer-tools variables
-/// are already on `original` (`confine.rs::apply_confined_environment`), where
-/// the program is resolved.
-pub(super) fn apply_stage_cache(
-    command: &mut Command,
-    original: &Command,
-    cache: &StageCache,
-    tree: &Path,
-) {
-    let host = command_environment(original);
-    command.envs(cache.environment(Consumer::HostJob, tree, &host, None));
-}
-
-/// Provisioning fetches dependencies, so Go keeps the host's proxy chain after
-/// the seed instead of a host job's `off`; nothing else differs.
-fn apply_provision_proxy(
-    command: &mut Command,
-    original: &Command,
-    cache: &StageCache,
-    tree: &Path,
-) {
-    let host = command_environment(original);
-    let session = cache.environment(Consumer::Session, tree, &host, None);
-    if let Some(proxy) = session.get("GOPROXY") {
-        command.env("GOPROXY", proxy);
-    }
-}
-
-/// Create the stage cache root when missing and return its canonical path,
-/// the form Seatbelt matches and bubblewrap binds.
-fn canonical_cache_root(cache: &StageCache) -> Result<PathBuf> {
-    cache.ensure().context("prepare the stage build cache")?;
-    cache
-        .root()
-        .canonicalize()
-        .context("resolve the stage build cache")
-}
-
 fn resolve_program(original: &Command, cwd: &Path) -> Result<PathBuf> {
     let program = original.get_program();
     let path = original
@@ -200,14 +184,29 @@ fn resolve_program(original: &Command, cwd: &Path) -> Result<PathBuf> {
 }
 
 /// The tree a command starting in the canonical `cwd` may use: `tree`, which
-/// must contain `cwd`, else `cwd` itself.
+/// must contain `cwd`, else `cwd` itself. The tree is writable to the code it
+/// holds, which could swap it for a symlink after a full resolve; only its
+/// parent is resolved, and the tree itself must be a directory, so the
+/// boundary grants that path and never a link's target.
 fn confined_tree(tree: Option<&Path>, cwd: &Path) -> Result<PathBuf> {
     let Some(tree) = tree else {
         return Ok(cwd.to_path_buf());
     };
-    let tree = tree
-        .canonicalize()
+    let tree = match (tree.parent(), tree.file_name()) {
+        (Some(parent), Some(name)) if !parent.as_os_str().is_empty() => {
+            parent.canonicalize().map(|parent| parent.join(name))
+        }
+        _ => tree.canonicalize(),
+    }
+    .context("resolve confined working tree")?;
+    let metadata = tree
+        .symlink_metadata()
         .context("resolve confined working tree")?;
+    anyhow::ensure!(
+        metadata.is_dir(),
+        "confined working tree {} must be a directory, not a symlink",
+        tree.display()
+    );
     anyhow::ensure!(
         cwd.starts_with(&tree),
         "confined working directory {} is outside its working tree {}",
@@ -250,7 +249,7 @@ fn platform_command(
     command.arg("--chdir").arg(cwd);
     bind_roots(
         &mut command,
-        read_roots_beside(original, &writable),
+        read_roots_beside(original, &writable, grants.seed_env().as_ref()),
         scratch,
     );
     for (source, upper, work, target) in scratch.cache_overlays() {

@@ -11,7 +11,8 @@ use super::criterion_output::format_criterion_result;
 use crate::git::worktree::find_repo_root_from_cwd;
 use crate::models::stage::Stage;
 use crate::verify::criteria::{
-    plan_confinement, run_acceptance_with_config, stage_cache_for, CriteriaConfig, CriterionResult,
+    confined_stage_cache, plan_confinement, resolve_confinement, run_acceptance_with_config,
+    CriteriaConfig, CriterionResult,
 };
 pub(crate) use crate::verify::execution_paths::{resolve_acceptance_dir, StageExecutionPaths};
 
@@ -98,6 +99,23 @@ pub(crate) fn run_acceptance_with_display(
     run_selected_acceptance(stage, stage_id, paths, work_dir, options, None)
 }
 
+/// The acceptance configuration of one run: confined commands share the
+/// stage's build cache, inherited ones get none.
+fn acceptance_config(
+    stage: &Stage,
+    stage_id: &str,
+    work_dir: &Path,
+    paths: &StageExecutionPaths,
+) -> Result<CriteriaConfig> {
+    let plan = plan_confinement(work_dir);
+    let confinement = resolve_confinement(stage.sandbox.command_confinement, plan);
+    Ok(CriteriaConfig::default()
+        .with_plan_confinement(plan)
+        .with_cache_dir(work_dir)
+        .with_tree_root(paths.worktree_root.as_deref())
+        .with_stage_cache(confined_stage_cache(work_dir, stage_id, confinement)?))
+}
+
 /// [`run_acceptance_with_display`] limited to the 0-based criteria in `only`
 /// (`loom check --criterion`); `None` runs every criterion.
 pub(crate) fn run_selected_acceptance(
@@ -123,12 +141,7 @@ pub(crate) fn run_selected_acceptance(
         println!("  (working directory: {})", dir.display());
     }
 
-    let config = CriteriaConfig::default()
-        .with_plan_confinement(plan_confinement(work_dir))
-        .with_cache_dir(work_dir)
-        .with_tree_root(paths.worktree_root.as_deref())
-        .with_stage_cache(Some(stage_cache_for(work_dir, stage_id)?))
-        .with_only(only.cloned());
+    let config = acceptance_config(stage, stage_id, work_dir, paths)?.with_only(only.cloned());
     let result = run_acceptance_with_config(stage, acceptance_dir, &config)
         .context("Failed to run acceptance criteria")?;
 

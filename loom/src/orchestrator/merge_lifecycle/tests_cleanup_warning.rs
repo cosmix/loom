@@ -119,3 +119,54 @@ fn reconciled_git_resources_keep_a_retained_directory_warning_across_recovery() 
         assert!(worktree.join(".claude/.cc-writes").is_dir());
     }
 }
+
+/// A knowledge stage has no worktree to carry its build cache's removal: after
+/// the merge, the lifecycle removes the cache itself.
+mod worktreeless_stage_cache {
+    use super::super::test_support::{finish_session, write_live_session};
+    use super::super::tests::{cleanup_from_outside, init_repo};
+    use super::CleanupOutcome;
+    use crate::models::session::SessionType;
+    use crate::test_cache_env::CacheEnv;
+    use serial_test::serial;
+
+    const STAGE: &str = "knowledge-stage";
+
+    fn seeded_cache(env: &CacheEnv, root: &std::path::Path) -> std::path::PathBuf {
+        let cache = env.root_of(root, STAGE);
+        std::fs::create_dir_all(&cache).unwrap();
+        std::fs::write(cache.join("artifact"), "built").unwrap();
+        cache
+    }
+
+    #[test]
+    #[serial]
+    fn the_cache_of_a_stage_without_a_worktree_is_removed() {
+        let env = CacheEnv::pin();
+        let temp = init_repo();
+        let cache = seeded_cache(&env, temp.path());
+
+        let outcome = cleanup_from_outside(temp.path(), STAGE);
+
+        assert!(
+            matches!(outcome, CleanupOutcome::NothingToDo),
+            "got {outcome:?}"
+        );
+        assert!(!cache.exists(), "the stage's cache must be removed");
+    }
+
+    #[test]
+    #[serial]
+    fn a_live_session_keeps_the_cache_of_a_stage_without_a_worktree() {
+        let env = CacheEnv::pin();
+        let temp = init_repo();
+        let cache = seeded_cache(&env, temp.path());
+        let work_dir = temp.path().join(".loom").join("work");
+        let mut session = write_live_session(&work_dir, STAGE, SessionType::Merge);
+
+        cleanup_from_outside(temp.path(), STAGE);
+
+        assert!(cache.exists(), "a live session still uses the cache");
+        finish_session(&work_dir, &mut session);
+    }
+}

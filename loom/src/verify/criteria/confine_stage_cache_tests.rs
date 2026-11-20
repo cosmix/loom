@@ -80,7 +80,7 @@ fn host_roots_overlapping_a_writable_root_are_left_out() {
     let path = std::env::join_paths([&inside, &home.join("src"), &beside]).unwrap();
     let mut command = Command::new("/bin/sh");
     command.env("HOME", &home).env("PATH", path);
-    let roots = super::read_roots_beside(&command, &[tree.as_path()]);
+    let roots = super::read_roots_beside(&command, &[tree.as_path()], None);
     assert!(roots.contains(&beside), "{roots:?}");
     for root in &roots {
         let overlaps = root.starts_with(&tree) || tree.starts_with(root);
@@ -109,7 +109,7 @@ fn the_loom_executable_directory_is_not_a_toolchain_root() {
         .env("PATH", path)
         .env("LOOM_BIN", &loom);
     let (_t, tree) = temp();
-    let roots = super::read_roots_beside(&command, &[tree.as_path()]);
+    let roots = super::read_roots_beside(&command, &[tree.as_path()], None);
     assert!(roots.contains(&beside), "{roots:?}");
     assert!(roots.contains(&loom), "{roots:?}");
     assert!(!roots.contains(&release), "{roots:?}");
@@ -179,13 +179,128 @@ fn maven_settings_are_hidden_inside_the_boundary() {
     let ((_r, repo), (_h, home), (_t, tree)) = (temp(), temp(), temp());
     std::fs::create_dir_all(home.join(".m2/repository")).unwrap();
     std::fs::write(home.join(".m2/repository/seed"), "SEED\n").unwrap();
-    std::fs::write(home.join(".m2/settings.xml"), "<settings/>\n").unwrap();
+    for name in ["settings.xml", "settings-security.xml"] {
+        std::fs::write(home.join(".m2").join(name), "<settings/>\n").unwrap();
+    }
     let _home = HomeGuard::pin(&home);
     let cache = StageCache::resolve(&repo, "alpha", &home, None).unwrap();
     let script = "cat \"$HOME/.m2/repository/seed\"; \
-                  test -e \"$HOME/.m2/settings.xml\" && echo VISIBLE; echo DONE";
+                  test -e \"$HOME/.m2/settings.xml\" && echo VISIBLE; \
+                  test -e \"$HOME/.m2/settings-security.xml\" && echo SECURITY; echo DONE";
     let result = run_in_stage(script, &tree, &cache);
     assert!(result.stdout.contains("SEED"), "{result:?}");
     assert!(result.stdout.contains("DONE"), "{result:?}");
     assert!(!result.stdout.contains("VISIBLE"), "{result:?}");
+    assert!(!result.stdout.contains("SECURITY"), "{result:?}");
+}
+
+/// The granted tree is its canonical parent joined with its own name: a tree
+/// swapped for a symlink is refused, never resolved to the link's target.
+#[test]
+fn a_tree_that_is_a_symlink_is_refused() {
+    let ((_b, base), (_t, target)) = (temp(), temp());
+    let tree = base.join("tree");
+    std::fs::create_dir(&tree).unwrap();
+    assert_eq!(super::confined_tree(Some(&tree), &tree).unwrap(), tree);
+    let link = base.join("link");
+    std::os::unix::fs::symlink(&target, &link).unwrap();
+    let error = super::confined_tree(Some(&link), &target).unwrap_err();
+    assert!(format!("{error:#}").contains("not a symlink"), "{error:#}");
+}
+
+/// The stage cache root granted is the one `ensure` opened without following
+/// links, under the canonical base, even when the base is reached through a
+/// symlink.
+#[test]
+fn the_granted_root_is_built_from_the_canonical_base() {
+    let ((_r, repo), (_h, home), (_x, real)) = (temp(), temp(), temp());
+    let xdg = home.join("xdg-link");
+    std::os::unix::fs::symlink(&real, &xdg).unwrap();
+    let cache = StageCache::resolve(&repo, "alpha", &home, Some(&xdg)).unwrap();
+    let granted = cache.ensure().unwrap();
+    assert!(granted.starts_with(&real), "{granted:?}");
+    assert_eq!(granted.file_name(), cache.root().file_name());
+}
+
+/// Sets one variable for the test's duration and restores it on drop.
+struct VarGuard(&'static str, Option<OsString>);
+
+impl VarGuard {
+    fn set(name: &'static str, value: &Path) -> Self {
+        let saved = std::env::var_os(name);
+        std::env::set_var(name, value);
+        Self(name, saved)
+    }
+}
+
+impl Drop for VarGuard {
+    fn drop(&mut self) {
+        match &self.1 {
+            Some(value) => std::env::set_var(self.0, value),
+            None => std::env::remove_var(self.0),
+        }
+    }
+}
+
+/// A relocated Go seed (`GOMODCACHE` outside HOME) is readable in a host job,
+/// and the `GOPROXY` the job gets names that same path.
+#[test]
+#[serial_test::serial]
+fn a_relocated_seed_is_readable_and_named_by_the_same_path() {
+    let ((_r, repo), (_h, home), (_g, gomod), (_t, tree)) = (temp(), temp(), temp(), temp());
+    let seed = gomod.join("cache/download");
+    std::fs::create_dir_all(&seed).unwrap();
+    let _home = HomeGuard::pin(&home);
+    let _gomod = VarGuard::set("GOMODCACHE", &gomod);
+    let cache = StageCache::resolve(&repo, "alpha", &home, None).unwrap();
+    let grants = super::Grants {
+        git: None,
+        cache_root: Some(Path::new("/unused")),
+    };
+    let seed_env = grants.seed_env().unwrap();
+    let mut command = Command::new("/bin/sh");
+    command.env("HOME", &home).env("PATH", "/usr/bin:/bin");
+    let roots = super::read_roots_beside(&command, &[tree.as_path()], Some(&seed_env));
+    assert!(roots.contains(&seed), "{roots:?}");
+    let env = cache.environment(
+        crate::stage_cache::Consumer::HostJob,
+        &tree,
+        &seed_env,
+        None,
+    );
+    let proxy = env["GOPROXY"].to_string_lossy().into_owned();
+    assert!(
+        proxy.contains(&format!("file://{}", seed.display())),
+        "{proxy}"
+    );
+}
+
+/// A host job's variables name the canonical root `wrap` grants, even when the
+/// cache base is reached through a symlink.
+#[test]
+#[serial_test::serial]
+fn a_symlinked_cache_base_gives_variables_under_the_granted_root() {
+    if launcher_absent("a_symlinked_cache_base_gives_variables_under_the_granted_root") {
+        return;
+    }
+    let ((_r, repo), (_h, home), (_t, tree)) = (temp(), temp(), temp());
+    let (_x, real) = short_temp();
+    let (_y, links) = short_temp();
+    let xdg = links.join("xdg-link");
+    std::os::unix::fs::symlink(&real, &xdg).unwrap();
+    let _home = HomeGuard::pin(&home);
+    let cache = StageCache::resolve(&repo, "alpha", &home, Some(&xdg)).unwrap();
+    let mut original = Command::new("/bin/sh");
+    original.current_dir(&tree);
+    let network = super::NetworkAccess::Denied;
+    let (wrapped, _scratch, _git) =
+        super::wrap(&original, Some(&tree), network, Some(&cache)).unwrap();
+    let granted = cache.ensure().unwrap();
+    assert!(granted.starts_with(&real), "{granted:?}");
+    let named = |name: &str| {
+        let value = wrapped.get_envs().find(|(key, _)| *key == name);
+        PathBuf::from(value.unwrap().1.unwrap())
+    };
+    assert_eq!(named("GOCACHE"), granted.join("go-build"));
+    assert_eq!(named("SCCACHE_SERVER_UDS"), granted.join("h.sock"));
 }

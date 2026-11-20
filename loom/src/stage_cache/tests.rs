@@ -1,18 +1,18 @@
 //! Unit tests for the cases the contract tests leave open.
 
 use super::{seed_read_roots, toolchain_read_roots, Consumer, StageCache};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
-fn temp() -> (tempfile::TempDir, PathBuf) {
+pub(super) fn temp() -> (tempfile::TempDir, PathBuf) {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().canonicalize().unwrap();
     (dir, path)
 }
 
-fn host(home: &Path, extra: &[(&str, &str)]) -> BTreeMap<String, OsString> {
+pub(super) fn host(home: &Path, extra: &[(&str, &str)]) -> BTreeMap<String, OsString> {
     let mut env = BTreeMap::from([("HOME".to_string(), OsString::from(home))]);
     for (name, value) in extra {
         env.insert(name.to_string(), OsString::from(value));
@@ -20,7 +20,7 @@ fn host(home: &Path, extra: &[(&str, &str)]) -> BTreeMap<String, OsString> {
     env
 }
 
-fn var(env: &BTreeMap<String, OsString>, name: &str) -> Option<String> {
+pub(super) fn var(env: &BTreeMap<String, OsString>, name: &str) -> Option<String> {
     env.get(name).map(|v| v.to_string_lossy().into_owned())
 }
 
@@ -68,19 +68,58 @@ fn goflags_count_is_not_duplicated() {
     assert_eq!(var(&worker, "GOFLAGS"), None);
 }
 
+/// A seed whose path would split a list entry (`GOPROXY`, ccache's remote
+/// storage, `MAVEN_OPTS`) is left out of the environment and the read roots.
 #[test]
-fn maven_opts_append_to_the_host_value() {
+fn a_seed_that_breaks_list_syntax_is_left_out() {
+    let ((_r, repo), (_t, tree), (_b, base)) = (temp(), temp(), temp());
+    for name in ["home with space", "home,comma", "home|bar"] {
+        let home = base.join(name);
+        for seed in ["go/pkg/mod/cache/download", ".m2/repository", "ccache"] {
+            std::fs::create_dir_all(home.join(seed)).unwrap();
+        }
+        let ccache = home.join("ccache").display().to_string();
+        let env_in = host(&home, &[("CCACHE_DIR", ccache.as_str())]);
+        let cache = StageCache::resolve(&repo, "alpha", &home, None).unwrap();
+        let env = cache.environment(Consumer::Session, &tree, &env_in, None);
+        let proxy = var(&env, "GOPROXY");
+        assert_eq!(proxy.as_deref(), Some("https://proxy.golang.org,direct"));
+        assert_eq!(var(&env, "CCACHE_REMOTE_STORAGE"), None, "{name}");
+        let maven = var(&env, "MAVEN_OPTS").unwrap();
+        assert!(!maven.contains("maven.repo.local.tail"), "{maven}");
+        assert!(seed_read_roots(&env_in).is_empty(), "{name}");
+    }
+}
+
+/// A session's and a worker's sccache sockets live in the private directory
+/// they are given, never in the shared root; without one, or past
+/// `sun_path`, the variable is left out. A host job's stays in the root.
+#[test]
+fn session_and_worker_sockets_live_in_their_own_directory() {
     let ((_r, repo), (_h, home), (_t, tree)) = (temp(), temp(), temp());
-    let cache = StageCache::resolve(&repo, "alpha", &home, None).unwrap();
-    let env = cache.environment(
-        Consumer::Session,
-        &tree,
-        &host(&home, &[("MAVEN_OPTS", "-Xmx1g")]),
-        None,
+    let host = host(&home, &[]);
+    let shared = StageCache::resolve(&repo, "alpha", &home, Some(Path::new("/xdg"))).unwrap();
+    let socket = |cache: &StageCache, consumer| {
+        var(
+            &cache.environment(consumer, &tree, &host, None),
+            "SCCACHE_SERVER_UDS",
+        )
+    };
+    for consumer in [Consumer::Session, Consumer::Worker] {
+        assert_eq!(socket(&shared, consumer), None, "{consumer:?}");
+    }
+    let private = shared.clone().with_socket_dir(Path::new("/run/session-1"));
+    let session = socket(&private, Consumer::Session);
+    assert_eq!(session.as_deref(), Some("/run/session-1/s.sock"));
+    let worker = socket(&private, Consumer::Worker);
+    assert_eq!(worker.as_deref(), Some("/run/session-1/w.sock"));
+    let host_job = socket(&private, Consumer::HostJob);
+    assert_eq!(
+        host_job,
+        Some(shared.root().join("h.sock").display().to_string())
     );
-    let local = cache.root().join("m2");
-    let expected = format!("-Xmx1g -Dmaven.repo.local={}", local.display());
-    assert_eq!(var(&env, "MAVEN_OPTS"), Some(expected), "no seed, no tail");
+    let long = shared.with_socket_dir(&Path::new("/run").join("d".repeat(120)));
+    assert_eq!(socket(&long, Consumer::Session), None);
 }
 
 #[test]
@@ -131,6 +170,25 @@ fn seed_that_exposes_home_is_dropped() {
     assert!(roots.is_empty(), "{roots:?}");
 }
 
+/// A system install root is refused when it holds HOME or a credential
+/// directory, as a root below HOME is.
+#[test]
+fn system_roots_holding_home_or_a_credential_are_left_out() {
+    let ((_s, holds_home), (_c, holds_key), (_p, plain), (_o, other)) =
+        (temp(), temp(), temp(), temp());
+    let home = holds_home.join("users/me");
+    std::fs::create_dir_all(&home).unwrap();
+    let other_home = other.join("me");
+    std::fs::create_dir_all(holds_key.join("keys")).unwrap();
+    std::fs::create_dir_all(&other_home).unwrap();
+    std::os::unix::fs::symlink(holds_key.join("keys"), other_home.join(".ssh")).unwrap();
+    let systems = [holds_home.as_path(), holds_key.as_path(), plain.as_path()];
+    let roots = super::roots::toolchain_read_roots_in(&host(&home, &[]), &systems);
+    assert_eq!(roots, vec![holds_key.clone(), plain.clone()], "HOME inside");
+    let roots = super::roots::toolchain_read_roots_in(&host(&other_home, &[]), &systems);
+    assert_eq!(roots, vec![holds_home, plain], "a credential inside");
+}
+
 #[test]
 fn toolchain_roots_skip_home_and_paths_outside_it() {
     let ((_h, home), (_o, outside)) = (temp(), temp());
@@ -146,7 +204,8 @@ fn toolchain_roots_skip_home_and_paths_outside_it() {
 fn ensure_creates_a_private_root_and_keeps_entries() {
     let ((_r, repo), (_h, home)) = (temp(), temp());
     let cache = StageCache::resolve(&repo, "alpha", &home, None).unwrap();
-    cache.ensure().unwrap();
+    let canonical = cache.ensure().unwrap();
+    assert_eq!(canonical, cache.root().canonicalize().unwrap());
     let mode = std::fs::metadata(cache.root())
         .unwrap()
         .permissions()
@@ -178,4 +237,78 @@ fn ensure_refuses_a_planted_symlink() {
         "a symlinked parent must be refused"
     );
     assert!(std::fs::read_dir(&elsewhere).unwrap().next().is_none());
+}
+
+/// With the socket directory short enough, `<root>/h.sock` is emitted at
+/// `SUN_LEN - 1` bytes and omitted at `SUN_LEN`; `<root>` is the base plus
+/// `/loom/stage-cache/` and a 24-character hash.
+#[test]
+fn the_sccache_socket_is_emitted_below_sun_len_and_omitted_at_it() {
+    const SUN_LEN: usize = if cfg!(target_os = "macos") { 104 } else { 108 };
+    let ((_r, repo), (_h, home), (_t, tree)) = (temp(), temp(), temp());
+    let fixed = "/loom/stage-cache/".len() + 24 + "/h.sock".len();
+    let socket_len = |xdg_len: usize| {
+        let xdg = PathBuf::from(format!("/{}", "x".repeat(xdg_len - 1)));
+        let cache = StageCache::resolve(&repo, "alpha", &home, Some(&xdg)).unwrap();
+        let env = cache.environment(Consumer::HostJob, &tree, &host(&home, &[]), None);
+        (
+            cache.root().join("h.sock").as_os_str().len(),
+            var(&env, "SCCACHE_SERVER_UDS"),
+        )
+    };
+    let (len, socket) = socket_len(SUN_LEN - 1 - fixed);
+    assert_eq!(len, SUN_LEN - 1);
+    assert!(socket.is_some(), "{len} bytes fit sun_path");
+    let (len, socket) = socket_len(SUN_LEN - fixed);
+    assert_eq!(len, SUN_LEN);
+    assert_eq!(socket, None, "{len} bytes leave no room for the NUL");
+}
+
+/// Every `ROOT_DIRS` variable is `<root>/<child>` for every consumer.
+#[test]
+fn every_root_dir_variable_names_a_child_of_the_root() {
+    let ((_r, repo), (_h, home), (_t, tree)) = (temp(), temp(), temp());
+    let cache = StageCache::resolve(&repo, "alpha", &home, None).unwrap();
+    for consumer in [Consumer::Session, Consumer::Worker, Consumer::HostJob] {
+        let env = cache.environment(consumer, &tree, &host(&home, &[]), None);
+        for (name, child) in super::environment::ROOT_DIRS {
+            let expected = cache.root().join(child).display().to_string();
+            assert_eq!(var(&env, name), Some(expected), "{consumer:?} {name}");
+        }
+    }
+}
+
+#[test]
+fn sccache_sockets_are_distinct_and_each_is_omitted_on_its_own_long_path() {
+    let ((_r, repo), (_h, home), (_t, tree)) = (temp(), temp(), temp());
+    let uds = |cache: &StageCache, consumer| {
+        let env = cache.environment(consumer, &tree, &host(&home, &[]), None);
+        var(&env, "SCCACHE_SERVER_UDS")
+    };
+    let short = StageCache::resolve(&repo, "alpha", &home, Some(Path::new("/xdg"))).unwrap();
+    let socket_dir = Path::new("/run/sd");
+    let private = short.clone().with_socket_dir(socket_dir);
+    let mut seen = BTreeSet::new();
+    for (consumer, path) in [
+        (Consumer::HostJob, private.root().join("h.sock")),
+        (Consumer::Session, socket_dir.join("s.sock")),
+        (Consumer::Worker, socket_dir.join("w.sock")),
+    ] {
+        let expected = path.display().to_string();
+        assert_eq!(uds(&private, consumer), Some(expected.clone()));
+        seen.insert(expected);
+    }
+    assert_eq!(seen.len(), 3, "the consumers' sockets are distinct");
+    let long = StageCache::resolve(&repo, "alpha", &home.join("h".repeat(200)), None).unwrap();
+    let long_root = long.with_socket_dir(socket_dir);
+    assert_eq!(uds(&long_root, Consumer::HostJob), None, "long root");
+    let long_dir = Path::new("/run").join("d".repeat(120));
+    let long_socket_dir = short.clone().with_socket_dir(&long_dir);
+    assert!(uds(&long_socket_dir, Consumer::HostJob).is_some());
+    for consumer in [Consumer::Session, Consumer::Worker] {
+        assert_eq!(uds(&long_socket_dir, consumer), None, "long dir");
+        assert_eq!(uds(&short, consumer), None, "no socket directory");
+    }
+    let host_socket = short.root().join("h.sock").display().to_string();
+    assert_eq!(uds(&short, Consumer::HostJob), Some(host_socket));
 }

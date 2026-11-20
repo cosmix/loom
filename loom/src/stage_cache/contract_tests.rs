@@ -141,6 +141,7 @@ fn stage_root_is_stable_and_outside_the_tree() {
 }
 
 #[test]
+#[serial_test::serial]
 fn stage_env_wins_over_per_command_scratch() {
     if sandbox_absent("stage_env_wins_over_per_command_scratch") {
         return;
@@ -168,6 +169,7 @@ fn stage_env_wins_over_per_command_scratch() {
 }
 
 #[test]
+#[serial_test::serial]
 fn stage_cache_persists_across_confined_commands() {
     if sandbox_absent("stage_cache_persists_across_confined_commands") {
         return;
@@ -369,17 +371,26 @@ fn host_job_sccache_socket_is_not_the_sessions() {
     let ((_r, repo), (_h, home), (_t, tree)) = (temp(), temp(), temp());
     let host = host_env(&home, &[]);
     let short = StageCache::resolve(&repo, "alpha", &home, Some(Path::new("/xdg"))).unwrap();
+    let socket_dir = Path::new("/run/sd");
+    let private = short.clone().with_socket_dir(socket_dir);
     for (consumer, socket) in consumers() {
-        let env = short.environment(consumer, &tree, &host, None);
-        let expected = shown(&short.root().join(socket));
+        let env = private.environment(consumer, &tree, &host, None);
+        let parent = if consumer == Consumer::HostJob {
+            private.root()
+        } else {
+            socket_dir
+        };
+        let expected = shown(&parent.join(socket));
         assert_eq!(var(&env, "SCCACHE_SERVER_UDS"), Some(expected));
         let dir = shown(&short.root().join("sccache"));
         assert_eq!(var(&env, "SCCACHE_DIR"), Some(dir), "{socket}");
     }
     let long = stage(&repo, &home.join("h".repeat(200)));
     assert!(long.root().join("h.sock").as_os_str().len() > 108);
+    let long_dir = Path::new("/run").join("d".repeat(120));
+    let both = long.clone().with_socket_dir(&long_dir);
     for (consumer, socket) in consumers() {
-        let env = long.environment(consumer, &tree, &host, None);
+        let env = both.environment(consumer, &tree, &host, None);
         let uds = var(&env, "SCCACHE_SERVER_UDS");
         assert_eq!(uds, None, "{socket} past SUN_LEN must be omitted");
     }

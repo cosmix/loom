@@ -349,7 +349,7 @@ fn granted_session_sandbox(
     stage: &Stage,
     kind: SessionType,
     cache: &crate::stage_cache::StageCache,
-) -> crate::sandbox::MergedSandboxConfig {
+) -> MergedSandboxConfig {
     let mut sandbox = session_sandbox(work_dir, stage, kind);
     apply_session_grant(cache, &mut sandbox);
     sandbox
@@ -379,3 +379,6 @@ mod tests_confinement_target;
 #[cfg(test)]
 #[path = "tests_launch_capsule.rs"]
 mod tests_launch_capsule;
+#[cfg(test)]
+#[path = "tests_launch_stage_cache.rs"]
+mod tests_launch_stage_cache;

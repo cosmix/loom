@@ -16,6 +16,7 @@ use crate::orchestrator::provision::{
 };
 use crate::orchestrator::tick::Phase;
 use crate::plan::schema::ProvisionEntry;
+use crate::stage_cache::StageCache;
 use crate::verify::criteria::stage_cache_for;
 
 use super::stage_block::StageBlock;
@@ -104,6 +105,24 @@ fn provision_worktree(
     entries: &[ProvisionEntry],
     worktree_path: &Path,
 ) -> Result<(), String> {
+    provision_with(
+        work_dir,
+        stage_id,
+        entries,
+        worktree_path,
+        run_provision_in_stage,
+    )
+}
+
+/// [`provision_worktree`] with the runner injected: each entry runs through `run`
+/// with the stage's build cache, so a test can observe what a provision command is given.
+fn provision_with(
+    work_dir: &Path,
+    stage_id: &str,
+    entries: &[ProvisionEntry],
+    worktree_path: &Path,
+    run: impl Fn(&[ProvisionEntry], &Path, Option<&StageCache>) -> Result<(), String>,
+) -> Result<(), String> {
     let cache = stage_cache_for(work_dir, stage_id)
         .map_err(|error| format!("cannot resolve the stage build cache: {error:#}"))?;
     let before = status_entries(work_dir, worktree_path);
@@ -113,7 +132,7 @@ fn provision_worktree(
             Phase::Spawning,
             BusyOp::Provisioning,
             stage_id,
-            || run_provision_in_stage(std::slice::from_ref(entry), worktree_path, Some(&cache)),
+            || run(std::slice::from_ref(entry), worktree_path, Some(&cache)),
         )
     })?;
     // A listing git could not produce (a plain directory, a worktree that cannot be

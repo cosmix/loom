@@ -16,7 +16,7 @@ use std::path::PathBuf;
 use tempfile::TempDir;
 
 /// A repository with one commit on `main` and a `.loom/work/` directory.
-fn init_repo() -> TempDir {
+pub(super) fn init_repo() -> TempDir {
     let temp = TestRepo::builder()
         .seed("file.txt", "one\n", "initial")
         .create()

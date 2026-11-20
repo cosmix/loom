@@ -25,17 +25,20 @@ use crate::verify::goal_backward::{verify_truth_checks, VerificationGap};
 ///
 /// These run at the default (`Confined`) level: the orchestrator invokes them
 /// before a stage is spawned, where no resolved sandbox config is in hand.
+/// `cache` is the stage's build caches, which a confined run shares with the
+/// stage's session and later checks.
 pub fn run_before_stage_checks(
     checks: &[TruthCheck],
     working_dir: &Path,
     tree: Option<&Path>,
+    cache: Option<&StageCache>,
 ) -> Result<Vec<VerificationGap>> {
     verify_truth_checks(
         checks,
         working_dir,
         tree,
         CommandConfinement::default(),
-        None,
+        cache,
     )
 }
 

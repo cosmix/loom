@@ -222,9 +222,7 @@ pub(crate) fn check_formatting(
     contracts_compile: bool,
 ) -> Result<()> {
     let stage = &site.stage;
-    // The worktree's state directory links to the repository's own.
-    let state = site.worktree_root.join(".loom/work");
-    let cache = confined_stage_cache(&state, &stage.id, confinement)?;
+    let cache = confined_stage_cache(&site.work_dir, &stage.id, confinement)?;
     let mut problems = format_problems(
         &stage.acceptance,
         &stage.setup,

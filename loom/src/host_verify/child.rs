@@ -21,8 +21,9 @@ use crate::models::dispute::truncate_to_byte_limit;
 use crate::models::stage::{Stage, StageType};
 use crate::verify::criteria::format_criterion_result;
 use crate::verify::criteria::{
-    plan_confinement, run_acceptance_with_config, set_spawn_observer, stage_cache_for, CachePolicy,
-    CriteriaConfig, CriterionObserver, CriterionResult, SpawnObserver, SpawnObserverGuard,
+    confined_stage_cache, plan_confinement, resolve_confinement, run_acceptance_with_config,
+    set_spawn_observer, CachePolicy, CriteriaConfig, CriterionObserver, CriterionResult,
+    SpawnObserver, SpawnObserverGuard,
 };
 use crate::verify::execution_paths::{resolve_acceptance_dir, StageExecutionPaths};
 use crate::verify::goal_backward::plan::{self, LoadedGoal};
@@ -100,7 +101,8 @@ fn check(work_dir: &Path, record: &JobRecord, progress: &Arc<Progress>) -> Resul
     }
     let only = record.criteria.clone().map(BTreeSet::from_iter);
     let cache = check_cache_policy(work_dir, record)?;
-    let config = acceptance_config(&stage, &tree, work_dir, cache, progress)?;
+    let root = tree.paths.worktree_root.as_deref();
+    let config = acceptance_config(&stage, root, work_dir, cache, progress)?;
     run_configured(&stage, &tree, &config.with_only(only))?;
     progress.take_failure()?;
     // The goal-backward checks belong to a run of every criterion.
@@ -121,16 +123,17 @@ pub(super) fn run_acceptance(
     no_cache: bool,
     progress: &Arc<Progress>,
 ) -> Result<()> {
-    let config = acceptance_config(stage, tree, work_dir, requested_cache(no_cache), progress)?;
+    let root = tree.paths.worktree_root.as_deref();
+    let config = acceptance_config(stage, root, work_dir, requested_cache(no_cache), progress)?;
     run_configured(stage, tree, &config)
 }
 
 /// A job's acceptance configuration: each criterion is recorded as it
 /// finishes, the record decides caching, never the daemon's environment, and
 /// confined commands share the stage's build caches.
-fn acceptance_config(
+pub(super) fn acceptance_config(
     stage: &Stage,
-    tree: &JobTree,
+    tree_root: Option<&Path>,
     work_dir: &Path,
     cache: CachePolicy,
     progress: &Arc<Progress>,
@@ -142,11 +145,13 @@ fn acceptance_config(
             progress.acceptance(index, result, &setup);
         }))
     };
-    let stage_cache = stage_cache_for(work_dir, &stage.id)?;
+    let plan = plan_confinement(work_dir);
+    let confinement = resolve_confinement(stage.sandbox.command_confinement, plan);
+    let stage_cache = confined_stage_cache(work_dir, &stage.id, confinement)?;
     Ok(CriteriaConfig::default()
-        .with_plan_confinement(plan_confinement(work_dir))
-        .with_tree_root(tree.paths.worktree_root.as_deref())
-        .with_stage_cache(Some(stage_cache))
+        .with_plan_confinement(plan)
+        .with_tree_root(tree_root)
+        .with_stage_cache(stage_cache)
         .with_observer(observer)
         .with_cache_dir(work_dir)
         .with_cache_policy(cache))
@@ -385,3 +390,7 @@ impl Progress {
         std::mem::take(&mut self.lock().outcomes)
     }
 }
+
+#[cfg(test)]
+#[path = "child_cache_tests.rs"]
+mod cache_tests;

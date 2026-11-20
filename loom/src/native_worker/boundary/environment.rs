@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use super::BOUNDARY_TMPDIR;
-use crate::stage_cache::{Consumer, StageCache};
+use crate::stage_cache::{host_env_from, Consumer, StageCache};
 
 /// Where the launcher is mounted inside the boundary.
 pub(super) const LOOM_BIN: &str = "/loom-bin/loom";
@@ -98,13 +98,19 @@ pub(super) fn host_map(env: &[(OsString, OsString)]) -> BTreeMap<String, OsStrin
 }
 
 /// `env` with the worker's stage cache variables set over it, each replacing
-/// a variable of the same name.
+/// a variable of the same name. Seeds resolve from `host`, loom's own
+/// environment, as every consumer's do. The worker's sccache socket is in
+/// [`BOUNDARY_TMPDIR`], on this boundary's private `/tmp`, which no host job
+/// or session can reach.
 pub(super) fn with_stage_cache(
     env: &[(OsString, OsString)],
+    host: &[(OsString, OsString)],
     cache: &StageCache,
     worktree: &Path,
 ) -> Vec<(OsString, OsString)> {
-    let vars = cache.environment(Consumer::Worker, worktree, &host_map(env), None);
+    let cache = cache.clone().with_socket_dir(Path::new(BOUNDARY_TMPDIR));
+    let seeds = host_env_from(host.iter().cloned());
+    let vars = cache.environment(Consumer::Worker, worktree, &seeds, None);
     let mut merged: Vec<_> = env
         .iter()
         .filter(|(name, _)| name.to_str().is_none_or(|name| !vars.contains_key(name)))
@@ -122,9 +128,10 @@ mod tests {
     fn the_worker_cache_replaces_same_named_variables_and_keeps_the_rest() {
         let home = tempfile::tempdir().unwrap();
         let cache = StageCache::resolve(home.path(), "alpha", home.path(), None).unwrap();
-        let env = environment(&[("HOME".into(), home.path().into())], false, None);
+        let host: [(OsString, OsString); 1] = [("HOME".into(), home.path().into())];
+        let env = environment(&host, false, None);
 
-        let merged = with_stage_cache(&env, &cache, home.path());
+        let merged = with_stage_cache(&env, &host, &cache, home.path());
 
         let value = |name: &str| lookup(&merged, name).map(Path::new);
         assert_eq!(
@@ -133,8 +140,8 @@ mod tests {
         );
         assert_eq!(value("HOME"), Some(home.path()));
         assert_eq!(value("TMPDIR"), Some(Path::new(BOUNDARY_TMPDIR)));
-        let socket = cache.root().join("w.sock");
-        assert!(value("SCCACHE_SERVER_UDS").is_none_or(|uds| uds == socket));
+        let socket = Path::new(BOUNDARY_TMPDIR).join("w.sock");
+        assert_eq!(value("SCCACHE_SERVER_UDS"), Some(socket.as_path()));
         assert_eq!(
             merged.iter().filter(|(name, _)| name == "GOCACHE").count(),
             1

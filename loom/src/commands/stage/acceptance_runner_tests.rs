@@ -1,5 +1,6 @@
 use super::*;
 use crate::models::stage::Stage;
+use crate::plan::schema::CommandConfinement;
 use crate::test_git::{git, TestRepo};
 use serial_test::serial;
 use tempfile::TempDir;
@@ -203,4 +204,39 @@ fn real_worktree(root: &std::path::Path, id: &str) {
             &format!(".worktrees/{id}"),
         ],
     );
+}
+
+/// The acceptance configuration of `stage_id` with `confinement` as its override.
+fn config_for(work_dir: &Path, confinement: CommandConfinement) -> CriteriaConfig {
+    let mut stage = Stage::new("cache-stage".to_string(), None);
+    stage.sandbox.command_confinement = Some(confinement);
+    let paths = StageExecutionPaths {
+        worktree_root: None,
+        acceptance_dir: None,
+    };
+    acceptance_config(&stage, "cache-stage", work_dir, &paths).unwrap()
+}
+
+#[test]
+#[serial]
+fn a_confined_stage_runs_with_its_stage_cache() {
+    let env = crate::test_cache_env::CacheEnv::pin();
+    let (repo, work_dir) = crate::test_cache_env::repo_with_work_dir();
+
+    let config = config_for(&work_dir, CommandConfinement::Confined);
+
+    let cache = config.stage_cache.expect("a confined run shares the cache");
+    assert_eq!(cache.root(), env.root_of(repo.path(), "cache-stage"));
+}
+
+#[test]
+#[serial]
+fn an_inherited_stage_resolves_no_cache_even_without_home() {
+    let _env = crate::test_cache_env::CacheEnv::pin();
+    let (_repo, work_dir) = crate::test_cache_env::repo_with_work_dir();
+    std::env::remove_var("HOME");
+
+    let config = config_for(&work_dir, CommandConfinement::Inherit);
+
+    assert!(config.stage_cache.is_none());
 }

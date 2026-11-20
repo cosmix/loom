@@ -55,7 +55,9 @@ fn resolved_stage_with_broken_detector(root: &Path) -> (Stage, PathBuf) {
 }
 
 #[test]
+#[serial_test::serial]
 fn the_daemon_refuses_a_landing_its_detectors_could_not_check() {
+    let _env = crate::test_cache_env::CacheEnv::pin();
     let temp = TempDir::new().unwrap();
     let root = temp.path().join("repo");
     std::fs::create_dir_all(&root).unwrap();
@@ -70,7 +72,9 @@ fn the_daemon_refuses_a_landing_its_detectors_could_not_check() {
 }
 
 #[test]
+#[serial_test::serial]
 fn failed_acceptance_names_only_the_failing_commands() {
+    let _env = crate::test_cache_env::CacheEnv::pin();
     let temp = TempDir::new().unwrap();
     let root = temp.path().join("repo");
     std::fs::create_dir_all(&root).unwrap();
@@ -88,7 +92,9 @@ fn failed_acceptance_names_only_the_failing_commands() {
 }
 
 #[test]
+#[serial_test::serial]
 fn the_failing_command_list_is_bounded() {
+    let _env = crate::test_cache_env::CacheEnv::pin();
     let failing = |command: String| {
         CriterionResult::new(
             command,
@@ -123,7 +129,9 @@ fn record_emitted(_: OutputStream, line: &str) {
 /// A stage session's `loom check` stores passes the same fingerprint would
 /// answer; the landing gate reruns the criterion regardless.
 #[test]
+#[serial_test::serial]
 fn a_pass_a_check_cached_does_not_answer_the_landing_gate() {
+    let _env = crate::test_cache_env::CacheEnv::pin();
     if crate::process::sandbox_probe::skip_unless(
         crate::verify::criteria::host_launcher().is_some(),
         "a_pass_a_check_cached_does_not_answer_the_landing_gate",
@@ -165,7 +173,9 @@ fn a_pass_a_check_cached_does_not_answer_the_landing_gate() {
 }
 
 #[test]
+#[serial_test::serial]
 fn an_operator_is_warned_and_keeps_the_decision() {
+    let _env = crate::test_cache_env::CacheEnv::pin();
     let temp = TempDir::new().unwrap();
     let root = temp.path().join("repo");
     std::fs::create_dir_all(&root).unwrap();

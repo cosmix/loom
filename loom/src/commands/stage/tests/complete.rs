@@ -97,11 +97,13 @@ struct EnvGuard {
     original_stage_id: Option<String>,
     original_session_id: Option<String>,
     original_worktree_path: Option<String>,
+    _cache_env: crate::test_cache_env::CacheEnv,
 }
 
 impl EnvGuard {
     fn new() -> Self {
         let guard = Self {
+            _cache_env: crate::test_cache_env::CacheEnv::pin(),
             original_dir: std::env::current_dir().unwrap(),
             original_stage_id: std::env::var("LOOM_STAGE_ID").ok(),
             original_session_id: std::env::var("LOOM_SESSION_ID").ok(),

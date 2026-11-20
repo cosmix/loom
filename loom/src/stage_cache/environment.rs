@@ -11,15 +11,117 @@ use std::path::{Path, PathBuf};
 /// path needs one byte for its NUL terminator, so it must be shorter.
 const SUN_LEN: usize = if cfg!(target_os = "macos") { 104 } else { 108 };
 
-/// Go's module proxy chain after the seed when the host names none.
+/// Go's module proxy chain after the seed for sessions, workers and
+/// provisioning, when the host names no `GOPROXY` of its own.
 const DEFAULT_GOPROXY: &str = "https://proxy.golang.org,direct";
 
 /// Host jobs rerun every test: a session can write `GOCACHE`, where Go
 /// caches test results, so a planted entry would otherwise pass `go test`.
 const GO_NO_TEST_CACHE: &str = "-count=1";
 
+/// The host variables [`StageCache::environment`], [`super::seed_read_roots`]
+/// and [`super::toolchain_read_roots`] read: seed locations, `HOME` and `PATH`,
+/// plus the Go settings `GOPROXY` and `GOFLAGS`, which the consumers keep.
+/// A `GOPROXY` carrying URL userinfo is a credential and is dropped
+/// ([`host_env_from`]). `MAVEN_OPTS` is never read: it carries proxy
+/// passwords. The daemon's environment keeps each name read here
+/// (`daemon/server/environment.rs`).
+pub(super) const HOST_ENV_NAMES: [&str; 9] = [
+    "HOME",
+    "PATH",
+    "GOPATH",
+    "GOMODCACHE",
+    "CCACHE_DIR",
+    "XDG_CACHE_HOME",
+    "GRADLE_USER_HOME",
+    "GOPROXY",
+    "GOFLAGS",
+];
+
+/// Whether any entry of a `GOPROXY` list (separated by `,` or `|`) has userinfo
+/// in its authority, the part between `scheme://` and the next `/`.
+/// An entry without `://` is read as `https://` by Go, so its authority is the
+/// text before the first `/`.
+pub fn goproxy_has_userinfo(value: &OsStr) -> bool {
+    let value = value.to_string_lossy();
+    value.split([',', '|']).any(|entry| {
+        let authority = entry.split_once("://").map_or(entry, |(_, rest)| rest);
+        authority.split('/').next().unwrap_or("").contains('@')
+    })
+}
+
+/// The `HOST_ENV_NAMES` of `vars`; a name that is not UTF-8 is skipped, and a
+/// `GOPROXY` with URL userinfo is dropped so the default chain applies.
+pub fn host_env_from<I>(vars: I) -> BTreeMap<String, OsString>
+where
+    I: IntoIterator<Item = (OsString, OsString)>,
+{
+    vars.into_iter()
+        .filter_map(|(name, value)| {
+            let name = name.into_string().ok()?;
+            let wanted = HOST_ENV_NAMES.contains(&name.as_str());
+            let credential = name == "GOPROXY" && goproxy_has_userinfo(&value);
+            (wanted && !credential).then_some((name, value))
+        })
+        .collect()
+}
+
+/// This process's `HOST_ENV_NAMES`: every consumer's seeds resolve from loom's
+/// own environment, never from a confined command's filtered one.
+pub fn host_env_from_process() -> BTreeMap<String, OsString> {
+    host_env_from(std::env::vars_os())
+}
+
+/// `GOPROXY` for `consumer`: the host module seed, when there is one, ahead of
+/// the host's `GOPROXY` (else `DEFAULT_GOPROXY`) for a session or worker, or
+/// ahead of `off` for a host job. Provisioning fetches, so it takes the
+/// `Session` chain.
+pub fn go_proxy(consumer: Consumer, host_env: &BTreeMap<String, OsString>) -> OsString {
+    let seed = Seeds::resolve(host_env).go;
+    proxy_chain(consumer, seed.as_deref(), host_env)
+}
+
+fn proxy_chain(
+    consumer: Consumer,
+    seed: Option<&Path>,
+    host_env: &BTreeMap<String, OsString>,
+) -> OsString {
+    let mut proxy = OsString::new();
+    if let Some(seed) = seed {
+        proxy.push("file://");
+        proxy.push(seed);
+        proxy.push(",");
+    }
+    match consumer {
+        Consumer::HostJob => proxy.push("off"),
+        Consumer::Session | Consumer::Worker => match host_env.get("GOPROXY") {
+            Some(host) if !host.is_empty() => proxy.push(host),
+            _ => proxy.push(DEFAULT_GOPROXY),
+        },
+    }
+    proxy
+}
+
+/// `GOFLAGS`: the host's, with `-count=1` added for a host job unless present.
+fn go_flags(consumer: Consumer, host_env: &BTreeMap<String, OsString>) -> OsString {
+    let mut flags = host_env.get("GOFLAGS").cloned().unwrap_or_default();
+    if consumer == Consumer::HostJob {
+        let present = flags
+            .to_string_lossy()
+            .split_whitespace()
+            .any(|f| f == GO_NO_TEST_CACHE);
+        if !present {
+            if !flags.is_empty() {
+                flags.push(" ");
+            }
+            flags.push(GO_NO_TEST_CACHE);
+        }
+    }
+    flags
+}
+
 /// Variables whose whole value is a directory below the root.
-const ROOT_DIRS: [(&str, &str); 13] = [
+pub(super) const ROOT_DIRS: [(&str, &str); 13] = [
     ("GOCACHE", "go-build"),
     ("GOMODCACHE", "go-mod"),
     ("CCACHE_DIR", "ccache"),
@@ -63,7 +165,11 @@ impl StageCache {
         for (name, child) in ROOT_DIRS {
             vars.set(name, self.root.join(child));
         }
-        self.go(&mut vars, consumer, host_env, seeds.go.as_deref());
+        vars.set(
+            "GOPROXY",
+            proxy_chain(consumer, seeds.go.as_deref(), host_env),
+        );
+        vars.set("GOFLAGS", go_flags(consumer, host_env));
         vars.set("CCACHE_BASEDIR", worktree_root);
         if let Some(seed) = &seeds.ccache {
             let mut storage = OsString::from("file:");
@@ -72,11 +178,10 @@ impl StageCache {
             vars.set("CCACHE_REMOTE_STORAGE", storage.clone());
             vars.set("CCACHE_SECONDARY_STORAGE", storage);
         }
-        let socket = self.root.join(socket_name(consumer));
-        if socket.as_os_str().len() < SUN_LEN {
+        if let Some(socket) = self.sccache_socket(consumer) {
             vars.set("SCCACHE_SERVER_UDS", socket);
         }
-        self.maven(&mut vars, host_env, seeds.maven.as_deref());
+        self.maven(&mut vars, seeds.maven.as_deref());
         if let Some(seed) = seeds.gradle {
             vars.set("GRADLE_RO_DEP_CACHE", seed);
         }
@@ -86,77 +191,35 @@ impl StageCache {
         vars.0
     }
 
-    fn go(
-        &self,
-        vars: &mut Vars,
-        consumer: Consumer,
-        host_env: &BTreeMap<String, OsString>,
-        seed: Option<&Path>,
-    ) {
-        let tail = match consumer {
-            Consumer::HostJob => OsString::from("off"),
-            Consumer::Session | Consumer::Worker => host_env
-                .get("GOPROXY")
-                .filter(|proxy| !proxy.is_empty())
-                .cloned()
-                .unwrap_or_else(|| DEFAULT_GOPROXY.into()),
+    /// The sccache server socket `consumer` starts, omitted when it would not
+    /// fit `sun_path`. The consumers of one stage share writable caches, so
+    /// the cache gives no integrity guarantee between them; separate sockets
+    /// keep each consumer's compiler runs inside its own confinement, since an
+    /// sccache server runs the compilers its clients ask for. A host job's
+    /// socket is in the root, where Seatbelt grants `h.sock` alone and
+    /// bubblewrap binds the root; a session's or worker's is in its private
+    /// [`StageCache::with_socket_dir`], which no host job is granted.
+    fn sccache_socket(&self, consumer: Consumer) -> Option<PathBuf> {
+        let socket = match consumer {
+            Consumer::HostJob => self.root.join("h.sock"),
+            Consumer::Session => self.socket_dir.as_ref()?.join("s.sock"),
+            Consumer::Worker => self.socket_dir.as_ref()?.join("w.sock"),
         };
-        let mut proxy = OsString::new();
-        if let Some(seed) = seed {
-            proxy.push("file://");
-            proxy.push(seed);
-            proxy.push(",");
-        }
-        proxy.push(tail);
-        vars.set("GOPROXY", proxy);
-        if consumer == Consumer::HostJob {
-            let host = host_env.get("GOFLAGS").map(OsString::as_os_str);
-            vars.set("GOFLAGS", appended(host, GO_NO_TEST_CACHE, true));
-        }
+        (socket.as_os_str().len() < SUN_LEN).then_some(socket)
     }
 
-    fn maven(&self, vars: &mut Vars, host_env: &BTreeMap<String, OsString>, seed: Option<&Path>) {
-        let mut local = OsString::from("-Dmaven.repo.local=");
-        local.push(self.root.join("m2"));
-        let host = host_env.get("MAVEN_OPTS").map(OsString::as_os_str);
-        let mut opts = appended(host, &local, false);
+    /// `MAVEN_OPTS` naming only the stage's local repository and, with a
+    /// seed, the read-only tail (Maven 3.9+). The host's own `MAVEN_OPTS` is
+    /// never read: it can carry a proxy password.
+    fn maven(&self, vars: &mut Vars, seed: Option<&Path>) {
+        let mut opts = OsString::from("-Dmaven.repo.local=");
+        opts.push(self.root.join("m2"));
         if let Some(seed) = seed {
-            let mut tail = OsString::from("-Dmaven.repo.local.tail=");
-            tail.push(seed);
-            opts = appended(Some(&opts), &tail, false);
+            opts.push(" -Dmaven.repo.local.tail=");
+            opts.push(seed);
         }
         vars.set("MAVEN_OPTS", opts);
     }
-}
-
-/// The sccache server socket each consumer starts: a host job reaching the
-/// session's server would have it run compilers outside the confinement.
-fn socket_name(consumer: Consumer) -> &'static str {
-    match consumer {
-        Consumer::Session => "s.sock",
-        Consumer::Worker => "w.sock",
-        Consumer::HostJob => "h.sock",
-    }
-}
-
-/// `host` and `option` joined by a space; with `dedup`, `host` unchanged when
-/// one of its space-separated words already is `option`.
-fn appended(host: Option<&OsStr>, option: impl AsRef<OsStr>, dedup: bool) -> OsString {
-    let option = option.as_ref();
-    let host = host.filter(|host| !host.is_empty());
-    let Some(host) = host else {
-        return option.to_os_string();
-    };
-    let present = host
-        .as_encoded_bytes()
-        .split(|byte| *byte == b' ')
-        .any(|word| word == option.as_encoded_bytes());
-    let mut joined = host.to_os_string();
-    if !(dedup && present) {
-        joined.push(" ");
-        joined.push(option);
-    }
-    joined
 }
 
 /// `PATH` with the developer toolchain and `usr/bin` ahead of the host's,

@@ -10,7 +10,9 @@ use crate::verify::contracts::test_support::{contract_worktree, plant_foreign_gi
 /// it. The positive control runs last: git that follows the pointer does run
 /// the filter, so its absence before comes from the pin.
 #[test]
+#[serial_test::serial]
 fn the_listing_around_a_provision_does_not_follow_a_forged_git_file() {
+    let _env = crate::test_cache_env::CacheEnv::pin();
     let tmp = TempDir::new().unwrap();
     let repo = tmp.path().canonicalize().unwrap().join("repo");
     let worktree = contract_worktree(&repo, "alpha");
@@ -44,6 +46,7 @@ fn the_listing_around_a_provision_does_not_follow_a_forged_git_file() {
 /// A worktree that cannot be pinned is the unreadable-listing path: no
 /// comparison, and no git in it either.
 #[test]
+#[serial_test::serial]
 fn a_directory_no_repository_registers_skips_the_comparison() {
     let worktree = TempDir::new().unwrap();
 
@@ -102,7 +105,9 @@ fn running_provisioning(tick: &tick::Tick) -> &crate::orchestrator::busy::Busy {
 }
 
 #[test]
+#[serial_test::serial]
 fn a_running_entry_sees_the_provisioning_busy_line() {
+    let _env = crate::test_cache_env::CacheEnv::pin();
     let worktree = TempDir::new().unwrap();
     let work = work_dir_in(worktree.path());
     let copy = entry(&copy_tick_command(&work, "seen.tick"));
@@ -117,7 +122,9 @@ fn a_running_entry_sees_the_provisioning_busy_line() {
 }
 
 #[test]
+#[serial_test::serial]
 fn each_entry_gets_its_own_busy_wrap() {
+    let _env = crate::test_cache_env::CacheEnv::pin();
     let worktree = TempDir::new().unwrap();
     let work = work_dir_in(worktree.path());
     let first = format!("{} && sleep 1", copy_tick_command(&work, "seen-1.tick"));
@@ -137,7 +144,9 @@ fn each_entry_gets_its_own_busy_wrap() {
 }
 
 #[test]
+#[serial_test::serial]
 fn a_failing_entry_stops_the_run_and_clears_the_busy_line() {
+    let _env = crate::test_cache_env::CacheEnv::pin();
     let work = TempDir::new().unwrap();
     let worktree = TempDir::new().unwrap();
     let entries = [entry("exit 3"), entry("touch second")];
@@ -181,4 +190,29 @@ fn a_persisted_block_answers_false() {
         load_stage("alpha", &work).unwrap().status,
         StageStatus::Blocked
     );
+}
+
+#[test]
+#[serial_test::serial]
+fn every_provision_entry_is_given_the_stage_cache() {
+    let env = crate::test_cache_env::CacheEnv::pin();
+    let (repo, work) = crate::test_cache_env::repo_with_work_dir();
+    let roots = std::cell::RefCell::new(Vec::new());
+
+    provision_with(
+        &work,
+        "alpha",
+        &[entry("true"), entry("true")],
+        repo.path(),
+        |_, _, cache| {
+            roots
+                .borrow_mut()
+                .push(cache.map(|c| c.root().to_path_buf()));
+            Ok(())
+        },
+    )
+    .unwrap();
+
+    let expected = Some(env.root_of(repo.path(), "alpha"));
+    assert_eq!(*roots.borrow(), vec![expected.clone(), expected]);
 }
