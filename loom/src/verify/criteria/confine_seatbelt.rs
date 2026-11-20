@@ -102,6 +102,10 @@ fn named_rules(
         profile.push_str(&hidden_rules(
             &HIDDEN_IN_M2.map(|name| home.join(".m2").join(name)),
         )?);
+        let git = home.join(".config/git");
+        profile.push_str(&readable_file_rules(
+            &READABLE_IN_GIT_CONFIG.map(|name| git.join(name)),
+        )?);
     }
     if let Some(root) = grants.cache_root {
         profile.push_str(&sccache_socket_rule(root)?);
@@ -113,6 +117,32 @@ fn named_rules(
 /// can hold repository credentials. Maven fails on a settings file it can see
 /// but not read, so they are hidden like the Cargo config files.
 const HIDDEN_IN_M2: [&str; 2] = ["settings.xml", "settings-security.xml"];
+
+/// Git's per-user ignore and attributes files, which it and Cargo's Git
+/// library read by default when no config names others (the user's config is
+/// already out: `GIT_CONFIG_GLOBAL=/dev/null` in `apply_environment`). The
+/// stage environment carries no `XDG_CONFIG_HOME`, so they sit under
+/// `$HOME/.config/git`. Unreadable, the ignore file failed every Cargo build
+/// script's first fingerprint with "Could not read repository exclude", and
+/// hiding it does not help: the library fails on any open error other than
+/// `ENOENT`, and Seatbelt denies with `EPERM`. They hold path patterns, no
+/// credentials, so they are readable.
+const READABLE_IN_GIT_CONFIG: [&str; 2] = ["ignore", "attributes"];
+
+/// Rules letting a confined command read each existing file of `paths`, at its
+/// path and at its symlink target.
+fn readable_file_rules(paths: &[PathBuf]) -> Result<String> {
+    let mut rules = String::new();
+    for path in paths {
+        let Ok(target) = path.canonicalize() else {
+            continue;
+        };
+        for file in std::iter::once(path.clone()).chain((target != *path).then_some(target)) {
+            rules.push_str(&format!("(allow file-read* (literal {}))", quote(&file)?));
+        }
+    }
+    Ok(rules)
+}
 
 /// The host-job sccache server socket in the stage cache root
 /// (`SCCACHE_SERVER_UDS`), the only Unix socket a confined command may bind or
@@ -259,3 +289,7 @@ mod tests;
 #[cfg(test)]
 #[path = "confine_provision_tests.rs"]
 mod provision_tests;
+
+#[cfg(test)]
+#[path = "confine_git_config_tests.rs"]
+mod git_config_tests;
