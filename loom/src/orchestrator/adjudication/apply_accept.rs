@@ -20,7 +20,7 @@ use super::apply_kinds::notify_and_requeue;
 use super::feedback::EVIDENCE_ACTION;
 use super::plan_patch::build_amendment_requests;
 use super::verdict_narrowing::{
-    acceptance_json, check_narrowing, narrows_acceptance, NARROWED_FIELD,
+    acceptance_json, at_current_base, check_narrowing, narrows_acceptance, NARROWED_FIELD,
 };
 use crate::verify::review::handoffs::{
     forget_handoffs, load_base_evidence, load_handoffs, record_handoffs, Handoff,
@@ -102,9 +102,10 @@ pub(super) fn verdict_amended(work_dir: &Path, stage_id: &str, key: &str) -> Res
 /// The hand-offs an accepted narrowing of `stage`'s acceptance records. On a
 /// replay that finds the list already amended they are the ones recorded
 /// before the amendment ([`amend_with_handoffs`]); otherwise they are
-/// computed against the unamended list. Recording checked the narrowing on
-/// that list, so the inner `Err` (the rule's reason) means it rests on base
-/// runs recorded since, or was recorded without the check: the caller then
+/// computed against the unamended list and the runs at the stage's current
+/// base. Recording checked the narrowing on that list, so the inner `Err` (the
+/// rule's reason) means it rests on base runs recorded since, the stage's base
+/// moved, or it was recorded without the check: the caller then
 /// amends nothing, since a criterion is narrowed only on a failing base run
 /// with its hand-off recorded.
 fn narrowing_handoffs(
@@ -122,7 +123,14 @@ fn narrowing_handoffs(
         recorded.retain(|handoff| handoff.dispute == key && handoff.field == NARROWED_FIELD);
         return Ok(Ok(recorded));
     }
-    let evidence = load_base_evidence(work_dir, amended_stage)?;
+    let evidence = match at_current_base(
+        work_dir,
+        stage,
+        load_base_evidence(work_dir, amended_stage)?,
+    ) {
+        Ok(evidence) => evidence,
+        Err(reason) => return Ok(Err(reason)),
+    };
     let current = acceptance_json(stage);
     Ok(check_narrowing(
         amended_stage,
@@ -220,3 +228,7 @@ mod tests;
 #[cfg(test)]
 #[path = "apply_accept_replay_tests.rs"]
 mod replay_tests;
+
+#[cfg(test)]
+#[path = "apply_accept_base_tests.rs"]
+mod base_tests;

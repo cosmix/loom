@@ -283,3 +283,29 @@ fn a_trial_of_a_file_outside_the_freeze_is_refused() {
     assert!(result.criteria.is_empty(), "nothing ran: {result:?}");
     assert!(!fx.receipt_saved(&record));
 }
+
+#[test]
+#[serial]
+fn a_trial_whose_overlay_changed_during_the_runs_records_no_receipt() {
+    if confinement_unavailable("a_trial_whose_overlay_changed_during_the_runs_records_no_receipt") {
+        return;
+    }
+    // The contract passes while overwriting the overlaid file with other bytes.
+    let rewrite = "printf 'PASS, other bytes\\n' > tests/x_contract.rs";
+    let fx = Fixture::new(&[("rewrites", rewrite)], &[]);
+    let before = fx.contract_file();
+    let record = fx.job(true, &[(CONTRACT_FILE, "PASS\n")]);
+    let result = fx.run(&record);
+    assert!(!result.passed, "{result:?}");
+    assert!(
+        labels_and_verdicts(&result).contains(&("frozen-files", false)),
+        "{result:?}"
+    );
+    assert_eq!(
+        fx.contract_file(),
+        before,
+        "the frozen file must be restored"
+    );
+    assert!(!fx.receipt_saved(&record));
+    assert_eq!(load_receipt(&fx.work_dir, STAGE).unwrap(), None);
+}

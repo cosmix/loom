@@ -307,14 +307,14 @@ fn after_an_accepted_refreeze_no_frozen_file_is_changed() {
     )
     .unwrap();
     let record = store::load_freeze(&fx.work_dir, "s1").unwrap().unwrap();
-    let before = changed_frozen_files(&record, &fx.worktree, &fx.worktree).unwrap();
+    let before = drift_lines(&record, &fx.worktree, &fx.worktree).unwrap();
     assert_eq!(before.len(), 3, "{before:?}");
 
     let dropped = refreeze_as_accept(&fx, &harness[1..]);
 
     assert_eq!(dropped, vec!["tests/support/gone.rs".to_string()]);
     let record = store::load_freeze(&fx.work_dir, "s1").unwrap().unwrap();
-    let after = changed_frozen_files(&record, &fx.worktree, &fx.worktree).unwrap();
+    let after = drift_lines(&record, &fx.worktree, &fx.worktree).unwrap();
     assert!(after.is_empty(), "{after:?}");
 }
 

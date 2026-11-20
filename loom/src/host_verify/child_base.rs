@@ -1,12 +1,12 @@
 //! A check at the stage's base (`loom check --criterion <n> --at-base`): the
-//! selected criteria run, with the stage's setup, confinement, timeout and
-//! build caches, against a checkout of the stage's base commit, the merge base
-//! the impact tests use. The checkout is kept beside the stage cache, where
-//! the stage's own code cannot write (`stage_cache::base_checkout`), so a
-//! second run reuses its build. Each
-//! criterion becomes an outcome `base:<index>` and one [`BaseEvidence`] a
-//! criterion dispute cites. The job reads the worktree only to find the base,
-//! so it is not bound to the worktree's tree digest.
+//! selected criteria run, with the stage's setup, confinement and timeout,
+//! against a checkout of the stage's base commit, the merge base the impact
+//! tests use. The checkout and the run's build cache are kept beside the stage
+//! cache, where the stage's own code cannot write (`stage_cache::base_checkout`),
+//! so a second run reuses its build and the stage's caches never reach it.
+//! Each criterion becomes an outcome `base:<index>` and one [`BaseEvidence`],
+//! naming the base, that a criterion dispute cites. The job reads the worktree
+//! only to find the base, so it is not bound to the worktree's tree digest.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -19,7 +19,8 @@ use super::child_policy::requested_cache;
 use super::submit::is_lower_hex;
 use super::{CriterionOutcome, JobRecord};
 use crate::models::stage::Stage;
-use crate::stage_cache::base_checkout::ensure_base_checkouts;
+use crate::stage_cache::base_checkout::{ensure_base_dirs, BaseDirs};
+use crate::stage_cache::StageCache;
 use crate::testrun::{classify, registry, RunOutcome, RunOutput, RunSummary};
 use crate::verify::context::CriteriaContext;
 use crate::verify::contracts::changes::stage_base;
@@ -55,7 +56,8 @@ pub(super) fn run(
         "the stage's base {base:?} is no commit id"
     );
     let short = base[..SHORT_COMMIT].to_string();
-    let checkout = BaseCheckout::kept(&checkout_dir(work_dir, &stage.id, &base)?, worktree, &base)
+    let dirs = base_dirs(work_dir, &stage.id, &base)?;
+    let checkout = BaseCheckout::kept(&dirs.checkout, worktree, &base)
         .with_context(|| format!("the stage's base {short} could not be checked out"))?;
     announce(&short, &checkout);
     let acceptance_dir =
@@ -63,11 +65,12 @@ pub(super) fn run(
     let recorder = Arc::new(Recorder::new(
         work_dir,
         stage,
-        short,
+        base,
         acceptance_dir.clone(),
         progress,
     ));
-    let config = base_config(stage, checkout.root(), work_dir, progress, &recorder)?;
+    let config = base_config(stage, checkout.root(), &dirs.cache, work_dir, progress)?
+        .with_observer(Recorder::observer(&recorder));
     run_acceptance_with_config(
         stage,
         acceptance_dir.as_deref(),
@@ -93,29 +96,28 @@ fn announce(short: &str, checkout: &BaseCheckout) {
     );
 }
 
-/// `<cache base>/loom/stage-base/<stage cache name>/<base>`, its parents
-/// made and the checkouts of other bases removed.
-pub(super) fn checkout_dir(work_dir: &Path, stage_id: &str, base: &str) -> Result<PathBuf> {
-    ensure_base_checkouts(&stage_cache_for(work_dir, stage_id)?, base)
+/// The checkout and build cache of `base` beside stage `stage_id`'s cache,
+/// their parents made and those of other bases removed.
+pub(super) fn base_dirs(work_dir: &Path, stage_id: &str, base: &str) -> Result<BaseDirs> {
+    ensure_base_dirs(&stage_cache_for(work_dir, stage_id)?, base)
 }
 
-/// A check's configuration with the checkout as its tree, no pass cache (a
-/// base run proves nothing about the worktree) and `recorder` observing.
-fn base_config(
+/// A check's configuration with the checkout `root` as its tree, no pass
+/// cache (a base run proves nothing about the worktree), and `cache`, the
+/// base's own, in place of the stage cache a confined run would get: the
+/// stage's code can write the stage cache, so a base run never reads it.
+pub(super) fn base_config(
     stage: &Stage,
     root: &Path,
+    cache: &StageCache,
     work_dir: &Path,
     progress: &Arc<Progress>,
-    recorder: &Arc<Recorder>,
 ) -> Result<CriteriaConfig> {
     let config = acceptance_config(stage, Some(root), work_dir, requested_cache(true), progress)?;
-    let recorder = Arc::clone(recorder);
-    let observer = CriterionObserver(Arc::new(move |index: usize, result: &CriterionResult| {
-        recorder.record(index, result);
-    }));
+    let stage_cache = config.stage_cache.as_ref().map(|_| cache.clone());
     Ok(CriteriaConfig {
         cache_dir: None,
-        observer: Some(observer),
+        stage_cache,
         ..config
     })
 }
@@ -125,7 +127,7 @@ fn base_config(
 struct Recorder {
     work_dir: PathBuf,
     stage: Stage,
-    short: String,
+    base: String,
     acceptance_dir: Option<PathBuf>,
     progress: Arc<Progress>,
     failure: Mutex<Option<String>>,
@@ -135,14 +137,14 @@ impl Recorder {
     fn new(
         work_dir: &Path,
         stage: &Stage,
-        short: String,
+        base: String,
         acceptance_dir: Option<PathBuf>,
         progress: &Arc<Progress>,
     ) -> Self {
         Self {
             work_dir: work_dir.to_path_buf(),
             stage: stage.clone(),
-            short,
+            base,
             acceptance_dir,
             progress: Arc::clone(progress),
             failure: Mutex::new(None),
@@ -159,6 +161,7 @@ impl Recorder {
         let evidence = evidence(
             index,
             criterion.command(),
+            &self.base,
             result,
             parsed(&expanded, cwd, result),
         );
@@ -169,11 +172,23 @@ impl Recorder {
         let outcome = CriterionOutcome {
             label: format!("base:{index}"),
             passed: evidence.passed,
-            summary: format!("at base {}: {}", self.short, describe(&evidence)),
+            summary: format!(
+                "at base {}: {}",
+                &self.base[..SHORT_COMMIT],
+                describe(&evidence)
+            ),
             log: None,
         };
         let output = [result.stdout.as_bytes(), result.stderr.as_bytes()].concat();
         self.progress.record(outcome, Some(output));
+    }
+
+    /// The observer that records each criterion through `recorder`.
+    fn observer(recorder: &Arc<Recorder>) -> CriterionObserver {
+        let recorder = Arc::clone(recorder);
+        CriterionObserver(Arc::new(move |index: usize, result: &CriterionResult| {
+            recorder.record(index, result);
+        }))
     }
 
     fn take_failure(&self) -> Result<()> {
@@ -200,10 +215,11 @@ pub(super) fn parsed(command: &str, cwd: &Path, result: &CriterionResult) -> Opt
 }
 
 /// The evidence of one run of criterion `index`, whose command the stage
-/// defines as `command`.
+/// defines as `command`, at the base commit `base`.
 pub(super) fn evidence(
     index: usize,
     command: &str,
+    base: &str,
     result: &CriterionResult,
     summary: Option<RunSummary>,
 ) -> BaseEvidence {
@@ -213,6 +229,7 @@ pub(super) fn evidence(
     BaseEvidence {
         index,
         command: command.to_string(),
+        base: base.to_string(),
         passed: result.success,
         executed: summary.as_ref().and_then(|summary| summary.executed),
         failed: summary.as_ref().and_then(|summary| summary.failed),

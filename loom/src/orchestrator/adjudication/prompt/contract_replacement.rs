@@ -10,7 +10,7 @@ use crate::models::dispute::{DisputeKind, FileReplacement};
 use crate::plan::schema::ContractSpec;
 use crate::utils::sha256_hex;
 use crate::verify::contracts::normalize;
-use crate::verify::contracts::trial::{load_receipt, receipt_covers};
+use crate::verify::contracts::trial::{load_receipt, receipt_files_cover};
 use crate::verify::integrity::lost_statements;
 
 /// The evidence headings whose fences the truncation pass halves
@@ -68,7 +68,7 @@ fn trial_line(input: &KindPromptInput<'_>) -> String {
         .map(|r| (r.file.clone(), sha256_hex(r.content.as_bytes())))
         .collect();
     match load_receipt(input.work_dir, &input.stage.id) {
-        Ok(Some(receipt)) if receipt_covers(Some(&receipt), &receipt.head, &pairs).is_ok() => {
+        Ok(Some(receipt)) if receipt_files_cover(&receipt, &pairs).is_ok() => {
             format!(
                 "Trial: passed in a confined host job at {} (format and static gates, then the \
                  contracts)\n\n",

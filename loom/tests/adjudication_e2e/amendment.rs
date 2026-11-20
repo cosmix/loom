@@ -1,6 +1,7 @@
 //! Amendment-application happy-path tests sharing the parent module's fixtures.
 
 use super::*;
+use loom::process::sandbox_probe::skip_without_plan_locks;
 
 /// The FLAT `plan_patch` shape three real adjudicators emitted instead of the
 /// nested shape [`verdict_accept_delete_first`] uses: `op`/`index` sit as
@@ -93,6 +94,9 @@ fn assert_amendment_applied(work: &Path, plan: &Path, shape: &str) {
 ///    `amendments_applied` is incremented.
 #[test]
 fn dispute_to_amendment_to_pass() {
+    if skip_without_plan_locks("dispute_to_amendment_to_pass") {
+        return;
+    }
     let tmp = tempfile::tempdir().unwrap();
     let work = tmp.path();
     let plan = write_plan_with_metadata_markers(work);
@@ -123,6 +127,9 @@ fn dispute_to_amendment_to_pass() {
 /// must apply identically: same snapshot, same audit row, same requeue.
 #[test]
 fn dispute_to_amendment_to_pass_with_flat_plan_patch() {
+    if skip_without_plan_locks("dispute_to_amendment_to_pass_with_flat_plan_patch") {
+        return;
+    }
     let tmp = tempfile::tempdir().unwrap();
     let work = tmp.path();
     let plan = write_plan_with_metadata_markers(work);

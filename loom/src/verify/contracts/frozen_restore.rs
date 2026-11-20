@@ -97,6 +97,9 @@ fn undo_one(
     if sha256_hex(&current) != overlay {
         return Ok(false);
     }
+    // The undo writes the frozen copy, not the bytes the file held before the
+    // trial: the child's snapshot died with it, and any other bytes would be
+    // drift the completion check refuses anyway.
     let content = read_frozen(&site.work_dir, record, &frozen.path, &frozen.sha256)?;
     // The overlay kept the file's mode; setuid, setgid and sticky bits are dropped.
     let mode = std::fs::symlink_metadata(root.join(target))?

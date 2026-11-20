@@ -5,6 +5,7 @@
 
 use super::*;
 use loom::models::dispute::{DisputeKind, DisputeVerdict, DisputeVerdictRecord, FindingSnapshot};
+use loom::process::sandbox_probe::skip_without_plan_locks;
 use loom::verify::contracts::store::load_freeze;
 use loom::verify::review::report::Finding;
 use loom::verify::review::store::{self, RecordedFinding, ReviewRound, RulingKind};
@@ -133,8 +134,10 @@ loom:
 <!-- END loom METADATA -->
 "#;
 
+// `narrowing_support` reuses this module: a second `#[path]` include of it
+// would compile the file twice in this test crate.
 #[path = "../test_support/mod.rs"]
-mod test_support;
+pub(crate) mod test_support;
 use test_support::git_repo::{git, TestRepo};
 
 /// A refused freeze in a real Git worktree with a Cargo package, plan,
@@ -271,6 +274,11 @@ fn assert_queued_for_a_contract_writer(fx: &Refused) -> Stage {
 
 #[test]
 fn freeze_refusal_accept_with_a_harness_patch_requeues_for_a_contract_writer() {
+    if skip_without_plan_locks(
+        "freeze_refusal_accept_with_a_harness_patch_requeues_for_a_contract_writer",
+    ) {
+        return;
+    }
     let fx = refused_freeze();
     let verdict = serde_json::json!({
         "verdict": "accept",
@@ -294,6 +302,9 @@ fn freeze_refusal_accept_with_a_harness_patch_requeues_for_a_contract_writer() {
 
 #[test]
 fn freeze_refusal_accept_applies_two_patches_in_order() {
+    if skip_without_plan_locks("freeze_refusal_accept_applies_two_patches_in_order") {
+        return;
+    }
     let fx = refused_freeze();
     let verdict = serde_json::json!({
         "verdict": "accept",

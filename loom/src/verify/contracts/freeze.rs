@@ -119,13 +119,7 @@ pub(crate) fn judge_run(
         }
     };
     if outcome != BUILD_FAILED {
-        if let Some(marker) = streams.and_then(|(out, err)| environment_marker(out, err)) {
-            return Err(format!(
-                "contract '{id}' fails for an environment reason ({marker}), so its red proves \
-                 nothing about the implementation: the test must run inside loom's confinement \
-                 (no network, no nested OS sandbox, writes only in the tree and TMPDIR)"
-            ));
-        }
+        refuse_environment_red(id, streams)?;
     }
     Ok(ContractRunReport {
         contract_id: id.clone(),
@@ -133,6 +127,22 @@ pub(crate) fn judge_run(
         outcome: outcome.to_string(),
         exit_code: exit,
     })
+}
+
+/// Refuse a red whose `(stdout, stderr)` carries an environment marker. The
+/// check applies even when the runner's summary parsed: a contract whose
+/// expected failure message itself contains such a marker cannot be frozen.
+/// Accepted, since a parsed summary can still come from a test that failed
+/// for the environment's reason.
+fn refuse_environment_red(id: &str, streams: Option<(&str, &str)>) -> Result<(), String> {
+    match streams.and_then(|(out, err)| environment_marker(out, err)) {
+        Some(marker) => Err(format!(
+            "contract '{id}' fails for an environment reason ({marker}), so its red proves \
+             nothing about the implementation: the test must run inside loom's confinement \
+             (no network, no nested OS sandbox, writes only in the tree and TMPDIR)"
+        )),
+        None => Ok(()),
+    }
 }
 
 /// D8 steps 1 and 2 with `repo`: the stage declares contracts, every changed

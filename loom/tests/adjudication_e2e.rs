@@ -302,7 +302,7 @@ fn double_apply_is_idempotent() {
 /// process restarts.
 #[test]
 fn dispute_amendment_is_idempotent_under_repeat_apply() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = plan_work_dir!("dispute_amendment_is_idempotent_under_repeat_apply");
     let work = tmp.path();
     write_plan_with_metadata_markers(work);
     write_stage(work, &make_stage_two_criteria("s1"));
@@ -394,7 +394,7 @@ fn file_and_drive_dispute(
 /// dispute so subsequent ticks short-circuit.
 #[test]
 fn amendment_cap_exceeded_escalates_to_human_review() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = plan_work_dir!("amendment_cap_exceeded_escalates_to_human_review");
     let work = tmp.path();
     write_plan_with_cap(work, 2);
     write_stage(work, &make_stage_three_criteria("s1"));

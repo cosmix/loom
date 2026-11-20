@@ -38,9 +38,12 @@ pub(super) fn semantics(has_replacement: bool) -> String {
          delete the contract with a `plan_patch` and say what it leaves untested.\n",
     );
     s.push_str(&format!(
-        "  An accept re-freezes every contract and harness file at its current content, \
-         adds new harness files and drops deleted ones, so judge the changes and new \
-         files listed under `{FROZEN_SET_HEADING}` too.\n"
+        "  An accept freezes each accepted replacement as written and every other file the \
+         freeze records at its frozen copy, putting back a changed or missing one; a file \
+         the freeze lacks that matches a harness glob (or is a new contract's file) is \
+         frozen as the worktree holds it. So the changed files listed under \
+         `{FROZEN_SET_HEADING}` are reverted by an accept, and the new files listed there \
+         are frozen: judge the new ones too.\n"
     ));
     if has_replacement {
         s.push_str(ACCEPTED_REPLACEMENT);

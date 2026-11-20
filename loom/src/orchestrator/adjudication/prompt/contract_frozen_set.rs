@@ -1,6 +1,9 @@
-//! The frozen-set evidence of a contract dispute briefing: what an accept
-//! would re-freeze besides the disputed contracts' own files (see
-//! `apply_contract::accept`), so the judge sees every file it vouches for.
+//! The frozen-set evidence of a contract dispute briefing: the frozen files
+//! besides the disputed contracts' own that the worktree changed, which an
+//! accept puts back from their frozen copies, and the harness matches the
+//! freeze lacks, which an accept freezes from the worktree
+//! (`apply_contract_rulings`, `apply_contract::refreeze`), so the judge sees
+//! every file it vouches for.
 
 use anyhow::{Context, Result};
 use std::collections::BTreeSet;
@@ -24,8 +27,9 @@ const MAX_FROZEN_SET_SECTION_BYTES: usize = 32 * 1024;
 /// [`FROZEN_SET_HEADING`] and its body: every frozen file outside `disputed`
 /// (the disputed contracts' normalized paths) whose worktree bytes differ from
 /// the freeze (a bounded diff of each, and a line naming each deleted one),
-/// then every harness match the freeze does not hold yet. An accept re-freezes
-/// the changed and new files and drops the deleted.
+/// then every harness match the freeze does not hold yet. An accept puts the
+/// changed and deleted files back at their frozen copies and freezes the new
+/// ones as the worktree holds them.
 pub(super) fn section(
     input: &KindPromptInput<'_>,
     disputed: &[String],

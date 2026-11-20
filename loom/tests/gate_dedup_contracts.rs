@@ -25,7 +25,7 @@ use support::{HELPER_FILE, STAGE};
 
 #[test]
 #[serial]
-fn refreeze_covers_changed_harness_files() {
+fn accept_puts_back_a_changed_harness_file_and_keeps_it_frozen() {
     let fx = support::refreeze_fixture();
     let new_bytes: &[u8] = b"pub fn ready() -> bool { true }\n";
     fs::write(fx.worktree.join(HELPER_FILE), new_bytes).unwrap();
@@ -34,15 +34,21 @@ fn refreeze_covers_changed_harness_files() {
 
     assert_eq!(
         fx.frozen_hash(HELPER_FILE),
-        Some(sha256_hex(new_bytes)),
-        "the accept must re-freeze the harness file at its current bytes"
+        Some(sha256_hex(support::HELPER_BYTES)),
+        "the accept must keep the harness file frozen at its recorded bytes"
     );
-    assert_eq!(fx.frozen_copy(HELPER_FILE), new_bytes);
+    assert_eq!(fx.frozen_copy(HELPER_FILE), support::HELPER_BYTES);
+    let worktree = fs::read(fx.worktree.join(HELPER_FILE)).unwrap();
+    assert_eq!(
+        worktree,
+        support::HELPER_BYTES,
+        "the changed file is put back"
+    );
 }
 
 #[test]
 #[serial]
-fn refreeze_drops_deleted_harness_files() {
+fn accept_puts_back_a_deleted_harness_file_and_keeps_it_frozen() {
     let fx = support::refreeze_fixture();
     fs::remove_file(fx.worktree.join(HELPER_FILE)).unwrap();
 
@@ -51,8 +57,15 @@ fn refreeze_drops_deleted_harness_files() {
 
     assert_eq!(
         fx.frozen_hash(HELPER_FILE),
-        None,
-        "a deleted harness file must leave the freeze record"
+        Some(sha256_hex(support::HELPER_BYTES)),
+        "a deleted harness file must stay in the freeze record"
+    );
+    assert_eq!(fx.frozen_copy(HELPER_FILE), support::HELPER_BYTES);
+    let worktree = fs::read(fx.worktree.join(HELPER_FILE)).unwrap();
+    assert_eq!(
+        worktree,
+        support::HELPER_BYTES,
+        "the deleted file is put back"
     );
 }
 

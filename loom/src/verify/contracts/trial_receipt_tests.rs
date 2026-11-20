@@ -132,3 +132,19 @@ fn a_filing_must_name_the_trialled_set_exactly() {
     let repeated = [pair("a.rs", "1"), pair("a.rs", "1")];
     assert!(receipt_covers(Some(&receipt), &head, &repeated).is_err());
 }
+
+#[test]
+fn files_cover_ignores_the_head_and_still_checks_every_file_and_its_bytes() {
+    let receipt = TrialReceipt {
+        head: "old-head".to_string(),
+        files: vec![TrialFile {
+            path: "tests/x.rs".to_string(),
+            sha256: "aa".to_string(),
+        }],
+    };
+    let pair = |sha: &str| vec![("tests/x.rs".to_string(), sha.to_string())];
+    assert_eq!(receipt_files_cover(&receipt, &pair("aa")), Ok(()));
+    assert!(receipt_files_cover(&receipt, &pair("bb")).is_err());
+    assert!(receipt_files_cover(&receipt, &[]).is_err());
+    assert!(receipt_covers(Some(&receipt), "new-head", &pair("aa")).is_err());
+}

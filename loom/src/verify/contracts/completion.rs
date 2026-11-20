@@ -11,7 +11,7 @@ use anyhow::{bail, Context, Result};
 use std::path::Path;
 
 use super::collection::rust::{chain_problems, run_dir_problems};
-use super::drift::{frozen_drift, Drift, DriftKind};
+use super::drift::{drift_lines, expecting};
 use super::failed_builds::FailedBuilds;
 use super::run_dir::resolve_run;
 use super::store::{self, FreezeRecord};
@@ -93,18 +93,14 @@ fn findings_with(
     runner: &dyn ProbeRunner,
     overrides: &[TrialFile],
 ) -> Result<ContractCheck> {
-    let Some(mut record) = store::load_freeze(work_dir, &stage.id)? else {
+    let Some(record) = store::load_freeze(work_dir, &stage.id)? else {
         bail!(
             "the contracts of stage '{}' were never frozen: the contract phase did not finish",
             stage.id
         );
     };
-    for file in &mut record.files {
-        if let Some(trial) = overrides.iter().find(|trial| trial.path == file.path) {
-            file.sha256.clone_from(&trial.sha256);
-        }
-    }
-    let drift = changed_frozen_files(&record, acceptance_dir, worktree_root)?;
+    let record = expecting(record, overrides);
+    let drift = drift_lines(&record, acceptance_dir, worktree_root)?;
     let place = Place {
         record: &record,
         acceptance_dir,
@@ -267,25 +263,6 @@ fn collection_problems(
     Ok(problems
         .into_iter()
         .map(|problem| format!("contract '{}': {problem}", contract.id))
-        .collect())
-}
-
-/// Frozen files whose content differs from the freeze, or that are gone.
-fn changed_frozen_files(
-    record: &FreezeRecord,
-    acceptance_dir: &Path,
-    worktree_root: &Path,
-) -> Result<Vec<String>> {
-    let drift = frozen_drift(record, acceptance_dir, worktree_root)?;
-    Ok(drift
-        .into_iter()
-        .map(|Drift { path, kind }| match kind {
-            DriftKind::Changed => format!("frozen file '{path}' changed after the freeze"),
-            DriftKind::Missing => format!("frozen file '{path}' is missing"),
-            DriftKind::Unreadable(error) => {
-                format!("frozen file '{path}' cannot be read as frozen: {error}")
-            }
-        })
         .collect())
 }
 

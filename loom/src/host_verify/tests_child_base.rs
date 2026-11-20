@@ -9,7 +9,8 @@ use std::path::{Path, PathBuf};
 
 use serial_test::serial;
 
-use super::child_base::{checkout_dir, describe, evidence, parsed};
+use super::child::Progress;
+use super::child_base::{base_config, base_dirs, describe, evidence, parsed};
 use super::tests_child::{confinement_unavailable, git, Fixture, STAGE};
 use super::{store, JobRecord, JobState};
 use crate::models::stage::StageType;
@@ -59,7 +60,9 @@ impl BaseFixture {
     }
 
     fn checkout(&self) -> PathBuf {
-        checkout_dir(&self.fx.work_dir, STAGE, &self.base).unwrap()
+        base_dirs(&self.fx.work_dir, STAGE, &self.base)
+            .unwrap()
+            .checkout
     }
 }
 
@@ -97,6 +100,7 @@ fn a_criterion_failing_at_the_base_records_its_counts() {
         [BaseEvidence {
             index: 0,
             command: CRITERION.to_string(),
+            base: bfx.base.clone(),
             passed: false,
             executed: Some(3),
             failed: Some(1),
@@ -171,6 +175,55 @@ fn a_checkout_with_a_foreign_head_is_made_again() {
 }
 
 #[test]
+#[serial]
+fn a_base_run_builds_with_the_base_cache_and_never_the_stage_cache() {
+    use crate::stage_cache::Consumer;
+    let fx = Fixture::new(&["true"], StageType::Standard);
+    let stage = crate::verify::transitions::load_stage(STAGE, &fx.work_dir).unwrap();
+    let base = "0123456789abcdef0123456789abcdef01234567";
+    let dirs = base_dirs(&fx.work_dir, STAGE, base).unwrap();
+    let progress = std::sync::Arc::new(Progress::new(&fx.work_dir, STAGE, "job"));
+    let config = base_config(&stage, &dirs.checkout, &dirs.cache, &fx.work_dir, &progress).unwrap();
+    let granted = config
+        .stage_cache
+        .expect("a confined base run has a build cache");
+    assert_eq!(granted, dirs.cache);
+    assert!(
+        config.cache_dir.is_none(),
+        "a base run proves nothing about the worktree"
+    );
+    let stage_root = crate::verify::criteria::stage_cache_for(&fx.work_dir, STAGE)
+        .unwrap()
+        .ensure()
+        .unwrap();
+    assert_eq!(
+        granted.ensure().unwrap(),
+        granted.root(),
+        "the grant is the base root"
+    );
+    assert!(
+        !granted.root().starts_with(&stage_root),
+        "{}",
+        granted.root().display()
+    );
+    let host = std::collections::BTreeMap::new();
+    for (name, value) in granted.environment(Consumer::HostJob, &dirs.checkout, &host, None) {
+        let value = Path::new(&value);
+        assert!(
+            !value.starts_with(&stage_root),
+            "{name} names the stage cache"
+        );
+        if name.ends_with("_DIR") || name == "SCCACHE_SERVER_UDS" {
+            assert!(
+                value.starts_with(granted.root()),
+                "{name}={}",
+                value.display()
+            );
+        }
+    }
+}
+
+#[test]
 fn at_base_needs_a_criterion_and_no_contracts() {
     use crate::commands::verify::{check_selection, CheckArgs, CheckSelection};
     let args = |criterion: Vec<usize>, contracts: bool| CheckArgs {
@@ -194,6 +247,7 @@ fn each_base_result_has_its_summary() {
     let evidence = |passed, executed, failed, build_failed, timed_out| BaseEvidence {
         index: 0,
         command: "c".to_string(),
+        base: "b".to_string(),
         passed,
         executed,
         failed,
@@ -241,7 +295,14 @@ fn the_adapter_counts_and_build_failures_become_evidence() {
     };
     let cwd = Path::new(".");
     let failing = run("=== 1 failed, 2 passed in 0.01s ===", 1);
-    let recorded = evidence(3, CRITERION, &failing, parsed(CRITERION, cwd, &failing));
+    let recorded = evidence(
+        3,
+        CRITERION,
+        "b",
+        &failing,
+        parsed(CRITERION, cwd, &failing),
+    );
+    assert_eq!(recorded.base, "b");
     assert_eq!(
         (
             recorded.index,
@@ -256,12 +317,13 @@ fn the_adapter_counts_and_build_failures_become_evidence() {
         "=== 1 error in 0.01s ===\nERROR collecting tests/test_a.py",
         2,
     );
-    let recorded = evidence(0, CRITERION, &broken, parsed(CRITERION, cwd, &broken));
+    let recorded = evidence(0, CRITERION, "b", &broken, parsed(CRITERION, cwd, &broken));
     assert!(recorded.build_failed, "{recorded:?}");
     let unknown = run("ok", 0);
     let recorded = evidence(
         0,
         "make check",
+        "b",
         &unknown,
         parsed("make check", cwd, &unknown),
     );

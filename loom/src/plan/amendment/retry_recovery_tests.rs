@@ -1,11 +1,14 @@
 use super::*;
 
-/// A criterion is narrowed only on a failing base run: loom's run of "one".
+/// A criterion is narrowed only on a failing base run: loom's run of "one"
+/// at the base of stage `a`, which gets a worktree to have one.
 fn seed_failing_base_run(work: &Path) {
+    use crate::verify::review::handoffs::test_support::stage_with_base;
     use crate::verify::review::handoffs::{save_base_evidence, BaseEvidence};
     let evidence = BaseEvidence {
         index: 0,
         command: "one".into(),
+        base: stage_with_base(&work.join("..").join(".."), "a"),
         passed: false,
         executed: Some(3),
         failed: Some(1),

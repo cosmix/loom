@@ -47,6 +47,25 @@ fn a_symlinked_root_is_refused() {
 }
 
 #[test]
+fn a_refused_root_still_removes_the_base_checkouts() {
+    let home = TempDir::new().unwrap();
+    let outside = TempDir::new().unwrap();
+    let cache = cache_in(home.path());
+    let dirs = super::super::base_checkout::ensure_base_dirs(&cache, "abc").unwrap();
+    std::fs::create_dir(&dirs.checkout).unwrap();
+    let stage_tree = dirs.checkout.parent().unwrap().to_path_buf();
+    std::fs::create_dir_all(cache.root().parent().unwrap()).unwrap();
+    symlink(outside.path(), cache.root()).unwrap();
+    let error = remove_stage_cache(&cache).unwrap_err();
+    assert!(format!("{error:#}").contains("stage cache"), "{error:#}");
+    assert!(
+        stage_tree.symlink_metadata().is_err(),
+        "the base checkouts go even though the root removal failed"
+    );
+    assert!(outside.path().exists());
+}
+
+#[test]
 fn an_absent_root_is_false() {
     let home = TempDir::new().unwrap();
     assert!(!remove_stage_cache(&cache_in(home.path())).unwrap());

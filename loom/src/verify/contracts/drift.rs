@@ -8,6 +8,7 @@ use anyhow::{Context, Result};
 use std::path::Path;
 
 use super::store::{self, FreezeRecord};
+use super::trial::TrialFile;
 use crate::fs::safe_read::{is_not_found, read_bounded};
 use crate::utils::sha256_hex;
 
@@ -61,4 +62,35 @@ pub fn frozen_drift(
         })
     });
     Ok(drift.collect())
+}
+
+/// `record` as a trial expects the worktree: each file `overrides` replaces
+/// carries the replacement's sha256, every other file its frozen one.
+pub(crate) fn expecting(mut record: FreezeRecord, overrides: &[TrialFile]) -> FreezeRecord {
+    for file in &mut record.files {
+        if let Some(trial) = overrides.iter().find(|trial| trial.path == file.path) {
+            file.sha256.clone_from(&trial.sha256);
+        }
+    }
+    record
+}
+
+/// One line per frozen file whose content differs from `record`, or that is
+/// gone ([`frozen_drift`]).
+pub(crate) fn drift_lines(
+    record: &FreezeRecord,
+    acceptance_dir: &Path,
+    worktree_root: &Path,
+) -> Result<Vec<String>> {
+    let drift = frozen_drift(record, acceptance_dir, worktree_root)?;
+    Ok(drift
+        .into_iter()
+        .map(|Drift { path, kind }| match kind {
+            DriftKind::Changed => format!("frozen file '{path}' changed after the freeze"),
+            DriftKind::Missing => format!("frozen file '{path}' is missing"),
+            DriftKind::Unreadable(error) => {
+                format!("frozen file '{path}' cannot be read as frozen: {error}")
+            }
+        })
+        .collect())
 }
