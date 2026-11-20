@@ -268,7 +268,9 @@ pub(super) fn platform_command(
         anyhow::bail!("confined verification requires sandbox-exec");
     }
     // dyld opens the root directory while discovering the system Cryptex cache.
-    let mut profile = String::from("(version 1)(deny default)(allow process*)(allow sysctl-read)(allow mach-lookup)(allow file-read-metadata)(allow file-read* (literal \"/\"))");
+    // `process*` grants no signals: `same-sandbox` lets the command stop its own
+    // children and groups, and nothing started outside this sandbox instance.
+    let mut profile = String::from("(version 1)(deny default)(allow process*)(allow signal (target same-sandbox))(allow sysctl-read)(allow mach-lookup)(allow file-read-metadata)(allow file-read* (literal \"/\"))");
     if network == NetworkAccess::Provision {
         profile.push_str(&provision_network_rules(grants)?);
     }
