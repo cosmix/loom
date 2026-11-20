@@ -1,0 +1,5 @@
+
+running 3 tests
+.test tests::hang has been running for over 60 seconds
+test tests::slow_then_ok has been running for over 60 seconds
+.

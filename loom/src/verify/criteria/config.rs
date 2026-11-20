@@ -12,6 +12,7 @@ use crate::models::stage::{CommandConfinement, Stage, TruthCheck};
 use crate::stage_cache::StageCache;
 
 use super::cache::CachePolicy;
+use super::live_output::LiveOutput;
 use super::result::CriterionResult;
 
 /// Default timeout for command execution (5 minutes)
@@ -71,6 +72,10 @@ pub struct CriteriaConfig {
     /// the next one starts. `None` by default.
     pub observer: Option<CriterionObserver>,
 
+    /// Where each criterion's output is copied while it runs. `None` by
+    /// default; the captured result does not depend on it.
+    pub live_output: Option<LiveOutput>,
+
     /// The 0-based indices of the criteria to run; `None` runs every one. A
     /// criterion outside the set is neither run, cached nor reported.
     pub only: Option<BTreeSet<usize>>,
@@ -105,6 +110,7 @@ impl Default for CriteriaConfig {
             tree_root: None,
             stage_cache: None,
             observer: None,
+            live_output: None,
             only: None,
         }
     }
@@ -154,6 +160,12 @@ impl CriteriaConfig {
     /// Report each criterion to `observer` as it finishes.
     pub fn with_observer(mut self, observer: CriterionObserver) -> Self {
         self.observer = Some(observer);
+        self
+    }
+
+    /// Copy each criterion's output to the writer `live` opens for it.
+    pub fn with_live_output(mut self, live: LiveOutput) -> Self {
+        self.live_output = Some(live);
         self
     }
 

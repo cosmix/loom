@@ -3,12 +3,12 @@
 
 use std::fmt::Write as _;
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 
 use super::digest;
-use super::store::{job_dir, read_progress};
+use super::store::{job_dir, read_progress, unfinished_logs};
 use super::wait::{WaitOutcome, WaitSite};
 use super::{CriterionOutcome, JobKind, JobRecord, JobResult, JobState};
 use crate::verify::contracts::completion::guidance;
@@ -83,10 +83,14 @@ pub(super) fn report(
             site_refusal(out, site, head, reason)?;
             return Ok(());
         }
-        WaitOutcome::Pending { done } => format!(
-            "{}: {done} criteria done. Run the same command again to keep waiting.\n",
-            site_heading(site, "pending", head)
-        ),
+        WaitOutcome::Pending { done, logs } => {
+            let mut text = format!(
+                "{}: {done} criteria done. Run the same command again to keep waiting.\n",
+                site_heading(site, "pending", head)
+            );
+            write_unfinished(&mut text, logs, "is running");
+            text
+        }
         WaitOutcome::Finished(record, result) => {
             finished_text(site, head, record, result.as_ref())?
         }
@@ -127,6 +131,8 @@ fn finished_text(
         let _ = writeln!(text, "{detail}");
     }
     if word == "stopped" {
+        let logs = unfinished_log_paths(site.work_dir, site.stage_id, &record.id, &outcomes);
+        write_unfinished(&mut text, &logs, "was running when the job stopped");
         let _ = writeln!(text, "Run the same command again to request a new run.");
     }
     let contract_failed = |o: &CriterionOutcome| !o.passed && o.label.starts_with("contract:");
@@ -142,7 +148,41 @@ fn finished_text(
 fn write_failure(text: &mut String, dir: &Path, outcome: &CriterionOutcome) {
     let _ = writeln!(text, "{}", outcome.summary.trim_end());
     if let Some(log) = &outcome.log {
-        let path = std::path::absolute(dir.join(log)).unwrap_or_else(|_| dir.join(log));
-        let _ = writeln!(text, "full log: {}", path.display());
+        let _ = writeln!(text, "full log: {}", absolute(dir, log).display());
+    }
+}
+
+fn absolute(dir: &Path, name: &str) -> PathBuf {
+    std::path::absolute(dir.join(name)).unwrap_or_else(|_| dir.join(name))
+}
+
+/// The paths of job `job_id`'s criterion logs that have no outcome among
+/// `outcomes` ([`unfinished_logs`]). A job directory that cannot be listed
+/// yields none: the report still prints what it knows.
+pub(super) fn unfinished_log_paths(
+    work_dir: &Path,
+    stage_id: &str,
+    job_id: &str,
+    outcomes: &[CriterionOutcome],
+) -> Vec<PathBuf> {
+    let listed = unfinished_logs(work_dir, stage_id, job_id, outcomes)
+        .and_then(|names| Ok((job_dir(work_dir, stage_id, job_id)?, names)));
+    match listed {
+        Ok((dir, names)) => names.iter().map(|name| absolute(&dir, name)).collect(),
+        Err(error) => {
+            tracing::warn!(error = %format!("{error:#}"), "cannot list the job's criterion logs");
+            Vec::new()
+        }
+    }
+}
+
+/// One line per log of a criterion with no result: `<label> <state>; log so
+/// far: <path>`.
+fn write_unfinished(text: &mut String, logs: &[PathBuf], state: &str) {
+    for log in logs {
+        let file = log.file_name().map(|name| name.to_string_lossy());
+        let label = file.as_deref().and_then(|name| name.strip_suffix(".log"));
+        let label = label.unwrap_or("a criterion");
+        let _ = writeln!(text, "{label} {state}; log so far: {}", log.display());
     }
 }

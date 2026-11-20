@@ -1,0 +1,4 @@
+command: python3 -m unittest test_hang
+exit: 137
+cwd: .
+hang-started: yes

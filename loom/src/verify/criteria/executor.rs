@@ -14,6 +14,7 @@ use crate::stage_cache::StageCache;
 
 use super::config::DEFAULT_COMMAND_TIMEOUT;
 use super::confine::{self, CommandSpec, PreparedCommand};
+use super::live_output::LiveSink;
 use super::result::CriterionResult;
 
 /// Maximum output size for acceptance criteria commands (10MB)
@@ -129,21 +130,37 @@ pub(crate) fn run_provision_with_timeout(
 
 /// Execute a command already prepared by the confinement path.
 pub(super) fn run_prepared_with_timeout(
+    prepared: PreparedCommand,
+    timeout: Duration,
+) -> Result<CriterionResult> {
+    run_prepared_live(prepared, timeout, None)
+}
+
+/// [`run_prepared_with_timeout`] that also copies the output to `live` as it
+/// arrives. At the timeout the leader's group is stopped and every other
+/// process the command started is killed (`escapees`) before the leader is
+/// reaped, then the leader and its group are killed and reaped.
+pub(super) fn run_prepared_live(
     mut prepared: PreparedCommand,
     timeout: Duration,
+    live: Option<LiveSink>,
 ) -> Result<CriterionResult> {
     let start = Instant::now();
     let display = prepared.display().to_string();
     let spawned = prepared.spawn_retaining_resources()?;
+    let leader = super::escapees::Leader::spawned(spawned.id(), prepared.anchor_pid());
     let mut child = if prepared.has_group_anchor() {
         OwnedProcess::child_only(spawned)
     } else {
         OwnedProcess::new(spawned)
     };
-    let output = OutputReaders::spawn(child.child());
+    let output = OutputReaders::spawn(child.child(), live);
     let wait_result = child
         .wait(timeout)
         .with_context(|| format!("Failed to wait for command: {display}"))?;
+    if wait_result.is_none() {
+        super::escapees::kill_escapees(leader);
+    }
     let cleanup_deadline = child.retire();
     prepared.retire_group();
     let (stdout, mut stderr) = output.collect(cleanup_deadline);
@@ -177,11 +194,12 @@ struct OutputReaders {
 }
 
 impl OutputReaders {
-    /// Take both pipes off `child` and start draining them on their own threads.
-    fn spawn(child: &mut Child) -> Self {
+    /// Take both pipes off `child` and start draining them on their own
+    /// threads, each also copying what it reads to `live`.
+    fn spawn(child: &mut Child, live: Option<LiveSink>) -> Self {
         Self {
-            stdout: spawn_reader(child.stdout.take()),
-            stderr: spawn_reader(child.stderr.take()),
+            stdout: spawn_reader(child.stdout.take(), live.clone()),
+            stderr: spawn_reader(child.stderr.take(), live),
         }
     }
 
@@ -195,12 +213,15 @@ impl OutputReaders {
     }
 }
 
-fn spawn_reader<R: Read + Send + 'static>(stream: Option<R>) -> mpsc::Receiver<Captured> {
+fn spawn_reader<R: Read + Send + 'static>(
+    stream: Option<R>,
+    live: Option<LiveSink>,
+) -> mpsc::Receiver<Captured> {
     let (tx, rx) = mpsc::channel();
     match stream {
         Some(stream) => {
             thread::spawn(move || {
-                let _ = tx.send(read_stream(stream));
+                let _ = tx.send(read_stream(stream, live.as_ref()));
             });
         }
         None => {
@@ -222,17 +243,18 @@ fn collect_stream(stream: mpsc::Receiver<Captured>, deadline: Instant) -> Captur
         })
 }
 
-/// Read a stream to string, handling errors gracefully
-///
-/// Reads output in chunks with a maximum size limit to prevent OOM attacks.
-/// If output exceeds MAX_OUTPUT_SIZE, the remaining data is discarded and
-/// a truncation message is appended.
 struct Captured {
     text: String,
     complete: bool,
 }
 
-fn read_stream<R: Read>(mut stream: R) -> Captured {
+/// Read a stream to string, handling errors gracefully
+///
+/// Reads output in chunks with a maximum size limit to prevent OOM attacks.
+/// If output exceeds MAX_OUTPUT_SIZE, the remaining data is discarded and
+/// a truncation message is appended. Every chunk read, kept or not, is also
+/// copied to `live`.
+fn read_stream<R: Read>(mut stream: R, live: Option<&LiveSink>) -> Captured {
     let mut complete = true;
     let mut truncated = false;
     let mut buf = Vec::new();
@@ -241,6 +263,9 @@ fn read_stream<R: Read>(mut stream: R) -> Captured {
         match stream.read(&mut chunk) {
             Ok(0) => break,
             Ok(n) => {
+                if let Some(live) = live {
+                    live.write(&chunk[..n]);
+                }
                 let keep = n.min(MAX_OUTPUT_SIZE.saturating_sub(buf.len()));
                 buf.extend_from_slice(&chunk[..keep]);
                 truncated |= keep < n;
@@ -264,7 +289,7 @@ fn read_stream<R: Read>(mut stream: R) -> Captured {
 
 #[cfg(test)]
 fn read_stream_to_string<R: Read>(stream: R) -> String {
-    read_stream(stream).text
+    read_stream(stream, None).text
 }
 
 #[cfg(test)]

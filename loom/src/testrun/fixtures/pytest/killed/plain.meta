@@ -1,0 +1,4 @@
+command: uv run --no-project --with pytest pytest
+exit: 137
+cwd: .
+hang-started: yes

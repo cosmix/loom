@@ -1,0 +1,8 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.13.0, pytest-9.1.1, pluggy-1.6.0 -- /home/user/.cache/uv/env/bin/python
+cachedir: .pytest_cache
+rootdir: /tmp/fixture/pyfn
+collecting ... collected 3 items
+
+test_hang.py::test_fast PASSED                                           [ 33%]
+test_hang.py::test_hang 

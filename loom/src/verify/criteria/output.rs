@@ -1,10 +1,15 @@
 //! Diagnostic rendering for a single acceptance criterion's result.
 
+use crate::testrun::RunningTests;
 use crate::verify::criteria::CriterionResult;
 
 /// Number of trailing lines of stdout/stderr shown for a failed or timed-out
 /// criterion.
 const TAIL_LINES: usize = 20;
+
+/// Most running tests a timed-out result names, and most characters of each.
+const RUNNING_NAMES: usize = 20;
+const RUNNING_NAME_CHARS: usize = 200;
 
 /// Render one criterion's pass/fail/timeout line. `index` is the same index
 /// `loom stage dispute-criteria --criterion-index` takes; `setup` is the
@@ -49,6 +54,14 @@ pub(crate) fn format_criterion_result(
         ));
     }
 
+    if let Some(running) = result
+        .running_at_timeout
+        .as_ref()
+        .filter(|_| result.timed_out)
+    {
+        lines.push(running_block(running));
+    }
+
     if let Some(tail) = tail_block("stderr", &result.stderr) {
         lines.push(tail);
     }
@@ -57,6 +70,35 @@ pub(crate) fn format_criterion_result(
     }
 
     lines.join("\n")
+}
+
+/// The tests a timed-out test run left running, at most [`RUNNING_NAMES`] of
+/// them, each cut to [`RUNNING_NAME_CHARS`] characters, or a line saying
+/// that loom cannot read them from this runner's output.
+pub(crate) fn running_block(running: &RunningTests) -> String {
+    let names = match running {
+        RunningTests::Named(names) if !names.is_empty() => names,
+        RunningTests::Named(_) => {
+            return "    still running at the timeout: no test named in the output".into()
+        }
+        RunningTests::Unknown => {
+            return "    still running at the timeout: unknown, loom cannot read this \
+                    runner's output for running tests; see its tail"
+                .into()
+        }
+    };
+    let mut block = vec![format!(
+        "    still running at the timeout ({}):",
+        names.len()
+    )];
+    for name in names.iter().take(RUNNING_NAMES) {
+        let cut: String = name.chars().take(RUNNING_NAME_CHARS).collect();
+        block.push(format!("      {cut}"));
+    }
+    if names.len() > RUNNING_NAMES {
+        block.push(format!("      and {} more", names.len() - RUNNING_NAMES));
+    }
+    block.join("\n")
 }
 
 /// Render the last [`TAIL_LINES`] lines of `text` under a header naming the
@@ -160,5 +202,41 @@ mod tests {
         assert!(out.contains("TIMEOUT [criterion 2]"), "{out}");
         assert!(out.contains("exit code: none"), "{out}");
         assert!(out.contains("still running when killed"), "{out}");
+        assert!(
+            !out.contains("still running at the timeout"),
+            "no test run: {out}"
+        );
+    }
+
+    #[test]
+    fn a_test_run_whose_runner_cannot_tell_says_so() {
+        let mut r = result(false, None, "", true);
+        r.running_at_timeout = Some(RunningTests::Unknown);
+
+        let out = format_criterion_result(1, &r, &[]);
+
+        assert!(
+            out.contains("unknown, loom cannot read this runner's output for running tests"),
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn a_timeout_names_its_running_tests_within_bounds() {
+        let mut r = result(false, None, "", true);
+        let mut names: Vec<String> = (0..25).map(|n| format!("t{n}")).collect();
+        names[0] = "x".repeat(500);
+        r.running_at_timeout = Some(RunningTests::Named(names));
+
+        let out = format_criterion_result(0, &r, &[]);
+
+        assert!(out.contains("still running at the timeout (25):"), "{out}");
+        assert!(out.contains(&"x".repeat(RUNNING_NAME_CHARS)), "{out}");
+        assert!(!out.contains(&"x".repeat(RUNNING_NAME_CHARS + 1)), "{out}");
+        assert!(out.contains("      t19\n      and 5 more"), "{out}");
+        assert!(!out.contains("t20"), "{out}");
+        r.running_at_timeout = Some(RunningTests::Named(Vec::new()));
+        let none = format_criterion_result(0, &r, &[]);
+        assert!(none.contains("no test named in the output"), "{none}");
     }
 }

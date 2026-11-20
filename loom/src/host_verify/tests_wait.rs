@@ -14,9 +14,9 @@ use crate::fs::inbox::{append_ledger, LedgerOutcome, LedgerRecord};
 use crate::relay::RequestKind;
 use crate::test_git::{git, TestRepo};
 
-const STAGE: &str = "s1";
+pub(super) const STAGE: &str = "s1";
 const SESSION: &str = "session-1";
-const OLD_JOB: &str = "11111111111111111111111111111111";
+pub(super) const OLD_JOB: &str = "11111111111111111111111111111111";
 const NEW_JOB: &str = "22222222222222222222222222222222";
 
 pub(super) struct Fx {
@@ -288,7 +288,7 @@ fn an_elapsed_budget_is_pending_and_exits_zero() {
     )
     .unwrap();
     let (waited, text) = fx.call(Duration::ZERO, false, "r9");
-    assert_eq!(waited, WaitOutcome::Pending { done: 1 });
+    assert_eq!(waited, super::tests_wait_live_log::pending(1));
     assert_eq!(exit_code(&waited), 0);
     assert!(text.starts_with("Host job: pending (check, "), "{text}");
     assert!(text.contains("1 criteria done"), "{text}");

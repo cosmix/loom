@@ -8,18 +8,19 @@
 //! to `child.log`.
 
 use std::collections::BTreeSet;
-use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::path::Path;
+use std::sync::Arc;
 
 use anyhow::{bail, ensure, Context, Result};
 
 use super::child_policy::{check_cache_policy, requested_cache};
+use super::child_progress::acceptance_label;
+pub(super) use super::child_progress::Progress;
 use super::{child_base, child_complete, child_contracts, digest, freeze, store};
 use super::{CriterionOutcome, JobKind, JobRecord, JobResult, JobState};
 use crate::git::worktree::WorktreeGit;
 use crate::models::dispute::truncate_to_byte_limit;
 use crate::models::stage::{Stage, StageType};
-use crate::verify::criteria::format_criterion_result;
 use crate::verify::criteria::{
     confined_stage_cache, plan_confinement, resolve_confinement, run_acceptance_with_config,
     set_spawn_observer, CachePolicy, CriteriaConfig, CriterionObserver, CriterionResult,
@@ -137,9 +138,10 @@ pub(super) fn run_acceptance(
     run_configured(stage, tree, &config)
 }
 
-/// A job's acceptance configuration: each criterion is recorded as it
-/// finishes, the record decides caching, never the daemon's environment, and
-/// confined commands share the stage's build caches.
+/// A job's acceptance configuration: each criterion's output reaches its log
+/// as it runs and the criterion is recorded as it finishes, the record decides
+/// caching, never the daemon's environment, and confined commands share the
+/// stage's build caches.
 pub(super) fn acceptance_config(
     stage: &Stage,
     tree_root: Option<&Path>,
@@ -162,6 +164,7 @@ pub(super) fn acceptance_config(
         .with_tree_root(tree_root)
         .with_stage_cache(stage_cache)
         .with_observer(observer)
+        .with_live_output(progress.live_output(acceptance_label))
         .with_cache_dir(work_dir)
         .with_cache_policy(cache))
 }
@@ -315,86 +318,5 @@ impl JobTree {
             ));
         }
         Ok((!found.is_empty()).then(|| found.join("; ")))
-    }
-}
-
-/// The outcomes of one job, persisted as each arrives. The acceptance
-/// observer cannot return an error, so the first store failure is kept and
-/// turned into the job's error once the criteria finish.
-pub(super) struct Progress {
-    work_dir: PathBuf,
-    stage_id: String,
-    job_id: String,
-    state: Mutex<ProgressState>,
-}
-
-#[derive(Default)]
-struct ProgressState {
-    outcomes: Vec<CriterionOutcome>,
-    failure: Option<String>,
-}
-
-impl Progress {
-    pub(super) fn new(work_dir: &Path, stage_id: &str, job_id: &str) -> Self {
-        Self {
-            work_dir: work_dir.to_path_buf(),
-            stage_id: stage_id.to_string(),
-            job_id: job_id.to_string(),
-            state: Mutex::new(ProgressState::default()),
-        }
-    }
-
-    fn lock(&self) -> MutexGuard<'_, ProgressState> {
-        self.state.lock().unwrap_or_else(PoisonError::into_inner)
-    }
-
-    /// Record acceptance criterion `index`. A result answered from the cache
-    /// captured no output and gets no log.
-    fn acceptance(&self, index: usize, result: &CriterionResult, setup: &[String]) {
-        let summary = format_criterion_result(index, result, setup);
-        let outcome = CriterionOutcome {
-            label: format!("acceptance-{index}"),
-            passed: result.success,
-            summary: truncate_to_byte_limit(&summary, SUMMARY_MAX_BYTES),
-            log: None,
-        };
-        let output =
-            (!result.cached).then(|| [result.stdout.as_bytes(), result.stderr.as_bytes()].concat());
-        self.record(outcome, output);
-    }
-
-    pub(super) fn record(&self, mut outcome: CriterionOutcome, output: Option<Vec<u8>>) {
-        let stored = self.store(&mut outcome, output);
-        let mut state = self.lock();
-        if let Err(err) = stored {
-            state.failure.get_or_insert_with(|| format!("{err:#}"));
-        }
-        state.outcomes.push(outcome);
-    }
-
-    fn store(&self, outcome: &mut CriterionOutcome, output: Option<Vec<u8>>) -> Result<()> {
-        let (work_dir, stage_id, job_id) = (&self.work_dir, &self.stage_id, &self.job_id);
-        if let Some(bytes) = output {
-            let log =
-                store::save_criterion_log(work_dir, stage_id, job_id, &outcome.label, &bytes)?;
-            outcome.log = Some(log);
-        }
-        store::append_progress(work_dir, stage_id, job_id, outcome)
-    }
-
-    pub(super) fn take_failure(&self) -> Result<()> {
-        match self.lock().failure.take() {
-            Some(failure) => bail!("cannot record the job's progress: {failure}"),
-            None => Ok(()),
-        }
-    }
-
-    /// Whether any outcome recorded so far failed.
-    pub(super) fn any_failed(&self) -> bool {
-        self.lock().outcomes.iter().any(|outcome| !outcome.passed)
-    }
-
-    pub(super) fn take_outcomes(&self) -> Vec<CriterionOutcome> {
-        std::mem::take(&mut self.lock().outcomes)
     }
 }

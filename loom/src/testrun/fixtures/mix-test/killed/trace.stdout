@@ -1,0 +1,6 @@
+Running ExUnit with seed: 0, max_cases: 1
+
+
+MixhangTest [test/mixhang_test.exs]
+  * test fast [L#4]  * test fast (0.00ms) [L#4]
+  * test hangs [L#9]

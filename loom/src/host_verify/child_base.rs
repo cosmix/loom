@@ -14,10 +14,11 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use anyhow::{bail, ensure, Context, Result};
 
-use super::child::{acceptance_config, JobTree, Progress};
+use super::child::{acceptance_config, JobTree, Progress, SUMMARY_MAX_BYTES};
 use super::child_policy::requested_cache;
 use super::submit::is_lower_hex;
 use super::{CriterionOutcome, JobRecord};
+use crate::models::dispute::truncate_to_byte_limit;
 use crate::models::stage::Stage;
 use crate::stage_cache::base_checkout::{ensure_base_dirs, BaseDirs};
 use crate::stage_cache::StageCache;
@@ -25,7 +26,8 @@ use crate::testrun::{classify, registry, RunOutcome, RunOutput, RunSummary};
 use crate::verify::context::CriteriaContext;
 use crate::verify::contracts::changes::stage_base;
 use crate::verify::criteria::{
-    run_acceptance_with_config, stage_cache_for, CriteriaConfig, CriterionObserver, CriterionResult,
+    run_acceptance_with_config, running_block, stage_cache_for, CriteriaConfig, CriterionObserver,
+    CriterionResult,
 };
 use crate::verify::execution_paths::resolve_acceptance_dir;
 use crate::verify::impact_tests::base::BaseCheckout;
@@ -118,8 +120,14 @@ pub(super) fn base_config(
     Ok(CriteriaConfig {
         cache_dir: None,
         stage_cache,
+        live_output: Some(progress.live_output(base_label)),
         ..config
     })
+}
+
+/// The label, and log name, of criterion `index` run at the base.
+fn base_label(index: usize) -> String {
+    format!("base:{index}")
 }
 
 /// Records each criterion as it finishes: its outcome and log in the job,
@@ -170,13 +178,9 @@ impl Recorder {
             failure.get_or_insert_with(|| format!("{error:#}"));
         }
         let outcome = CriterionOutcome {
-            label: format!("base:{index}"),
+            label: base_label(index),
             passed: evidence.passed,
-            summary: format!(
-                "at base {}: {}",
-                &self.base[..SHORT_COMMIT],
-                describe(&evidence)
-            ),
+            summary: base_summary(&self.base[..SHORT_COMMIT], &evidence, result),
             log: None,
         };
         let output = [result.stdout.as_bytes(), result.stderr.as_bytes()].concat();
@@ -236,6 +240,25 @@ pub(super) fn evidence(
         build_failed,
         timed_out: result.timed_out,
     }
+}
+
+/// `at base <short>: <describe>`, then for a timed-out run the tests it left
+/// running, bounded as an acceptance criterion's summary bounds them.
+pub(super) fn base_summary(
+    short: &str,
+    evidence: &BaseEvidence,
+    result: &CriterionResult,
+) -> String {
+    let mut summary = format!("at base {short}: {}", describe(evidence));
+    if let Some(running) = result
+        .running_at_timeout
+        .as_ref()
+        .filter(|_| result.timed_out)
+    {
+        summary.push('\n');
+        summary.push_str(&running_block(running));
+    }
+    truncate_to_byte_limit(&summary, SUMMARY_MAX_BYTES)
 }
 
 /// `passed`, `failed <n> of <m>`, `selected zero tests`, `did not build` or

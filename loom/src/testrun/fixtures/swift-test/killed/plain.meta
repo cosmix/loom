@@ -1,0 +1,4 @@
+command: swift test --skip-build
+exit: 137
+cwd: .
+hang-started: yes

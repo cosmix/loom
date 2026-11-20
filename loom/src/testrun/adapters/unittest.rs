@@ -129,6 +129,10 @@ impl TestRunnerAdapter for Unittest {
             build_failed: false,
         }
     }
+
+    fn unfinished_tests(&self, out: &RunOutput<'_>) -> Option<Vec<String>> {
+        crate::testrun::unfinished::read_either(out, crate::testrun::unfinished::unittest)
+    }
 }
 
 #[cfg(test)]

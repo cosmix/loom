@@ -1,0 +1,4 @@
+command: ruby -Itest test/hang_test.rb -v
+exit: 137
+cwd: .
+hang-started: yes

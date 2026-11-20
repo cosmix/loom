@@ -1,0 +1,4 @@
+command: ctest --test-dir build -j2 --output-on-failure
+exit: 137
+cwd: .
+hang-started: yes

@@ -32,6 +32,32 @@ unittest, ctest and minitest, which print no ANSI colour. bun-test, node-test, v
 mocha already suppress colour on a non-TTY, so their `.nocolor` bytes match the default run;
 `dart test` is the one runner that prints ANSI codes to a pipe by default.
 
+## Killed runs (`<adapter>/killed/`)
+
+Each `killed/<scenario>.*` is a real run of a three-test project (a passing test, one that sleeps
+for ten minutes, another passing test) whose process group was sent `SIGKILL` a few seconds after
+the sleeping test started, with stdout and stderr on pipes as loom reads them; the `exit:` line is
+the shell's 137. `testrun/unfinished_tests.rs` checks what each adapter reads from them about the
+tests still running. They were recorded on 2026-11-20 on a `darwin/arm64` host; the scratch
+project path is replaced by `/tmp/fixture` and the uv environment path by
+`/home/user/.cache/uv/env`. The cargo-test runs waited 70 s so that libtest printed its 60 s
+warnings, one for a test that then passed.
+
+| Adapter | Scenarios | Runner |
+| --- | --- | --- |
+| cargo-test | `pretty` (`cargo test`), `terse` (`cargo test -q`) | cargo 1.97 |
+| go-test | `verbose` (`-v`), `plain` | go 1.27.4 |
+| pytest | `verbose` (`-v`), `plain` | pytest 9.1.1, Python 3.13.0 |
+| unittest | `verbose` (`-v`), `plain` | Python 3.15 |
+| node-test | `plain` (`node --test`) | node v26.13.1 |
+| bun-test | `plain` (`bun test`) | bun 1.3.14 |
+| vitest | `plain` (`vitest run --globals`), `verbose` (`--reporter=verbose`) | vitest 5.0.0 |
+| rspec | `plain`, `documentation` (`--format documentation`) | rspec 3.13 |
+| minitest | `plain`, `verbose` (`-v`) | minitest 5.25.5 |
+| mix-test | `plain`, `trace` (`--trace`) | Mix 1.20.5, OTP 29 |
+| swift-test | `plain` (`swift test --skip-build`): XCTest's piped output is buffered and lost | Swift 6.4.2 |
+| ctest | `plain`, `parallel` (`-j2`), both `--output-on-failure` | ctest 4.5.1 |
+
 ## Runner versions
 
 | Tool | Version |

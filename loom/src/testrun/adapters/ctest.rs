@@ -99,6 +99,10 @@ impl TestRunnerAdapter for Ctest {
             ..RunSummary::default()
         }
     }
+
+    fn unfinished_tests(&self, out: &RunOutput<'_>) -> Option<Vec<String>> {
+        crate::testrun::unfinished::read_either(out, crate::testrun::unfinished::ctest)
+    }
 }
 
 #[cfg(test)]

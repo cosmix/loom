@@ -3,7 +3,7 @@
 
 use std::fs::File;
 use std::os::unix::fs::FileExt;
-use std::os::unix::process::{CommandExt, ExitStatusExt};
+use std::os::unix::process::ExitStatusExt;
 use std::path::Path;
 use std::process::{Command, ExitStatus, Stdio};
 
@@ -28,11 +28,12 @@ const STRIPPED_ENV: [&str; 9] = [
     "LOOM_HOOK_PATH",
 ];
 
-/// Spawn `<program> <args_prefix..> <stage_id> --job <job_id>` in its own
-/// process group, from the main project root, with stdout and stderr appended
-/// to `child.log`, the daemon's environment minus every session variable, and
-/// `LOOM_WORK_DIR` naming the canonical state root. The child resolves
-/// nothing from its own working directory. Returns the child and its log.
+/// Spawn `<program> <args_prefix..> <stage_id> --job <job_id>` leading its own
+/// session and process group, from the main project root, with stdout and
+/// stderr appended to `child.log`, the daemon's environment minus every
+/// session variable, and `LOOM_WORK_DIR` naming the canonical state root. The
+/// child resolves nothing from its own working directory. Returns the child
+/// and its log.
 pub(super) fn spawn_child(
     work_dir: &Path,
     config: &RunnerConfig,
@@ -54,8 +55,10 @@ pub(super) fn spawn_child(
         .current_dir(project_root)
         .stdin(Stdio::null())
         .stdout(log.try_clone()?)
-        .stderr(log.try_clone()?)
-        .process_group(0);
+        .stderr(log.try_clone()?);
+    // A session of its own, so that a criterion's timeout can find what the
+    // criterion started in it (`verify::criteria::escapees`).
+    crate::verify::criteria::lead_own_session(&mut command);
     for (key, _) in std::env::vars_os() {
         if key.to_str().is_some_and(is_session_variable) {
             command.env_remove(&key);

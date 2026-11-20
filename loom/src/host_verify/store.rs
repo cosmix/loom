@@ -180,6 +180,14 @@ pub fn save_criterion_log(
     label: &str,
     bytes: &[u8],
 ) -> Result<String> {
+    let name = criterion_log_name(label)?;
+    let rel = job_rel(stage_id, job_id)?.join(&name);
+    replace_file(&open_root(work_dir)?, &rel, &capped_log(bytes))?;
+    Ok(name)
+}
+
+/// `<label>.log`, for a label of `[a-z0-9:_-]+` that names no store file.
+fn criterion_log_name(label: &str) -> Result<String> {
     let valid = |byte: u8| matches!(byte, b'a'..=b'z' | b'0'..=b'9' | b':' | b'_' | b'-');
     ensure!(
         !label.is_empty() && label.bytes().all(valid),
@@ -190,8 +198,6 @@ pub fn save_criterion_log(
         !STORE_FILES.contains(&name.as_str()),
         "{name} is a store file"
     );
-    let rel = job_rel(stage_id, job_id)?.join(&name);
-    replace_file(&open_root(work_dir)?, &rel, &capped_log(bytes))?;
     Ok(name)
 }
 
@@ -229,6 +235,7 @@ pub fn load_job_file(
 }
 
 mod groups;
+mod live_log;
 mod order;
 mod slots;
 #[cfg(test)]
@@ -236,6 +243,7 @@ pub(crate) use groups::append_group;
 pub use groups::load_groups;
 pub(crate) use groups::start_guarded_group;
 pub(super) use groups::{load_group_anchors, load_uncontrolled_groups};
+pub(crate) use live_log::{open_live_log, unfinished_logs};
 pub(crate) use order::next_submission_order;
 pub(crate) use slots::{clear_pending, load_pending, save_job_copy, save_pending};
 

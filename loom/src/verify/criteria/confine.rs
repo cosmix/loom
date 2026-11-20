@@ -133,6 +133,11 @@ impl PreparedCommand {
         self.group_anchor.is_some()
     }
 
+    /// The pid of the group anchor the spawned command joined, if any.
+    pub(super) fn anchor_pid(&self) -> Option<u32> {
+        self.group_anchor.as_ref().map(|anchor| anchor.pgid())
+    }
+
     pub(super) fn retire_group(&mut self) {
         if let Some(mut anchor) = self.group_anchor.take() {
             anchor.retire();
@@ -147,9 +152,20 @@ impl PreparedCommand {
             self.command = wrapped;
         }
         self.group_anchor = super::spawn_observer::prepare_group()?;
-        if let Some(anchor) = &self.group_anchor {
-            #[cfg(unix)]
-            self.command.process_group(i32::try_from(anchor.pgid())?);
+        // A leader of its own session lets a timeout find descendants that
+        // left its process group (`escapees`); under an anchor it joins the
+        // anchor's group in the host job child's session instead. A new
+        // session also has no controlling terminal: opening `/dev/tty` fails
+        // with `ENXIO`, the leader's own `setpgid(0, 0)` fails with `EPERM`
+        // (a session leader cannot leave its group), and on Linux the leader
+        // acquires a controlling terminal by opening a terminal device
+        // without `O_NOCTTY`.
+        #[cfg(unix)]
+        match &self.group_anchor {
+            Some(anchor) => {
+                self.command.process_group(i32::try_from(anchor.pgid())?);
+            }
+            None => super::escapees::lead_own_session(&mut self.command),
         }
         let child = self
             .command
@@ -181,9 +197,9 @@ impl ConfinedChild {
 
 /// Spawn a plan-authored command as a child process under `confinement`.
 ///
-/// On Unix a normal child leads its own process group. Under the host-job
-/// observer it joins a persistent guardian's group, which can still be
-/// retired after the command exits or the daemon restarts.
+/// On Unix a normal child leads its own session and process group. Under the
+/// host-job observer it joins a persistent guardian's group, which can still
+/// be retired after the command exits or the daemon restarts.
 ///
 /// stdin is `/dev/null` and both output streams are piped; callers must drain
 /// them concurrently with waiting — `executor::run_spec_with_timeout` is the
@@ -241,8 +257,6 @@ fn prepare(
         // Explicit plan opt-in: the command genuinely needs what loom was given.
         CommandConfinement::Inherit => {}
     }
-    #[cfg(unix)]
-    cmd.process_group(0);
     cmd.stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());

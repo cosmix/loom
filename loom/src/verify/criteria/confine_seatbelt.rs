@@ -293,5 +293,9 @@ mod tests;
 mod provision_tests;
 
 #[cfg(test)]
+#[path = "confine_seatbelt_signal_tests.rs"]
+mod signal_tests;
+
+#[cfg(test)]
 #[path = "confine_git_config_tests.rs"]
 mod git_config_tests;

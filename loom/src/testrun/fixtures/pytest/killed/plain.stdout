@@ -1,0 +1,6 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.13.0, pytest-9.1.1, pluggy-1.6.0
+rootdir: /tmp/fixture/pyfn
+collected 3 items
+
+test_hang.py .

@@ -1,0 +1,4 @@
+command: cargo test
+exit: 137
+cwd: .
+hang-started: yes

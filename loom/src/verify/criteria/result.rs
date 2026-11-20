@@ -23,6 +23,10 @@ pub struct CriterionResult {
     /// guard counted them. A hit keeps only an output tail, too short to
     /// re-count from; `None` on a real execution.
     pub cached_tests_executed: Option<u64>,
+    /// After a timeout of a test run, what its output shows of the tests it
+    /// left running (`crate::testrun::registry::unfinished_tests`); `None`
+    /// for a command that is no test run, and on every other result.
+    pub running_at_timeout: Option<crate::testrun::RunningTests>,
 }
 
 impl CriterionResult {
@@ -47,6 +51,7 @@ impl CriterionResult {
             output_complete: true,
             cached: false,
             cached_tests_executed: None,
+            running_at_timeout: None,
         }
     }
 
@@ -69,6 +74,7 @@ impl CriterionResult {
             output_complete: true,
             cached: true,
             cached_tests_executed: tests_executed,
+            running_at_timeout: None,
         }
     }
 

@@ -5,13 +5,15 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use super::cache;
-use super::cache_contract::{AssertionVerdict, CriterionContract};
+use super::cache_contract::{AssertionVerdict, CachedCriterionPass, CriterionContract};
 use super::cache_fingerprint::{self, ExecutionIdentity, InputFingerprint};
 use super::config::{extended_criterion_timeout, CriteriaConfig};
 use super::confine::{prepare_confined, resolve_confinement, CommandSpec, PreparedCommand};
 use super::criterion_eval::{evaluate, CriterionCommand};
-use super::executor::run_prepared_with_timeout;
+use super::executor::run_prepared_live;
+use super::live_output::LiveSink;
 use super::result::{AcceptanceResult, CriterionResult};
+use super::runner_results::{note_running_tests, CollectedResults, EvaluatedCriterion};
 use crate::models::stage::{AcceptanceCriterion, CommandConfinement, Stage};
 use crate::verify::context::CriteriaContext;
 
@@ -42,6 +44,7 @@ pub fn run_acceptance_with_config(
     let selected = stage.acceptance.iter().enumerate();
     for (index, criterion) in selected.filter(|(index, _)| config.selects(*index)) {
         let prepared = prepare_criterion(
+            index,
             criterion,
             setup.as_deref(),
             &context,
@@ -72,6 +75,7 @@ fn expanded_setup(stage: &Stage, context: &CriteriaContext) -> Option<String> {
 }
 
 struct PreparedCriterion<'a> {
+    index: usize,
     criterion: &'a AcceptanceCriterion,
     original_command: &'a str,
     /// The criterion's command with variables expanded and no setup prefix.
@@ -82,6 +86,7 @@ struct PreparedCriterion<'a> {
 }
 
 fn prepare_criterion<'a>(
+    index: usize,
     criterion: &'a AcceptanceCriterion,
     setup: Option<&str>,
     context: &CriteriaContext,
@@ -102,6 +107,7 @@ fn prepare_criterion<'a>(
     let contract = CriterionContract::new(&spec, criterion, timeout, confinement)
         .with_zero_test_guard(zero_test_guard);
     PreparedCriterion {
+        index,
         criterion,
         original_command,
         expanded_command: expanded,
@@ -117,14 +123,7 @@ fn run_criterion(
     confinement: CommandConfinement,
     config: &CriteriaConfig,
 ) -> Result<EvaluatedCriterion> {
-    let mut outcome = run_with_cache(
-        &prepared.contract,
-        &prepared.spec,
-        working_dir,
-        prepared.timeout,
-        confinement,
-        config,
-    )?;
+    let mut outcome = run_with_cache(&prepared, working_dir, confinement, config)?;
     outcome.result.command = prepared.original_command.to_string();
     if outcome.result.cached {
         return Ok(EvaluatedCriterion {
@@ -132,10 +131,12 @@ fn run_criterion(
             failures: Vec::new(),
         });
     }
+    let cwd = working_dir.unwrap_or(Path::new("."));
+    note_running_tests(&mut outcome.result, &prepared.expanded_command, cwd);
     let command = CriterionCommand {
         written: prepared.original_command,
         expanded: &prepared.expanded_command,
-        cwd: working_dir.unwrap_or(Path::new(".")),
+        cwd,
     };
     let (verdict, failures) = evaluate(
         prepared.criterion,
@@ -173,45 +174,39 @@ struct CacheCandidate {
 }
 
 fn run_with_cache(
-    contract: &CriterionContract,
-    spec: &CommandSpec,
+    criterion: &PreparedCriterion<'_>,
     working_dir: Option<&Path>,
-    timeout: Duration,
     confinement: CommandConfinement,
     config: &CriteriaConfig,
 ) -> Result<RunOutcome> {
+    let (contract, spec) = (&criterion.contract, &criterion.spec);
     let started = Instant::now();
+    let run = |prepared, candidate| {
+        let live = config
+            .live_output
+            .as_ref()
+            .and_then(|live| live.open(criterion.index));
+        execute(prepared, criterion.timeout, started, candidate, live)
+    };
     let tree = config.tree_root.as_deref();
     let cache = config.stage_cache.as_ref();
     let prepared = prepare_confined(spec, working_dir, tree, confinement, cache)?;
     let Some(work_dir) = enabled_cache_dir(config) else {
-        return execute(prepared, timeout, started, None);
+        return run(prepared, None);
     };
     let acceptance_dir = working_dir.unwrap_or(Path::new("."));
     if !cache::is_cacheable(&spec.to_string(), acceptance_dir) {
-        return execute(prepared, timeout, started, None);
+        return run(prepared, None);
     }
     let Some(identity) = ExecutionIdentity::from_prepared(&prepared, confinement) else {
-        return execute(prepared, timeout, started, None);
+        return run(prepared, None);
     };
     let Some(before) = cache_fingerprint::capture(acceptance_dir, &identity) else {
-        return execute(prepared, timeout, started, None);
+        return run(prepared, None);
     };
     let lookup = || cache::lookup_pass(work_dir, contract, &before);
     if let Some(record) = config.cache.reads().then(lookup).flatten() {
-        let result = CriterionResult::cached_verdict(
-            spec.to_string(),
-            Some(record.actual_exit),
-            record.stdout_tail,
-            record.stderr_tail,
-            record.verdict.tests_executed,
-            started.elapsed(),
-        );
-        return Ok(RunOutcome {
-            result,
-            execution_duration: None,
-            candidate: None,
-        });
+        return Ok(cached_outcome(spec, record, started));
     }
     let candidate = CacheCandidate {
         work_dir: work_dir.to_path_buf(),
@@ -219,7 +214,24 @@ fn run_with_cache(
         before,
         identity,
     };
-    execute(prepared, timeout, started, Some(candidate))
+    run(prepared, Some(candidate))
+}
+
+/// The outcome of a criterion answered by the pass cache: nothing ran.
+fn cached_outcome(spec: &CommandSpec, record: CachedCriterionPass, started: Instant) -> RunOutcome {
+    let result = CriterionResult::cached_verdict(
+        spec.to_string(),
+        Some(record.actual_exit),
+        record.stdout_tail,
+        record.stderr_tail,
+        record.verdict.tests_executed,
+        started.elapsed(),
+    );
+    RunOutcome {
+        result,
+        execution_duration: None,
+        candidate: None,
+    }
 }
 
 fn enabled_cache_dir(config: &CriteriaConfig) -> Option<&Path> {
@@ -232,8 +244,9 @@ fn execute(
     timeout: Duration,
     started: Instant,
     candidate: Option<CacheCandidate>,
+    live: Option<LiveSink>,
 ) -> Result<RunOutcome> {
-    let mut result = run_prepared_with_timeout(prepared, timeout)?;
+    let mut result = run_prepared_live(prepared, timeout, live)?;
     let execution_duration = result.duration;
     result.duration = started.elapsed();
     Ok(RunOutcome {
@@ -270,99 +283,12 @@ fn publish_pass(
     );
 }
 
-#[derive(Default)]
-struct CollectedResults {
-    results: Vec<CriterionResult>,
-    failures: Vec<String>,
-}
-
-struct EvaluatedCriterion {
-    result: CriterionResult,
-    failures: Vec<String>,
-}
-
-impl CollectedResults {
-    fn push(&mut self, evaluated: EvaluatedCriterion) {
-        self.results.push(evaluated.result);
-        self.failures.extend(evaluated.failures);
-    }
-
-    fn warn_on_suspicious_stderr(&self) {
-        for result in &self.results {
-            for warning in detect_stderr_warnings(result) {
-                eprintln!("warning: {warning}");
-            }
-        }
-    }
-
-    fn finish(self) -> AcceptanceResult {
-        if self.failures.is_empty() {
-            AcceptanceResult::AllPassed {
-                results: self.results,
-            }
-        } else {
-            AcceptanceResult::Failed {
-                results: self.results,
-                failures: self.failures,
-            }
-        }
-    }
-}
-
-fn detect_stderr_warnings(result: &CriterionResult) -> Vec<String> {
-    if !result.success || result.stderr.is_empty() || result.cached {
-        return Vec::new();
-    }
-    let patterns = [
-        "connection refused",
-        "permission denied",
-        "failed to download",
-        "blocked",
-        "EACCES",
-        "ECONNREFUSED",
-        "unable to connect",
-        "network error",
-        "sandbox",
-    ];
-    let stderr = result.stderr.to_lowercase();
-    patterns
-        .iter()
-        .filter(|pattern| stderr.contains(pattern.to_lowercase().as_str()))
-        .map(|pattern| {
-            format!(
-                "Command '{}' succeeded (exit 0) but stderr contains '{}' — may indicate a silent failure",
-                result.command, pattern
-            )
-        })
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::verify::criteria::CriterionObserver;
     use std::collections::BTreeSet;
     use std::sync::{Arc, Mutex};
-
-    fn make_result(success: bool, stderr: &str) -> CriterionResult {
-        CriterionResult::new(
-            "test-command".to_string(),
-            success,
-            String::new(),
-            stderr.to_string(),
-            if success { Some(0) } else { Some(1) },
-            Duration::from_millis(100),
-            false,
-        )
-    }
-
-    #[test]
-    fn stderr_warning_detection_is_case_insensitive_and_success_only() {
-        let warning = make_result(true, "BLOCKED by firewall, connection refused");
-        let failure = make_result(false, "connection refused");
-        assert_eq!(detect_stderr_warnings(&warning).len(), 2);
-        assert!(detect_stderr_warnings(&failure).is_empty());
-    }
 
     #[test]
     fn only_runs_the_named_criteria_under_their_own_indices() {
@@ -391,10 +317,8 @@ mod tests {
         assert_eq!(*seen.lock().unwrap(), [0, 2]);
         assert!(!dir.path().join("ran-1").exists(), "criterion 1 ran");
     }
-
-    #[test]
-    fn ordinary_success_stderr_is_not_a_warning() {
-        let result = make_result(true, "Compiling project\nFinished dev target");
-        assert!(detect_stderr_warnings(&result).is_empty());
-    }
 }
+
+#[cfg(test)]
+#[path = "runner_timeout_tests.rs"]
+mod timeout_tests;

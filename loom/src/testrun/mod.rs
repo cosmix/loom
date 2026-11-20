@@ -16,11 +16,15 @@ mod environment;
 #[cfg(test)]
 mod fixture_support;
 pub mod languages;
+mod libtest;
 mod outcome;
 pub mod recognize;
 pub mod registry;
 #[cfg(test)]
 mod tests;
+mod unfinished;
+#[cfg(test)]
+mod unfinished_tests;
 
 pub use outcome::classify;
 
@@ -56,6 +60,18 @@ pub enum RunOutcome {
     NotSelected,
     /// The output said nothing the adapter could read; the exit code decides.
     Unparsed,
+}
+
+/// What a stopped run's output says about the tests it left running
+/// ([`registry::unfinished_tests`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RunningTests {
+    /// The command runs a test runner whose output loom cannot read for the
+    /// tests still running.
+    Unknown,
+    /// The tests the output shows started and not finished; empty when it
+    /// names none.
+    Named(Vec<String>),
 }
 
 /// A test to select: the file declaring it and, when known, its name in the
@@ -192,5 +208,13 @@ pub trait TestRunnerAdapter: Sync {
     /// not a rejection. Defaults to the runner's own `build_failed`.
     fn compile_rejected(&self, out: &RunOutput<'_>) -> bool {
         self.parse(out).build_failed
+    }
+
+    /// The tests a stopped run's output shows started and not finished, or
+    /// `None` when this runner's output does not show it. An empty list means
+    /// the output names none still running. A runner whose output names a
+    /// test only once it finished keeps this default.
+    fn unfinished_tests(&self, _out: &RunOutput<'_>) -> Option<Vec<String>> {
+        None
     }
 }

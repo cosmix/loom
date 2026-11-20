@@ -193,6 +193,10 @@ impl TestRunnerAdapter for CargoTest {
     fn compile_rejected(&self, out: &RunOutput<'_>) -> bool {
         self.parse(out).build_failed && cargo_could_not_compile(&combined_output(out))
     }
+
+    fn unfinished_tests(&self, out: &RunOutput<'_>) -> Option<Vec<String>> {
+        crate::testrun::libtest::unfinished(out.stdout, out.stderr)
+    }
 }
 
 /// The libtest paths of the named `targets`; `None` when none is named.

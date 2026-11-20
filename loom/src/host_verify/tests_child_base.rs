@@ -10,10 +10,11 @@ use std::path::{Path, PathBuf};
 use serial_test::serial;
 
 use super::child::Progress;
-use super::child_base::{base_config, base_dirs, describe, evidence, parsed};
+use super::child_base::{base_config, base_dirs, base_summary, describe, evidence, parsed};
 use super::tests_child::{confinement_unavailable, git, Fixture, STAGE};
 use super::{store, JobRecord, JobState};
 use crate::models::stage::StageType;
+use crate::testrun::RunningTests;
 use crate::verify::review::handoffs::{load_base_evidence, BaseEvidence};
 
 /// A criterion run through a `pytest` that only prints `summary` and exits
@@ -329,4 +330,36 @@ fn the_adapter_counts_and_build_failures_become_evidence() {
     );
     assert_eq!((recorded.executed, recorded.failed), (None, None));
     assert!(recorded.passed && !recorded.build_failed);
+}
+
+#[test]
+fn a_base_timeout_names_the_tests_it_left_running() {
+    let mut result = crate::verify::criteria::CriterionResult::new(
+        "cargo test".to_string(),
+        false,
+        String::new(),
+        String::new(),
+        None,
+        std::time::Duration::ZERO,
+        true,
+    );
+    let names: Vec<String> = (0..25).map(|n| format!("slow::t{n}")).collect();
+    result.running_at_timeout = Some(RunningTests::Named(names));
+    let recorded = evidence(0, "cargo test", "b", &result, None);
+
+    let summary = base_summary("abc123", &recorded, &result);
+
+    assert!(
+        summary.starts_with("at base abc123: timed out\n    still running at the timeout (25):"),
+        "{summary}"
+    );
+    assert!(
+        summary.contains("      slow::t19\n      and 5 more"),
+        "{summary}"
+    );
+    result.timed_out = false;
+    assert_eq!(
+        base_summary("abc123", &recorded, &result),
+        "at base abc123: timed out"
+    );
 }

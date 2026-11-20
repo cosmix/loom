@@ -24,6 +24,7 @@ mod child_base;
 mod child_complete;
 mod child_contracts;
 pub(crate) mod child_policy;
+mod child_progress;
 mod child_watchdog;
 pub mod digest;
 pub mod freeze;
@@ -77,6 +78,8 @@ mod tests_freeze_memo;
 #[cfg(test)]
 mod tests_freeze_refusal;
 #[cfg(test)]
+mod tests_live_log;
+#[cfg(test)]
 mod tests_runner;
 #[cfg(test)]
 mod tests_runner_group;
@@ -98,6 +101,8 @@ mod tests_submit_pending;
 mod tests_wait;
 #[cfg(test)]
 mod tests_wait_criteria;
+#[cfg(test)]
+mod tests_wait_live_log;
 #[cfg(test)]
 mod tests_wait_refusal;
 #[cfg(test)]

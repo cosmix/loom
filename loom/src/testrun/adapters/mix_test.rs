@@ -105,6 +105,10 @@ impl TestRunnerAdapter for MixTest {
             Some(excluded),
         )
     }
+
+    fn unfinished_tests(&self, out: &RunOutput<'_>) -> Option<Vec<String>> {
+        crate::testrun::unfinished::read_either(out, crate::testrun::unfinished::exunit)
+    }
 }
 
 #[cfg(test)]

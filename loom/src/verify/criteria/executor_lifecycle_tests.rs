@@ -66,7 +66,7 @@ fn capture_error_after_partial_output_is_incomplete() {
             Ok(1)
         }
     }
-    let capture = read_stream(Failing(false));
+    let capture = read_stream(Failing(false), None);
     assert!(!capture.complete);
     assert!(capture.text.starts_with('x'));
 }

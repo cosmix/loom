@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use super::recognize::invocations;
-use super::{adapters, TestRunnerAdapter};
+use super::{adapters, RunOutput, RunningTests, TestRunnerAdapter};
 
 /// Every registered adapter, in registration order.
 pub fn all() -> &'static [&'static dyn TestRunnerAdapter] {
@@ -23,4 +23,21 @@ pub fn recognize(command: &str, cwd: &Path) -> Option<&'static dyn TestRunnerAda
     invocations(command, cwd)
         .iter()
         .find_map(|argv| all().iter().copied().find(|a| a.recognizes(argv)))
+}
+
+/// The tests a stopped run of `command` in `cwd` left unfinished, read by the
+/// adapter that recognises `command`, else by the first adapter that can read
+/// them from `out` (a wrapper script that runs `cargo test`). When no adapter
+/// can read them, [`RunningTests::Unknown`] if an adapter recognises
+/// `command` as a test run, else `None`: a build or a script is no test run.
+pub fn unfinished_tests(command: &str, cwd: &Path, out: &RunOutput<'_>) -> Option<RunningTests> {
+    let recognised = recognize(command, cwd);
+    let named = recognised
+        .into_iter()
+        .chain(all().iter().copied())
+        .find_map(|adapter| adapter.unfinished_tests(out));
+    match named {
+        Some(names) => Some(RunningTests::Named(names)),
+        None => recognised.map(|_| RunningTests::Unknown),
+    }
 }

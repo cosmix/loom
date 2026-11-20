@@ -58,13 +58,17 @@ mod criterion_eval;
 pub(crate) mod environment;
 #[cfg(test)]
 mod environment_contract_tests;
+mod escapees;
 mod executor;
+mod live_output;
 pub(crate) mod output;
 #[cfg(target_os = "linux")]
 pub(crate) mod pid_namespace;
 mod probe;
+mod process_table;
 mod result;
 mod runner;
+mod runner_results;
 mod spawn_observer;
 mod zero_tests;
 
@@ -89,12 +93,14 @@ pub(crate) use confine::{
 pub use confine::{
     plan_confinement, resolve_confinement, spawn_confined, CommandSpec, ConfinedChild,
 };
+pub(crate) use escapees::lead_own_session;
 pub(crate) use executor::run_provision_with_timeout;
 pub use executor::{
     run_single_criterion, run_single_criterion_with_timeout, run_spec_in_optional_stage,
     run_spec_in_optional_tree, run_spec_in_stage, run_spec_with_timeout,
 };
-pub(crate) use output::format_criterion_result;
+pub use live_output::{LiveOutput, LiveWriterOpener};
+pub(crate) use output::{format_criterion_result, running_block};
 pub(in crate::verify) use probe::{CachedRun, CriteriaProbe, ProbeRun, ProbeRunner};
 pub use result::{AcceptanceResult, CriterionResult};
 pub use runner::{run_acceptance, run_acceptance_with_config};

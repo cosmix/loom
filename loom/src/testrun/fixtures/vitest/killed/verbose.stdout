@@ -1,0 +1,5 @@
+
+ RUN  v5.0.0 /tmp/fixture/vitest
+
+ ✓ other.test.js > other passes 0ms
+ ✓ hang.test.js > fast 0ms

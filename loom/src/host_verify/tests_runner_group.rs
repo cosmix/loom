@@ -23,10 +23,10 @@ use crate::verify::criteria::{set_spawn_observer, spawn_confined, CommandSpec, S
 
 /// Why this process cannot run criterion guardians, or `None` when it can.
 /// A guardian records the boot identity and its own start time, and stops its
-/// group with SIGKILL. A macOS host job's Seatbelt profile allows `process*`
-/// but no `signal`, so a kill from inside it is refused: the guardian never
-/// stops, and dropping its `GroupAnchor` then waits on it without a deadline.
-/// The Claude Code sandbox denies the boot-identity sysctl instead.
+/// group with SIGKILL. A sandbox that refuses signals to the processes it
+/// started (a Seatbelt profile with `process*` and no `signal` rule) leaves
+/// the guardian running, and dropping its `GroupAnchor` then waits on it
+/// without a deadline. The Claude Code sandbox denies the boot-identity sysctl.
 fn guardian_blocker() -> Option<String> {
     if let Err(error) = crate::process::boot_id::os_boot_id() {
         return Some(format!("cannot read the boot identity: {error:#}"));

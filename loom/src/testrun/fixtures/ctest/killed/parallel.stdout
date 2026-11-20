@@ -1,0 +1,6 @@
+Test project /tmp/fixture/ctest/build
+    Start 1: fast
+    Start 2: hang
+1/3 Test #1: fast .............................   Passed    0.00 sec
+    Start 3: later
+2/3 Test #3: later ............................   Passed    0.00 sec

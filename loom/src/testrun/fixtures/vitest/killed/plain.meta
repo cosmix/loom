@@ -1,0 +1,4 @@
+command: vitest run --globals
+exit: 137
+cwd: .
+hang-started: yes

@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use super::store::save_current;
 use super::tests_wait::{fixture, Fx};
+use super::tests_wait_live_log::pending;
 use super::wait::{wait_or_request, WaitOutcome, WaitSite};
 use super::JobState;
 use crate::relay::HostJobRequest;
@@ -26,14 +27,8 @@ fn two_selections_of_one_session_keep_two_requests() {
     let mut current = fx.job(JOB, JobState::Running, &["r1"]);
     current.criteria = Some(vec![1]);
     save_current(&fx.work_dir, &current).unwrap();
-    assert_eq!(
-        call(&fx, Some(&[1]), "r3"),
-        (WaitOutcome::Pending { done: 0 }, None)
-    );
-    assert_eq!(
-        call(&fx, Some(&[2]), "r4"),
-        (WaitOutcome::Pending { done: 0 }, None)
-    );
+    assert_eq!(call(&fx, Some(&[1]), "r3"), (pending(0), None));
+    assert_eq!(call(&fx, Some(&[2]), "r4"), (pending(0), None));
     assert!(state_names(&fx, Some(&[1]), "r1"));
     assert!(state_names(&fx, Some(&[2]), "r2"));
 }
@@ -52,7 +47,7 @@ fn reordered_and_repeated_criteria_follow_one_request() {
     save_current(&fx.work_dir, &current).unwrap();
     assert_eq!(
         call(&fx, Some(&normalized_criteria(&[1, 2, 1])), "r2"),
-        (WaitOutcome::Pending { done: 0 }, None)
+        (pending(0), None)
     );
 }
 
@@ -77,10 +72,7 @@ fn a_request_waiting_behind_another_job_follows_the_waiting_record() {
         LedgerOutcome::Applied,
         &format!("host job {} queued behind {}", waiting.id, current.id),
     );
-    assert_eq!(
-        call(&fx, Some(&[2]), "r3"),
-        (WaitOutcome::Pending { done: 0 }, None)
-    );
+    assert_eq!(call(&fx, Some(&[2]), "r3"), (pending(0), None));
     waiting.state = JobState::Cancelled;
     save_job_copy(&fx.work_dir, &waiting).unwrap();
     let (outcome, ticket) = call(&fx, Some(&[2]), "r4");
@@ -149,7 +141,7 @@ fn a_full_check_never_follows_a_pending_subset_job() {
     save_current(&fx.work_dir, &subset).unwrap();
 
     let (same, ticket) = call(&fx, Some(&[1]), "r9");
-    assert_eq!(same, WaitOutcome::Pending { done: 0 });
+    assert_eq!(same, pending(0));
     assert_eq!(ticket, None, "the same selection follows its request");
 
     let (full, ticket) = call(&fx, None, "r2");

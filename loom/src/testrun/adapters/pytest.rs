@@ -149,6 +149,10 @@ impl TestRunnerAdapter for Pytest {
         summary.build_failed = COLLECTION_ERROR.is_match(&text);
         summary
     }
+
+    fn unfinished_tests(&self, out: &RunOutput<'_>) -> Option<Vec<String>> {
+        crate::testrun::unfinished::read_either(out, crate::testrun::unfinished::pytest)
+    }
 }
 
 #[cfg(test)]

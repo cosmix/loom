@@ -127,18 +127,14 @@ pub(super) fn wrap(
     Ok((command, scratch, git))
 }
 
-/// Start in `cwd` with no input, piped output and a process group of its own.
+/// Start in `cwd` with no input and piped output. The spawn chooses the
+/// command's session and process group (`PreparedCommand::spawn_retaining_resources`).
 fn prepare_spawn(command: &mut Command, cwd: &Path) {
     command
         .current_dir(cwd)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        command.process_group(0);
-    }
 }
 
 /// `original`'s environment with private tool state from `scratch`. Git reads

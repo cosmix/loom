@@ -13,7 +13,7 @@ use chrono::Utc;
 
 use super::digest::{head, knowledge_tree_digest, tree_digest};
 use super::store::{load_result, read_progress};
-use super::wait_report::{report, site_heading, site_refusal};
+use super::wait_report::{report, site_heading, site_refusal, unfinished_log_paths};
 use super::wait_state::{
     find_job, job_id_of, ledger_outcome, read_state, remove_state_if_owned, state_path,
     write_state, RequestState,
@@ -59,8 +59,14 @@ pub struct WaitSite<'a> {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WaitOutcome {
-    Requested { request_id: String },
-    Pending { done: usize },
+    Requested {
+        request_id: String,
+    },
+    /// `logs`: the log so far of each criterion running now.
+    Pending {
+        done: usize,
+        logs: Vec<PathBuf>,
+    },
     Finished(Box<JobRecord>, Option<JobResult>),
     Refused(String),
 }
@@ -314,8 +320,8 @@ fn follow(site: &WaitSite<'_>, state: &RequestState) -> Result<WaitOutcome> {
     loop {
         match poll(site, state)? {
             Poll::Decided(outcome) => return Ok(*outcome),
-            Poll::Waiting { done } if Instant::now() >= end => {
-                return Ok(WaitOutcome::Pending { done });
+            Poll::Waiting { done, logs } if Instant::now() >= end => {
+                return Ok(WaitOutcome::Pending { done, logs });
             }
             Poll::Waiting { .. } => {
                 std::thread::sleep(POLL.min(end.saturating_duration_since(Instant::now())));
@@ -326,7 +332,7 @@ fn follow(site: &WaitSite<'_>, state: &RequestState) -> Result<WaitOutcome> {
 
 enum Poll {
     Decided(Box<WaitOutcome>),
-    Waiting { done: usize },
+    Waiting { done: usize, logs: Vec<PathBuf> },
 }
 
 fn poll(site: &WaitSite<'_>, state: &RequestState) -> Result<Poll> {
@@ -343,12 +349,17 @@ fn poll(site: &WaitSite<'_>, state: &RequestState) -> Result<Poll> {
                 "the request never reached the daemon".to_string(),
             )))
         } else {
-            Poll::Waiting { done: 0 }
+            Poll::Waiting {
+                done: 0,
+                logs: Vec::new(),
+            }
         });
     };
     if !record.state.is_terminal() {
-        let done = read_progress(site.work_dir, site.stage_id, &record.id)?.len();
-        return Ok(Poll::Waiting { done });
+        let outcomes = read_progress(site.work_dir, site.stage_id, &record.id)?;
+        let logs = unfinished_log_paths(site.work_dir, site.stage_id, &record.id, &outcomes);
+        let done = outcomes.len();
+        return Ok(Poll::Waiting { done, logs });
     }
     let result = load_result(site.work_dir, site.stage_id, &record.id)?;
     Ok(Poll::Decided(Box::new(WaitOutcome::Finished(

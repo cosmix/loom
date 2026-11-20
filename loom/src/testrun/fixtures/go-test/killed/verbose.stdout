@@ -1,0 +1,3 @@
+=== RUN   TestFast
+--- PASS: TestFast (0.00s)
+=== RUN   TestHang
