@@ -194,7 +194,37 @@ jobs:
           go_seed="$RUNNER_TEMP/go-seed"
           mkdir -p "$go_seed"
           (cd "$go_seed" && go mod init seed && go mod download github.com/pkg/errors@v0.9.1)
-          mvn -q -B dependency:get -Dartifact=commons-lang:commons-lang:2.6
+          # Compiling unconfined fetches every plugin the probe's offline
+          # `mvn -o -B compile` needs (resources, compiler, surefire) besides
+          # the dependency.
+          maven_seed="$RUNNER_TEMP/maven-seed"
+          mkdir -p "$maven_seed/src/main/java"
+          cat > "$maven_seed/pom.xml" <<'EOF'
+          <project xmlns="http://maven.apache.org/POM/4.0.0">
+            <modelVersion>4.0.0</modelVersion>
+            <groupId>example</groupId>
+            <artifactId>seed</artifactId>
+            <version>1</version>
+            <properties>
+              <maven.compiler.source>11</maven.compiler.source>
+              <maven.compiler.target>11</maven.compiler.target>
+              <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+            </properties>
+            <dependencies>
+              <dependency>
+                <groupId>commons-lang</groupId>
+                <artifactId>commons-lang</artifactId>
+                <version>2.6</version>
+              </dependency>
+            </dependencies>
+          </project>
+          EOF
+          cat > "$maven_seed/src/main/java/App.java" <<'EOF'
+          public class App {
+              public static void main(String[] args) {}
+          }
+          EOF
+          (cd "$maven_seed" && mvn -q -B compile)
           gradle_seed="$RUNNER_TEMP/gradle-seed"
           mkdir -p "$gradle_seed/src/main/java/seed"
           cat > "$gradle_seed/settings.gradle" <<'EOF'
@@ -229,12 +259,13 @@ jobs:
           echo "LOOM_TEST_MAVEN_SEED=commons-lang:commons-lang:2.6" >> "$GITHUB_ENV"
           echo "LOOM_TEST_GRADLE_SEED=commons-lang:commons-lang:2.6" >> "$GITHUB_ENV"
 
-      # Runs the confined toolchain probes in stage_cache::toolchain_tests::.
+      # Runs every stage_cache:: test and the confine stage-cache tests, among
+      # them the confined toolchain probes in stage_cache::toolchain_tests::.
       # LOOM_TEST_REQUIRE_SANDBOX_FREE turns every skip into a failure, so a
       # missing toolchain or launcher on either runner is a red build.
       - name: Run the confined toolchain probes
         working-directory: loom
-        run: "cargo test --lib stage_cache::toolchain_tests::"
+        run: "cargo test --lib -- stage_cache:: verify::criteria::confine::host::stage_cache_tests::"
         env:
           LOOM_TEST_REQUIRE_SANDBOX_FREE: "1"
 
@@ -336,7 +367,37 @@ jobs:
           go_seed="$RUNNER_TEMP/go-seed"
           mkdir -p "$go_seed"
           (cd "$go_seed" && go mod init seed && go mod download github.com/pkg/errors@v0.9.1)
-          mvn -q -B dependency:get -Dartifact=commons-lang:commons-lang:2.6
+          # Compiling unconfined fetches every plugin the probe's offline
+          # `mvn -o -B compile` needs (resources, compiler, surefire) besides
+          # the dependency.
+          maven_seed="$RUNNER_TEMP/maven-seed"
+          mkdir -p "$maven_seed/src/main/java"
+          cat > "$maven_seed/pom.xml" <<'EOF'
+          <project xmlns="http://maven.apache.org/POM/4.0.0">
+            <modelVersion>4.0.0</modelVersion>
+            <groupId>example</groupId>
+            <artifactId>seed</artifactId>
+            <version>1</version>
+            <properties>
+              <maven.compiler.source>11</maven.compiler.source>
+              <maven.compiler.target>11</maven.compiler.target>
+              <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+            </properties>
+            <dependencies>
+              <dependency>
+                <groupId>commons-lang</groupId>
+                <artifactId>commons-lang</artifactId>
+                <version>2.6</version>
+              </dependency>
+            </dependencies>
+          </project>
+          EOF
+          cat > "$maven_seed/src/main/java/App.java" <<'EOF'
+          public class App {
+              public static void main(String[] args) {}
+          }
+          EOF
+          (cd "$maven_seed" && mvn -q -B compile)
           gradle_seed="$RUNNER_TEMP/gradle-seed"
           mkdir -p "$gradle_seed/src/main/java/seed"
           cat > "$gradle_seed/settings.gradle" <<'EOF'
@@ -371,12 +432,13 @@ jobs:
           echo "LOOM_TEST_MAVEN_SEED=commons-lang:commons-lang:2.6" >> "$GITHUB_ENV"
           echo "LOOM_TEST_GRADLE_SEED=commons-lang:commons-lang:2.6" >> "$GITHUB_ENV"
 
-      # Runs the confined toolchain probes in stage_cache::toolchain_tests::.
+      # Runs every stage_cache:: test and the confine stage-cache tests, among
+      # them the confined toolchain probes in stage_cache::toolchain_tests::.
       # LOOM_TEST_REQUIRE_SANDBOX_FREE turns every skip into a failure, so a
       # missing toolchain or launcher on either runner is a red build.
       - name: Run the confined toolchain probes
         working-directory: loom
-        run: "cargo test --lib stage_cache::toolchain_tests::"
+        run: "cargo test --lib -- stage_cache:: verify::criteria::confine::host::stage_cache_tests::"
         env:
           LOOM_TEST_REQUIRE_SANDBOX_FREE: "1"
 
