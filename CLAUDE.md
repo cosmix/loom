@@ -8,7 +8,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Loom is a self-propelling agent orchestration CLI written in Rust. It coordinates Claude Code sessions across git worktrees, enabling parallel task execution with automatic crash recovery and context handoffs.
 
-This is an unreleased project under active development NO BACKWARDS COMPATIBILTY OR MIGRATION ROUTINES SHOULD BE ADDED AT THIS STAGE.
+This is a project under active development NO BACKWARDS COMPATIBILTY OR MIGRATION ROUTINES SHOULD BE ADDED AT THIS STAGE.
+
+Loom is often used to develop loom. When this happens keep in mind that loom is used to drive projects in several languages, frameworks and architectures. Your fixes should not just apply within the narrow scope of using loom to develop loom, e.g. focusing solely on Rust, React, Typescript etc.
 
 ## Build Commands
 
