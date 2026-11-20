@@ -171,12 +171,20 @@ fn an_interrupt_keeps_the_subagents_so_the_final_write_waits_for_their_end() {
     wait_until("the closing message", || h.sent(&s) == [CLOSING]);
     h.spool(&s, "UserPromptSubmit", json!({"prompt": CLOSING}));
     h.spool(&s, "Stop", json!({}));
-    settle();
+    assert!(h.close_held(&s), "closed while its agents ran");
     assert_eq!(h.ended(&s.id), None, "closed while its agents ran");
-    for agent in ["a1", "a2"] {
-        h.spool(&s, "SubagentStop", json!({"agent_id": agent}));
-    }
-    h.spool(&s, "Stop", json!({}));
+    h.spool(&s, "SubagentStop", json!({"agent_id": "a1"}));
+    wait_until("a1's stop", || {
+        h.count_events(
+            |e| matches!(e, BridgeEvent::SubagentStopped { agent_id, .. } if agent_id == "a1"),
+        ) == 1
+    });
+    settle();
+    assert!(h.close_held(&s), "closed while a2 ran");
+    assert_eq!(h.ended(&s.id), None, "closed while a2 ran");
+    // The gate is a state check: the last agent's end closes the session with no further
+    // Stop, and its teardown removes the directory a later spool would write into.
+    h.spool(&s, "SubagentStop", json!({"agent_id": "a2"}));
     wait_until("the end", || h.ended(&s.id) == Some(EndOutcome::Closed));
 }
 

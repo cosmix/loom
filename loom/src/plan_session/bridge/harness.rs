@@ -11,6 +11,7 @@ use std::time::Duration;
 use serde_json::{json, Value};
 
 use super::fake_host::{FakeHost, FakePins};
+use super::session::Phase;
 use super::tests::{append_record, wait_for, wait_until};
 use super::TurnPins;
 use super::{
@@ -253,6 +254,21 @@ impl Harness {
                 id: ended, cause, ..
             } if ended == id => Some(*cause),
             _ => None,
+        })
+    }
+
+    /// Wait until the final turn's `Stop` reached the close gate, then whether the gate held:
+    /// the session is live and no close is pending. The gate latches `closing_stopped` and
+    /// sets `close_ready` in one locked step, so this reads its decision instead of sleeping
+    /// and racing the teardown that removes the session directory.
+    pub(super) fn close_held(&self, s: &Sess) -> bool {
+        wait_for("the final turn's Stop", || {
+            let inner = self.bridge.lock();
+            let Some(session) = inner.sessions.get(&s.id) else {
+                return Some(false);
+            };
+            let open = matches!(session.phase, Phase::Live) && session.flow.close_ready.is_none();
+            session.flow.closing_stopped.then_some(open)
         })
     }
 
