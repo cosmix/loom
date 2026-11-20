@@ -290,8 +290,7 @@ pub struct PlanChild(Child);
 impl PlanChild {
     /// Kill and reap the child; harmless once it has exited.
     pub fn stop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
+        loom::process::sandbox_probe::reap::kill_and_reap(&mut self.0);
     }
 }
 

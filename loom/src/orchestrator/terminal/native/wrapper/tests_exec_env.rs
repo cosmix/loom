@@ -1,4 +1,5 @@
 use super::*;
+use crate::process::sandbox_probe::skip_without_process_substitution;
 use tempfile::TempDir;
 
 /// Run the written wrapper through `bash <path>` (never exec of the script, so
@@ -6,6 +7,9 @@ use tempfile::TempDir;
 /// environment, and return what the `env` session command printed.
 #[test]
 fn wrapper_exec_environment_keeps_user_and_drops_secrets() {
+    if skip_without_process_substitution("wrapper_exec_environment_keeps_user_and_drops_secrets") {
+        return;
+    }
     let temp_dir = TempDir::new().unwrap();
     let wrapper = create_wrapper_script(
         temp_dir.path(),
@@ -46,6 +50,9 @@ fn wrapper_exec_environment_keeps_user_and_drops_secrets() {
 /// the session gets, and the cache variables reach it.
 #[test]
 fn the_stage_cache_exports_override_the_allowlisted_path() {
+    if skip_without_process_substitution("the_stage_cache_exports_override_the_allowlisted_path") {
+        return;
+    }
     let temp_dir = TempDir::new().unwrap();
     let host_env = WrapperHostEnv {
         cache_exports: "    PATH=/developer/bin:/usr/bin \\\n    GOCACHE=/cache/go-build \\\n"

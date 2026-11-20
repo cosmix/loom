@@ -2,6 +2,7 @@
 //! the output cap, the end of stdout before the answer, `stop`, drop, and a symlinked settings
 //! path.
 
+use crate::process::sandbox_probe::skip_without_group_signals;
 use std::ffi::OsString;
 use std::fs;
 use std::os::unix::fs::{symlink, PermissionsExt};
@@ -84,6 +85,11 @@ fn listed(table: &CommandTable) -> usize {
 
 #[test]
 fn the_answer_and_a_commands_changed_line_replace_the_table() {
+    let false =
+        skip_without_group_signals("the_answer_and_a_commands_changed_line_replace_the_table")
+    else {
+        return;
+    };
     let (_temp, base) = base();
     let spec = spec(&base, &answering_body(&base));
     let (on_table, rx) = channel();
@@ -136,6 +142,9 @@ fn assert_unavailable_once(rx: &mpsc::Receiver<Arc<CommandTable>>, pid: u32, bas
 
 #[test]
 fn a_line_over_the_cap_kills_the_process() {
+    let false = skip_without_group_signals("a_line_over_the_cap_kills_the_process") else {
+        return;
+    };
     let (_temp, base) = base();
     let body = "head -c 2097152 /dev/zero | tr '\\0' x\necho\nexec sleep 30\n";
     let (on_table, rx) = channel();
@@ -145,6 +154,11 @@ fn a_line_over_the_cap_kills_the_process() {
 
 #[test]
 fn over_8_mib_of_short_lines_before_the_answer_kills_the_process() {
+    let false =
+        skip_without_group_signals("over_8_mib_of_short_lines_before_the_answer_kills_the_process")
+    else {
+        return;
+    };
     let (_temp, base) = base();
     let body = "yes 0123456789abcdef | head -c 9437184\nexec sleep 30\n";
     let (on_table, rx) = channel();
@@ -170,6 +184,9 @@ fn the_end_of_stdout_before_the_answer_is_unavailable_once() {
 
 #[test]
 fn drop_kills_and_reaps_a_silent_process() {
+    let false = skip_without_group_signals("drop_kills_and_reaps_a_silent_process") else {
+        return;
+    };
     let (_temp, base) = base();
     let (on_table, rx) = channel();
     let spec = spec(&base, "exec sleep 30\n");

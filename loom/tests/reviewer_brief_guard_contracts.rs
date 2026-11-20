@@ -9,6 +9,7 @@ mod helpers;
 
 use helpers::{clear_relay_env, run_hook_process};
 use loom::fs::permissions::constants as hooks;
+use loom::process::sandbox_probe::skip_without_process_tree;
 use serde_json::{json, Value};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -102,6 +103,9 @@ fn run_guard(dir: &Path, payload: &Value, worker: &str, reviewer: &str) -> Outpu
 
 #[test]
 fn guard_appends_the_reviewer_brief_once() {
+    if skip_without_process_tree("guard_appends_the_reviewer_brief_once") {
+        return;
+    }
     let dir = temp();
     let preamble_line = hooks::HOOK_SUBAGENT_PREAMBLE
         .lines()

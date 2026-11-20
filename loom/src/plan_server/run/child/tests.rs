@@ -1,4 +1,5 @@
 use super::*;
+use crate::process::sandbox_probe::skip_without_group_signals;
 
 fn shell(script: &str) -> Command {
     let mut cmd = Command::new("sh");
@@ -47,6 +48,9 @@ fn truncates_long_lines_at_a_utf8_boundary_and_keeps_following_lines() {
 
 #[test]
 fn kills_a_sleeping_child_at_the_bound() {
+    let false = skip_without_group_signals("kills_a_sleeping_child_at_the_bound") else {
+        return;
+    };
     let mut pid = None;
     let started = Instant::now();
     let error = run_streamed_bounded(

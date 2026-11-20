@@ -22,7 +22,7 @@ use loom::models::session::{Session, SessionStatus, SessionType};
 use loom::models::stage::{Stage, StageStatus};
 use loom::orchestrator::{Orchestrator, OrchestratorConfig};
 use loom::plan::schema::AcceptanceCriterion;
-use loom::process::sandbox_probe::skip_unless;
+use loom::process::sandbox_probe::{skip_unless, skip_without_process_tree};
 use loom::relay::{RelayLine, RequestKind};
 use loom::verify::transitions::save_stage;
 use serial_test::serial;
@@ -338,7 +338,8 @@ fn relay_memory_note_flows_end_to_end() {
         helpers::tool_available("jq") && helpers::tool_available("bash"),
         TEST_NAME,
         "jq or bash was not found on PATH",
-    ) {
+    ) || skip_without_process_tree(TEST_NAME)
+    {
         return;
     }
 

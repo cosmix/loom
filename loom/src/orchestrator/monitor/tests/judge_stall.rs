@@ -7,6 +7,7 @@
 //! making tool calls is reported exactly once — unless it is waiting on a
 //! command it started, and then only up to its hold ceiling.
 
+use crate::process::sandbox_probe::require_process_control;
 use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::time::{Duration, Instant};
@@ -154,26 +155,6 @@ fn a_judge_heartbeat_never_reaches_the_stage_agents_key() {
     assert!(watcher.judge_heartbeat("disputed-stage").is_none());
 }
 
-/// Closing a judge removes its heartbeat, and a judge closed before its first
-/// tool call never wrote one — so a missing file is success, not an error.
-#[test]
-fn cleaning_up_a_judge_heartbeat_tolerates_a_missing_file() {
-    let temp = tempfile::TempDir::new().unwrap();
-    let work_dir = temp.path();
-    write_judge_heartbeat(work_dir, "disputed-stage", "judge-1", 0);
-    let path = judge_heartbeat_path(work_dir, "disputed-stage");
-    assert!(
-        path.exists(),
-        "fixture heartbeat must exist to be deletable"
-    );
-
-    cleanup_judge_heartbeat(work_dir, "disputed-stage");
-    assert!(!path.exists());
-
-    cleanup_judge_heartbeat(work_dir, "disputed-stage");
-    cleanup_judge_heartbeat(work_dir, "never-existed");
-}
-
 /// The case the watchdog exists for: a judge that never reached a tool call,
 /// so it has no heartbeat at all and is measured from its spawn. Reported
 /// once — the report closes it, so a repeat every poll would be noise about a
@@ -291,6 +272,7 @@ fn a_zero_budget_never_closes_a_judge() {
 /// command ran. That is waiting, and it must not be closed for it.
 #[test]
 fn a_judge_waiting_on_its_own_command_is_not_stalled() {
+    require_process_control!("a_judge_waiting_on_its_own_command_is_not_stalled");
     let temp = tempfile::TempDir::new().unwrap();
     let (config, handlers) = handlers_for(temp.path());
     let sessions = [judge("disputed-stage", "judge-1", BUDGET_SECS as i64 + 60)];
@@ -312,6 +294,7 @@ fn a_judge_waiting_on_its_own_command_is_not_stalled() {
 /// for. Finding the judge's process must not excuse it by itself.
 #[test]
 fn a_judge_running_no_command_is_still_stalled() {
+    require_process_control!("a_judge_running_no_command_is_still_stalled");
     let temp = tempfile::TempDir::new().unwrap();
     let (config, handlers) = handlers_for(temp.path());
     let sessions = [judge("disputed-stage", "judge-1", BUDGET_SECS as i64 + 60)];
@@ -334,6 +317,7 @@ fn a_judge_running_no_command_is_still_stalled() {
 /// closed on the very next poll; the sighting restarts its clock instead.
 #[test]
 fn a_judge_whose_command_just_ended_gets_a_full_budget() {
+    require_process_control!("a_judge_whose_command_just_ended_gets_a_full_budget");
     let temp = tempfile::TempDir::new().unwrap();
     let (config, handlers) = handlers_for(temp.path());
     let sessions = [judge("disputed-stage", "judge-1", BUDGET_SECS as i64 + 60)];
@@ -366,6 +350,7 @@ fn a_judge_whose_command_just_ended_gets_a_full_budget() {
 /// judge is stalled even though its command is still running.
 #[test]
 fn a_judge_silent_past_its_hold_ceiling_is_stalled_despite_its_command() {
+    require_process_control!("a_judge_silent_past_its_hold_ceiling_is_stalled_despite_its_command");
     let temp = tempfile::TempDir::new().unwrap();
     let (config, handlers) = handlers_for(temp.path());
     let silent_secs = HOLD_CEILING_SECS as i64 + 60;
@@ -394,3 +379,6 @@ fn a_judge_silent_past_its_hold_ceiling_is_stalled_despite_its_command() {
     };
     assert!(*stale_duration_secs > HOLD_CEILING_SECS);
 }
+
+#[path = "judge_stall_cleanup.rs"]
+mod cleanup;

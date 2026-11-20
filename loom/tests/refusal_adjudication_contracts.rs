@@ -2,6 +2,7 @@
 //! `freeze-refusal` dispute, and a harness amendment that reaches both the
 //! plan file and the stage record.
 
+use loom::process::sandbox_probe::skip_without_plan_locks;
 use std::fs;
 use std::path::PathBuf;
 
@@ -108,6 +109,9 @@ fn refusal_dispute_filed_only_by_contract_writer() {
 
 #[test]
 fn harness_amendment_reaches_stage_record() {
+    if skip_without_plan_locks("harness_amendment_reaches_stage_record") {
+        return;
+    }
     let env = setup();
     let request = AmendmentRequest {
         stage_id: STAGE_ID.to_string(),

@@ -153,6 +153,9 @@ mod tests {
 
     #[test]
     fn a_query_that_outlives_its_deadline_is_killed_and_yields_nothing() {
+        crate::process::sandbox_probe::require_group_signals!(
+            "a_query_that_outlives_its_deadline_is_killed_and_yields_nothing"
+        );
         let started = Instant::now();
 
         let text = bounded_stdout(Command::new("sleep").arg("30"), Duration::from_millis(200));
@@ -192,6 +195,9 @@ mod tests {
     /// `--cancel` would release under it for a second reconcile to take.
     #[test]
     fn a_late_child_is_the_reconciler_once_it_restamps_the_epoch() {
+        crate::process::sandbox_probe::require_process_control!(
+            "a_late_child_is_the_reconciler_once_it_restamps_the_epoch"
+        );
         let temp = tempfile::TempDir::new().unwrap();
         let path = temp.path().join("reconcile.lock");
         // `read` is a builtin, so this argv stays in place until the kill below.
@@ -215,8 +221,7 @@ mod tests {
         let before = is_reconciler(pid, read_lock(&path).unwrap().epoch, now);
         let began = begin_run(&path, pid, 7, unix_now());
         let after = is_reconciler(pid, read_lock(&path).unwrap().epoch, unix_now());
-        child.kill().unwrap();
-        child.wait().unwrap();
+        crate::process::sandbox_probe::reap::kill_and_reap(&mut child);
 
         assert_eq!(
             before,

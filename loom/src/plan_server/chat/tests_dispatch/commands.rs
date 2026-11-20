@@ -1,6 +1,7 @@
 //! The command catalogue owner over fake `claude` scripts: one side process per chat session,
 //! its tables on the wire, in the session's gate and on the route, ended with the session.
 
+use crate::process::sandbox_probe::skip_without_group_signals;
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
@@ -121,6 +122,11 @@ fn assert_route_and_replay(f: &super::Fixture, id: &str, latest: &Value) {
 
 #[test]
 fn a_chat_has_one_side_process_whose_lists_reach_the_gate_the_route_and_new_tabs() {
+    let false = skip_without_group_signals(
+        "a_chat_has_one_side_process_whose_lists_reach_the_gate_the_route_and_new_tabs",
+    ) else {
+        return;
+    };
     let f = fixture(false);
     let base = tempfile::tempdir().unwrap();
     let catalogue = f.ctx.extensions().get::<Catalogue>().unwrap();
@@ -149,6 +155,11 @@ fn a_chat_has_one_side_process_whose_lists_reach_the_gate_the_route_and_new_tabs
 
 #[test]
 fn a_side_process_that_never_answers_makes_the_list_unavailable_with_the_native_rows() {
+    let false = skip_without_group_signals(
+        "a_side_process_that_never_answers_makes_the_list_unavailable_with_the_native_rows",
+    ) else {
+        return;
+    };
     let f = fixture(false);
     let base = tempfile::tempdir().unwrap();
     let catalogue = f.ctx.extensions().get::<Catalogue>().unwrap();

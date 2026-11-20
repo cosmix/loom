@@ -15,7 +15,7 @@ use loom::models::session::{Session, SessionStatus, SessionType};
 use loom::models::stage::{Stage, StageStatus};
 use loom::orchestrator::{Orchestrator, OrchestratorConfig};
 use loom::plan::schema::AcceptanceCriterion;
-use loom::process::sandbox_probe::skip_unless;
+use loom::process::sandbox_probe::{skip_unless, skip_without_process_tree};
 use loom::relay::{RelayLine, RequestKind};
 use loom::verify::transitions::save_stage;
 use serial_test::serial;
@@ -323,6 +323,7 @@ fn skip_for_missing_tools(test_name: &str) -> bool {
         .iter()
         .all(|tool| helpers::tool_available(tool));
     skip_unless(present, test_name, "jq, bash or git was not found on PATH")
+        || skip_without_process_tree(test_name)
 }
 
 /// The relayed commit lands the staged tree on `loom/<stage>`.

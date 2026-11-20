@@ -8,6 +8,7 @@ use tempfile::TempDir;
 
 use super::blocks::{summarize, Summary};
 use super::tests_blocks::{line, now, write_ledger};
+use crate::process::sandbox_probe::skip_unless;
 
 fn subjects(report: &Summary) -> Vec<&str> {
     report.records.iter().map(|r| r.subject.as_str()).collect()
@@ -23,7 +24,15 @@ fn socket_ledger_is_skipped_and_others_are_reported() {
     let listener = UnixListener::bind(&socket).ok();
     if listener.is_none() {
         let mode = nix::sys::stat::Mode::S_IRWXU;
-        nix::sys::stat::mknod(&socket, nix::sys::stat::SFlag::S_IFSOCK, mode, 0).unwrap();
+        let made = nix::sys::stat::mknod(&socket, nix::sys::stat::SFlag::S_IFSOCK, mode, 0);
+        let why = "this process can neither bind nor mknod a Unix socket";
+        if skip_unless(
+            made.is_ok(),
+            "socket_ledger_is_skipped_and_others_are_reported",
+            why,
+        ) {
+            return;
+        }
     }
     write_ledger(
         dir.path(),

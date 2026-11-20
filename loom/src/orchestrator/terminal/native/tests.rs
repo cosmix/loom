@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::orchestrator::terminal::emulator::TerminalEmulator;
+use crate::process::sandbox_probe::skip_without_group_signals;
 use tempfile::TempDir;
 
 fn test_backend(work_dir: &std::path::Path) -> NativeBackend {
@@ -77,6 +78,11 @@ fn kill_session_with_pid_only_identity_refuses_signal_without_error() {
 
 #[test]
 fn kill_session_retains_verified_identity_and_is_idempotent_after_exit() {
+    let false = skip_without_group_signals(
+        "kill_session_retains_verified_identity_and_is_idempotent_after_exit",
+    ) else {
+        return;
+    };
     let work_dir = TempDir::new().unwrap();
     let backend = test_backend(work_dir.path());
     let session = stage_session("verified-then-missing");

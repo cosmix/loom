@@ -11,6 +11,7 @@ use crate::models::session::{SessionExitReason, SessionStatus};
 use crate::orchestrator::terminal::native::{
     session_process_status, write_test_pid_identity, SessionProcessStatus,
 };
+use crate::process::sandbox_probe::skip_without_group_signals;
 use crate::verify::transitions::{load_stage, update_stage};
 use std::path::Path;
 use std::time::Duration;
@@ -143,6 +144,11 @@ fn dispute_retirement_records_replaced() {
 
 #[test]
 fn handoff_does_not_requeue_a_verified_process_that_outlives_sigterm() {
+    if skip_without_group_signals(
+        "handoff_does_not_requeue_a_verified_process_that_outlives_sigterm",
+    ) {
+        return;
+    }
     let temp = handoff_work_dir();
     let work = temp.path().join(".loom").join("work");
     executing_stage(&work);
@@ -203,6 +209,9 @@ fn hand_off_a_slow_exiting_agent(window: Duration) -> (StageStatus, SessionStatu
 
 #[test]
 fn handoff_waits_out_an_agent_that_exits_within_the_window() {
+    if skip_without_group_signals("handoff_waits_out_an_agent_that_exits_within_the_window") {
+        return;
+    }
     let (stage, session) = hand_off_a_slow_exiting_agent(Duration::from_secs(5));
 
     assert_eq!(stage, StageStatus::Queued);
@@ -211,6 +220,9 @@ fn handoff_waits_out_an_agent_that_exits_within_the_window() {
 
 #[test]
 fn handoff_calls_an_agent_that_outlasts_the_window_a_survivor() {
+    if skip_without_group_signals("handoff_calls_an_agent_that_outlasts_the_window_a_survivor") {
+        return;
+    }
     let (stage, session) = hand_off_a_slow_exiting_agent(Duration::from_millis(300));
 
     assert_eq!(stage, StageStatus::NeedsHandoff);

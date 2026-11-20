@@ -3,6 +3,7 @@
 //! `commit-msg` hook that rewrites the message, an error before any commit, a commit that is not
 //! the settle's, an unborn branch, a log encoding other than UTF-8.
 
+use crate::process::sandbox_probe::skip_without_group_signals;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -49,6 +50,11 @@ fn assert_committed_with_its_brief(root: &Path) {
 
 #[test]
 fn a_post_commit_hook_past_the_deadline_still_reports_the_commit() {
+    let false =
+        skip_without_group_signals("a_post_commit_hook_past_the_deadline_still_reports_the_commit")
+    else {
+        return;
+    };
     let dir = repo();
     let root = dir.path();
     hook(root, "post-commit", "sleep 30\n");

@@ -6,6 +6,7 @@
 //! contract agent's kill is observed through a real process, as the other
 //! takedown tests do.
 
+use crate::process::sandbox_probe::skip_without_group_signals;
 use std::path::Path;
 
 use serial_test::serial;
@@ -139,6 +140,9 @@ fn contract_session_spawns_before_stage_session() {
 #[test]
 #[serial]
 fn contract_phase_finished_spawns_stage_session() {
+    if skip_without_group_signals("contract_phase_finished_spawns_stage_session") {
+        return;
+    }
     let _hooks = HooksDirGuard::install();
     let temp = handoff_work_dir();
     let work = temp.path().join(".loom").join("work");

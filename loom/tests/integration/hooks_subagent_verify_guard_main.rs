@@ -185,8 +185,7 @@ fn main_agent_is_allowed_when_loom_main_agent_pid_is_not_an_ancestor() {
         .spawn()
         .expect("spawn sleep");
     let (code, stderr) = run_with_main_pid(bystander.id());
-    bystander.kill().ok();
-    bystander.wait().ok();
+    loom::process::sandbox_probe::reap::kill_and_reap(&mut bystander);
     assert_eq!(
         code, 0,
         "a live non-ancestor LOOM_MAIN_AGENT_PID must allow; stderr={stderr}"

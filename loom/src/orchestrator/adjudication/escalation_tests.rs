@@ -7,6 +7,7 @@
 //! `orchestrator/core/event_handler/verdict_retirement_tests.rs`: every proxy
 //! for "the agent was taken down" lies in at least one lane.
 
+use crate::process::sandbox_probe::skip_without_group_signals;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
@@ -132,6 +133,11 @@ fn assert_retired_then_escalated(work: &Path, worker: &Session, pid: u32) {
 /// silently abandoning the dispute.
 #[test]
 fn a_failed_adjudicator_spawn_retires_the_disputing_agent_before_escalating() {
+    if skip_without_group_signals(
+        "a_failed_adjudicator_spawn_retires_the_disputing_agent_before_escalating",
+    ) {
+        return;
+    }
     let (temp, work) = work_dir();
     let (worker, pid) = live_disputing_stage(&work, make_stage("s1"));
     // Every adjudication spawn fails before reaching a terminal backend: the
@@ -157,6 +163,10 @@ fn a_failed_adjudicator_spawn_retires_the_disputing_agent_before_escalating() {
 
 #[test]
 fn the_evidence_cap_retires_the_disputing_agent_before_escalating() {
+    if skip_without_group_signals("the_evidence_cap_retires_the_disputing_agent_before_escalating")
+    {
+        return;
+    }
     let (temp, work) = work_dir();
     let mut stage = make_stage("s1");
     stage.tally.evidence_rounds = MAX_EVIDENCE_ROUNDS;

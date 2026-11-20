@@ -12,6 +12,7 @@ use super::*;
 use crate::fs::session_files::save_session;
 use crate::models::session::{Session, SessionExitReason, SessionStatus};
 use crate::orchestrator::terminal::native::write_test_pid_identity;
+use crate::process::sandbox_probe::skip_without_group_signals;
 use crate::verify::transitions::{load_stage, update_stage};
 use std::path::Path;
 
@@ -48,6 +49,11 @@ fn session_on_disk(work: &Path, session_id: &str) -> Session {
 /// healthy successor instead of the corpse it actually named.
 #[test]
 fn the_backstop_ignores_an_event_from_a_session_the_stage_has_moved_on_from() {
+    let false = skip_without_group_signals(
+        "the_backstop_ignores_an_event_from_a_session_the_stage_has_moved_on_from",
+    ) else {
+        return;
+    };
     let temp = handoff_work_dir();
     let work = temp.path().join(".loom").join("work");
     executing_stage(&work);
@@ -95,6 +101,11 @@ fn the_backstop_ignores_an_event_from_a_session_the_stage_has_moved_on_from() {
 /// kill the healthy successor currently assigned to the stage.
 #[test]
 fn handoff_ignores_an_event_from_a_session_the_stage_has_moved_on_from() {
+    let false = skip_without_group_signals(
+        "handoff_ignores_an_event_from_a_session_the_stage_has_moved_on_from",
+    ) else {
+        return;
+    };
     let temp = handoff_work_dir();
     let work = temp.path().join(".loom").join("work");
     executing_stage(&work);

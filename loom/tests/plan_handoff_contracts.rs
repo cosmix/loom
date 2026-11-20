@@ -296,6 +296,10 @@ fn pressure_start_refuses_a_locked_plan() {
         ("doc/plans/IN_PROGRESS-PLAN-b.md", "# B\n"),
         ("doc/product/index.md", "# Vision\n"),
     ]);
+    // `validate_start` reads the user's start-block state: pin it to an empty directory so
+    // the result does not depend on what the real `~/.loom` allows this process to read.
+    let loom_home = tempfile::tempdir().expect("an empty loom home");
+    let _env = EnvGuard::set("LOOM_HOME", loom_home.path());
     let project = Project::load(&repo.root).expect("load the project");
     for plan in ["doc/plans/IN_PROGRESS-PLAN-b.md", "doc/product/index.md"] {
         let refusal = validate_start(&project, &start(plan));
@@ -308,6 +312,11 @@ fn pressure_start_refuses_a_locked_plan() {
 #[test]
 #[serial]
 fn codex_terminated_only_when_identity_verifies() {
+    let false = loom::process::sandbox_probe::skip_without_process_control(
+        "codex_terminated_only_when_identity_verifies",
+    ) else {
+        return;
+    };
     assert!(matches!(codex_action(None), CodexAction::Nothing));
 
     let mut dead = sleeper();
@@ -327,8 +336,7 @@ fn codex_terminated_only_when_identity_verifies() {
         start_time: None,
     };
     let unverified = codex_action(Some(bare));
-    live.kill().ok();
-    live.wait().ok();
+    loom::process::sandbox_probe::reap::kill_and_reap(&mut live);
     assert!(matches!(verified, CodexAction::Terminate), "{verified:?}");
     assert!(
         matches!(unverified, CodexAction::LeaveAlone),

@@ -18,6 +18,7 @@ use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::core::OrchestratorConfig;
 use crate::orchestrator::terminal::native::write_test_pid_identity;
 use crate::plan::ExecutionGraph;
+use crate::process::sandbox_probe::skip_without_group_signals;
 use crate::verify::transitions::{create_stage, load_stage, update_stage};
 use tempfile::TempDir;
 
@@ -121,6 +122,16 @@ fn write_verdict(work: &std::path::Path, stage_id: &str, id: u32, session_id: Op
 }
 
 /// A saved, live adjudication session with a real process behind it.
+/// A running tmux-backed session assigned to `test-stage`, saved under `work`.
+fn running_tmux_session(work: &std::path::Path) -> Session {
+    let mut session = Session::new();
+    session.assign_to_stage("test-stage".into());
+    session.status = SessionStatus::Running;
+    session.backend = SessionBackendKind::Tmux;
+    save_session(&session, work).unwrap();
+    session
+}
+
 fn live_judge(work: &std::path::Path) -> (Session, u32) {
     let mut session = Session::new_adjudication("test-stage");
     session.status = SessionStatus::Running;
@@ -190,16 +201,15 @@ fn receipt_replay_publishes_marker_without_retiring_a_later_session() {
 
 #[test]
 fn reset_between_scan_and_claim_cannot_retire_fresh_agent() {
+    if skip_without_group_signals("reset_between_scan_and_claim_cannot_retire_fresh_agent") {
+        return;
+    }
     let temp = handoff_work_dir();
     let work = temp.path().join(".work");
     stage_needing_adjudication(&work);
     write_dispute_request(&work, "test-stage", 1);
     write_verdict(&work, "test-stage", 1, None);
-    let mut fresh = Session::new();
-    fresh.assign_to_stage("test-stage".into());
-    fresh.status = SessionStatus::Running;
-    fresh.backend = SessionBackendKind::Tmux;
-    save_session(&fresh, &work).unwrap();
+    let fresh = running_tmux_session(&work);
     let pid = spawn_orphan_process();
     write_test_pid_identity(&work, &fresh, pid).unwrap();
 
@@ -243,6 +253,9 @@ fn reset_between_scan_and_claim_cannot_retire_fresh_agent() {
 /// left alive blocks the next dispute on the stage (`claim_session_slot`).
 #[test]
 fn applying_a_verdict_closes_the_judge_that_wrote_it() {
+    if skip_without_group_signals("applying_a_verdict_closes_the_judge_that_wrote_it") {
+        return;
+    }
     let temp = handoff_work_dir();
     let work = temp.path().join(".work");
     stage_needing_adjudication(&work);
@@ -273,6 +286,9 @@ fn applying_a_verdict_closes_the_judge_that_wrote_it() {
 /// for the same stage — however it came to exist — must never be touched.
 #[test]
 fn a_judge_for_another_dispute_is_left_alone() {
+    if skip_without_group_signals("a_judge_for_another_dispute_is_left_alone") {
+        return;
+    }
     let temp = handoff_work_dir();
     let work = temp.path().join(".work");
     stage_needing_adjudication(&work);
@@ -302,6 +318,11 @@ fn a_judge_for_another_dispute_is_left_alone() {
 /// since a live judge might still be working one of those.
 #[test]
 fn a_verdict_without_a_session_id_closes_idle_judges_only_when_no_dispute_remains() {
+    if skip_without_group_signals(
+        "a_verdict_without_a_session_id_closes_idle_judges_only_when_no_dispute_remains",
+    ) {
+        return;
+    }
     let temp = handoff_work_dir();
     let work = temp.path().join(".work");
     stage_needing_adjudication(&work);
@@ -368,32 +389,5 @@ fn verdict_held_stage(work: &std::path::Path, held: bool) -> StageStatus {
     load_stage("test-stage", work).unwrap().status
 }
 
-#[test]
-fn a_held_plan_v1_stage_goes_to_a_fresh_session() {
-    let temp = handoff_work_dir();
-    let work = temp.path().join(".work");
-    assert_eq!(verdict_held_stage(&work, false), StageStatus::Queued);
-}
-
-#[test]
-fn an_operator_held_stage_goes_back_to_the_queue_and_stays_held() {
-    let temp = handoff_work_dir();
-    let work = temp.path().join(".work");
-    assert_eq!(verdict_held_stage(&work, true), StageStatus::Queued);
-    assert!(load_stage("test-stage", &work).unwrap().held);
-}
-
-#[test]
-fn a_stage_with_an_unanswered_dispute_keeps_waiting() {
-    let temp = handoff_work_dir();
-    let work = temp.path().join(".work");
-    stage_needing_adjudication(&work);
-    write_dispute_request(&work, "test-stage", 1);
-    orchestrator_for(&work, temp.path())
-        .apply_pending_verdicts()
-        .unwrap();
-    assert_eq!(
-        load_stage("test-stage", &work).unwrap().status,
-        StageStatus::NeedsAdjudication
-    );
-}
+#[path = "verdict_apply_held_tests.rs"]
+mod held_tests;

@@ -76,6 +76,16 @@ fn skip_unless_gate_visible(test: &str) -> bool {
     )
 }
 
+/// Returns from the calling test, naming it, when the enforcement gate cannot see a process
+/// tree. One line keeps a test under the function size limit.
+macro_rules! require_gate_visible {
+    ($test:literal) => {
+        if skip_unless_gate_visible(concat!("gate::", $test)) {
+            return;
+        }
+    };
+}
+
 fn write_agent_def(base: &Path, agent_type: &str, model: &str) {
     let dir = base.join(".claude/agents");
     fs::create_dir_all(&dir).expect("create agents dir");

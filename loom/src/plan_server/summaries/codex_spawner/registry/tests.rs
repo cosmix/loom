@@ -1,5 +1,6 @@
 //! The forced stop: it reaches a group whose leader is gone, and a server stop waits for it.
 
+use crate::process::sandbox_probe::skip_without_group_signals;
 use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader, Read};
 use std::os::unix::process::{CommandExt, ExitStatusExt};
@@ -53,6 +54,11 @@ fn closed(mut stdout: BufReader<ChildStdout>) -> Receiver<()> {
 
 #[test]
 fn the_forced_stop_reaches_a_descendant_after_the_leader_left_the_registry() {
+    let false = skip_without_group_signals(
+        "the_forced_stop_reaches_a_descendant_after_the_leader_left_the_registry",
+    ) else {
+        return;
+    };
     // The leader dies of SIGTERM; its background child ignores it and holds the pipe.
     let script = "(trap '' TERM; echo ready; exec sleep 30) & wait";
     let (mut leader, pid, stdout) = group(script);
@@ -73,6 +79,11 @@ fn the_forced_stop_reaches_a_descendant_after_the_leader_left_the_registry() {
 
 #[test]
 fn a_server_stop_forces_a_group_that_ignores_sigterm_after_the_grace() {
+    let false = skip_without_group_signals(
+        "a_server_stop_forces_a_group_that_ignores_sigterm_after_the_grace",
+    ) else {
+        return;
+    };
     let (mut child, pid, _stdout) = group("trap '' TERM; echo ready; exec sleep 30");
     let jobs = registered(pid);
     terminate_all(&jobs);
@@ -85,6 +96,9 @@ fn a_server_stop_forces_a_group_that_ignores_sigterm_after_the_grace() {
 
 #[test]
 fn an_abort_ends_the_wait_and_still_forces() {
+    let false = skip_without_group_signals("an_abort_ends_the_wait_and_still_forces") else {
+        return;
+    };
     let (mut child, pid, _stdout) = group("trap '' TERM; echo ready; exec sleep 30");
     let jobs = registered(pid);
     terminate_all(&jobs);
@@ -97,6 +111,10 @@ fn an_abort_ends_the_wait_and_still_forces() {
 
 #[test]
 fn a_server_stop_does_not_wait_for_a_group_that_is_gone() {
+    let false = skip_without_group_signals("a_server_stop_does_not_wait_for_a_group_that_is_gone")
+    else {
+        return;
+    };
     let (mut child, pid, _stdout) = group("echo ready; exec sleep 30");
     let jobs = registered(pid);
     terminate_all(&jobs);

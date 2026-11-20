@@ -14,6 +14,7 @@ use crate::models::stage::{StageStatus, StageType};
 use crate::orchestrator::monitor::events::CompletionEscalation;
 use crate::orchestrator::monitor::MonitorEvent;
 use crate::orchestrator::terminal::native::write_test_pid_identity;
+use crate::process::sandbox_probe::skip_without_group_signals;
 use crate::test_git::{git, TestRepo};
 use crate::verify::transitions::{load_stage, update_stage};
 use chrono::Utc;
@@ -245,6 +246,9 @@ fn second_failure_with_writer_gone_parks() {
 
 #[test]
 fn alive_writer_is_killed_confirmed_and_parked() {
+    if skip_without_group_signals("alive_writer_is_killed_confirmed_and_parked") {
+        return;
+    }
     let mut fixture = fixture(2);
     let pid = spawn_orphan_process();
     write_test_pid_identity(&fixture.work, &fixture.session, pid).unwrap();

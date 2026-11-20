@@ -1,6 +1,7 @@
 //! Unit tests for the process helpers in the parent module.
 
 use super::*;
+use crate::process::sandbox_probe::skip_without_group_signals;
 
 #[test]
 fn test_current_process_is_alive() {
@@ -86,6 +87,10 @@ fn test_run_bounded_returns_output_when_command_completes() {
 
 #[test]
 fn test_run_bounded_kills_command_that_outlives_deadline() {
+    let false = skip_without_group_signals("test_run_bounded_kills_command_that_outlives_deadline")
+    else {
+        return;
+    };
     let mut cmd = Command::new("sleep");
     cmd.arg("60");
 
@@ -184,6 +189,11 @@ fn run_bounded_reports_output_overflow_on_each_stream() {
 
 #[test]
 fn output_overflow_takes_precedence_over_timeout_and_retires_descendants() {
+    let false = skip_without_group_signals(
+        "output_overflow_takes_precedence_over_timeout_and_retires_descendants",
+    ) else {
+        return;
+    };
     let temp = tempfile::tempdir().unwrap();
     let guard = super::lifecycle_tests::InheritorGuard::new(temp.path());
     let script = format!(
@@ -200,6 +210,9 @@ fn output_overflow_takes_precedence_over_timeout_and_retires_descendants() {
 
 #[test]
 fn bounded_output_returns_structured_timeout() {
+    let false = skip_without_group_signals("bounded_output_returns_structured_timeout") else {
+        return;
+    };
     let mut cmd = Command::new("sleep");
     cmd.arg("60");
 
@@ -215,6 +228,11 @@ fn bounded_output_returns_structured_timeout() {
 #[cfg(unix)]
 #[test]
 fn run_bounded_retires_descendant_holding_pipe_after_exit() {
+    let false =
+        skip_without_group_signals("run_bounded_retires_descendant_holding_pipe_after_exit")
+    else {
+        return;
+    };
     // Leader exit retires its descendants before collecting the pipes.
     let mut cmd = Command::new("sh");
     cmd.args(["-c", "sleep 30 & echo done"]);
@@ -233,6 +251,10 @@ fn run_bounded_retires_descendant_holding_pipe_after_exit() {
 #[cfg(unix)]
 #[test]
 fn timeout_kills_descendants_in_the_child_process_group() {
+    let false = skip_without_group_signals("timeout_kills_descendants_in_the_child_process_group")
+    else {
+        return;
+    };
     let temp = tempfile::tempdir().unwrap();
     let pid_path = temp.path().join("descendant.pid");
     let pid_arg = shell_escape::escape(pid_path.display().to_string().into());
@@ -265,6 +287,9 @@ fn test_terminate_reports_missing_process_without_error() {
 
 #[test]
 fn test_terminate_signals_live_process() {
+    let false = skip_without_group_signals("test_terminate_signals_live_process") else {
+        return;
+    };
     let mut child = Command::new("sleep")
         .arg("60")
         .stdout(Stdio::null())

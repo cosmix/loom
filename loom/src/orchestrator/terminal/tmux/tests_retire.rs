@@ -3,6 +3,7 @@ use super::*;
 use crate::orchestrator::terminal::tmux::socket::tests::{
     server_socket_dir, TmuxServerGuard, TmuxTmpDirGuard,
 };
+use crate::process::sandbox_probe::skip_without_unix_socket;
 use serial_test::serial;
 use std::fs;
 use tempfile::TempDir;
@@ -37,6 +38,12 @@ fn retirement_only_targets_this_repo_viewer() {
     fs::create_dir_all(&work_b).unwrap();
     let a = viewer_socket_name(&work_a);
     let b = viewer_socket_name(&work_b);
+    if skip_without_unix_socket(
+        "retirement_only_targets_this_repo_viewer",
+        &socket_path_for(&a),
+    ) {
+        return;
+    }
     let _a_guard = TmuxServerGuard::new(&a);
     let _b_guard = TmuxServerGuard::new(&b);
     let _other_guard = TmuxServerGuard::new("unrelated-viewer");
@@ -88,6 +95,12 @@ fn retirement_removes_the_owned_socket_of_a_dead_server() {
     let work_dir = repo.path().join(".loom/work");
     fs::create_dir_all(&work_dir).unwrap();
     let path = socket_path_for(&viewer_socket_name(&work_dir));
+    if skip_without_unix_socket(
+        "retirement_removes_the_owned_socket_of_a_dead_server",
+        &path,
+    ) {
+        return;
+    }
     leave_dead_socket(&path);
 
     assert!(retire_viewer(&work_dir).unwrap());
@@ -108,6 +121,12 @@ fn retirement_refuses_a_listening_socket_it_cannot_verify() {
     let work_dir = repo.path().join(".loom/work");
     fs::create_dir_all(&work_dir).unwrap();
     let path = socket_path_for(&viewer_socket_name(&work_dir));
+    if skip_without_unix_socket(
+        "retirement_refuses_a_listening_socket_it_cannot_verify",
+        &path,
+    ) {
+        return;
+    }
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     let _listener = std::os::unix::net::UnixListener::bind(&path).unwrap();
 
@@ -125,6 +144,9 @@ fn retirement_refuses_a_symlink_at_the_expected_name() {
     let work_dir = repo.path().join(".loom/work");
     fs::create_dir_all(&work_dir).unwrap();
     let path = socket_path_for(&viewer_socket_name(&work_dir));
+    if skip_without_unix_socket("retirement_refuses_a_symlink_at_the_expected_name", &path) {
+        return;
+    }
     let elsewhere = socket_root.path().join("elsewhere");
     leave_dead_socket(&elsewhere);
     fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -193,6 +215,12 @@ fn retirement_leaves_the_socket_of_a_server_about_to_listen() {
     let repo = TempDir::new().unwrap();
     let work_dir = work_dir_in(&repo);
     let path = socket_path_for(&viewer_socket_name(&work_dir));
+    if skip_without_unix_socket(
+        "retirement_leaves_the_socket_of_a_server_about_to_listen",
+        &path,
+    ) {
+        return;
+    }
     let _bound = bind_without_listening(&path);
     let _lock = hold_start_lock(&path);
     assert!(has_no_listener(&path), "it refuses as a dead server does");
@@ -215,6 +243,12 @@ fn retirement_removes_an_unheld_lock_file_with_the_dead_socket() {
     let repo = TempDir::new().unwrap();
     let work_dir = work_dir_in(&repo);
     let path = socket_path_for(&viewer_socket_name(&work_dir));
+    if skip_without_unix_socket(
+        "retirement_removes_an_unheld_lock_file_with_the_dead_socket",
+        &path,
+    ) {
+        return;
+    }
     leave_dead_socket(&path);
     fs::write(lock_path(&path), "").unwrap();
 
@@ -232,6 +266,12 @@ fn retirement_does_not_follow_a_symlink_at_the_lock_path() {
     let repo = TempDir::new().unwrap();
     let work_dir = work_dir_in(&repo);
     let path = socket_path_for(&viewer_socket_name(&work_dir));
+    if skip_without_unix_socket(
+        "retirement_does_not_follow_a_symlink_at_the_lock_path",
+        &path,
+    ) {
+        return;
+    }
     leave_dead_socket(&path);
     let elsewhere = socket_root.path().join("elsewhere");
     std::os::unix::fs::symlink(&elsewhere, lock_path(&path)).unwrap();
@@ -256,6 +296,9 @@ fn a_real_tmux_client_waits_for_the_start_lock() {
     let name = "lock-honoured";
     let _server = TmuxServerGuard::new(name);
     let path = socket_path_for(name);
+    if skip_without_unix_socket("a_real_tmux_client_waits_for_the_start_lock", &path) {
+        return;
+    }
     leave_dead_socket(&path);
     let dead = fs::symlink_metadata(&path).unwrap();
     let lock = start_lock::StartLock::try_take(&path).unwrap().unwrap();
@@ -288,6 +331,12 @@ fn retirement_racing_a_real_start_keeps_the_started_server() {
     let name = viewer_socket_name(&work_dir);
     let _server = TmuxServerGuard::new(&name);
     let path = socket_path_for(&name);
+    if skip_without_unix_socket(
+        "retirement_racing_a_real_start_keeps_the_started_server",
+        &path,
+    ) {
+        return;
+    }
     for round in 0..20 {
         leave_dead_socket(&path);
         let starting = name.clone();

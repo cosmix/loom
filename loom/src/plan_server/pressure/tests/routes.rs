@@ -1,6 +1,7 @@
 //! The routes: each disabled reason of the options and their order, the start refusals, and
 //! the Stop and confirm refusals, and who may confirm a configuration block.
 
+use crate::process::sandbox_probe::skip_without_group_signals;
 use std::path::PathBuf;
 
 use serde_json::{json, Value};
@@ -130,6 +131,9 @@ fn options_say_another_browser_holds_authoring() {
 #[test]
 #[serial]
 fn options_say_a_run_is_running() {
+    let false = skip_without_group_signals("options_say_a_run_is_running") else {
+        return;
+    };
     let f = Fixture::new();
     running(&f);
     let body = options(&f, &f.holder);
@@ -141,6 +145,9 @@ fn options_say_a_run_is_running() {
 #[test]
 #[serial]
 fn options_give_the_first_reason_in_order() {
+    let false = skip_without_group_signals("options_give_the_first_reason_in_order") else {
+        return;
+    };
     let mut f = Fixture::new();
     running(&f);
     let watcher = BrowserId::mint().unwrap();
@@ -191,6 +198,9 @@ fn refused(f: &Fixture, body: Value) -> (u16, String) {
 #[test]
 #[serial]
 fn start_refuses_a_second_run() {
+    let false = skip_without_group_signals("start_refuses_a_second_run") else {
+        return;
+    };
     let f = Fixture::new();
     running(&f);
     assert_eq!(

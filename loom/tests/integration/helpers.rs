@@ -168,6 +168,13 @@ fn hook_runner_drains_large_output_and_times_out() {
             .expect_err("output above the capture limit must fail");
     assert!(error.to_string().contains("stdout"), "{error:#}");
 
+    // The hung stand-in spins until the runner's group kill ends it: when signals
+    // are refused it would outlive the test, so it is never spawned then.
+    let false = loom::process::sandbox_probe::skip_without_group_signals(
+        "hook_runner_drains_large_output_and_times_out",
+    ) else {
+        return;
+    };
     let dir = TempDir::new().unwrap();
     let pid_file = dir.path().join("descendant.pid");
     let mut hung = Command::new("bash");

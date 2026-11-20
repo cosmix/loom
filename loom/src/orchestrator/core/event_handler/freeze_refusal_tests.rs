@@ -1,6 +1,7 @@
 //! The `dispute_refused_freezes` tick step: which refusals it files, when,
 //! and what it does once the freeze-refusal budget is spent.
 
+use crate::process::sandbox_probe::skip_without_group_signals;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
@@ -248,6 +249,9 @@ fn a_local_refusal_waits_while_the_writers_children_are_unknown() {
 #[test]
 #[serial]
 fn the_fourth_refusal_retires_the_writer_and_escalates() {
+    if skip_without_group_signals("the_fourth_refusal_retires_the_writer_and_escalates") {
+        return;
+    }
     let mut fx = fixture();
     update_stage(STAGE, &fx.work, |stage| {
         stage.tally.freeze_refusal_disputes = 3;
@@ -286,67 +290,6 @@ fn the_fourth_refusal_retires_the_writer_and_escalates() {
     );
     assert!(fx.requests().is_empty(), "no dispute is pending");
     assert_eq!(daemon_refusal(&fx.work, STAGE).unwrap(), None);
-}
-#[test]
-#[serial]
-fn a_declined_filing_is_marked_and_never_retried() {
-    let mut fx = fixture();
-    fx.record(&fx.writer.id);
-
-    settle_filing(
-        &fx.work,
-        STAGE,
-        FreezeRefusalFiling::Declined("not admitted".to_string()),
-    )
-    .unwrap();
-    fx.tick();
-
-    fx.assert_nothing_filed();
-    let record = daemon_refusal(&fx.work, STAGE).unwrap().unwrap();
-    assert_eq!(record.declined.as_deref(), Some("not admitted"));
-}
-#[test]
-#[serial]
-fn an_admission_read_error_after_the_initial_read_retries() {
-    let mut fx = fixture();
-    fx.record(&fx.writer.id);
-    let (stage, _) = fx.orchestrator.refusing_writer(STAGE).unwrap().unwrap();
-    let refusal = daemon_refusal(&fx.work, STAGE).unwrap().unwrap();
-    let path = fx.work.join("contracts").join(STAGE).join("freeze.json");
-    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    std::fs::create_dir(&path).unwrap();
-    assert!(fx.orchestrator.file_refusal(&stage, &refusal).is_err());
-    let pending = daemon_refusal(&fx.work, STAGE).unwrap().unwrap();
-    assert_eq!(pending.declined, None);
-    fx.assert_nothing_filed();
-    std::fs::remove_dir(path).unwrap();
-    fx.tick();
-    fx.assert_filed_once();
-    assert_eq!(fx.stage().tally.freeze_refusal_disputes, 1);
-}
-#[test]
-#[serial]
-fn a_tick_retried_after_a_failed_filing_writes_one_request() {
-    // SAFETY: `geteuid` has no preconditions.
-    if unsafe { libc::geteuid() } == 0 {
-        return;
-    }
-    let mut fx = fixture();
-    fx.record(&fx.writer.id);
-    // The request is written, then the stage update fails.
-    let stages = fx.work.join("stages");
-    std::fs::set_permissions(&stages, std::fs::Permissions::from_mode(0o555)).unwrap();
-    fx.tick();
-    std::fs::set_permissions(&stages, std::fs::Permissions::from_mode(0o755)).unwrap();
-    assert_eq!(fx.stage().status, StageStatus::Executing);
-    assert!(
-        daemon_refusal(&fx.work, STAGE).unwrap().is_some(),
-        "kept for the retry"
-    );
-
-    fx.tick();
-
-    fx.assert_filed_once();
 }
 
 /// A codex child of `session_id` the lifecycle journal reports running.
@@ -398,3 +341,7 @@ fn active_child(work: &Path, workspace: &Path, session_id: &str) {
         ChildDisposition::Active
     );
 }
+
+#[cfg(test)]
+#[path = "freeze_refusal_retry_tests.rs"]
+mod retry_tests;

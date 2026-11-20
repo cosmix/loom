@@ -9,6 +9,7 @@
 //! `loom-hooks/_lifecycle.sh`'s `loom_lifecycle_resolve_start`. No contract
 //! binds or dials a unix socket.
 
+use loom::process::sandbox_probe::skip_unless;
 use std::fs;
 use std::os::unix::fs::{symlink, PermissionsExt};
 use std::path::{Path, PathBuf};
@@ -70,10 +71,11 @@ fn socket_problem_measures_the_resolved_path() {
     let (_dir, root) = canonical_temp();
     let (real, spelling) = symlinked_worktree(&root);
     let resolved_len = real.join(SOCKET_FILE).as_os_str().len();
-    assert!(
-        resolved_len < SUN_PATH_MAX,
-        "environment precondition: temp dir too long ({resolved_len} bytes resolved)"
-    );
+    let fits = resolved_len < SUN_PATH_MAX;
+    let why = format!("the temp dir is too long ({resolved_len} bytes resolved)");
+    if skip_unless(fits, "socket_problem_measures_the_resolved_path", &why) {
+        return;
+    }
     assert_eq!(
         socket_path_problem(&spelling),
         None,

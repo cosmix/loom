@@ -15,6 +15,7 @@ use crate::orchestrator::core::{Orchestrator, OrchestratorConfig};
 use crate::orchestrator::monitor::heartbeat::judge_heartbeat_path;
 use crate::orchestrator::terminal::native::{session_settings_path, write_test_pid_identity};
 use crate::plan::ExecutionGraph;
+use crate::process::sandbox_probe::skip_without_group_signals;
 use crate::verify::transitions::{create_stage, load_stage, update_stage};
 use tempfile::TempDir;
 
@@ -118,6 +119,11 @@ fn live_session(work: &std::path::Path, kind: SessionType) -> (Session, u32) {
 /// would take that decision away from it.
 #[test]
 fn a_stalled_judge_is_closed_and_the_stage_stays_under_adjudication() {
+    if skip_without_group_signals(
+        "a_stalled_judge_is_closed_and_the_stage_stays_under_adjudication",
+    ) {
+        return;
+    }
     let temp = work_root();
     let work = temp.path().join(".work");
     stage_needing_adjudication(&work);
@@ -164,6 +170,9 @@ fn a_stalled_judge_is_closed_and_the_stage_stays_under_adjudication() {
 /// the judge, its record and cleanup evidence must remain live.
 #[test]
 fn a_judge_that_survives_the_kill_is_not_marked_terminal() {
+    if skip_without_group_signals("a_judge_that_survives_the_kill_is_not_marked_terminal") {
+        return;
+    }
     let temp = work_root();
     let work = temp.path().join(".work");
     stage_needing_adjudication(&work);
@@ -197,6 +206,10 @@ fn a_judge_that_survives_the_kill_is_not_marked_terminal() {
 /// the judge watchdog.
 #[test]
 fn a_session_that_is_not_an_adjudicator_is_ignored() {
+    let false = skip_without_group_signals("a_session_that_is_not_an_adjudicator_is_ignored")
+    else {
+        return;
+    };
     let temp = work_root();
     let work = temp.path().join(".work");
     stage_needing_adjudication(&work);
@@ -222,6 +235,9 @@ fn a_session_that_is_not_an_adjudicator_is_ignored() {
 /// report harmless.
 #[test]
 fn a_judge_that_is_no_longer_running_is_ignored() {
+    let false = skip_without_group_signals("a_judge_that_is_no_longer_running_is_ignored") else {
+        return;
+    };
     let temp = work_root();
     let work = temp.path().join(".work");
     stage_needing_adjudication(&work);

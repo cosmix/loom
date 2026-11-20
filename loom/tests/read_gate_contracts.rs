@@ -10,6 +10,7 @@ mod helpers;
 #[path = "read_gate_contracts/support.rs"]
 mod support;
 
+use loom::process::sandbox_probe::skip_without_process_tree;
 use std::fs;
 use std::os::unix::fs::symlink;
 use support::{big_file, map_outline, outline_rows, Gate, Liveness};
@@ -36,6 +37,9 @@ fn first_unoutlined_read_warns_every_time() {
 
 #[test]
 fn first_outlined_read_denied_then_repeat_allowed() {
+    if skip_without_process_tree("first_outlined_read_denied_then_repeat_allowed") {
+        return;
+    }
     let gate = Gate::outlined();
     let files = files_dir();
     let file = big_file(files.path(), "big.txt");
@@ -58,6 +62,9 @@ fn first_outlined_read_denied_then_repeat_allowed() {
 
 #[test]
 fn outside_a_live_stage_only_warns() {
+    if skip_without_process_tree("outside_a_live_stage_only_warns") {
+        return;
+    }
     let mut gate = Gate::outlined();
     let files = files_dir();
     let live = big_file(files.path(), "live.txt");
@@ -77,6 +84,9 @@ fn outside_a_live_stage_only_warns() {
 
 #[test]
 fn unrecordable_denial_fails_open() {
+    if skip_without_process_tree("unrecordable_denial_fails_open") {
+        return;
+    }
     let mut gate = Gate::outlined();
     let files = files_dir();
     let file = big_file(files.path(), "big.txt");
@@ -125,6 +135,9 @@ fn control_inputs_are_exempt() {
 
 #[test]
 fn read_gate_false_only_warns() {
+    if skip_without_process_tree("read_gate_false_only_warns") {
+        return;
+    }
     let gate = Gate::outlined();
     let files = files_dir();
     let file = big_file(files.path(), "big.txt");
@@ -220,6 +233,9 @@ fn symlinked_markdown_gets_no_rows() {
 
 #[test]
 fn markdown_outline_reaches_the_denial() {
+    if skip_without_process_tree("markdown_outline_reaches_the_denial") {
+        return;
+    }
     let repo = helpers::init_test_repo();
     let body = format!(
         "# Alpha section\n{}## Beta section\n{}",
@@ -248,6 +264,9 @@ fn markdown_outline_reaches_the_denial() {
 
 #[test]
 fn second_agent_gets_its_own_denial() {
+    if skip_without_process_tree("second_agent_gets_its_own_denial") {
+        return;
+    }
     let gate = Gate::outlined();
     let files = files_dir();
     let file = big_file(files.path(), "big.txt");
@@ -259,6 +278,9 @@ fn second_agent_gets_its_own_denial() {
 
 #[test]
 fn bash_cat_and_read_share_one_denial() {
+    if skip_without_process_tree("bash_cat_and_read_share_one_denial") {
+        return;
+    }
     let root = files_dir();
     let cwd = root.path().join("cwd");
     fs::create_dir_all(&cwd).expect("create cwd");
@@ -286,6 +308,9 @@ fn bash_cat_and_read_share_one_denial() {
 
 #[test]
 fn denial_ledger_at_capacity_warns() {
+    if skip_without_process_tree("denial_ledger_at_capacity_warns") {
+        return;
+    }
     let gate = Gate::outlined();
     let files = files_dir();
     let paths: Vec<_> = (0..301)

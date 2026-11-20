@@ -2,6 +2,7 @@
 //! an injected router, checks `Host` before the router sees a request, and the
 //! dashboard's startup lines stay byte-identical.
 
+use loom::process::sandbox_probe::skip_without_loopback;
 use std::io::{self, Read, Write};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -98,6 +99,9 @@ fn get(addr: SocketAddr, host: &str) -> String {
 
 #[test]
 fn serve_dispatches_to_custom_router() {
+    if skip_without_loopback("serve_dispatches_to_custom_router") {
+        return;
+    }
     let calls = Arc::new(AtomicUsize::new(0));
     let server = start(Arc::clone(&calls));
     let response = get(server.addr, &format!("127.0.0.1:{}", server.addr.port()));
@@ -115,6 +119,9 @@ fn serve_dispatches_to_custom_router() {
 
 #[test]
 fn bad_host_never_reaches_router() {
+    if skip_without_loopback("bad_host_never_reaches_router") {
+        return;
+    }
     let calls = Arc::new(AtomicUsize::new(0));
     let server = start(Arc::clone(&calls));
     let response = get(server.addr, "evil.example:80");

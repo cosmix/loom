@@ -4,6 +4,7 @@
 #[path = "pressure_pipeline_contracts/support.rs"]
 mod support;
 
+use loom::process::sandbox_probe::skip_without_plan_locks;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
@@ -77,6 +78,9 @@ fn record_line_renders_rounds_models_and_outcome() {
 
 #[test]
 fn record_keeps_the_plan_file_mode() {
+    if skip_without_plan_locks("record_keeps_the_plan_file_mode") {
+        return;
+    }
     let dir = tempfile::tempdir().unwrap();
     let plan = dir.path().join("PLAN-x.md");
     fs::write(&plan, MINIMAL_PLAN).unwrap();
@@ -176,6 +180,9 @@ fn stopped_pipeline_writes_no_record() {
 
 #[test]
 fn missing_report_round_is_recorded() {
+    if skip_without_plan_locks("missing_report_round_is_recorded") {
+        return;
+    }
     let dir = tempfile::tempdir().unwrap();
     let plan = dir.path().join("PLAN-x.md");
     let report = dir.path().join("codex-PLAN-x.md");
@@ -198,6 +205,9 @@ fn missing_report_round_is_recorded() {
 
 #[test]
 fn recorded_plan_passes_verify_and_preflight() {
+    if skip_without_plan_locks("recorded_plan_passes_verify_and_preflight") {
+        return;
+    }
     let (_temp, root, plan) = git_repo_with_plan(MINIMAL_PLAN);
     let line = record_line(&["gpt-6.2-sol", "gpt-6.2-sol"], 2, &[]);
     let written = append_record(&plan, &line).expect("append_record");

@@ -163,6 +163,8 @@ impl Fixture {
     /// [`STAGE`] as an executing v2 stage owned by `owner`, its one contract
     /// frozen.
     pub fn frozen_contract_stage(&self, owner: &str) {
+        // A file-dispute reads the stage's execution site from its worktree.
+        crate::verify::contracts::test_support::contract_worktree(&self.repo_root, STAGE);
         save_stage(&contract_stage(STAGE, owner), &self.work_dir).unwrap();
         let record = FreezeRecord {
             version: crate::verify::contracts::store::FREEZE_RECORD_VERSION,

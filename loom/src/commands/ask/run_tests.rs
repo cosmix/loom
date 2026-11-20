@@ -1,3 +1,4 @@
+use crate::process::sandbox_probe::skip_without_group_signals;
 use std::ffi::OsStr;
 use std::path::Path;
 use std::time::{Duration, Instant};
@@ -63,6 +64,9 @@ fn stdout_past_sixteen_mib_fails() {
 
 #[test]
 fn the_deadline_kills_the_worker() {
+    let false = skip_without_group_signals("the_deadline_kills_the_worker") else {
+        return;
+    };
     let started = Instant::now();
     let message = failure("sleep 30", Duration::from_secs(1));
     assert!(message.contains("timed out"), "{message}");

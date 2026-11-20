@@ -156,6 +156,7 @@ fn explore_without_definition_resolves_builtin_sonnet() {
 
 #[test]
 fn typed_spawn_combines_brief_and_model_in_one_updated_input() {
+    require_gate_visible!("typed_spawn_combines_brief_and_model_in_one_updated_input");
     let (fixture, hook) = setup_hook();
     let (home, cwd, work) = (temp(), temp(), temp());
     write_agent_def(cwd.path(), "loom-software-engineer", "sonnet");
@@ -198,6 +199,7 @@ fn typed_spawn_combines_brief_and_model_in_one_updated_input() {
 
 #[test]
 fn brief_without_model_rewrite_updates_only_the_prompt() {
+    require_gate_visible!("brief_without_model_rewrite_updates_only_the_prompt");
     let (fixture, hook) = setup_hook();
     let (home, cwd, work) = (temp(), temp(), temp());
     let stub_bin = install_worker_brief_stub(fixture.path());
@@ -267,6 +269,7 @@ fn typed_spawn_without_definition_or_model_receives_brief_without_model_key() {
 
 #[test]
 fn brief_rewrite_keeps_existing_warning_context() {
+    require_gate_visible!("brief_rewrite_keeps_existing_warning_context");
     let (fixture, hook) = setup_hook();
     let (home, cwd, work) = (temp(), temp(), temp());
     write_agent_def(cwd.path(), "loom-software-engineer", "sonnet");

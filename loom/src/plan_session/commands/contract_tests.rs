@@ -2,6 +2,7 @@
 //! nor its hooks, a side process that never answers is killed, reaped and cleaned up, and every
 //! `builtin` row of the `initialize` answer reads as native or bundled.
 
+use crate::process::sandbox_probe::skip_without_group_signals;
 use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -198,6 +199,9 @@ fn assert_one_initialize_line(stdin_log: &Path) {
 
 #[test]
 fn a_side_process_that_never_answers_is_reaped() {
+    let false = skip_without_group_signals("a_side_process_that_never_answers_is_reaped") else {
+        return;
+    };
     let temp = tempfile::tempdir().unwrap();
     let base = temp.path().canonicalize().unwrap();
     let stdin_log = base.join("stdin.log");

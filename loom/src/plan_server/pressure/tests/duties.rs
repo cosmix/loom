@@ -1,6 +1,7 @@
 //! What a run watches and leaves behind: teammate panes and transcripts, the configuration
 //! guard, recovery after a dead server, and the shutdown drain.
 
+use crate::process::sandbox_probe::skip_without_group_signals;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::{mpsc, Arc};
@@ -34,6 +35,9 @@ const TEAMMATE_META: &str = include_str!("../fixtures/teammate.meta.json");
 #[test]
 #[serial]
 fn a_second_tmux_pane_fails_the_pressure_step() {
+    let false = skip_without_group_signals("a_second_tmux_pane_fails_the_pressure_step") else {
+        return;
+    };
     let f = Fixture::new();
     fs::write(f.tools.join("panes"), "2").unwrap();
     f.codex("sleep", "30");
@@ -78,6 +82,11 @@ fn transcripts(f: &Fixture) -> (Transcripts, PathBuf, PathBuf) {
 #[test]
 #[serial]
 fn only_teammate_transcripts_are_registered_for_their_tokens() {
+    let false =
+        skip_without_group_signals("only_teammate_transcripts_are_registered_for_their_tokens")
+    else {
+        return;
+    };
     let f = Fixture::new();
     let (found, teammate, subagent) = transcripts(&f);
     assert_eq!(
@@ -255,6 +264,11 @@ fn assert_grace_blocks(f: &Fixture, viewer: &BrowserId, codex_pid: u32, child: u
 #[test]
 #[serial]
 fn a_codex_still_running_after_its_grace_blocks_launches_until_confirmed() {
+    let false = skip_without_group_signals(
+        "a_codex_still_running_after_its_grace_blocks_launches_until_confirmed",
+    ) else {
+        return;
+    };
     let f = Fixture::new();
     f.codex("stubborn", "15");
     f.fake.script(vec![Script::Hold]);
@@ -284,6 +298,11 @@ fn a_codex_still_running_after_its_grace_blocks_launches_until_confirmed() {
 #[test]
 #[serial]
 fn a_codex_outliving_its_grace_after_the_marker_blocks_launches() {
+    let false =
+        skip_without_group_signals("a_codex_outliving_its_grace_after_the_marker_blocks_launches")
+    else {
+        return;
+    };
     let f = Fixture::new();
     f.codex("stubborn", "15");
     f.start(1);
@@ -342,6 +361,10 @@ fn recovery_deletes_an_interrupted_runs_report_and_names_the_run() {
 #[test]
 #[serial]
 fn the_shutdown_drain_stops_a_running_run_and_returns() {
+    let false = skip_without_group_signals("the_shutdown_drain_stops_a_running_run_and_returns")
+    else {
+        return;
+    };
     let f = Fixture::new();
     f.codex("sleep", "30");
     f.fake.script(vec![Script::Hold]);

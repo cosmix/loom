@@ -356,6 +356,7 @@ fn recovery_stops_a_job_cancelled_while_no_daemon_ran() {
 
 #[test]
 fn recovery_leaves_the_groups_of_a_retired_cancelled_job_alone() {
+    require_guardians!("recovery_leaves_the_groups_of_a_retired_cancelled_job_alone");
     let (_dir, work) = state_root();
     let mut stranger = Criterion::spawn();
     let mut record = running_record(STAGE, None);

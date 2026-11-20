@@ -1,5 +1,6 @@
 //! Tests for executor module
 
+use crate::process::sandbox_probe::skip_without_group_signals;
 use std::time::Duration;
 
 use crate::verify::criteria::executor::{run_single_criterion, run_single_criterion_with_timeout};
@@ -44,6 +45,9 @@ fn test_run_single_criterion_failure() {
 
 #[test]
 fn test_run_single_criterion_timeout() {
+    let false = skip_without_group_signals("test_run_single_criterion_timeout") else {
+        return;
+    };
     if !crate::process::sandbox_probe::confined_commands_runnable() {
         return;
     }

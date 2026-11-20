@@ -11,6 +11,7 @@ mod support;
 #[path = "plan_session_bridge_runtime_contracts/util.rs"]
 mod util;
 
+use loom::process::sandbox_probe::skip_without_group_signals;
 use std::fs;
 use std::process::Command;
 use std::sync::mpsc;
@@ -269,6 +270,11 @@ fn a_failed_teardown_keeps_the_session_record_and_directory() {
 
 #[test]
 fn a_marker_end_keeps_the_recorded_child_and_its_log_until_release() {
+    let false = skip_without_group_signals(
+        "a_marker_end_keeps_the_recorded_child_and_its_log_until_release",
+    ) else {
+        return;
+    };
     let h = Fixture::new().ready(|_| {});
     let s = h.idle(pressure());
     let mut child = OwnedChild(Command::new("sleep").arg("30").spawn().unwrap());

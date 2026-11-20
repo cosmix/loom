@@ -8,8 +8,8 @@ use super::forward_active_at;
 use super::test_support::{liquidmon, Fixture, INV_A, LIQUIDMON_RUNNING, LIQUIDMON_SUCCEEDED};
 use super::CodexAuthorization;
 use crate::orchestrator::monitor::direct_worker::live_tests::{
-    mark_own_agent, nonce, spawn_companion_wait, spawn_tree, wait_for_supervisor, wait_for_worker,
-    wait_until_gone,
+    cannot_run_live_trees, mark_own_agent, nonce, spawn_companion_wait, spawn_tree,
+    wait_for_supervisor, wait_for_worker, wait_until_gone,
 };
 
 const BUDGET: Duration = Duration::from_secs(300);
@@ -37,6 +37,9 @@ fn observed(fixture: &Fixture, since: DateTime<Utc>, now: DateTime<Utc>) -> Opti
 
 #[test]
 fn authorization_without_a_live_worker_is_not_progress() {
+    let false = cannot_run_live_trees("authorization_without_a_live_worker_is_not_progress") else {
+        return;
+    };
     let now = Utc::now();
     let (fixture, started) = authorized(now, 900);
     assert_eq!(
@@ -83,6 +86,11 @@ fn bound_direct(invocation: Option<&str>) -> (Fixture, CodexAuthorization) {
 
 #[test]
 fn direct_receipts_do_not_authorize_progress_or_shadow_later_work() {
+    let false =
+        cannot_run_live_trees("direct_receipts_do_not_authorize_progress_or_shadow_later_work")
+    else {
+        return;
+    };
     let (fixture, auth) = bound_direct(None);
     let now = auth.authorized_at + chrono::Duration::seconds(900);
     let since = auth.authorized_at - chrono::Duration::seconds(1);
@@ -100,6 +108,11 @@ fn direct_receipts_do_not_authorize_progress_or_shadow_later_work() {
 
 #[test]
 fn only_the_authorized_launch_holds_recovery_for_a_running_direct_receipt() {
+    let false = cannot_run_live_trees(
+        "only_the_authorized_launch_holds_recovery_for_a_running_direct_receipt",
+    ) else {
+        return;
+    };
     let invocation = nonce(7);
     let (fixture, auth) = bound_direct(Some(&invocation));
     mark_own_agent(&fixture.work_dir, &fixture.session);
@@ -134,6 +147,10 @@ fn only_the_authorized_launch_holds_recovery_for_a_running_direct_receipt() {
 
 #[test]
 fn a_foreground_direct_forward_holds_before_its_first_receipt() {
+    let false = cannot_run_live_trees("a_foreground_direct_forward_holds_before_its_first_receipt")
+    else {
+        return;
+    };
     let now = Utc::now();
     let invocation = nonce(8);
     let fixture = Fixture::new().unwrap();
@@ -179,6 +196,10 @@ fn authorized_invocation(
 
 #[test]
 fn companion_needs_its_authorized_wait_and_a_fresh_bound_log() {
+    let false = cannot_run_live_trees("companion_needs_its_authorized_wait_and_a_fresh_bound_log")
+    else {
+        return;
+    };
     let now = Utc::now();
     let (fixture, invocation, started) = authorized_invocation(now, 900, 9);
     let log = plant_job(&fixture, &invocation, std::process::id());
@@ -194,6 +215,11 @@ fn companion_needs_its_authorized_wait_and_a_fresh_bound_log() {
 
 #[test]
 fn a_planted_job_and_touched_log_hold_nothing_without_the_authorized_wait() {
+    let false = cannot_run_live_trees(
+        "a_planted_job_and_touched_log_hold_nothing_without_the_authorized_wait",
+    ) else {
+        return;
+    };
     let now = Utc::now();
     let (fixture, invocation, started) = authorized_invocation(now, 60, 10);
     plant_job(&fixture, &invocation, 1);
@@ -226,6 +252,16 @@ fn a_planted_job_and_touched_log_hold_nothing_without_the_authorized_wait() {
 
 #[test]
 fn a_planted_job_cannot_shadow_or_extend_the_authorized_direct_worker() {
+    let false =
+        cannot_run_live_trees("a_planted_job_cannot_shadow_or_extend_the_authorized_direct_worker")
+    else {
+        return;
+    };
+    let false =
+        cannot_run_live_trees("a_planted_job_cannot_shadow_or_extend_the_authorized_direct_worker")
+    else {
+        return;
+    };
     let now = Utc::now();
     let (fixture, invocation, started) = authorized_invocation(now, 60, 11);
     plant_job(&fixture, &invocation, 1);
@@ -244,6 +280,10 @@ fn a_planted_job_cannot_shadow_or_extend_the_authorized_direct_worker() {
 
 #[test]
 fn a_parallel_tool_call_does_not_void_a_healthy_forward() {
+    let false = cannot_run_live_trees("a_parallel_tool_call_does_not_void_a_healthy_forward")
+    else {
+        return;
+    };
     let now = Utc::now();
     let (fixture, invocation, _) = authorized_invocation(now, 60, 12);
     // The latest heartbeat progress is newer than the authorization.
@@ -267,6 +307,16 @@ fn a_parallel_tool_call_does_not_void_a_healthy_forward() {
 
 #[test]
 fn a_parallel_tool_call_does_not_void_a_healthy_companion_forward() {
+    let false =
+        cannot_run_live_trees("a_parallel_tool_call_does_not_void_a_healthy_companion_forward")
+    else {
+        return;
+    };
+    let false =
+        cannot_run_live_trees("a_parallel_tool_call_does_not_void_a_healthy_companion_forward")
+    else {
+        return;
+    };
     let now = Utc::now();
     let (fixture, invocation, _) = authorized_invocation(now, 60, 13);
     plant_job(&fixture, &invocation, std::process::id());
@@ -279,6 +329,11 @@ fn a_parallel_tool_call_does_not_void_a_healthy_companion_forward() {
 
 #[test]
 fn an_old_forward_finished_by_its_receipt_holds_nothing_while_a_process_lingers() {
+    let false = cannot_run_live_trees(
+        "an_old_forward_finished_by_its_receipt_holds_nothing_while_a_process_lingers",
+    ) else {
+        return;
+    };
     let invocation = nonce(14);
     let (fixture, auth) = bound_direct(Some(&invocation));
     mark_own_agent(&fixture.work_dir, &fixture.session);

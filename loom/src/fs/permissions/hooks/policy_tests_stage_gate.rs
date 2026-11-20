@@ -30,7 +30,19 @@ fn skip_reason() -> Option<String> {
     if let Some(reason) = ancestor_stage_evidence_reason() {
         return Some(reason);
     }
-    None
+    confinement_stage_evidence_reason()
+}
+
+// confinement_stage_evidence_reason - mirrors `_loom_confinement_evidence` on macOS: a
+// nested Seatbelt profile that differs from the applied one is refused, so a refused
+// probe means an outer profile (a host job's, or a session sandbox's) already confines
+// this process, and the guard reads that as stage evidence.
+fn confinement_stage_evidence_reason() -> Option<String> {
+    if !cfg!(target_os = "macos") {
+        return None;
+    }
+    crate::process::sandbox_probe::confined_commands_blocker()
+        .map(|why| format!("an outer Seatbelt profile confines this process ({why})"))
 }
 
 // ancestor_stage_evidence_reason - mirrors _loom_ancestor_stage_evidence in

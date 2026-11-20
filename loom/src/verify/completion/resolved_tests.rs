@@ -1,6 +1,7 @@
 //! What each caller of the resolver's completion checks gets when a detector
 //! cannot run.
 
+use crate::process::sandbox_probe::skip_without_confinement;
 use std::path::{Path, PathBuf};
 
 use tempfile::TempDir;
@@ -74,6 +75,9 @@ fn the_daemon_refuses_a_landing_its_detectors_could_not_check() {
 #[test]
 #[serial_test::serial]
 fn failed_acceptance_names_only_the_failing_commands() {
+    if skip_without_confinement() {
+        return;
+    }
     let _env = crate::test_cache_env::CacheEnv::pin();
     let temp = TempDir::new().unwrap();
     let root = temp.path().join("repo");

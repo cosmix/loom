@@ -9,6 +9,7 @@ use crate::orchestrator::core::OrchestratorConfig;
 use crate::orchestrator::terminal::native::write_test_pid_identity;
 use crate::plan::schema::StageDefinition;
 use crate::plan::ExecutionGraph;
+use crate::process::sandbox_probe::skip_without_group_signals;
 use crate::verify::transitions::{create_stage, load_stage, update_stage};
 use std::path::Path;
 use tempfile::TempDir;
@@ -139,6 +140,9 @@ pub(super) fn executing_stage(work_dir: &Path) {
 /// gone proves the takedown happened.
 #[test]
 fn budget_backstop_kills_the_agent_and_then_requeues() {
+    if skip_without_group_signals("budget_backstop_kills_the_agent_and_then_requeues") {
+        return;
+    }
     let temp = handoff_work_dir();
     let work = temp.path().join(".loom").join("work");
     executing_stage(&work);

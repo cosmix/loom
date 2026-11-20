@@ -1,6 +1,7 @@
 //! Contract tests for stage plan-server-core: the planning server's access gate, authoring
 //! model, ids, display names, lock, project root, browser opener and the bare `loom plan`.
 
+use loom::process::sandbox_probe::skip_without_loopback;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
 use std::path::Path;
@@ -79,6 +80,9 @@ fn cookies_of(resp: &Response) -> String {
 
 #[test]
 fn api_without_cookie_is_401_on_loopback() {
+    if skip_without_loopback("api_without_cookie_is_401_on_loopback") {
+        return;
+    }
     let repo = project_repo();
     let server = serve(&repo);
     let resp = get(server.local, "/api/server", "");
@@ -92,6 +96,9 @@ fn api_without_cookie_is_401_on_loopback() {
 
 #[test]
 fn token_on_other_path_sets_no_cookie() {
+    if skip_without_loopback("token_on_other_path_sets_no_cookie") {
+        return;
+    }
     let repo = project_repo();
     let server = serve(&repo);
     let port = server.local.port();
@@ -119,6 +126,9 @@ fn token_on_other_path_sets_no_cookie() {
 /// provider reached the context extensions.
 #[test]
 fn brief_route_has_its_provider_after_the_real_install_order() {
+    if skip_without_loopback("brief_route_has_its_provider_after_the_real_install_order") {
+        return;
+    }
     let repo = project_repo();
     let server = serve(&repo);
     let boot = get(server.local, &format!("/?token={}", server.token), "");
@@ -137,6 +147,9 @@ fn brief_route_has_its_provider_after_the_real_install_order() {
 
 #[test]
 fn ws_upgrade_with_loopback_alias_origin_is_refused() {
+    if skip_without_loopback("ws_upgrade_with_loopback_alias_origin_is_refused") {
+        return;
+    }
     let repo = project_repo();
     let server = serve(&repo);
     let port = server.local.port();
@@ -294,8 +307,7 @@ struct ChildGuard(Child);
 
 impl Drop for ChildGuard {
     fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
+        loom::process::sandbox_probe::reap::kill_and_reap(&mut self.0);
     }
 }
 
@@ -334,6 +346,9 @@ fn spawn_loom_plan(repo: &Path, home: &Path) -> (ChildGuard, mpsc::Receiver<Stri
 
 #[test]
 fn bare_loom_plan_serves_the_planning_app() {
+    if skip_without_loopback("bare_loom_plan_serves_the_planning_app") {
+        return;
+    }
     let repo = project_repo();
     let home = tempfile::tempdir().unwrap();
     let (_child, lines) = spawn_loom_plan(repo.path(), home.path());

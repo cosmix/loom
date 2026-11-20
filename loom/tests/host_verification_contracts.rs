@@ -23,7 +23,9 @@ use loom::host_verify::store::{job_dir, load_current, load_groups, save_current,
 use loom::host_verify::submit::{cancel, submit, Submission, SubmitRequest};
 use loom::host_verify::{JobKind, JobRecord, JobState};
 use loom::models::session::SessionType;
-use loom::process::sandbox_probe::{confined_commands_runnable, skip_unless};
+use loom::process::sandbox_probe::{
+    confined_commands_runnable, skip_unless, skip_without_group_signals,
+};
 use loom::relay::{verdict, MatrixVerdict, RequestKind};
 use serial_test::serial;
 use tempfile::TempDir;
@@ -143,6 +145,9 @@ fn a_new_head_supersedes_the_queued_job() {
 #[test]
 #[serial]
 fn cancel_kills_the_running_child() {
+    let false = skip_without_group_signals("cancel_kills_the_running_child") else {
+        return;
+    };
     let (_dir, w) = state_root();
     write_stage(&w, &["true"]);
     let mut runner = HostJobRunner::new(w.clone(), sleeper());
@@ -176,11 +181,13 @@ fn size(path: &std::path::Path) -> u64 {
 #[serial]
 fn cancel_stops_the_criteria_of_a_running_job() {
     let name = "cancel_stops_the_criteria_of_a_running_job";
-    if skip_unless(
-        confined_commands_runnable(),
-        name,
-        "loom's confinement cannot start here",
-    ) {
+    if skip_without_group_signals(name)
+        || skip_unless(
+            confined_commands_runnable(),
+            name,
+            "loom's confinement cannot start here",
+        )
+    {
         return;
     }
     let fx = build_fixture(&["while :; do date >> beat.txt; sleep 0.2; done"]);
@@ -225,6 +232,9 @@ fn cancel_stops_the_criteria_of_a_running_job() {
 #[test]
 #[serial]
 fn a_job_past_its_deadline_is_failed_and_killed() {
+    let false = skip_without_group_signals("a_job_past_its_deadline_is_failed_and_killed") else {
+        return;
+    };
     let (_dir, w) = state_root();
     write_stage(&w, &["true"]);
     let mut runner =

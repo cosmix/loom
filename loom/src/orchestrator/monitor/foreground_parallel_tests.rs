@@ -16,6 +16,7 @@ use serial_test::serial;
 use super::*;
 use crate::assets::install::test_env::InstallRootsEnv;
 use crate::codex_lifecycle::test_support::{Fixture, INV_A};
+use crate::orchestrator::monitor::direct_worker::live_tests::cannot_run_live_trees;
 use crate::orchestrator::terminal::native::NativeBackend;
 use crate::process::{process_start_time, OwnedProcess};
 
@@ -82,6 +83,10 @@ fn write_agent_pid(work: &Path, session: &Session, agent: u32) {
 /// An idle older command must not hide a busy one started after it.
 #[test]
 fn an_idle_older_command_does_not_hide_a_busy_parallel_one() {
+    let false = cannot_run_live_trees("an_idle_older_command_does_not_hide_a_busy_parallel_one")
+    else {
+        return;
+    };
     let temp = tempfile::tempdir().unwrap();
     let mut session = Session::new();
     session.id = "parallel-session".to_string();
@@ -109,6 +114,11 @@ fn an_idle_older_command_does_not_hide_a_busy_parallel_one() {
 #[test]
 #[serial]
 fn a_forward_with_no_evidence_earns_no_credit_and_blocks_none_beside_it() {
+    let false = cannot_run_live_trees(
+        "a_forward_with_no_evidence_earns_no_credit_and_blocks_none_beside_it",
+    ) else {
+        return;
+    };
     let fixture = Fixture::new().unwrap();
     let home = fixture.state_root.ancestors().nth(3).unwrap();
     let _env = InstallRootsEnv::isolate(home);

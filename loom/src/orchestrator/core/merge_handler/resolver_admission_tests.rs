@@ -1,5 +1,6 @@
 //! Real CLI and daemon admission paths sharing a controlled backend.
 
+use crate::process::sandbox_probe::skip_without_group_signals;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
@@ -15,8 +16,7 @@ struct ChildGuard(Arc<Mutex<Option<std::process::Child>>>);
 impl Drop for ChildGuard {
     fn drop(&mut self) {
         if let Some(mut child) = self.0.lock().unwrap().take() {
-            let _ = child.kill();
-            let _ = child.wait();
+            crate::process::sandbox_probe::reap::kill_and_reap(&mut child);
         }
     }
 }
@@ -175,6 +175,11 @@ fn competing_launches(fail_publication: bool) {
 /// spends no resolver attempt and leaves the stage waiting for its merge.
 #[test]
 fn a_held_admission_lock_defers_the_spawn_without_spending_an_attempt() {
+    if skip_without_group_signals(
+        "a_held_admission_lock_defers_the_spawn_without_spending_an_attempt",
+    ) {
+        return;
+    }
     let repo = repo_with_conflicting_stage_branches(&["race"]);
     let mut daemon = orchestrator_with_conflict(repo.path(), "race");
     let work = daemon.config.work_dir.clone();
@@ -197,10 +202,16 @@ fn a_held_admission_lock_defers_the_spawn_without_spending_an_attempt() {
 
 #[test]
 fn cli_and_daemon_launch_only_one_resolver() {
+    if skip_without_group_signals("cli_and_daemon_launch_only_one_resolver") {
+        return;
+    }
     competing_launches(false);
 }
 
 #[test]
 fn failed_publication_after_spawn_blocks_the_other_surface() {
+    if skip_without_group_signals("failed_publication_after_spawn_blocks_the_other_surface") {
+        return;
+    }
     competing_launches(true);
 }

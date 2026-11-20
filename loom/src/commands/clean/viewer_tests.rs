@@ -4,6 +4,7 @@ use super::*;
 use crate::orchestrator::terminal::tmux::socket::tests::{server_socket_dir, TmuxTmpDirGuard};
 use crate::orchestrator::terminal::tmux::socket_path_for;
 use crate::orchestrator::terminal::tmux::viewer::viewer_socket_name;
+use crate::process::sandbox_probe::skip_without_unix_socket;
 use tempfile::TempDir;
 
 /// `loom clean --all` proceeds past the viewer socket a dead tmux server left.
@@ -16,6 +17,9 @@ fn state_cleanup_proceeds_past_a_dead_viewer_socket() {
     let work_dir = temp_dir.path().join(".loom/work");
     fs::create_dir_all(&work_dir).unwrap();
     let socket = socket_path_for(&viewer_socket_name(&work_dir));
+    if skip_without_unix_socket("state_cleanup_proceeds_past_a_dead_viewer_socket", &socket) {
+        return;
+    }
     fs::create_dir_all(socket.parent().unwrap()).unwrap();
     drop(std::os::unix::net::UnixListener::bind(&socket).unwrap());
     let mut stats = CleanStats::default();
@@ -38,6 +42,12 @@ fn state_cleanup_stops_at_a_listening_socket_it_cannot_verify() {
     let work_dir = temp_dir.path().join(".loom/work");
     fs::create_dir_all(&work_dir).unwrap();
     let socket = socket_path_for(&viewer_socket_name(&work_dir));
+    if skip_without_unix_socket(
+        "state_cleanup_stops_at_a_listening_socket_it_cannot_verify",
+        &socket,
+    ) {
+        return;
+    }
     fs::create_dir_all(socket.parent().unwrap()).unwrap();
     let _listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
     let mut stats = CleanStats::default();

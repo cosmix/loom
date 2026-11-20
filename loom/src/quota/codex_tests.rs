@@ -1,4 +1,5 @@
 use super::*;
+use crate::process::sandbox_probe::skip_without_group_signals;
 use std::sync::Arc;
 use tempfile::tempdir;
 
@@ -159,6 +160,10 @@ fn garbage_and_an_over_long_line_are_skipped_before_the_reply() {
 #[test]
 #[cfg(unix)]
 fn a_hanging_server_times_out_and_the_child_is_killed() {
+    let false = skip_without_group_signals("a_hanging_server_times_out_and_the_child_is_killed")
+    else {
+        return;
+    };
     let dir = tempdir().unwrap();
     let pid_file = dir.path().join("pid");
     let script = format!("#!/bin/sh\necho $$ > {}\nsleep 30\n", pid_file.display());
@@ -191,6 +196,9 @@ fn a_hanging_server_times_out_and_the_child_is_killed() {
 #[test]
 #[cfg(unix)]
 fn a_passed_reply_deadline_times_out() {
+    let false = skip_without_group_signals("a_passed_reply_deadline_times_out") else {
+        return;
+    };
     let dir = tempdir().unwrap();
     // The deadline runs whether or not the child ever gets to run `sleep`,
     // so nothing here waits on the child's start-up.
@@ -214,6 +222,11 @@ fn a_passed_reply_deadline_times_out() {
 #[test]
 #[cfg(unix)]
 fn a_flood_of_notifications_after_the_reply_does_not_hang_the_reader_join() {
+    let false = skip_without_group_signals(
+        "a_flood_of_notifications_after_the_reply_does_not_hang_the_reader_join",
+    ) else {
+        return;
+    };
     let dir = tempdir().unwrap();
     let pid_file = dir.path().join("pid");
     // The reply to id 1 arrives first, so `await_reply` returns and stops
@@ -283,6 +296,10 @@ fn a_child_that_closes_stdin_before_the_request_still_yields_its_reply() {
 #[test]
 #[cfg(unix)]
 fn a_shutdown_flag_set_mid_exchange_returns_quickly() {
+    let false = skip_without_group_signals("a_shutdown_flag_set_mid_exchange_returns_quickly")
+    else {
+        return;
+    };
     let dir = tempdir().unwrap();
     let script = "#!/bin/sh\nsleep 30\n";
     let command = fake_codex_command(dir.path(), script);

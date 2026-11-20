@@ -11,6 +11,7 @@ use crate::orchestrator::core::OrchestratorConfig;
 use crate::orchestrator::provision::write_provision_snapshot;
 use crate::orchestrator::tick::{self, Phase};
 use crate::plan::ExecutionGraph;
+use crate::process::sandbox_probe::confined_commands_runnable;
 use crate::test_git::{git, TestRepo};
 use crate::verify::transitions::{load_stage, save_stage};
 use std::fs;
@@ -213,6 +214,9 @@ fn a_snapshot_without_entries_leaves_the_gate_to_before_stage() {
 #[test]
 #[serial_test::serial]
 fn a_passing_provision_runs_in_the_worktree() {
+    if !confined_commands_runnable() {
+        return;
+    }
     let worktree = TempDir::new().unwrap();
 
     let (passed, stage) = gate(&["touch provisioned"], Vec::new(), worktree.path());
@@ -225,6 +229,9 @@ fn a_passing_provision_runs_in_the_worktree() {
 #[test]
 #[serial_test::serial]
 fn a_provision_that_leaves_an_unignored_file_blocks_the_stage() {
+    if !confined_commands_runnable() {
+        return;
+    }
     let repo = repo_ignoring_node_modules();
     let command = "mkdir -p node_modules && touch node_modules/x && touch provisioned";
 
@@ -246,6 +253,9 @@ fn a_provision_that_leaves_an_unignored_file_blocks_the_stage() {
 #[test]
 #[serial_test::serial]
 fn an_unignored_file_name_reaches_the_reason_without_its_escape_bytes() {
+    if !confined_commands_runnable() {
+        return;
+    }
     let repo = repo_ignoring_node_modules();
 
     let (passed, stage) = gate(
@@ -270,6 +280,9 @@ fn an_unignored_file_name_reaches_the_reason_without_its_escape_bytes() {
 #[test]
 #[serial_test::serial]
 fn provisioning_stamps_the_daemon_tick() {
+    if !confined_commands_runnable() {
+        return;
+    }
     let _env = crate::test_cache_env::CacheEnv::pin();
     let work = TempDir::new().unwrap();
     let worktree = TempDir::new().unwrap();
@@ -286,6 +299,9 @@ fn provisioning_stamps_the_daemon_tick() {
 #[test]
 #[serial_test::serial]
 fn a_provision_that_writes_only_ignored_files_spawns() {
+    if !confined_commands_runnable() {
+        return;
+    }
     let repo = repo_ignoring_node_modules();
 
     let (passed, stage) = gate(
@@ -302,6 +318,9 @@ fn a_provision_that_writes_only_ignored_files_spawns() {
 #[test]
 #[serial_test::serial]
 fn a_retry_does_not_count_its_own_earlier_unignored_files() {
+    if !confined_commands_runnable() {
+        return;
+    }
     let repo = repo_ignoring_node_modules();
     fs::write(repo.path().join("provisioned"), "").unwrap();
 
@@ -313,6 +332,9 @@ fn a_retry_does_not_count_its_own_earlier_unignored_files() {
 #[test]
 #[serial_test::serial]
 fn the_gate_reads_the_snapshot_not_the_plan() {
+    if !confined_commands_runnable() {
+        return;
+    }
     let _env = crate::test_cache_env::CacheEnv::pin();
     let temp = work_dir();
     let work = temp.path().join(".loom").join("work");
@@ -344,55 +366,8 @@ fn the_gate_reads_the_snapshot_not_the_plan() {
     assert!(!worktree.path().join("from-plan").exists());
 }
 
-#[test]
-#[serial_test::serial]
-fn a_provision_that_modifies_a_tracked_file_blocks_and_names_its_full_path() {
-    let repo = repo_tracking("web/bun.lock");
-
-    let (passed, stage) = gate(&["echo changed >> web/bun.lock"], Vec::new(), repo.path());
-
-    assert!(!passed);
-    assert_eq!(stage.status, StageStatus::Blocked);
-    let reason = stage.close_reason.expect("the block records its reason");
-    // The status entry is " M web/bun.lock": a trimmed listing clips it to "eb/bun.lock".
-    assert!(reason.contains("worktree: web/bun.lock;"), "{reason}");
-}
-
-#[test]
-#[serial_test::serial]
-fn a_pre_existing_modified_tracked_file_is_not_a_new_entry() {
-    let repo = repo_tracking("a.txt");
-    fs::write(repo.path().join("a.txt"), "edited before provisioning\n").unwrap();
-
-    let (passed, stage) = gate(
-        &["mkdir -p node_modules && touch node_modules/x"],
-        Vec::new(),
-        repo.path(),
-    );
-
-    assert!(passed);
-    assert_eq!(stage.status, StageStatus::Queued);
-}
-
-/// A lossy decode reads the name as `bad\u{FFFD}name`, a new entry it then blocks on
-/// under a different name; a skipped comparison lets the stage spawn. APFS
-/// rejects such a name (EILSEQ), so the provision cannot write it on macOS.
-#[cfg(not(target_os = "macos"))]
-#[test]
-#[serial_test::serial]
-fn a_provision_that_writes_a_non_utf8_name_blocks_the_stage() {
-    let repo = repo_ignoring_node_modules();
-
-    let (passed, stage) = gate(
-        &["touch \"$(printf 'bad\\377name')\""],
-        Vec::new(),
-        repo.path(),
-    );
-
-    assert!(!passed);
-    let reason = stage.close_reason.expect("the block records its reason");
-    assert_eq!(reason, NON_UTF8_REASON);
-}
-
 #[path = "provision_gate_pin_tests.rs"]
 mod pin_tests;
+
+#[path = "provision_gate_tracked_tests.rs"]
+mod tracked_tests;

@@ -44,9 +44,9 @@ const SUN_PATH_LIMIT: usize = 104;
 /// prefix plus a realistic id rather than measuring one exactly.
 const SOCKET_NAME_BUDGET: usize = 40;
 
-/// Select a writable base whose projected tmux socket path fits `sun_path`.
-/// Fail rather than skip when no candidate is usable.
-fn create_isolated_tmux_tmpdir() -> PathBuf {
+/// Select a writable base whose projected tmux socket path fits `sun_path`;
+/// `Err` lists every rejected candidate.
+fn create_isolated_tmux_tmpdir() -> Result<PathBuf, String> {
     // SAFETY: getuid() is always safe to call and cannot fail. Matches
     // `loom_socket_dir()` in `src/orchestrator/terminal/tmux/socket.rs`,
     // which builds the real socket path the same way.
@@ -80,10 +80,12 @@ fn create_isolated_tmux_tmpdir() -> PathBuf {
             continue;
         }
 
-        return dir;
+        return Ok(dir);
     }
 
-    panic!("no usable TMUX_TMPDIR base found; rejected candidates: {rejected:?}");
+    Err(format!(
+        "no usable TMUX_TMPDIR base found; rejected candidates: {rejected:?}"
+    ))
 }
 
 /// Redirects `TMUX_TMPDIR` to an isolated per-test directory for the
@@ -95,8 +97,14 @@ pub(crate) struct TmuxTmpDirGuard {
 }
 
 impl TmuxTmpDirGuard {
+    /// When no base is usable (a long `$TMPDIR` and an unwritable `/tmp`) the guard points
+    /// at a directory that does not exist, so the caller's `skip_unless_tmux_can_bind`
+    /// probe fails and skips (or panics under `LOOM_E2E_REQUIRE_TMUX=1`).
     pub(crate) fn new() -> Self {
-        let dir = create_isolated_tmux_tmpdir();
+        let dir = create_isolated_tmux_tmpdir().unwrap_or_else(|why| {
+            eprintln!("{why}");
+            std::env::temp_dir().join(format!("lt-unusable-{}", std::process::id()))
+        });
         let _env = EnvVarGuard::set("TMUX_TMPDIR", &dir);
         Self { _env, dir }
     }

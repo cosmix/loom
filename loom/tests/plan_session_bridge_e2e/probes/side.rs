@@ -204,8 +204,8 @@ impl Side {
         let procs = tree(pid);
         self.seen.add(procs.iter().copied());
         let _ = killpg(Pid::from_raw(pid as i32), Signal::SIGKILL);
-        let _ = self.child.kill();
-        let status = self.child.wait();
+        loom::process::sandbox_probe::reap::kill_and_reap(&mut self.child);
+        let status = self.child.try_wait();
         let left = kill_all(&procs);
         self.stdin.take();
         if let Some(reader) = self.reader.take() {

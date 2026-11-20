@@ -8,7 +8,9 @@ use std::time::{Duration, Instant};
 use tungstenite::client::IntoClientRequest;
 use tungstenite::{Message, WebSocket};
 
-use crate::process::sandbox_probe::{loopback_bindable, skip_unless};
+use crate::process::sandbox_probe::{
+    loopback_bindable, skip_unless, skip_without_group_signals, skip_without_pty,
+};
 
 use super::bridge;
 use super::protocol::{
@@ -234,7 +236,8 @@ fn skip_bridge_test(name: &str) -> bool {
         loopback_bindable(),
         name,
         "loopback sockets are unavailable in this sandbox",
-    )
+    ) || skip_without_pty(name)
+        || skip_without_group_signals(name)
 }
 
 #[test]

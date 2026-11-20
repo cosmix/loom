@@ -9,6 +9,7 @@ use super::*;
 use crate::orchestrator::monitor::detection::Detection;
 use crate::orchestrator::monitor::heartbeat::write_heartbeat;
 use crate::orchestrator::terminal::native::NativeBackend;
+use crate::process::sandbox_probe::skip_without_process_control;
 use crate::process::{process_start_time, OwnedProcess};
 
 struct LiveFixture {
@@ -154,6 +155,11 @@ fn wait_worker(path: &Path) -> u32 {
 
 #[test]
 fn monitor_and_status_share_first_and_later_cpu_progress_at_identical_clocks() {
+    let false = skip_without_process_control(
+        "monitor_and_status_share_first_and_later_cpu_progress_at_identical_clocks",
+    ) else {
+        return;
+    };
     for after_progress in [false, true] {
         let fixture = LiveFixture::new(after_progress);
         let mut monitor = Detection::new();

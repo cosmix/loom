@@ -2,6 +2,8 @@
 //! requested: a live check is stopped before the gates run, and a passed one
 //! lands nothing.
 
+use crate::process::sandbox_probe::confined_commands_runnable;
+use crate::process::sandbox_probe::skip_without_group_signals;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -116,6 +118,12 @@ fn assert_stopped(fx: &Fixture, running: &JobRecord) {
 
 #[test]
 fn merge_resolved_kills_a_running_check_before_the_gates_run() {
+    if !confined_commands_runnable() {
+        return;
+    }
+    if skip_without_group_signals("merge_resolved_kills_a_running_check_before_the_gates_run") {
+        return;
+    }
     let fx = fixture();
     let (mut orchestrator, running) = stage_with_running_check(&fx);
 
@@ -133,6 +141,12 @@ fn merge_resolved_kills_a_running_check_before_the_gates_run() {
 
 #[test]
 fn a_resolver_exit_kills_a_running_check_before_the_gates_run() {
+    if !confined_commands_runnable() {
+        return;
+    }
+    if skip_without_group_signals("a_resolver_exit_kills_a_running_check_before_the_gates_run") {
+        return;
+    }
     let fx = fixture();
     let (mut orchestrator, running) = stage_with_running_check(&fx);
 
@@ -151,6 +165,12 @@ fn a_resolver_exit_kills_a_running_check_before_the_gates_run() {
 /// deadline waiting for the next tick to look at it.
 #[test]
 fn stopping_the_check_starts_no_queued_job_of_another_stage() {
+    if !confined_commands_runnable() {
+        return;
+    }
+    if skip_without_group_signals("stopping_the_check_starts_no_queued_job_of_another_stage") {
+        return;
+    }
     let fx = fixture();
     let (mut orchestrator, _running) = stage_with_running_check(&fx);
     let other = Stage {
@@ -174,6 +194,9 @@ fn stopping_the_check_starts_no_queued_job_of_another_stage() {
 
 #[test]
 fn merge_resolved_cancels_a_queued_check_no_child_runs_for() {
+    if !confined_commands_runnable() {
+        return;
+    }
     let fx = fixture();
     let mut orchestrator = resolved_stage(&fx);
     let job = queue_check(&fx);

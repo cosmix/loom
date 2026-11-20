@@ -29,7 +29,9 @@ use loom::models::session::{Session, SessionType};
 use loom::models::stage::StageStatus;
 use loom::orchestrator::{Orchestrator, OrchestratorConfig};
 use loom::plan::schema::ContractSpec;
-use loom::process::sandbox_probe::{confined_commands_runnable, skip_unless};
+use loom::process::sandbox_probe::{
+    confined_commands_runnable, skip_unless, skip_without_group_signals,
+};
 use loom::verify::contracts::refusal::daemon_refusal;
 use loom::verify::transitions::{load_stage, update_stage};
 use serial_test::serial;
@@ -54,6 +56,7 @@ fn skip(test_name: &str) -> bool {
         .iter()
         .all(|tool| helpers::tool_available(tool));
     skip_unless(present, test_name, "jq, bash or git was not found on PATH")
+        || skip_without_group_signals(test_name)
 }
 
 /// The environment the daemon's child inherits: a scratch user directory
