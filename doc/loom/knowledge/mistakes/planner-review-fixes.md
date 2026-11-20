@@ -109,9 +109,9 @@ Slips from the planner review-fixes plan (kickoff, chat, drafts, uploads, vision
 
 ## `loom check` Run in the Background or While Workers Edit
 
-**What happened:** `loom check integration-verify` run with `run_in_background` never reached the daemon (the relay hook reads stdout of a foreground Bash call only) and the next foreground call reported `refused`. Separately, each `loom check` while workers were editing queued a new host job (new tree fingerprint, same HEAD id).
+**What happened:** `loom check integration-verify` run with `run_in_background` never reached the daemon (the relay hook reads stdout of a foreground Bash call only) and the next foreground call reported `refused`. Separately, each `loom check` while workers were editing queued a new host job (new tree fingerprint, same HEAD id). In plan `planner-kickoff-fixes` integration-verify ran the gate (and a clippy probe) while review findings were still open, which proved nothing about the final tree and paid a cold build.
 
-**Prevention:** run `loom check` in the foreground and rerun the same command only to wait; submit it only when no worker is writing. `--criterion` takes the 0-based index from the criterion's `[criterion <n>]` label, not the 1-based number in the signal's task list.
+**Prevention:** run `loom check` in the foreground and rerun the same command only to wait; submit it only when no worker is writing and no finding is open. In integration-verify, review first, fix every finding, then run the gate once on the fixed tree; the gate is the last check, not a discovery step. `--criterion` takes the 0-based index from the criterion's `[criterion <n>]` label, not the 1-based number in the signal's task list.
 
 ## A Plan `reachable` Entry Named a Route Handler Held as a Value
 
@@ -137,3 +137,13 @@ Slips from the planner review-fixes plan (kickoff, chat, drafts, uploads, vision
 **Why:** `commands.ts` and `empty-kickoff.tsx` assumed a secure context. Tests run in a secure context and mock `randomUUID`, so no test saw the insecure case.
 **Prevention:** use `newId()` for browser ids; check any new browser API against secure-context requirements, since LAN binds are plain HTTP.
 **Fix:** `web/src/plan/id.ts` `newId()` with a `getRandomValues` v4 fallback, tested with `randomUUID` removed.
+
+## Set It Aside Looked Like It Did Nothing
+
+**What happened:** on a kickoff with a delivered user message, "Set it aside" returned ok and the draft read `live: true` 2 s later, with no `Ended` event; the notice still said "is still open". A repeated set aside could not stop the closing turn either.
+
+**Why:** `set_aside_kickoff` ended the session with `EndMode::FinalWrite`. `bridge/ending.rs` `plan_end` keeps a final write for an authoring session whose user message was delivered, so `Ended` fires only after the closing message is pasted at the next idle plus its reply, bounded by `final_write_bound` (600 s in production, 5 s in the fixture). Nothing in the UI changed meanwhile. A session that has an end requested reads `Ending`, so `Session::interrupt` returns `NotRunning` for a closing turn: a repeat could never kill it. A kickoff whose user never wrote was already torn down at once; the holder rule was not involved.
+
+**Prevention:** a command that waits on the agent must change what the user sees and carry its own bound; do not reuse the 600 s end bound for a user-facing action. Tests after a set aside cannot `wait_state(Idle/Working)`: observe the closing paste and the "Stopped" notice frames.
+
+**Fix:** `Bridge::close_within` (`bridge/end_plan.rs`) bounds the final write by `SET_ASIDE_BOUND` (60 s) and leaves a planned end's closing turn alone; `now: true` tears down; the web notice reads "is being set aside…" with Stop now ([Kickoff drafts](../architecture/planner-uploads-and-drafts.md#kickoff-drafts)).

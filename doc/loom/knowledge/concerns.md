@@ -233,7 +233,7 @@ Teardown closes an iTerm2 or Terminal.app window by its title. The iTerm2 spawn 
 
 ## Planner Review Fixes Follow-ups
 
-Operator checks no stage sandbox can run (rebuilt summaries, a real image read, a kickoff round trip, journeys J2-J5 and J8), one open question about server-written sends returned on end, and about forty unimplemented reviewer suggestions on uploads, drafts, summaries and the web screens. → [Planner UI Repair Follow-ups](concerns/planner-ui-repair-followups.md#planner-review-fixes-unchecked-here-and-reviewer-suggestions)
+Operator checks no stage sandbox can run (rebuilt summaries, a real image read, a kickoff round trip, journeys J2-J5 and J8), one open question about server-written sends returned on end, and about forty unimplemented reviewer suggestions on uploads, drafts, summaries and the web screens. → [Planner UI Repair Follow-ups](concerns/planner-ui-repair-followups.md#planner-review-fixes-unchecked-here-and-reviewer-suggestions) Planner kickoff fixes: a proposed check for a stale embedded `web/dist`, the criterion-sandbox failures no local run reproduces, and the unimplemented reviewer suggestions on set aside, the confined Delete and the draft page. → [Planner Kickoff Fixes Follow-ups](concerns/planner-kickoff-fixes-followups.md)
 
 ## Planner Polish Follow-ups
 
