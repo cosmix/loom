@@ -14,6 +14,7 @@ use crate::models::stage::{StageStatus, StageType};
 use crate::verify::transitions::update_stage;
 
 #[test]
+#[serial_test::serial]
 fn a_v2_standard_stage_without_a_review_round_is_rejected() {
     let fx = Fixture::new(StageType::Standard, 2);
     let record = fx.passed();
@@ -25,6 +26,7 @@ fn a_v2_standard_stage_without_a_review_round_is_rejected() {
 }
 
 #[test]
+#[serial_test::serial]
 fn a_knowledge_stage_completes_merged() {
     let fx = Fixture::new(StageType::Knowledge, 1);
     let record = fx.passed();
@@ -46,6 +48,7 @@ fn a_knowledge_stage_completes_merged() {
 }
 
 #[test]
+#[serial_test::serial]
 fn a_check_record_is_ignored() {
     let fx = Fixture::new(StageType::Standard, 1);
     let record = fx.finished(JobKind::Check, JobState::Passed, &[("acceptance-0", true)]);
@@ -59,6 +62,7 @@ fn a_check_record_is_ignored() {
 }
 
 #[test]
+#[serial_test::serial]
 fn an_applied_record_is_not_applied_twice() {
     let fx = Fixture::new(StageType::Standard, 1);
     let record = fx.passed();
@@ -83,6 +87,7 @@ fn complete_stage_only(fx: &Fixture, head: &str) {
 }
 
 #[test]
+#[serial_test::serial]
 fn a_crash_after_the_transition_is_finished_by_the_next_apply() {
     let fx = Fixture::new(StageType::Standard, 1);
     let record = fx.passed();
@@ -115,6 +120,7 @@ fn corrupt_session_record(fx: &Fixture) {
 }
 
 #[test]
+#[serial_test::serial]
 fn an_unreadable_session_record_is_an_error_not_a_rejection() {
     let fx = Fixture::new(StageType::Standard, 1);
     let record = fx.passed();
@@ -127,6 +133,7 @@ fn an_unreadable_session_record_is_an_error_not_a_rejection() {
 }
 
 #[test]
+#[serial_test::serial]
 fn an_unreadable_session_record_of_a_failed_run_is_an_error_not_ignored() {
     let fx = Fixture::new(StageType::Standard, 1);
     let record = fx.finished(
@@ -141,6 +148,7 @@ fn an_unreadable_session_record_of_a_failed_run_is_an_error_not_ignored() {
 }
 
 #[test]
+#[serial_test::serial]
 fn an_unwritable_checkpoint_directory_is_an_error_until_it_is_restored() {
     // SAFETY: `geteuid` has no preconditions.
     if unsafe { libc::geteuid() } == 0 {

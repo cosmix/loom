@@ -39,6 +39,7 @@ fn current(fx: &Fixture) -> JobRecord {
 }
 
 #[test]
+#[serial_test::serial]
 fn a_passing_run_on_the_same_tree_completes_the_stage_without_a_job() {
     let fx = held();
     let passed = fx.passed();
@@ -66,6 +67,7 @@ fn a_passing_run_on_the_same_tree_completes_the_stage_without_a_job() {
 }
 
 #[test]
+#[serial_test::serial]
 fn a_run_that_failed_its_impact_tests_is_run_again() {
     let fx = held();
     fx.finished(
@@ -85,6 +87,7 @@ fn a_run_that_failed_its_impact_tests_is_run_again() {
 }
 
 #[test]
+#[serial_test::serial]
 fn a_later_verdict_run_outranks_the_passing_run() {
     // Both records predate submission ordering, so the later queue time ranks.
     let fx = held();
@@ -113,6 +116,7 @@ fn a_later_verdict_run_outranks_the_passing_run() {
 }
 
 #[test]
+#[serial_test::serial]
 fn a_stale_review_refuses_the_stage_without_a_job() {
     let fx = held();
     fx.record_review(true);

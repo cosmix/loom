@@ -70,6 +70,7 @@ fn ordered(fx: &Fixture, kind: JobKind, order: u64) -> JobRecord {
 }
 
 #[test]
+#[serial_test::serial]
 fn the_latest_completion_request_is_the_complete_record_submitted_last() {
     let fx = Fixture::new(StageType::Standard, 2);
     assert_eq!(latest_completion_head(&fx.work_dir, STAGE).unwrap(), None);
@@ -90,6 +91,7 @@ fn the_latest_completion_request_is_the_complete_record_submitted_last() {
 }
 
 #[test]
+#[serial_test::serial]
 fn a_run_failing_more_than_its_impact_tests_queues_nothing() {
     let fx = held(StageType::Standard, 2);
     fx.finished(
@@ -102,6 +104,7 @@ fn a_run_failing_more_than_its_impact_tests_queues_nothing() {
 }
 
 #[test]
+#[serial_test::serial]
 fn a_run_stopped_by_a_pipeline_error_queues_nothing() {
     let fx = held(StageType::Standard, 2);
     let record = fx.record(JobKind::Complete, JobState::Failed);
@@ -124,6 +127,7 @@ fn a_run_stopped_by_a_pipeline_error_queues_nothing() {
 }
 
 #[test]
+#[serial_test::serial]
 fn a_passed_record_without_a_result_queues_nothing() {
     let fx = held(StageType::Standard, 2);
     fx.record(JobKind::Complete, JobState::Passed);
@@ -132,6 +136,7 @@ fn a_passed_record_without_a_result_queues_nothing() {
 }
 
 #[test]
+#[serial_test::serial]
 fn a_plan_v1_or_knowledge_stage_queues_nothing() {
     for fx in [held(StageType::Standard, 1), held(StageType::Knowledge, 2)] {
         fx.passed();
@@ -140,6 +145,7 @@ fn a_plan_v1_or_knowledge_stage_queues_nothing() {
 }
 
 #[test]
+#[serial_test::serial]
 fn a_pass_the_completion_gates_refuse_goes_to_a_fresh_session() {
     let fx = held(StageType::Standard, 2);
     let record = verdict_job(&fx, JobState::Passed, &[("acceptance-0", true)]);
@@ -153,6 +159,7 @@ fn a_pass_the_completion_gates_refuse_goes_to_a_fresh_session() {
 }
 
 #[test]
+#[serial_test::serial]
 fn a_pass_whose_head_moved_goes_to_a_fresh_session() {
     let fx = held(StageType::Standard, 1);
     let record = verdict_job(&fx, JobState::Passed, &[("acceptance-0", true)]);
@@ -169,6 +176,7 @@ fn a_pass_whose_head_moved_goes_to_a_fresh_session() {
 }
 
 #[test]
+#[serial_test::serial]
 fn a_cancelled_run_goes_to_a_fresh_session_without_failures() {
     let fx = held(StageType::Standard, 1);
     let mut record = fx.record(JobKind::VerdictComplete, JobState::Cancelled);
@@ -186,6 +194,7 @@ fn a_cancelled_run_goes_to_a_fresh_session_without_failures() {
 }
 
 #[test]
+#[serial_test::serial]
 fn a_pass_while_another_job_decides_the_stage_is_ignored() {
     let fx = held(StageType::Standard, 1);
     let record = verdict_job(&fx, JobState::Passed, &[("acceptance-0", true)]);
@@ -199,6 +208,7 @@ fn a_pass_while_another_job_decides_the_stage_is_ignored() {
 }
 
 #[test]
+#[serial_test::serial]
 fn a_completion_applied_again_is_already_completed() {
     let fx = held(StageType::Standard, 1);
     let record = verdict_job(&fx, JobState::Passed, &[("acceptance-0", true)]);
@@ -217,6 +227,7 @@ fn a_completion_applied_again_is_already_completed() {
 }
 
 #[test]
+#[serial_test::serial]
 fn a_verdict_completion_gets_the_deadline_of_a_completion() {
     let fx = Fixture::new(StageType::Standard, 1);
     let plan = fx.work_dir.join("PLAN-host.md");
@@ -244,6 +255,7 @@ fn a_verdict_completion_gets_the_deadline_of_a_completion() {
 }
 
 #[test]
+#[serial_test::serial]
 fn giving_up_on_the_application_hands_the_stage_back() {
     let fx = held(StageType::Standard, 1);
     let record = verdict_job(&fx, JobState::Passed, &[("acceptance-0", true)]);
@@ -290,6 +302,7 @@ fn sweep(daemon: &mut Orchestrator) {
 }
 
 #[test]
+#[serial_test::serial]
 fn the_sweep_queues_the_completion_of_an_eligible_held_stage() {
     let fx = held(StageType::Standard, 2);
     let mut daemon = orchestrator(&fx);
@@ -313,6 +326,7 @@ fn the_sweep_queues_the_completion_of_an_eligible_held_stage() {
 }
 
 #[test]
+#[serial_test::serial]
 fn a_held_stage_reset_since_the_sweep_listed_it_queues_nothing() {
     let fx = held(StageType::Standard, 2);
     fx.passed();
@@ -334,6 +348,7 @@ fn a_held_stage_reset_since_the_sweep_listed_it_queues_nothing() {
 }
 
 #[test]
+#[serial_test::serial]
 fn an_unreadable_completion_result_hands_the_stage_back_with_the_error() {
     let fx = held(StageType::Standard, 2);
     let mut daemon = orchestrator(&fx);
@@ -351,6 +366,7 @@ fn an_unreadable_completion_result_hands_the_stage_back_with_the_error() {
 }
 
 #[test]
+#[serial_test::serial]
 fn the_sweep_completes_a_held_stage_from_its_passing_run() {
     let fx = held(StageType::Standard, 2);
     let mut daemon = orchestrator(&fx);
@@ -367,6 +383,7 @@ fn the_sweep_completes_a_held_stage_from_its_passing_run() {
 }
 
 #[test]
+#[serial_test::serial]
 fn the_sweep_hands_back_a_stage_the_gates_refuse_without_a_job() {
     let fx = held(StageType::Standard, 2);
     let mut daemon = orchestrator(&fx);

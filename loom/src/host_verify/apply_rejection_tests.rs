@@ -36,6 +36,7 @@ fn write_unsigned(fx: &Fixture, checkpoint: CompletionCheckpoint) {
 }
 
 #[test]
+#[serial_test::serial]
 fn an_unsigned_receipt_does_not_stand_in_for_the_recorded_one() {
     let fx = Fixture::new(StageType::Standard, 1);
     let record = fx.passed();
@@ -60,6 +61,7 @@ fn an_unsigned_receipt_does_not_stand_in_for_the_recorded_one() {
 }
 
 #[test]
+#[serial_test::serial]
 fn unsigned_nonce_fillers_do_not_hide_the_recorded_receipt() {
     let fx = Fixture::new(StageType::Standard, 1);
     let record = fx.passed();

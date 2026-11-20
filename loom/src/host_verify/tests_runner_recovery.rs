@@ -139,6 +139,7 @@ fn the_deadline_counts_each_after_stage_timeout_and_saturates() {
 }
 
 #[test]
+#[serial]
 fn completion_budget_uses_the_executable_plan_and_binds_the_child() {
     let fx = Fixture::new(StageType::Standard, 1);
     let plan = fx.work_dir.join("PLAN-host.md");

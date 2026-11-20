@@ -77,6 +77,7 @@ fn assert_submitted(fx: &Fixture) -> String {
 }
 
 #[test]
+#[serial_test::serial]
 fn verdict_pass_completes_from_adjudication() {
     let fx = held(1);
     let record = verdict_job(&fx, JobState::Passed, &[("acceptance-0", true)]);
@@ -99,6 +100,7 @@ fn verdict_pass_completes_from_adjudication() {
 }
 
 #[test]
+#[serial_test::serial]
 fn verdict_pass_leaves_the_retired_session_alone() {
     let fx = held(1);
     assert_eq!(fx.session_status(), SessionStatus::Running);
@@ -143,6 +145,7 @@ fn write_open_dispute(fx: &Fixture, id: u32) {
 }
 
 #[test]
+#[serial_test::serial]
 fn open_dispute_blocks_the_verdict_completion() {
     let fx = held(1);
     let record = verdict_job(&fx, JobState::Passed, &[("acceptance-0", true)]);
@@ -157,6 +160,7 @@ fn open_dispute_blocks_the_verdict_completion() {
 }
 
 #[test]
+#[serial_test::serial]
 fn failed_verdict_run_hands_back_with_its_failures() {
     let fx = held(1);
     let record = verdict_job(&fx, JobState::Failed, &[("acceptance-0", false)]);
@@ -174,6 +178,7 @@ fn failed_verdict_run_hands_back_with_its_failures() {
 }
 
 #[test]
+#[serial_test::serial]
 fn interrupted_verdict_run_requeues() {
     let fx = held(1);
     let mut record = fx.record(JobKind::VerdictComplete, JobState::Interrupted);
@@ -189,6 +194,7 @@ fn interrupted_verdict_run_requeues() {
 }
 
 #[test]
+#[serial_test::serial]
 fn eligible_held_stage_gets_one_stage_bound_job() {
     assert_eq!(JobKind::VerdictComplete.name(), "verdict_complete");
     let fx = held(2);
@@ -210,6 +216,7 @@ fn eligible_held_stage_gets_one_stage_bound_job() {
 }
 
 #[test]
+#[serial_test::serial]
 fn moved_head_falls_back_to_a_fresh_session() {
     let fx = held(2);
     fx.finished(
@@ -223,6 +230,7 @@ fn moved_head_falls_back_to_a_fresh_session() {
 }
 
 #[test]
+#[serial_test::serial]
 fn dirty_tree_falls_back_to_a_fresh_session() {
     let fx = held(2);
     fx.finished(
@@ -239,6 +247,7 @@ fn dirty_tree_falls_back_to_a_fresh_session() {
 }
 
 #[test]
+#[serial_test::serial]
 fn failed_agent_completion_is_not_rerun() {
     let fx = held(2);
     fx.finished(
@@ -251,6 +260,7 @@ fn failed_agent_completion_is_not_rerun() {
 }
 
 #[test]
+#[serial_test::serial]
 fn impact_only_failure_is_rerun() {
     let impact_only = held(2);
     impact_only.record_review(false);
@@ -271,6 +281,7 @@ fn impact_only_failure_is_rerun() {
 }
 
 #[test]
+#[serial_test::serial]
 fn stale_policy_falls_back_to_a_fresh_session() {
     let fx = held(2);
     fx.finished(
