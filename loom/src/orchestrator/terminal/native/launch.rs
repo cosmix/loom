@@ -18,8 +18,8 @@ use std::path::{Path, PathBuf};
 use crate::models::session::{Session, SessionType};
 use crate::models::stage::Stage;
 use crate::sandbox::MergedSandboxConfig;
+use crate::stage_cache::session::apply_session_grant;
 
-use super::session_settings::{write_session_capsule, CapsuleRequest};
 use super::SessionCapsule;
 use host::LaunchHost;
 pub(crate) use host::{record_daemon_binary, run_host_facts};
@@ -277,37 +277,6 @@ pub(crate) fn prepare_session_launch(
     prepare_session_launch_with(&host, work_dir, kind, stage, session, signal_path, cwd)
 }
 
-/// The session's settings capsule, written from the host's resolved facts.
-// Kept separate: the only caller passes its own values, and `CapsuleRequest` already bundles them.
-#[allow(clippy::too_many_arguments)]
-fn write_capsule(
-    host: &LaunchHost,
-    work_dir: &Path,
-    kind: SessionType,
-    stage: &Stage,
-    session_id: &str,
-    sandbox: &MergedSandboxConfig,
-    cwd: &Path,
-    scratch_dir: &Path,
-) -> Result<String> {
-    write_session_capsule(&CapsuleRequest {
-        kind,
-        session_id,
-        sandbox,
-        cwd,
-        work_dir,
-        repo_root: &host.repo_root,
-        hooks_dir: host.facts.hooks_dir.as_deref(),
-        scratch_dir,
-        surfaces: &host.control_surfaces(work_dir),
-        writable_roots: &host.facts.writable_roots,
-        python3: host.facts.python3.as_deref(),
-        python_hooks: &host.facts.python_hooks,
-        socket_scan_root: Path::new(crate::sandbox::HOST_TMP_ROOT),
-        workflow_licensed: workflow_licensed(kind, stage),
-    })
-}
-
 /// [`prepare_session_launch`] against host facts supplied by tests or the daemon.
 /// The stage is assigned first so `tracking_key` is set for the (stage, kind)
 /// pair: the tmux title is the tracking_key, and the per-session PID-file
@@ -333,12 +302,12 @@ fn prepare_session_launch_with(
     cwd: &Path,
 ) -> Result<(Session, String, String, PathBuf)> {
     let (session, title, pid_key) = assigned_session(session, kind, stage);
-    let sandbox = session_sandbox(work_dir, stage, kind);
     host.capsule_support.require_isolation()?;
     crate::sandbox::preflight::require_confined_host(&host.facts)?;
+    let cache = host.stage_cache(work_dir, &stage.id)?;
+    let sandbox = granted_session_sandbox(work_dir, stage, kind, &cache);
     let scratch_dir = host.prepare_scratch(&session.id)?;
-    let settings_file = write_capsule(
-        host,
+    let settings_file = host.write_capsule(
         work_dir,
         kind,
         stage,
@@ -367,11 +336,23 @@ fn prepare_session_launch_with(
         kind,
         context_ceiling_tokens,
         super::build_cache::sccache_usable_in(&sandbox),
-        &host.wrapper_env(scratch_dir),
+        &host.wrapper_env(scratch_dir, &cache, cwd),
     )?;
     // Absolute: macOS terminals open in the home directory.
     let wrapper_path_abs = wrapper_path.canonicalize().unwrap_or(wrapper_path);
     Ok((session, title, pid_key, wrapper_path_abs))
+}
+
+/// The session's sandbox plus the write grant for the stage cache root.
+fn granted_session_sandbox(
+    work_dir: &Path,
+    stage: &Stage,
+    kind: SessionType,
+    cache: &crate::stage_cache::StageCache,
+) -> crate::sandbox::MergedSandboxConfig {
+    let mut sandbox = session_sandbox(work_dir, stage, kind);
+    apply_session_grant(cache, &mut sandbox);
+    sandbox
 }
 
 fn assigned_session(

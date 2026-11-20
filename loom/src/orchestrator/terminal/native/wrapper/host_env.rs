@@ -28,11 +28,15 @@ pub(crate) struct WrapperHostEnv {
     pub hook_path: Vec<PathBuf>,
     /// The operating system's boot ID, exported as `LOOM_BOOT_ID`.
     pub boot_id: Option<String>,
+    /// The stage cache's session environment, already rendered as
+    /// continuation lines by `stage_cache::session::wrapper_exports`.
+    pub cache_exports: String,
 }
 
 impl WrapperHostEnv {
     /// Shell-escaped `exec env` assignments, one continuation line each, in
-    /// the shape of the wrapper's other exports.
+    /// the shape of the wrapper's other exports; the stage cache's last, so
+    /// its `PATH` replaces the allowlisted one.
     pub(super) fn render(&self) -> String {
         let (git_setting_name, git_setting_value) = WorktreeGit::SESSION_GIT_PARAMETERS;
         let hook_path = (!self.hook_path.is_empty()).then(|| {
@@ -64,6 +68,7 @@ impl WrapperHostEnv {
             let assignment = escape(format!("{name}={}", value?).into());
             Some(format!("    {assignment} {CONTINUATION}"))
         })
+        .chain(std::iter::once(self.cache_exports.clone()))
         .collect()
     }
 }

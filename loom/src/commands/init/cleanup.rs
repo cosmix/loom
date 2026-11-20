@@ -135,6 +135,15 @@ pub fn cleanup_worktrees_directory(repo_root: &Path) -> Result<()> {
 
                 let branch_name = branch_name_for_stage(&stage_id);
                 let _ = run_git(&["branch", "-D", &branch_name], repo_root);
+
+                if let Err(error) =
+                    crate::stage_cache::cleanup::remove_stage_cache_of(repo_root, &stage_id)
+                {
+                    println!(
+                        "  {} {stage_id}: stage cache not removed: {error:#}",
+                        "⚠".yellow().bold()
+                    );
+                }
             }
         }
     }

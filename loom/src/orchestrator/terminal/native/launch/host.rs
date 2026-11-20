@@ -15,9 +15,12 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 use super::super::capsule::{probed_capsule_support, CapsuleSupport};
+use super::super::session_settings::{write_session_capsule, CapsuleRequest};
 use super::super::wrapper::{
     absolute, accepted_loom_bin, operator_executable_dirs, WrapperHostEnv,
 };
+use crate::models::session::SessionType;
+use crate::models::stage::Stage;
 use crate::relay::{ensure_dir_0700, session_dir};
 use crate::sandbox::control_surfaces::{
     session_writable_roots, ControlSurfaces, WritableRootInputs,
@@ -25,6 +28,8 @@ use crate::sandbox::control_surfaces::{
 use crate::sandbox::preflight::{
     find_executable, python_hook_scripts, HostFacts, SandboxPreflightRefusal,
 };
+use crate::sandbox::MergedSandboxConfig;
+use crate::stage_cache::StageCache;
 
 /// Everything a launch needs from the host, resolved once.
 pub(super) struct LaunchHost {
@@ -103,9 +108,56 @@ impl LaunchHost {
         )
     }
 
-    /// The wrapper's `LOOM_SCRATCH_DIR`, `LOOM_BIN`, `LOOM_HOOK_PATH` and `LOOM_BOOT_ID`.
-    pub(super) fn wrapper_env(&self, scratch_dir: PathBuf) -> WrapperHostEnv {
+    /// The session's settings capsule, written from this host's resolved facts.
+    // Kept flat: the only caller passes its own values, and `CapsuleRequest` already bundles them.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn write_capsule(
+        &self,
+        work_dir: &Path,
+        kind: SessionType,
+        stage: &Stage,
+        session_id: &str,
+        sandbox: &MergedSandboxConfig,
+        cwd: &Path,
+        scratch_dir: &Path,
+    ) -> Result<String> {
+        write_session_capsule(&CapsuleRequest {
+            kind,
+            session_id,
+            sandbox,
+            cwd,
+            work_dir,
+            repo_root: &self.repo_root,
+            hooks_dir: self.facts.hooks_dir.as_deref(),
+            scratch_dir,
+            surfaces: &self.control_surfaces(work_dir),
+            writable_roots: &self.facts.writable_roots,
+            python3: self.facts.python3.as_deref(),
+            python_hooks: &self.facts.python_hooks,
+            socket_scan_root: Path::new(crate::sandbox::HOST_TMP_ROOT),
+            workflow_licensed: super::workflow_licensed(kind, stage),
+        })
+    }
+
+    /// The stage's cache root, the one its host jobs use, created before the
+    /// capsule names it: Claude Code skips an `allowWrite` path that does not exist.
+    pub(super) fn stage_cache(&self, work_dir: &Path, stage_id: &str) -> Result<StageCache> {
+        let cache = resolve_stage_cache(work_dir, &self.repo_root, stage_id)?;
+        cache.ensure()?;
+        Ok(cache)
+    }
+
+    /// The wrapper's `LOOM_SCRATCH_DIR`, `LOOM_BIN`, `LOOM_HOOK_PATH` and
+    /// `LOOM_BOOT_ID`, and the session's stage cache exports for `cwd`.
+    pub(super) fn wrapper_env(
+        &self,
+        scratch_dir: PathBuf,
+        cache: &StageCache,
+        cwd: &Path,
+    ) -> WrapperHostEnv {
+        let host_env = crate::stage_cache::session::host_env_from_process();
         WrapperHostEnv {
+            cache_exports: crate::stage_cache::session::wrapper_exports(cache, cwd, &host_env),
             scratch_dir: Some(scratch_dir),
             loom_bin: Some(self.facts.loom_bin.clone()),
             hook_path: self.facts.hook_path.clone(),
@@ -266,8 +318,21 @@ fn owned_dir(path: &Path, uid: u32) -> Result<PathBuf> {
     Ok(canonical)
 }
 
+/// The stage's cache root, not yet created. Test builds keep it inside the
+/// test's own work dir, as scratch directories are, so no launch test writes
+/// the operator's cache.
+fn resolve_stage_cache(work_dir: &Path, repo_root: &Path, stage_id: &str) -> Result<StageCache> {
+    if cfg!(test) {
+        let home = absolute(work_dir).join("cache-home");
+        StageCache::resolve(repo_root, stage_id, &home, None)
+    } else {
+        crate::verify::criteria::stage_cache_for(work_dir, stage_id)
+    }
+}
+
 /// Every root a session could write, over every stage in the plan (their
-/// merged `allowWrite` entries, and whether any licenses the codex lane).
+/// merged `allowWrite` entries, whether any licenses the codex lane, and each
+/// stage's cache root, which the session grant writes).
 fn writable_roots(
     work_dir: &Path,
     repo_root: &Path,
@@ -279,8 +344,12 @@ fn writable_roots(
         .flatten()
         .unwrap_or_default();
     let mut allow_write = Vec::new();
+    let mut cache_roots = Vec::new();
     let mut codex_licensed = false;
     for stage in crate::verify::list_all_stages(work_dir).unwrap_or_default() {
+        if let Ok(cache) = resolve_stage_cache(work_dir, repo_root, &stage.id) {
+            cache_roots.push(cache.root().to_path_buf());
+        }
         let mut merged = crate::sandbox::merge_config(
             &plan,
             &stage.sandbox,
@@ -292,14 +361,16 @@ fn writable_roots(
         allow_write.extend(merged.filesystem.allow_write);
     }
     let tmpdir = std::env::var_os("TMPDIR").map(PathBuf::from);
-    session_writable_roots(&WritableRootInputs {
+    let mut roots = session_writable_roots(&WritableRootInputs {
         repo_root,
         allow_write: &allow_write,
         codex_licensed,
         scratch_root,
         home,
         tmpdir: tmpdir.as_deref(),
-    })
+    });
+    roots.extend(cache_roots);
+    roots
 }
 
 /// `path_var`'s entries that are absolute, exist as directories, and

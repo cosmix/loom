@@ -37,6 +37,8 @@ mod tests_cleanup_ownership;
 #[cfg(test)]
 mod tests_spool;
 #[cfg(test)]
+mod tests_stage_cache;
+#[cfg(test)]
 mod tests_tracked_scaffold;
 
 // Re-export public API

@@ -30,7 +30,7 @@ fn writable_roots_cover_every_input() {
         "/abs/grant",
         "/repo/loom/target",
         "/home/op/.cargo/registry",
-        "/home/op/.bun/install/cache",
+        "/home/op/.rustup/downloads",
         "/home/op/.codex",
         "/home/op/.claude/plugins/data/codex-openai-codex",
         "/home/op/.cache/loom/scratch",

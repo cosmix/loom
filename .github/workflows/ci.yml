@@ -122,6 +122,52 @@ jobs:
           workspaces: loom
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: stable
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.10.2"
+
+      - name: Check Maven is 3.9
+        run: |
+          mvn -v
+          line=$(mvn -v | head -n 1)
+          case "$line" in
+            "Apache Maven 3.9."*) ;;
+            *) echo "expected Maven 3.9, got: $line"; exit 1 ;;
+          esac
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Set up sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Install ccache
+        run: |
+          sudo apt-get update && sudo apt-get install -y ccache
+
+      - name: Check cmake
+        run: cmake --version
+
       # Confined verification runs criteria under bubblewrap on Linux, and
       # Ubuntu's AppArmor denies the unprivileged user namespace it needs.
       - name: Install tmux, ripgrep and bubblewrap
@@ -138,6 +184,57 @@ jobs:
       - name: Run the bubblewrap capsule probe
         working-directory: loom
         run: "cargo test --lib tests_capsule_denies::bwrap::"
+        env:
+          LOOM_TEST_REQUIRE_SANDBOX_FREE: "1"
+
+      # Seeds the host caches that stage_cache::toolchain_tests:: reads, then
+      # exports the coordinates the probes need through GITHUB_ENV.
+      - name: Seed the toolchain caches
+        run: |
+          go_seed="$RUNNER_TEMP/go-seed"
+          mkdir -p "$go_seed"
+          (cd "$go_seed" && go mod init seed && go mod download github.com/pkg/errors@v0.9.1)
+          mvn -q -B dependency:get -Dartifact=commons-lang:commons-lang:2.6
+          gradle_seed="$RUNNER_TEMP/gradle-seed"
+          mkdir -p "$gradle_seed/src/main/java/seed"
+          cat > "$gradle_seed/settings.gradle" <<'EOF'
+          rootProject.name = 'seed'
+          EOF
+          cat > "$gradle_seed/build.gradle" <<'EOF'
+          plugins {
+              id 'java'
+          }
+
+          repositories {
+              mavenCentral()
+          }
+
+          dependencies {
+              implementation 'commons-lang:commons-lang:2.6'
+          }
+          EOF
+          cat > "$gradle_seed/src/main/java/seed/Seed.java" <<'EOF'
+          package seed;
+
+          import org.apache.commons.lang.StringUtils;
+
+          public class Seed {
+              public static void main(String[] args) {
+                  System.out.println(StringUtils.isBlank(" "));
+              }
+          }
+          EOF
+          (cd "$gradle_seed" && gradle -q --no-daemon compileJava)
+          echo "LOOM_TEST_GO_SEED_MODULE=github.com/pkg/errors@v0.9.1" >> "$GITHUB_ENV"
+          echo "LOOM_TEST_MAVEN_SEED=commons-lang:commons-lang:2.6" >> "$GITHUB_ENV"
+          echo "LOOM_TEST_GRADLE_SEED=commons-lang:commons-lang:2.6" >> "$GITHUB_ENV"
+
+      # Runs the confined toolchain probes in stage_cache::toolchain_tests::.
+      # LOOM_TEST_REQUIRE_SANDBOX_FREE turns every skip into a failure, so a
+      # missing toolchain or launcher on either runner is a red build.
+      - name: Run the confined toolchain probes
+        working-directory: loom
+        run: "cargo test --lib stage_cache::toolchain_tests::"
         env:
           LOOM_TEST_REQUIRE_SANDBOX_FREE: "1"
 
@@ -177,6 +274,51 @@ jobs:
           workspaces: loom
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: stable
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.10.2"
+
+      - name: Check Maven is 3.9
+        run: |
+          mvn -v
+          line=$(mvn -v | head -n 1)
+          case "$line" in
+            "Apache Maven 3.9."*) ;;
+            *) echo "expected Maven 3.9, got: $line"; exit 1 ;;
+          esac
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Set up sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Install ccache
+        run: brew install ccache
+
+      - name: Check cmake
+        run: cmake --version
+
       # The smoke scripts call rg and jq.
       - name: Install tmux, ripgrep and jq
         run: brew install tmux ripgrep jq
@@ -186,6 +328,57 @@ jobs:
         run: cargo test --all-targets --no-fail-fast
         env:
           LOOM_E2E_REQUIRE_TMUX: "1"
+
+      # Seeds the host caches that stage_cache::toolchain_tests:: reads, then
+      # exports the coordinates the probes need through GITHUB_ENV.
+      - name: Seed the toolchain caches
+        run: |
+          go_seed="$RUNNER_TEMP/go-seed"
+          mkdir -p "$go_seed"
+          (cd "$go_seed" && go mod init seed && go mod download github.com/pkg/errors@v0.9.1)
+          mvn -q -B dependency:get -Dartifact=commons-lang:commons-lang:2.6
+          gradle_seed="$RUNNER_TEMP/gradle-seed"
+          mkdir -p "$gradle_seed/src/main/java/seed"
+          cat > "$gradle_seed/settings.gradle" <<'EOF'
+          rootProject.name = 'seed'
+          EOF
+          cat > "$gradle_seed/build.gradle" <<'EOF'
+          plugins {
+              id 'java'
+          }
+
+          repositories {
+              mavenCentral()
+          }
+
+          dependencies {
+              implementation 'commons-lang:commons-lang:2.6'
+          }
+          EOF
+          cat > "$gradle_seed/src/main/java/seed/Seed.java" <<'EOF'
+          package seed;
+
+          import org.apache.commons.lang.StringUtils;
+
+          public class Seed {
+              public static void main(String[] args) {
+                  System.out.println(StringUtils.isBlank(" "));
+              }
+          }
+          EOF
+          (cd "$gradle_seed" && gradle -q --no-daemon compileJava)
+          echo "LOOM_TEST_GO_SEED_MODULE=github.com/pkg/errors@v0.9.1" >> "$GITHUB_ENV"
+          echo "LOOM_TEST_MAVEN_SEED=commons-lang:commons-lang:2.6" >> "$GITHUB_ENV"
+          echo "LOOM_TEST_GRADLE_SEED=commons-lang:commons-lang:2.6" >> "$GITHUB_ENV"
+
+      # Runs the confined toolchain probes in stage_cache::toolchain_tests::.
+      # LOOM_TEST_REQUIRE_SANDBOX_FREE turns every skip into a failure, so a
+      # missing toolchain or launcher on either runner is a red build.
+      - name: Run the confined toolchain probes
+        working-directory: loom
+        run: "cargo test --lib stage_cache::toolchain_tests::"
+        env:
+          LOOM_TEST_REQUIRE_SANDBOX_FREE: "1"
 
       - name: Build the loom binary
         if: ${{ !cancelled() }}

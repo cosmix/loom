@@ -165,6 +165,7 @@ fn an_ultracode_stage_session_launches_with_the_workflow_tool_and_no_other_kind_
 fn the_ultracode_prompt_keyword_appears_exactly_when_the_capsule_omits_the_workflow_deny() {
     let fixture = fixture();
     let stage = Stage {
+        id: "stage-1".to_string(),
         ultracode: true,
         ..Stage::default()
     };

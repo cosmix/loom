@@ -228,12 +228,17 @@ pub fn run_from_dir(dir: &Path) -> Result<ExitCode> {
         Ok(proxy) => proxy,
         Err(e) => return Ok(settle_unspawned(dir, &format!("proxy start failed: {e:#}"))),
     };
+    let stage_cache = match stage_cache_of(dir, &manifest.stage_id) {
+        Ok(cache) => cache,
+        Err(e) => return Ok(settle_unspawned(dir, &format!("stage cache: {e:#}"))),
+    };
     let spec = BoundarySpec {
         worktree: manifest.workspace_root,
         codex_home,
         codex_program,
         proxy_socket,
         loom_program,
+        stage_cache: Some(stage_cache),
     };
     // Durable before bubblewrap can exist: a crash between the spawn and
     // `boundary.json` must not let the daemon release ownership unproven.
@@ -250,6 +255,18 @@ pub fn run_from_dir(dir: &Path) -> Result<ExitCode> {
     drop(proxy);
     drop(socket_dir);
     Ok(code)
+}
+
+/// The stage's build cache, created before the boundary binds it. `dir` is
+/// `<work_dir>/native-workers/<stage>/<invocation>` (`store::invocation_dir`).
+fn stage_cache_of(dir: &Path, stage_id: &str) -> Result<crate::stage_cache::StageCache> {
+    let work_dir = dir
+        .ancestors()
+        .nth(3)
+        .context("the invocation directory is not under a work directory")?;
+    let cache = crate::verify::criteria::stage_cache_for(work_dir, stage_id)?;
+    cache.ensure()?;
+    Ok(cache)
 }
 
 /// Creates `supervisor.json` exclusively: whoever creates it owns the

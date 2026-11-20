@@ -51,6 +51,10 @@ pub struct BoundarySpec {
     pub proxy_socket: PathBuf,
     /// The running loom executable, mounted at `/loom-bin/loom`.
     pub loom_program: PathBuf,
+    /// The stage's build cache, created by the supervisor's host: bound
+    /// read-write at its own path and exported through the boundary's
+    /// environment. `None` leaves the boundary without one.
+    pub stage_cache: Option<crate::stage_cache::StageCache>,
 }
 
 /// A started boundary. The value must stay alive (not be destructured with
@@ -104,7 +108,7 @@ pub(crate) fn spawn(spec: &BoundarySpec) -> anyhow::Result<SpawnedBoundary> {
     #[cfg(target_os = "linux")]
     {
         let host: Vec<_> = std::env::vars_os().collect();
-        let plan = linux::Plan::real(spec, &host)?;
+        let plan = linux::Plan::real(spec, &host)?.with_stage_cache(spec.stage_cache.clone());
         linux::start(&plan, &host)
     }
     #[cfg(not(target_os = "linux"))]

@@ -52,6 +52,7 @@ fn full_host_env() -> WrapperHostEnv {
         loom_bin: Some(PathBuf::from("/opt/loom/bin/loom")),
         hook_path: vec![PathBuf::from("/usr/bin"), PathBuf::from("/bin")],
         boot_id: None,
+        cache_exports: String::new(),
     }
 }
 
