@@ -1,6 +1,6 @@
 ---
 name: kickoff
-description: Load when a planning session starts new work, settles its size and name with the user, and creates a feature vision or a standalone plan after confirmation.
+description: Load when a planning session starts new work in the size its opening names, settles the name with the user, and creates a feature vision or a standalone plan once the user presses Write.
 ---
 
 # Start new work

@@ -176,3 +176,32 @@ fn remove_empty_dir_reports_whether_it_removed() {
     assert!(!root.path().join("empty").exists());
     assert!(!safe_remove_empty_dir_in_workdir(fd, Path::new("empty")).unwrap());
 }
+
+/// `root/<name>` with `levels` nested directories under it and a file in the deepest.
+fn chain(root: &Path, name: &str, levels: usize) -> std::path::PathBuf {
+    let mut path = root.join(name);
+    for level in 0..levels {
+        path.push(format!("{level}"));
+    }
+    std::fs::create_dir_all(&path).unwrap();
+    std::fs::write(path.join("leaf.md"), b"").unwrap();
+    path
+}
+
+#[test]
+fn remove_tree_stops_past_the_depth_limit_before_touching_the_deepest_level() {
+    let root = tempfile::tempdir().unwrap();
+    // The 64th directory's file sits 65 levels down: one past the limit.
+    let deepest = chain(root.path(), "deep", 64);
+    let error = format!("{:#}", remove_tree(root.path(), "deep").unwrap_err());
+    assert!(error.contains("more than 64 levels deep"), "{error}");
+    assert!(error.contains("stopped after 0 removed entries"), "{error}");
+    assert!(
+        deepest.join("leaf.md").exists(),
+        "the deepest level was touched"
+    );
+
+    chain(root.path(), "shallow", 63);
+    remove_tree(root.path(), "shallow").unwrap();
+    assert!(std::fs::symlink_metadata(root.path().join("shallow")).is_err());
+}

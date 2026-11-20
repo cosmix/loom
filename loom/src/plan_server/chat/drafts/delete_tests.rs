@@ -294,3 +294,36 @@ fn symlinked_document_is_unlinked_as_a_link() {
     assert!(keep.exists());
     assert!(fs::symlink_metadata(dir.path().join(PLAN)).is_err());
 }
+
+/// A bundle that cannot be removed after the document went says the document is already gone,
+/// so the user does not read the refusal as "nothing was deleted".
+#[test]
+fn a_bundle_refused_after_the_document_says_it_is_already_deleted() {
+    use std::os::unix::fs::PermissionsExt;
+    // Root ignores the mode below, so the removal succeeds and there is no refusal to read.
+    // SAFETY: `geteuid` has no preconditions and cannot fail.
+    if unsafe { libc::geteuid() } == 0 {
+        return;
+    }
+    let dir = project();
+    let plan = touch(dir.path(), PLAN);
+    touch(dir.path(), "doc/plans/briefs/demo-work/sealed/a.md");
+    let sealed = dir.path().join(BUNDLE).join("sealed");
+    fs::set_permissions(&sealed, fs::Permissions::from_mode(0o500)).unwrap();
+    let result = remove_written(dir.path(), PLAN);
+    fs::set_permissions(&sealed, fs::Permissions::from_mode(0o700)).unwrap();
+    let error = result.unwrap_err();
+    assert!(!plan.exists(), "the document went first");
+    assert!(
+        error.ends_with(&format!("; {PLAN} is already deleted.")),
+        "{error}"
+    );
+}
+
+#[test]
+fn target_size_reads_the_size_of_a_kickoff_target_only() {
+    use crate::plan_session::scope::KickoffSize;
+    assert_eq!(target_size(PLAN), Ok(KickoffSize::Plan));
+    assert_eq!(target_size(FEATURE), Ok(KickoffSize::Feature));
+    assert!(target_size(BUNDLE).is_err());
+}

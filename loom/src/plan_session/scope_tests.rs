@@ -298,7 +298,7 @@ fn a_resumed_kickoff_may_write_its_existing_target_and_nothing_else() -> Result<
     let (root, dir) = fixture()?;
     put(root.path(), "doc/plans/PLAN-half.md")?;
     put(root.path(), "doc/plans/briefs/half/unit.md")?;
-    let scope = SessionScope::kickoff_resumed(root.path(), KickoffSize::Plan, "half")?;
+    let scope = SessionScope::kickoff_resumed(KickoffSize::Plan, "half")?;
     for path in ["doc/plans/PLAN-half.md", "doc/plans/briefs/half/unit.md"] {
         assert_eq!(scope.allows_write(Path::new(path)), Ok(()));
     }
@@ -314,9 +314,8 @@ fn a_resumed_kickoff_may_write_its_existing_target_and_nothing_else() -> Result<
 
 #[test]
 fn a_resumed_kickoff_refuses_an_invalid_name() -> Result<()> {
-    let root = tempdir()?;
     for name in ["Uppercase", "with/slash", "..", "", "archive"] {
-        let result = SessionScope::kickoff_resumed(root.path(), KickoffSize::Feature, name);
+        let result = SessionScope::kickoff_resumed(KickoffSize::Feature, name);
         assert!(result.is_err(), "{name:?}");
     }
     Ok(())

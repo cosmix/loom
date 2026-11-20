@@ -5,7 +5,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use super::dispatch::{bridge, chat_state, launch, take_authoring, ChatOwner, Outcome};
-use super::draft_cmd::{known_draft, on_confirm, writable};
+use super::draft_cmd::{known_draft, on_confirm, writable, SIZE_MISMATCH};
 use super::drafts::{self, Draft, Seed};
 use super::kickoff_cmd::record_owner;
 use super::lock;
@@ -25,8 +25,9 @@ use crate::planning::guidance::{continuation_message, DraftContinuation};
 pub(super) fn resume(ctx: &Arc<PlanContext>, conn: &ConnCtx, session: &str) -> Outcome {
     writable(ctx)?;
     let (bridge, state) = (bridge(ctx)?, chat_state(ctx)?);
-    let draft = known_draft(ctx, &state, session)?;
+    // Read under the start lock, as a discard does: whichever runs second sees the other's work.
     let _starting = state.starting();
+    let draft = known_draft(ctx, &state, session)?;
     let took = take_authoring(ctx, conn)?;
     let started = continue_draft(ctx, conn, &bridge, &state, &draft);
     if started.is_err() {
@@ -49,7 +50,7 @@ fn continue_draft(
         KickoffSize::Feature => "kickoff",
         KickoffSize::Plan => "kickoff-small",
     };
-    let resumed = resumed(ctx.root(), draft);
+    let resumed = resumed(ctx.root(), draft)?;
     let grant = resumed.as_ref().map(|resumed| resumed.grant.clone());
     let target = grant.as_ref().and(draft.target.as_deref());
     // The opening says the document exists only when it does: a bundle alone resumes the grant
@@ -92,22 +93,31 @@ struct Resumed {
 
 /// The grant the continuation holds from its first turn: only for a draft whose confirmed
 /// document (or its bundle) exists, so the agent can finish it. A draft with nothing written
-/// continues as a fresh kickoff of the same size.
-fn resumed(root: &Path, draft: &Draft) -> Option<Resumed> {
-    let target = draft.target.as_deref()?;
-    let written = drafts::written(root, target).ok()?;
+/// continues as a fresh kickoff of the same size. A target of another size than the draft's
+/// (a hand-edited draft file) is refused: the grant would not be the size the draft started with.
+fn resumed(root: &Path, draft: &Draft) -> Result<Option<Resumed>, String> {
+    let Some(target) = draft.target.as_deref() else {
+        return Ok(None);
+    };
+    let Ok(written) = drafts::written(root, target) else {
+        return Ok(None);
+    };
+    if written.grant.size != draft.size {
+        return Err(SIZE_MISMATCH.to_owned());
+    }
     if written.paths.is_empty() {
-        return None;
+        return Ok(None);
     }
     let document = written.paths.iter().any(|path| path == target);
-    Some(Resumed {
+    Ok(Some(Resumed {
         grant: written.grant,
         document,
-    })
+    }))
 }
 
 /// Seed the tracker with the draft's shape so Taking shape starts filled, and tell the browsers.
-/// A resumed draft's view also carries its target, so the Write button reads written.
+/// A resumed draft's view also carries its target, so Write asks for the document under the
+/// resumed grant instead of confirming the kickoff again.
 fn announce_seeded(
     ctx: &PlanContext,
     state: &ChatState,

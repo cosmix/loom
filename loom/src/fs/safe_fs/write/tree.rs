@@ -21,17 +21,24 @@ use std::path::Path;
 /// Most entries one `safe_remove_tree_in_workdir` call visits before it stops with an error.
 const MAX_TREE_ENTRIES: usize = 4096;
 
-/// Entries visited and removed so far by one tree removal.
+/// Deepest level below the removed directory one call descends to. Each level holds one open
+/// descriptor and one stack frame, so a deeper chain would run into the descriptor limit or the
+/// connection thread's stack; it stops with an error before anything past this level is opened.
+const MAX_TREE_DEPTH: usize = 64;
+
+/// Entries visited and removed so far by one tree removal, and the level being emptied.
 #[derive(Default)]
 struct Walk {
     seen: usize,
     removed: usize,
+    depth: usize,
 }
 
 /// Remove the directory `relpath` under `dirfd` and everything in it. Every component is
 /// opened with `O_NOFOLLOW`; a symlink anywhere (the path, an entry) is unlinked as a link and
-/// never followed. Refuses `..` and absolute paths. At most `MAX_TREE_ENTRIES` (4096) entries:
-/// past that it stops with an error naming how many it removed. A missing `relpath` is not an
+/// never followed. Refuses `..` and absolute paths. At most `MAX_TREE_ENTRIES` (4096) entries
+/// and `MAX_TREE_DEPTH` (64) levels: past either it stops with an error naming how many it
+/// removed. A missing `relpath` is not an
 /// error; a non-directory at `relpath` is unlinked like any other entry.
 pub fn safe_remove_tree_in_workdir(dirfd: RawFd, relpath: &Path) -> Result<()> {
     let components = validate_relpath(relpath)?;
@@ -74,6 +81,9 @@ fn final_name(components: &[Vec<u8>]) -> Result<CString> {
 /// Remove `name` under `parent`: a directory is emptied and removed, anything else (a
 /// symlink included) is unlinked as itself.
 fn remove_entry(parent: BorrowedFd<'_>, name: &CStr, walk: &mut Walk) -> Result<()> {
+    if walk.depth > MAX_TREE_DEPTH {
+        bail!("safe_fs: the tree is more than {MAX_TREE_DEPTH} levels deep");
+    }
     // O_NONBLOCK keeps a FIFO from blocking should the kernel open it before the type check.
     let flags = OFlag::O_DIRECTORY
         | OFlag::O_NOFOLLOW
@@ -110,9 +120,11 @@ fn remove_entry(parent: BorrowedFd<'_>, name: &CStr, walk: &mut Walk) -> Result<
 /// readdir's behaviour on a directory that changes under it is unspecified.
 fn empty_dir(mut dir: Dir, walk: &mut Walk) -> Result<()> {
     let names = list_names(&mut dir, walk)?;
+    walk.depth += 1;
     for name in &names {
         remove_entry(dir.as_fd(), name, walk)?;
     }
+    walk.depth -= 1;
     Ok(())
 }
 

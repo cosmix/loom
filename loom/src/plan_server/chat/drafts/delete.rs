@@ -72,12 +72,7 @@ pub(in crate::plan_server::chat) fn remove_written(
 ) -> Result<Vec<String>, String> {
     let grant = grant_of(target)?;
     let dirfd = open_root(root)?;
-    if let Some(locked) = locked_spelling(&dirfd, &grant)? {
-        return Err(format!(
-            "{} has gone into execution; it cannot be deleted here.",
-            locked.display()
-        ));
-    }
+    refuse_locked(&dirfd, &grant)?;
     // Every path is looked up before anything goes, so a symlinked directory refuses the whole
     // delete instead of stopping it halfway.
     let found = existing(&dirfd, &grant)?;
@@ -94,7 +89,7 @@ pub(in crate::plan_server::chat) fn remove_written(
         .as_ref()
         .filter(|b| found.contains(&display(b)))
     {
-        safe_remove_tree_in_workdir(fd, bundle).map_err(|e| refusal(bundle, e))?;
+        remove_bundle(&dirfd, &grant, bundle, !removed.is_empty())?;
         removed.push(display(bundle));
     }
     if feature_dir_present {
@@ -105,6 +100,46 @@ pub(in crate::plan_server::chat) fn remove_written(
         }
     }
     Ok(removed)
+}
+
+/// Remove the plan's bundle. A `loom run` that renamed the document between the lookup and its
+/// unlink makes that unlink a no-op (ENOENT reads as removed), so the locked spellings are looked
+/// up again first: the bundle of an executing plan stays.
+fn remove_bundle(
+    dirfd: &OwnedFd,
+    grant: &Grant,
+    bundle: &Path,
+    document_gone: bool,
+) -> Result<(), String> {
+    // A locked spelling means the document moved, not that it was deleted: the plain refusal.
+    refuse_locked(dirfd, grant)?;
+    safe_remove_tree_in_workdir(dirfd.as_raw_fd(), bundle).map_err(|error| {
+        let refused = refusal(bundle, error);
+        match document_gone {
+            true => format!(
+                "{refused}; {} is already deleted.",
+                grant.document.display()
+            ),
+            false => refused,
+        }
+    })
+}
+
+/// Refuse when a locked spelling of the grant's document exists: the plan went into execution.
+fn refuse_locked(dirfd: &OwnedFd, grant: &Grant) -> Result<(), String> {
+    match locked_spelling(dirfd, grant)? {
+        Some(locked) => Err(format!(
+            "{} has gone into execution; it cannot be deleted here.",
+            locked.display()
+        )),
+        None => Ok(()),
+    }
+}
+
+/// The size `target` names, once it passed the same check as [`written`]. Err when `target` is
+/// not exactly a kickoff target.
+pub(in crate::plan_server::chat) fn target_size(target: &str) -> Result<KickoffSize, String> {
+    grant_of(target).map(|grant| grant.size)
 }
 
 /// The grant `target` names, when `target` is byte for byte `kickoff_target(size, name)`'s

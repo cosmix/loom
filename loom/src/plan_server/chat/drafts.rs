@@ -23,7 +23,7 @@ use anyhow::Result;
 use chrono::{DateTime, SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
 
-pub(super) use self::delete::{remove_written, written};
+pub(super) use self::delete::{remove_written, target_size, written};
 use self::store::Files;
 use super::{lock, ChatState};
 use crate::fs::safe_fs::{safe_create_dir_all, safe_replace_outside_workdir};
