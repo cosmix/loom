@@ -26,6 +26,7 @@ fn record(kind: JobKind, state: JobState, now: DateTime<Utc>) -> JobRecord {
         finished_at: None,
         pid: None,
         detail: None,
+        at_base: false,
     }
 }
 

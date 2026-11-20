@@ -324,6 +324,7 @@ mod silence_report_tests {
             finished_at: None,
             pid: None,
             detail: None,
+            at_base: false,
         };
         store::save_current(temp.path(), &record).unwrap();
         let session = session_created(now, 1_000);

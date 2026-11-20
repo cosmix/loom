@@ -58,8 +58,7 @@ pub enum Submission {
     Refused(String),
 }
 
-/// The job file holding a trial's replacement files, a JSON
-/// `[FileReplacement]` the child lays over the frozen files.
+/// The job file of a trial's replacement files, a JSON `[FileReplacement]` laid over frozen files.
 pub(crate) const REPLACEMENTS_FILE: &str = "replacements.json";
 
 /// Queue, join, wait behind a check of the same session and tree, or supersede.
@@ -69,31 +68,47 @@ pub fn submit(
     request: &SubmitRequest<'_>,
     now: DateTime<Utc>,
 ) -> Result<Submission> {
-    submit_selection(work_dir, request, None, now)
+    submit_selection(work_dir, request, Selection::Criteria, now)
 }
 
-/// [`submit`] a check of the stage's frozen contracts (`loom check
-/// --contracts`); `replacements` makes it a trial of those files. Such a check
-/// has its own selection: it neither joins nor is joined by another job, and
-/// never waits behind a check.
+/// [`submit`] a check of the frozen contracts (`--contracts`); `replacements` make it a trial of
+/// those files. Its own selection, it neither joins nor is joined by another job, nor waits.
 pub fn submit_contracts(
     work_dir: &Path,
     request: &SubmitRequest<'_>,
     replacements: &[FileReplacement],
     now: DateTime<Utc>,
 ) -> Result<Submission> {
-    submit_selection(work_dir, request, Some(replacements), now)
+    submit_selection(work_dir, request, Selection::Contracts(replacements), now)
 }
 
-/// `contracts` is `None` for a job of the acceptance criteria, else the
-/// replacement files of a contracts check (empty for none).
+/// [`submit`] a check of the request's criteria at the stage's base commit
+/// (`loom check --at-base`), its own selection as a contracts check is.
+pub fn submit_at_base(
+    work_dir: &Path,
+    request: &SubmitRequest<'_>,
+    now: DateTime<Utc>,
+) -> Result<Submission> {
+    submit_selection(work_dir, request, Selection::AtBase, now)
+}
+
+/// What a job runs: the stage's criteria, its frozen contracts with a trial's
+/// replacement files (none for a plain check), or criteria at the base.
+#[derive(Clone, Copy)]
+enum Selection<'a> {
+    Criteria,
+    Contracts(&'a [FileReplacement]),
+    AtBase,
+}
+
 fn submit_selection(
     work_dir: &Path,
     request: &SubmitRequest<'_>,
-    contracts: Option<&[FileReplacement]>,
+    selection: Selection<'_>,
     now: DateTime<Utc>,
 ) -> Result<Submission> {
-    if let Some(problem) = invalid_binding(request, contracts.is_some()) {
+    let own = !matches!(selection, Selection::Criteria);
+    if let Some(problem) = invalid_binding(request, selection) {
         return Ok(Submission::Refused(problem.to_string()));
     }
     if let Some(blocker) = stage_disposition(work_dir, request.stage_id).blocker(request.stage_id) {
@@ -101,9 +116,9 @@ fn submit_selection(
     }
     let lock = store::lock_stage(work_dir, request.stage_id)?;
     let Some(mut current) = live_current(&lock, work_dir, request.stage_id)? else {
-        return queue(work_dir, request, contracts, now).map(Submission::Queued);
+        return queue(work_dir, request, selection, now).map(Submission::Queued);
     };
-    if covers(&current, request, contracts.is_some()) {
+    if covers(&current, request, own) {
         add_request(&mut current, request.request_id);
         store::save_current(work_dir, &current)?;
         return Ok(Submission::Joined(current));
@@ -111,15 +126,15 @@ fn submit_selection(
     if request.kind == JobKind::Check && current.kind != JobKind::Check {
         return Ok(Submission::Refused(CHECK_BEHIND_RUN.to_string()));
     }
-    if contracts.is_none() && waits_behind(&current, request) {
+    if !own && waits_behind(&current, request) {
         return wait_behind(&lock, work_dir, &current, request, now);
     }
-    let queued = new_record(work_dir, request, contracts.is_some(), now)?;
+    let queued = new_record(work_dir, request, selection, now)?;
     let reason = format!("superseded by {}", queued.id);
     pending::cancel_locked(&lock, work_dir, request.stage_id, &reason, now)?;
     end(&mut current, &reason, now);
     store::save_current(work_dir, &current)?;
-    save_replacements(work_dir, &queued, contracts)?;
+    save_replacements(work_dir, &queued, selection)?;
     persist_queued(work_dir, &queued)?;
     Ok(Submission::Superseded {
         cancelled: Box::new(current),
@@ -138,17 +153,19 @@ pub(crate) fn is_lower_hex(text: &str, lengths: &[usize]) -> bool {
 /// Why the request's tree binding is malformed, if it is. Every route that
 /// queues a job passes through `submit`, so none can store an unverifiable
 /// binding.
-fn invalid_binding(request: &SubmitRequest<'_>, contracts: bool) -> Option<&'static str> {
+fn invalid_binding(request: &SubmitRequest<'_>, selection: Selection<'_>) -> Option<&'static str> {
     if !is_lower_hex(request.head, &[40, 64]) {
         return Some("head must be 40 or 64 lowercase hex characters");
     }
     if !is_lower_hex(request.tree_digest, &[64]) {
         return Some("tree_digest must be 64 lowercase hex characters");
     }
+    let contracts = matches!(selection, Selection::Contracts(_));
     if contracts && request.kind != JobKind::Check {
         return Some("only a check runs the contracts alone");
     }
     match &request.criteria {
+        None if matches!(selection, Selection::AtBase) => Some("an at-base check names criteria"),
         Some(_) if contracts => Some("a contracts check runs no acceptance criteria"),
         Some(_) if request.kind != JobKind::Check => Some("only a check runs a criterion subset"),
         Some(criteria) if criteria.is_empty() => Some("criteria must name at least one criterion"),
@@ -205,14 +222,13 @@ pub fn cancel_if_id(
     Ok(Some(record))
 }
 
-/// Whether the non-terminal `current` job answers `request` as well: the same
-/// tree and kind, a cached request is answered by an uncached run too, and
-/// the job runs every criterion the request selects. A contracts check
-/// (`contracts`, or the current job's) answers nothing else and is answered
-/// by nothing: a trial's replacement bytes are its own selection.
-fn covers(current: &JobRecord, request: &SubmitRequest<'_>, contracts: bool) -> bool {
-    !contracts
-        && !current.contracts
+/// Whether the non-terminal `current` job answers `request` as well: the same tree and kind, a
+/// cached request is answered by an uncached run too, and the job runs every criterion the request
+/// selects. A contracts check or a check at the base (`own`, or the current job's) answers nothing
+/// else and is answered by nothing: a trial's replacement bytes are its own selection.
+fn covers(current: &JobRecord, request: &SubmitRequest<'_>, own: bool) -> bool {
+    !own && !current.contracts
+        && !current.at_base
         && current.head == request.head
         && current.tree_digest == request.tree_digest
         && (current.no_cache || !request.no_cache)
@@ -238,7 +254,7 @@ fn runs_selection(job: Option<&[usize]>, request: Option<&[usize]>) -> bool {
 fn new_record(
     work_dir: &Path,
     request: &SubmitRequest<'_>,
-    contracts: bool,
+    selection: Selection<'_>,
     now: DateTime<Utc>,
 ) -> Result<JobRecord> {
     Ok(JobRecord {
@@ -251,7 +267,8 @@ fn new_record(
         tree_digest: request.tree_digest.to_string(),
         no_cache: request.no_cache,
         criteria: request.criteria.clone(),
-        contracts,
+        contracts: matches!(selection, Selection::Contracts(_)),
+        at_base: matches!(selection, Selection::AtBase),
         state: JobState::Queued,
         requests: vec![request.request_id.to_string()],
         queued_at: now,
@@ -265,24 +282,21 @@ fn new_record(
 fn queue(
     work_dir: &Path,
     request: &SubmitRequest<'_>,
-    contracts: Option<&[FileReplacement]>,
+    selection: Selection<'_>,
     now: DateTime<Utc>,
 ) -> Result<JobRecord> {
-    let queued = new_record(work_dir, request, contracts.is_some(), now)?;
-    save_replacements(work_dir, &queued, contracts)?;
+    let queued = new_record(work_dir, request, selection, now)?;
+    save_replacements(work_dir, &queued, selection)?;
     persist_queued(work_dir, &queued)?;
     Ok(queued)
 }
 
 /// Save a trial's replacement files as `queued`'s job file before the job
 /// becomes current, so the runner never starts it without them.
-fn save_replacements(
-    work_dir: &Path,
-    queued: &JobRecord,
-    contracts: Option<&[FileReplacement]>,
-) -> Result<()> {
-    let Some(replacements) = contracts.filter(|files| !files.is_empty()) else {
-        return Ok(());
+fn save_replacements(work_dir: &Path, queued: &JobRecord, selection: Selection<'_>) -> Result<()> {
+    let replacements = match selection {
+        Selection::Contracts(files) if !files.is_empty() => files,
+        _ => return Ok(()),
     };
     let bytes = serde_json::to_vec(replacements)?;
     store::save_job_file(
@@ -346,7 +360,7 @@ fn wait_behind(
             widen(&mut waiting, request);
             waiting
         }
-        None => new_record(work_dir, request, false, now)?,
+        None => new_record(work_dir, request, Selection::Criteria, now)?,
     };
     store::save_pending(work_dir, &waiting)?;
     Ok(Submission::Waiting {

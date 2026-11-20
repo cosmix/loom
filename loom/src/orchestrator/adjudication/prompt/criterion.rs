@@ -54,7 +54,7 @@ fn build_instructions(input: &KindPromptInput<'_>, indices: &[usize]) -> String 
     ));
     s.push_str(&judge_not_fix());
     s.push_str(&run_the_criteria(input, indices));
-    s.push_str(&verdict_rules());
+    s.push_str(&verdict_rules(&input.stage.id));
     s.push_str(&input.verdict_protocol(&verdict_schema()));
     s
 }
@@ -71,8 +71,9 @@ pub(super) fn judge_not_fix() -> String {
     s
 }
 
-/// What each verdict means, and what its citations must hold.
-pub(super) fn verdict_rules() -> String {
+/// What each verdict means, what its citations must hold, and when it may
+/// narrow a criterion of stage `stage_id`.
+pub(super) fn verdict_rules(stage_id: &str) -> String {
     let mut s = String::new();
     s.push_str("## Verdict semantics\n\n");
     s.push_str("- accept: the criterion is wrong (unrunnable / asserts a value that is\n");
@@ -89,7 +90,30 @@ pub(super) fn verdict_rules() -> String {
     s.push_str("must record the run you did above: `file` is the directory you ran it\n");
     s.push_str("from, `excerpt` is the command with its exit code and the output lines\n");
     s.push_str("that decided it, `claim` is what that run proves.\n\n");
+    s.push_str(&narrowing_rules(stage_id));
     s
+}
+
+/// When an accept may leave tests out of the stage's check, and what it must
+/// record when it does (`verdict_narrowing` refuses the rest at recording).
+fn narrowing_rules(stage_id: &str) -> String {
+    format!(
+        "## Narrowing a criterion\n\n\
+         - To replace a criterion with one that selects fewer tests, or to delete it,\n  \
+         first run `loom check {stage_id} --criterion <n> --at-base` and read its\n  \
+         `Host job:` line.\n\
+         - Narrow only when the criterion fails there. Name every test the amendment\n  \
+         leaves out in `plan_patch.leaves_out` with where it will run\n  \
+         (`integration-verify`, `ci`, or `nowhere`) and why. An amendment that changes\n  \
+         which tests run and declares no `leaves_out` is invalid.\n\
+         - A criterion that passes at base, selects no test there or does not build\n  \
+         there fails because of the stage's own change or its own new test. Do not\n  \
+         narrow it and do not reject: answer `needs-more-evidence` telling the agent\n  \
+         to fix its test, or, for a frozen contract, to file `loom stage\n  \
+         dispute-contract` with a replacement.\n\
+         - Skipping a test is for a test that cannot pass whatever the implementation.\n  \
+         A flaky or slow test is not that: say what would fix it.\n\n"
+    )
 }
 
 /// The step that comes before any judgement: execute the disputed criteria
@@ -246,7 +270,14 @@ pub(super) fn schema_json(field_choice: &str) -> String {
         "                   \"value\": \"<YAML body for the new element; omit for delete>\" },\n",
     );
     s.push_str("                 ... ],\n");
-    s.push_str("    \"reason\": \"<why the criteria are wrong>\"\n");
+    s.push_str("    \"reason\": \"<why the criteria are wrong>\",\n");
+    s.push_str("    \"leaves_out\": [ { \"index\": <0-based index the patch amends>,\n");
+    s.push_str("                      \"tests\": [\"<test the amendment leaves out>\", ...],\n");
+    s.push_str(
+        "                      \"runs_at\": \"integration-verify\" | \"ci\" | \"nowhere\",\n",
+    );
+    s.push_str("                      \"reason\": \"<why it is left out>\" }, ... ]\n");
+    s.push_str("                 (a delete, or a replace that selects fewer tests)\n");
     s.push_str("  },\n");
     s.push_str("  \"questions\": [\"...\", ...] (needs-more-evidence; >=1)\n");
     s.push_str("}\n");

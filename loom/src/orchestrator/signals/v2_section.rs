@@ -21,6 +21,7 @@ pub(super) fn append_v2_section(content: &mut String, stage: &Stage, work_dir: &
     append_frozen_contracts(content, stage, work_dir);
     review::append_review_gate(content, stage, work_dir);
     review::append_reviewer_suggestions(content, stage, work_dir);
+    super::handoffs::append_plan_handoffs(content, stage, work_dir);
     review::append_unimplemented_suggestions(content, stage);
 }
 

@@ -17,6 +17,11 @@ pub(super) const TRIAL_NEEDS_SESSION: &str =
     "a replacement trial runs as a host job, which only the stage's session can request: run \
      `loom check <stage> --contracts --replacement <frozen-file>=<path>` there";
 
+/// Why the operator's shell does not run criteria at the stage's base.
+pub(super) const AT_BASE_NEEDS_SESSION: &str =
+    "a run at the stage's base is a host job, which only a session of the stage (or its judge) \
+     can request: run `loom check <stage> --criterion <index> --at-base` there";
+
 /// `loom check`'s run options.
 #[derive(Debug, Clone, clap::Args)]
 pub struct CheckArgs {
@@ -42,6 +47,12 @@ pub struct CheckArgs {
     /// replacement needs a passing trial first.
     #[arg(long = "replacement", value_name = "FROZEN_FILE=PATH")]
     pub replacement: Vec<String>,
+
+    /// With --criterion: run the criteria against a checkout of the stage's
+    /// base commit instead of its worktree, recording the result as base
+    /// evidence a criterion dispute can cite.
+    #[arg(long = "at-base")]
+    pub at_base: bool,
 }
 
 /// What one `loom check` runs.
@@ -57,12 +68,26 @@ pub enum CheckSelection {
     /// The frozen contracts with each `(frozen file, replacement path)` laid
     /// over its frozen file.
     Trial(Vec<(String, PathBuf)>),
+    /// These 0-based acceptance criteria, sorted and deduplicated, run at
+    /// the stage's base commit.
+    AtBase(Vec<usize>),
 }
 
 /// The selection `args` names. `--contracts` with `--criterion`,
-/// `--replacement` without `--contracts`, and a malformed or repeated
-/// replacement are refused, so no flag is silently dropped.
+/// `--replacement` without `--contracts`, `--at-base` without `--criterion`
+/// or with `--contracts`, and a malformed or repeated replacement are
+/// refused, so no flag is silently dropped.
 pub fn check_selection(args: &CheckArgs) -> Result<CheckSelection> {
+    if args.at_base {
+        if args.contracts || !args.replacement.is_empty() {
+            bail!("--at-base runs acceptance criteria at the stage's base: drop --contracts");
+        }
+        let criteria = normalized_criteria(&args.criterion);
+        if criteria.is_empty() {
+            bail!("--at-base runs the criteria --criterion names: add --criterion <index>");
+        }
+        return Ok(CheckSelection::AtBase(criteria));
+    }
     if !args.contracts {
         if !args.replacement.is_empty() {
             bail!("--replacement trials a replacement of a frozen file and needs --contracts");

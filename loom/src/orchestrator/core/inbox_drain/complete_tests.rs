@@ -37,6 +37,7 @@ fn relay_complete(fx: &Fixture) -> Settle {
         criteria: None,
         contracts: false,
         replacements: Vec::new(),
+        at_base: false,
     };
     apply_complete(&host(fx), STAGE, &session, &request, "r1")
 }

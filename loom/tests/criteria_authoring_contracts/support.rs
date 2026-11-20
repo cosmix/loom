@@ -258,6 +258,7 @@ fn job_record(session: &str, order: u64) -> JobRecord {
         no_cache: false,
         criteria: None,
         contracts: false,
+        at_base: false,
         state: JobState::Failed,
         requests: Vec::new(),
         queued_at: now,

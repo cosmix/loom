@@ -10,7 +10,7 @@ use chrono::Utc;
 use crate::git::revision::require_head_commit;
 use crate::git::worktree::WorktreeGit;
 use crate::host_verify::submit::{
-    is_lower_hex, submit, submit_contracts, Submission, SubmitRequest,
+    is_lower_hex, submit, submit_at_base, submit_contracts, Submission, SubmitRequest,
 };
 use crate::host_verify::JobKind;
 use crate::models::session::{Session, SessionType};
@@ -59,6 +59,8 @@ pub(super) fn apply_check(
     let (work_dir, now) = (host.work_dir(), Utc::now());
     settle_submission(if request.contracts {
         submit_contracts(work_dir, &submission, &request.replacements, now)
+    } else if request.at_base {
+        submit_at_base(work_dir, &submission, now)
     } else {
         submit(work_dir, &submission, now)
     })
@@ -127,6 +129,12 @@ fn validate(host: &dyn InboxHost, stage: &Stage, request: &HostJobRequest) -> Re
         .map_err(|error| format!("{error:#}"))?;
     if request.contracts {
         validate_contracts(host, stage, request)?;
+    }
+    if request.at_base && stage.stage_type == StageType::Knowledge {
+        return Err(format!(
+            "stage '{}' runs on the repository root and has no base to run its criteria at",
+            stage.id
+        ));
     }
     let head = checkout_head(host, stage)?;
     if head != request.head {

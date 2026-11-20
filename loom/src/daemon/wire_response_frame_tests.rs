@@ -4,6 +4,17 @@ use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 use std::time::{Duration, Instant};
 
+fn next_plan_summary() -> CompletionSummary {
+    CompletionSummary {
+        total_duration_secs: 2,
+        stages: Vec::new(),
+        success_count: 0,
+        failure_count: 0,
+        plan_path: "next.yaml".to_string(),
+        ..Default::default()
+    }
+}
+
 #[test]
 fn response_reader_retains_split_header_and_body_across_timeouts() {
     let (mut sender, mut receiver) = UnixStream::pair().unwrap();
@@ -16,13 +27,7 @@ fn response_reader_retains_split_header_and_body_across_timeouts() {
     write_message(
         &mut second,
         &Response::OrchestrationComplete {
-            summary: CompletionSummary {
-                total_duration_secs: 2,
-                stages: Vec::new(),
-                success_count: 0,
-                failure_count: 0,
-                plan_path: "next.yaml".to_string(),
-            },
+            summary: next_plan_summary(),
         },
     )
     .unwrap();
@@ -141,6 +146,7 @@ fn split_completion_is_delivered_before_eof() {
             success_count: 0,
             failure_count: 0,
             plan_path: "plan.yaml".to_string(),
+            ..Default::default()
         },
     };
     let mut frame = Vec::new();

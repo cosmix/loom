@@ -55,6 +55,7 @@ pub(super) const EXPECTED_SECTIONS: &[&str] = &[
     "Frozen Contracts",
     "Review Gate",
     "Reviewer Suggestions",
+    "Handed-Off Tests",
     "Unimplemented Suggestions",
 ];
 

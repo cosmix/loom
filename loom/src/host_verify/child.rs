@@ -1,11 +1,11 @@
 //! The host child: one host job, run by `loom stage verify-host`.
 //!
-//! The daemon's runner starts it for a job it has set `Running`. The child
-//! verifies the tree the request named, records each criterion's outcome as
-//! it finishes, and writes the job's result. A check runs the stage's gate or
-//! its contracts (`child_contracts`), a completion or a verdict completion its
-//! full run (`child_complete`), a freeze its contracts (`freeze`). The CLI
-//! wrapper prints the result summary; checks may print progress to `child.log`.
+//! The daemon's runner starts it for a job it has set `Running`. The child verifies the tree the
+//! request named, records each criterion's outcome as it finishes, and writes the job's result. A
+//! check runs the stage's gate, its contracts (`child_contracts`) or criteria at its base
+//! (`child_base`), a completion or a verdict completion its full run (`child_complete`), a freeze
+//! its contracts (`freeze`). The CLI wrapper prints the result summary; checks may print progress
+//! to `child.log`.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -14,7 +14,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use anyhow::{bail, ensure, Context, Result};
 
 use super::child_policy::{check_cache_policy, requested_cache};
-use super::{child_complete, child_contracts, digest, freeze, store};
+use super::{child_base, child_complete, child_contracts, digest, freeze, store};
 use super::{CriterionOutcome, JobKind, JobRecord, JobResult, JobState};
 use crate::git::worktree::WorktreeGit;
 use crate::models::dispute::truncate_to_byte_limit;
@@ -96,6 +96,9 @@ fn check(work_dir: &Path, record: &JobRecord, progress: &Arc<Progress>) -> Resul
     let expected = std::env::var(super::BUDGET_POLICY_ENV).ok();
     let goal = plan::load(&stage.id, work_dir, expected.as_deref())?;
     let tree = JobTree::resolve(&stage, work_dir)?;
+    if record.at_base {
+        return child_base::run(work_dir, record, &stage, &tree, progress);
+    }
     if let Some(mismatch) = tree.differences(record)? {
         bail!("the tree does not match the request: {mismatch}");
     }
@@ -210,8 +213,7 @@ fn goal_summary(result: &GoalBackwardResult) -> String {
     }
 }
 
-/// The job's result from its outcomes and how its pipeline ended:
-/// `Ok(Some(change))` names how the tree changed during the run.
+/// The job's result from its outcomes and pipeline end; `Ok(Some(change))` names a tree change.
 pub(super) fn finish(
     record: &JobRecord,
     criteria: Vec<CriterionOutcome>,

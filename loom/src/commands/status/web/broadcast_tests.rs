@@ -54,6 +54,7 @@ fn send_fragmented_status(sender: &mut UnixStream) {
                 success_count: 0,
                 failure_count: 0,
                 plan_path: "plan.yaml".into(),
+                ..Default::default()
             },
         },
     )

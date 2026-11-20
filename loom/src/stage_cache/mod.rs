@@ -9,6 +9,7 @@
 //! or another user's directory), so a stage never adopts a cache it did not
 //! create.
 
+pub mod base_checkout;
 pub mod cleanup;
 mod developer;
 mod environment;
@@ -154,6 +155,20 @@ impl StageCache {
     /// path, never one resolved again later, which a stage could by then have
     /// swapped for a symlink (the root itself is the stage's to write).
     pub fn ensure(&self) -> Result<PathBuf> {
+        self.ensure_below(&PARENTS)
+    }
+
+    /// The root's name, shared by the directories kept for this stage
+    /// beside the stage cache (`base_checkout`).
+    fn root_name(&self) -> Result<&std::ffi::OsStr> {
+        self.root
+            .file_name()
+            .context("stage cache root has no name")
+    }
+
+    /// `<base>/<parents..>/<root name>`, made and opened as [`Self::ensure`]
+    /// describes, closed to this user; returns its canonical path.
+    fn ensure_below(&self, parents: &[&str]) -> Result<PathBuf> {
         std::fs::DirBuilder::new()
             .recursive(true)
             .mode(0o700)
@@ -167,19 +182,15 @@ impl StageCache {
         let mut directory = Dir::open(&base, flags, Mode::empty())
             .with_context(|| format!("open cache base {}", base.display()))?;
         let mut path = base;
-        for name in PARENTS {
+        for name in parents {
             path.push(name);
-            directory = open_owned(directory.as_fd(), name, &path)?;
+            directory = open_owned(directory.as_fd(), *name, &path)?;
         }
-        let name = self
-            .root
-            .file_name()
-            .context("stage cache root has no name")?;
+        let name = self.root_name()?;
         path.push(name);
         let root = open_owned(directory.as_fd(), name, &path)?;
         if fstat(&root)?.st_mode & 0o777 != 0o700 {
-            fchmod(&root, Mode::S_IRWXU)
-                .with_context(|| format!("close stage cache {}", self.root.display()))?;
+            fchmod(&root, Mode::S_IRWXU).with_context(|| format!("close {}", path.display()))?;
         }
         Ok(path)
     }

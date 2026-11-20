@@ -6,25 +6,27 @@ use std::path::{Path, PathBuf};
 
 use super::*;
 use crate::models::dispute::{
-    applied_marker, Citation, CriterionField, DisputeKind, DisputeVerdict,
+    applied_marker, verdict_file, Citation, CriterionField, DisputeKind, DisputeVerdict,
 };
 use crate::models::stage::{AcceptanceCriterion, StageStatus};
+use crate::orchestrator::adjudication::record::record_verdict_text;
 use crate::orchestrator::adjudication::tests::{
     make_stage, write_request, write_stage, write_verdict,
 };
 use crate::orchestrator::adjudication::{feedback, AdjudicatorRegistry};
 use crate::plan::amendment::count_amendments_for_stage;
+use crate::verify::review::handoffs::{load_handoffs, save_base_evidence, BaseEvidence};
 use crate::verify::transitions::load_stage;
 
 const CRITERIA: usize = 15;
 
-fn criterion(i: usize) -> String {
+pub(super) fn criterion(i: usize) -> String {
     format!("cargo test --lib case_{i}")
 }
 
 /// `root/.loom/work`, its `config.toml` naming a plan whose stage `s1` has
 /// fifteen acceptance criteria. Returns the work dir and the plan path.
-fn setup(root: &Path) -> (PathBuf, PathBuf) {
+pub(super) fn setup(root: &Path) -> (PathBuf, PathBuf) {
     let work = root.join(".loom").join("work");
     std::fs::create_dir_all(work.join("stages")).unwrap();
     let plans = root.join("doc").join("plans");
@@ -54,7 +56,7 @@ fn setup(root: &Path) -> (PathBuf, PathBuf) {
     (work, plan)
 }
 
-fn accept_replacing_13_and_deleting_14() -> DisputeVerdict {
+pub(super) fn accept_replacing_13_and_deleting_14() -> DisputeVerdict {
     DisputeVerdict::Accept {
         plan_patch: PlanPatch {
             inner: serde_json::json!({
@@ -63,6 +65,8 @@ fn accept_replacing_13_and_deleting_14() -> DisputeVerdict {
                     {"op": "replace", "index": 13, "value": "cargo test --lib portable"},
                     {"op": "delete", "index": 14},
                 ],
+                "leaves_out": [{"index": 14, "tests": ["case_14"],
+                                "runs_at": "integration-verify", "reason": "git metadata"}],
                 "reason": "13 needs the network; 14 needs git metadata",
             }),
         },
@@ -78,10 +82,21 @@ fn accept_replacing_13_and_deleting_14() -> DisputeVerdict {
     }
 }
 
+/// Loom's base run of criterion 14, the one the verdict deletes.
+fn seed_deleted_base_run(work: &Path) {
+    let deleted = BaseEvidence {
+        index: 14,
+        command: criterion(14),
+        ..failing_base_run()
+    };
+    save_base_evidence(work, "s1", &deleted).unwrap();
+}
+
 #[test]
 fn an_accept_patching_two_criteria_amends_both_once_and_requeues_with_a_notice() {
     let tmp = tempfile::tempdir().unwrap();
     let (work, plan) = setup(tmp.path());
+    seed_deleted_base_run(&work);
     let kind = DisputeKind::criterion(CriterionField::Acceptance, vec![13, 14]);
     write_request(&work, "s1", 1, kind);
     write_verdict(&work, "s1", 1, accept_replacing_13_and_deleting_14(), 1);
@@ -223,4 +238,102 @@ fn a_verdict_past_the_cap_applies_nothing_and_escalates() {
         load_stage("s1", &work).unwrap().status,
         StageStatus::NeedsHumanReview
     );
+}
+
+pub(super) const NARROWED: usize = 13;
+
+pub(super) fn narrowing_json() -> serde_json::Value {
+    serde_json::json!({
+        "field": "acceptance",
+        "patches": [{
+            "op": "replace",
+            "index": NARROWED,
+            "value": format!("{} -- --skip net_fetch", criterion(NARROWED)),
+        }],
+        "leaves_out": [{
+            "index": NARROWED,
+            "tests": ["net_fetch"],
+            "runs_at": "integration-verify",
+            "reason": "needs the network",
+        }],
+    })
+}
+
+pub(super) fn failing_base_run() -> BaseEvidence {
+    BaseEvidence {
+        index: NARROWED,
+        command: criterion(NARROWED),
+        passed: false,
+        executed: Some(12),
+        failed: Some(1),
+        build_failed: false,
+        timed_out: false,
+    }
+}
+
+#[test]
+fn an_accepted_narrowing_records_one_handoff_and_a_replay_none() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (work, _plan) = setup(tmp.path());
+    save_base_evidence(&work, "s1", &failing_base_run()).unwrap();
+    let kind = DisputeKind::criterion(CriterionField::Acceptance, vec![NARROWED]);
+    write_request(&work, "s1", 1, kind);
+    let DisputeVerdict::Accept {
+        citations,
+        reasoning,
+        ..
+    } = accept_replacing_13_and_deleting_14()
+    else {
+        unreachable!("the fixture is an accept");
+    };
+    let plan_patch = PlanPatch {
+        inner: narrowing_json(),
+    };
+    let verdict = DisputeVerdict::Accept {
+        plan_patch,
+        citations,
+        reasoning,
+    };
+    write_verdict(&work, "s1", 1, verdict, 1);
+
+    AdjudicatorRegistry::new()
+        .apply_verdict(&work, "s1", 1)
+        .unwrap();
+    let recorded = load_handoffs(&work, "s1").unwrap();
+    assert_eq!(recorded.len(), 1, "{recorded:?}");
+    assert_eq!(recorded[0].tests, vec!["net_fetch".to_string()]);
+    assert_eq!(recorded[0].dispute, "1");
+    assert!(recorded[0].verified);
+
+    std::fs::remove_file(applied_marker(&work.join("disputes"), "s1", 1)).unwrap();
+    AdjudicatorRegistry::new()
+        .apply_verdict(&work, "s1", 1)
+        .unwrap();
+    assert_eq!(load_handoffs(&work, "s1").unwrap(), recorded);
+}
+
+#[test]
+fn a_narrowing_without_a_base_run_is_refused_and_records_nothing() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (work, _plan) = setup(tmp.path());
+    let kind = DisputeKind::criterion(CriterionField::Acceptance, vec![NARROWED]);
+    write_request(&work, "s1", 1, kind);
+    let raw = serde_json::json!({
+        "verdict": "accept",
+        "reasoning": "the test needs the network",
+        "citations": [{"file": ".", "excerpt": "exit 101", "claim": "fails"}],
+        "plan_patch": narrowing_json(),
+    })
+    .to_string();
+
+    let err = record_verdict_text(&work, "s1", 1, &raw, None).unwrap_err();
+
+    assert!(format!("{err:#}").contains("--at-base"), "{err:#}");
+    assert!(!verdict_file(&work.join("disputes"), "s1", 1).exists());
+    assert!(load_handoffs(&work, "s1").unwrap().is_empty());
+
+    save_base_evidence(&work, "s1", &failing_base_run()).unwrap();
+    record_verdict_text(&work, "s1", 1, &raw, None).unwrap();
+    let verdict = std::fs::read_to_string(verdict_file(&work.join("disputes"), "s1", 1)).unwrap();
+    assert!(verdict.contains("leaves_out"), "{verdict}");
 }

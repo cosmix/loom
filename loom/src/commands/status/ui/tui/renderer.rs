@@ -181,6 +181,7 @@ mod tests {
             success_count: 1,
             failure_count: 0,
             plan_path: "plan.md".to_owned(),
+            ..Default::default()
         }
     }
 

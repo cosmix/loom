@@ -197,7 +197,7 @@ fn build_instructions(input: &KindPromptInput<'_>, entry: &Entry) -> String {
     }
     s.push_str(&worktree_gone_warning(input.site));
     s.push_str(&what_the_run_decides());
-    s.push_str(&verdict_rules());
+    s.push_str(&verdict_rules(&input.stage.id));
     s.push_str(&input.verdict_protocol(&verdict_schema(entry)));
     s
 }

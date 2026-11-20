@@ -41,6 +41,7 @@ fn the_relay_payload_decodes_back_to_the_freeze_request() {
         criteria: None,
         contracts: false,
         replacements: Vec::new(),
+        at_base: false,
     };
     let choices = choices_of(&[("a", "x::y")]);
     let payload = freeze_payload(&request, &choices).unwrap();
@@ -206,6 +207,7 @@ fn wait_site<'a>(fx: &'a Fx, scratch: &'a std::path::Path) -> WaitSite<'a> {
         contracts: None,
         scratch_dir: scratch,
         budget: Duration::ZERO,
+        at_base: false,
     }
 }
 

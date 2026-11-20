@@ -66,6 +66,10 @@ pub struct HostJobRequest {
     /// each bounded as a dispute's replacement.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub replacements: Vec<FileReplacement>,
+    /// A check of `criteria` against a checkout of the stage's base commit
+    /// (`loom check --criterion <n> --at-base`); only a check sets it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub at_base: bool,
 }
 
 /// A ticket payload, decoded to the type its `kind` promises.
@@ -139,6 +143,9 @@ fn decode_check(payload: &Value) -> Result<HostJobRequest> {
     if !request.contracts && !request.replacements.is_empty() {
         bail!("only a contracts check trials replacement files");
     }
+    if request.at_base && (request.contracts || request.criteria.is_none()) {
+        bail!("a check at the stage's base runs the acceptance criteria it names, no contracts");
+    }
     bound_replacements(&request.replacements)?;
     Ok(request)
 }
@@ -173,7 +180,7 @@ fn decode_completion(payload: &Value) -> Result<HostJobRequest> {
     if request.criteria.is_some() {
         bail!("a completion runs every criterion and takes no criteria");
     }
-    if request.contracts || !request.replacements.is_empty() {
+    if request.contracts || !request.replacements.is_empty() || request.at_base {
         bail!("a completion runs every check and takes no contracts selection");
     }
     Ok(request)

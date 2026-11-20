@@ -14,7 +14,10 @@
 //! objects and writes nothing outside the scratch directory, so a sandboxed
 //! session can make one, and it has a `.git` of its own for a test that asks
 //! git where it runs. [`BaseCheckout`] removes the directory when dropped, on
-//! every error path and while unwinding.
+//! every error path and while unwinding. [`BaseCheckout::kept`] instead keeps
+//! a checkout at a loom-owned directory beside the stage cache, which a
+//! confined run at the base writes, so loom's own git never reads that
+//! checkout's `.git` (`stage_cache::base_checkout`).
 //!
 //! A checkout holds tracked files only. A package whose installed
 //! environment (`node_modules`, `.venv`) is untracked is not run there, and a
@@ -82,10 +85,13 @@ pub(super) struct BaseProbe<'a> {
     pub(super) runner: &'a dyn BaseRunner,
 }
 
-/// A detached checkout of one commit in a scratch directory, removed on drop.
+/// A detached checkout of one commit in a scratch directory, removed on drop,
+/// or kept at a directory of the caller's ([`Self::kept`]).
 pub(crate) struct BaseCheckout {
     dir: Option<TempDir>,
     root: PathBuf,
+    /// A kept checkout found clean at the commit, with what earlier runs built.
+    reused: bool,
 }
 
 impl BaseCheckout {
@@ -111,20 +117,33 @@ impl BaseCheckout {
 
     /// The shared clone and detached checkout both constructors make in `dir`.
     fn check_out(dir: TempDir, worktree: &Path, commit: &str) -> Result<Self> {
-        let common_dir = ["rev-parse", "--path-format=absolute", "--git-common-dir"];
-        let common = read_only(&local_git(worktree)?, &common_dir)?;
-        let common = String::from_utf8(common).context("the git common directory is not UTF-8")?;
+        let common = common_dir(worktree)?;
         let root = dir.path().join("checkout");
         let target = root
             .to_str()
             .context("the scratch directory is not UTF-8")?;
         let clone = ["clone", "--quiet", "--shared", "--no-checkout", "--"];
-        let args: Vec<&str> = clone.into_iter().chain([common.trim(), target]).collect();
+        let args: Vec<&str> = clone.into_iter().chain([common.as_str(), target]).collect();
         run_git_checked(&args, dir.path())?;
         run_git_checked(&["checkout", "--quiet", "--detach", commit], &root)?;
         Ok(Self {
             dir: Some(dir),
             root,
+            reused: false,
+        })
+    }
+
+    /// The checkout of `commit` of the repository holding `worktree` at `dir`,
+    /// kept when dropped: reused when its HEAD is `commit` and its tree is
+    /// clean, else deleted and made again. A symbolic link at `dir` or its
+    /// parent is refused (`stage_cache::base_checkout::keep`).
+    pub(crate) fn kept(dir: &Path, worktree: &Path, commit: &str) -> Result<Self> {
+        let common = common_dir(worktree)?;
+        let reused = crate::stage_cache::base_checkout::keep(dir, &common, commit)?;
+        Ok(Self {
+            dir: None,
+            root: dir.to_path_buf(),
+            reused,
         })
     }
 
@@ -132,6 +151,20 @@ impl BaseCheckout {
     pub(crate) fn root(&self) -> &Path {
         &self.root
     }
+
+    /// Whether [`Self::kept`] reused a checkout an earlier run left.
+    pub(crate) fn reused(&self) -> bool {
+        self.reused
+    }
+}
+
+/// The absolute common git directory of the repository holding `worktree`,
+/// read through git pinned to that checkout.
+fn common_dir(worktree: &Path) -> Result<String> {
+    let args = ["rev-parse", "--path-format=absolute", "--git-common-dir"];
+    let common = read_only(&local_git(worktree)?, &args)?;
+    let common = String::from_utf8(common).context("the git common directory is not UTF-8")?;
+    Ok(common.trim().to_string())
 }
 
 impl Drop for BaseCheckout {

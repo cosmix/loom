@@ -1,20 +1,21 @@
 //! Normalising an adjudicator's `plan_patch` into [`AmendmentRequest`]s.
 //!
 //! A criterion or contract-rulings verdict's canonical `plan_patch` is
-//! `{"field": ..., "patches": [{"op", "index", "value"}, ...], "reason": ...}`:
+//! `{"field": ..., "patches": [{"op", "index", "value"}, ...], "reason": ...}`,
+//! with the `leaves_out` list of a narrowing beside it ([`with_leaves_out`]):
 //! one dispute names every failing criterion or contract, so one verdict may
 //! amend several entries of one list. [`normalize`] also reads the single
 //! nested `{"field", "patch": {...}}` shape and the FLAT `{"field", "op",
 //! "index", "value"}` shape three adjudicator sessions emitted when the prompt
 //! named the shape only as "AmendmentRequest JSON", a Rust type the model
 //! cannot see; `verdict.rs` and `verdict_contract.rs` accept all three at
-//! record time and record `patches`. Which field a dispute may amend is the
-//! caller's check.
+//! record time and record `patches`. Which field a criterion dispute may
+//! amend is [`admits`].
 
 use anyhow::Result;
 use serde_json::{Map, Value};
 
-use crate::models::dispute::PlanPatch;
+use crate::models::dispute::{CriterionField, PlanPatch};
 use crate::plan::amendment::{AmendmentField, AmendmentPatch, AmendmentRequest};
 
 /// The amendments a recorded criterion verdict's `plan_patch` makes, in the
@@ -44,6 +45,39 @@ pub(super) fn build_amendment_requests(
         .collect();
     requests.sort_by_key(|request| std::cmp::Reverse(request.patch.index()));
     Ok(requests)
+}
+
+/// Whether an accept on a dispute over `disputed`'s list may amend `field`:
+/// an acceptance dispute may amend `acceptance` or `wiring`, a wiring or
+/// wiring-tests dispute only its own list.
+pub(super) fn admits(disputed: CriterionField, field: AmendmentField) -> bool {
+    field == disputed.amendment_field()
+        || (disputed == CriterionField::Acceptance && field == AmendmentField::Wiring)
+}
+
+/// The `plan_patch.field` values an accept on a dispute over `disputed`'s
+/// list may carry, as a re-prompt spells them.
+pub(super) fn admitted_fields(disputed: CriterionField) -> &'static str {
+    match disputed {
+        CriterionField::Acceptance => "\"acceptance\"|\"wiring\"",
+        CriterionField::Wiring => "\"wiring\"",
+        CriterionField::WiringTests => "\"wiring-tests\"",
+    }
+}
+
+/// The question for an accept whose `plan_patch` amends a list the dispute
+/// does not contest: it names the disputed list and the field to use.
+pub(super) fn wrong_list(disputed: CriterionField, plan_patch_raw: &Value) -> String {
+    let amended = plan_patch_raw
+        .get("field")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    format!(
+        "Accept verdict 'plan_patch' amends '{amended}', but this dispute contests the \
+         stage's {} list. Re-emit plan_patch with \"field\": {}.",
+        disputed.as_str(),
+        admitted_fields(disputed)
+    )
 }
 
 /// Decode `inner` into `(field, patches, reason)`, accepting a `patches`
@@ -144,6 +178,16 @@ pub(super) fn canonical_patches_inner(
 ) -> Value {
     let patches = serde_json::to_value(patches).expect("AmendmentPatch always serializes");
     canonical(field, "patches", patches, reason)
+}
+
+/// `canonical` with the `leaves_out` list of `raw`, the plan_patch the judge
+/// emitted, when it has one: the tests a narrowing leaves out are recorded
+/// beside the patches, and read again when the verdict applies.
+pub(super) fn with_leaves_out(mut canonical: Value, raw: &Value) -> Value {
+    if let (Some(map), Some(leaves_out)) = (canonical.as_object_mut(), raw.get("leaves_out")) {
+        map.insert("leaves_out".to_string(), leaves_out.clone());
+    }
+    canonical
 }
 
 fn canonical(field: AmendmentField, key: &str, patch: Value, reason: Option<&str>) -> Value {

@@ -199,6 +199,23 @@ must record the run you did above: `file` is the directory you ran it
 from, `excerpt` is the command with its exit code and the output lines
 that decided it, `claim` is what that run proves.
 
+## Narrowing a criterion
+
+- To replace a criterion with one that selects fewer tests, or to delete it,
+  first run `loom check demo --criterion <n> --at-base` and read its
+  `Host job:` line.
+- Narrow only when the criterion fails there. Name every test the amendment
+  leaves out in `plan_patch.leaves_out` with where it will run
+  (`integration-verify`, `ci`, or `nowhere`) and why. An amendment that changes
+  which tests run and declares no `leaves_out` is invalid.
+- A criterion that passes at base, selects no test there or does not build
+  there fails because of the stage's own change or its own new test. Do not
+  narrow it and do not reject: answer `needs-more-evidence` telling the agent
+  to fix its test, or, for a frozen contract, to file `loom stage
+  dispute-contract` with a replacement.
+- Skipping a test is for a test that cannot pass whatever the implementation.
+  A flaky or slow test is not that: say what would fix it.
+
 ## Recording your verdict
 
 First find your draft file. Run `printf '%s\n' "${LOOM_SCRATCH_DIR:-}"`:
@@ -221,7 +238,12 @@ First find your draft file. Run `printf '%s\n' "${LOOM_SCRATCH_DIR:-}"`:
                    "index": <0-based index into that array>,
                    "value": "<YAML body for the new element; omit for delete>" },
                  ... ],
-    "reason": "<why the criteria are wrong>"
+    "reason": "<why the criteria are wrong>",
+    "leaves_out": [ { "index": <0-based index the patch amends>,
+                      "tests": ["<test the amendment leaves out>", ...],
+                      "runs_at": "integration-verify" | "ci" | "nowhere",
+                      "reason": "<why it is left out>" }, ... ]
+                 (a delete, or a replace that selects fewer tests)
   },
   "questions": ["...", ...] (needs-more-evidence; >=1)
 }

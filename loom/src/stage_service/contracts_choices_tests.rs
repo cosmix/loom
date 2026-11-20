@@ -104,6 +104,7 @@ impl Fixture {
             finished_at: None,
             pid: None,
             detail: None,
+            at_base: false,
         };
         jobs::save_current(&self.work_dir, &record).unwrap();
         record

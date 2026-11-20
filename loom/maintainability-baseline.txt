@@ -23,7 +23,7 @@ file src/plan/tests/amendment.rs 605
 file src/process/mod.rs 402
 file src/sandbox/config.rs 708
 file src/sandbox/settings/tests.rs 1565
-file tests/adjudication_e2e.rs 525
+file tests/adjudication_e2e.rs 490
 file tests/e2e/context_variables.rs 409
 file tests/integration/plan_verify.rs 1027
 

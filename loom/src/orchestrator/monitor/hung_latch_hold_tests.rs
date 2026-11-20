@@ -172,6 +172,7 @@ fn save_job(work_dir: &Path, state: JobState, started_secs_ago: i64) {
         finished_at: None,
         pid: None,
         detail: None,
+        at_base: false,
     };
     store::save_current(work_dir, &record).unwrap();
 }

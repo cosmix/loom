@@ -52,6 +52,7 @@ pub mod verdict;
 mod verdict_contract;
 mod verdict_freeze_refusal;
 mod verdict_kinds;
+mod verdict_narrowing;
 
 #[cfg(test)]
 mod apply_contract_tests;
@@ -65,6 +66,8 @@ mod contract_rulings_contract_tests;
 mod contract_verdict_fixtures;
 #[cfg(test)]
 mod escalation_tests;
+#[cfg(test)]
+mod narrowing_contract_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

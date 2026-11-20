@@ -97,6 +97,7 @@ fn relay(context: &RelayContext, call: &SessionCall<'_>, out: &mut dyn Write) ->
         contracts: None,
         scratch_dir: &context.scratch_dir,
         budget: wait::budget_for(&target.stage),
+        at_base: false,
     };
     let mut sink = TicketSink::default();
     let mut emit = |request: &HostJobRequest| -> Result<String> {
