@@ -112,3 +112,13 @@ Three things hid the cause:
 **Prevention:** diagnose a sandbox denial by running the command under the exact generated profile and widening it until it passes (allow-all reads, then single paths), before attributing it to the path the error message names. Hiding a file (denying metadata) does not help a tool that fails on `EPERM`; grant the read.
 
 **Fix:** `confine_seatbelt.rs` grants literal reads of `$HOME/.config/git/ignore` and `attributes` (`READABLE_IN_GIT_CONFIG`), regression `confine_git_config_tests.rs`.
+
+## A Full `loom check` Was Advised Before Rerunning Completion
+
+**What happened:** after a completion job was cut off mid-run, the operator was advised to have the stage agent run a full `loom check <stage>` before rerunning `loom stage complete`, to learn the unrun criteria's failures first. The agent did, and the operator had to correct it.
+
+**Why:** `loom stage complete` runs every criterion in the same host job and reports every failure, so the full check only ran the same criteria twice.
+
+**Prevention:** after a fix, rerun `loom stage complete` directly. Use `loom check <stage> --criterion <n>` only to reproduce a single known failure while fixing it.
+
+**Fix:** none in the tree; this records the advice to avoid.
