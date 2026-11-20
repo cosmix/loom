@@ -239,7 +239,7 @@ pub(super) fn append_stage_end_sequence(content: &mut String) {
 /// Append the package-manager-cache carve-out note to the sandbox section,
 /// shown whenever the sandbox is enabled (`format/sandbox_section.rs`).
 pub(super) fn append_package_cache_note(content: &mut String) {
-    content.push_str("**Package-manager caches:** the per-user caches of bun, npm, pnpm, yarn, deno, cargo, rustup, uv, pip and go under your home directory are writable, so `bun install`, `cargo add`, `uv sync`, `go get` and their peers work inside this sandbox. Two limits: a cache directory that does not exist yet at session start is NOT bound (the sandbox skips missing paths), and a cache relocated by an env var (`XDG_CACHE_HOME`, `CARGO_HOME`, `BUN_INSTALL_CACHE_DIR`, ...) is not covered — either one surfaces as `EROFS` / `Read-only file system` from the package manager. That is a sandbox limit, not a bug in your change: block the stage with `loom stage block <stage-id> \"<cache path> needs a plan-level sandbox.filesystem.allow_write entry\"`; do not work around it.\n\n");
+    content.push_str("**Package-manager caches:** your home directory grants write access to the cargo and rustup caches only. Every other ecosystem (bun, npm, pnpm, yarn, deno, uv, pip, go, gradle, maven) writes its cache into this stage's own cache root, which the launcher exports through the tools' own environment variables (`XDG_CACHE_HOME`, `BUN_INSTALL_CACHE_DIR`, `UV_CACHE_DIR`, `GOMODCACHE`, ...); keep them as exported and never point a tool back at your own caches, which are read-only here. So `bun install`, `cargo add`, `uv sync` and `go get` work inside this sandbox. One limit: relocating `CARGO_HOME` or `RUSTUP_HOME` is not covered, and a toolchain install under a read-only directory fails. `EROFS` / `Read-only file system` from a package manager means a tool reached a real cache or a toolchain directory: block the stage with `loom stage block <stage-id> \"<path> is read-only in the sandbox\"`; do not work around it.\n\n");
 }
 
 #[cfg(test)]
@@ -264,5 +264,25 @@ mod tests {
         assert!(note.starts_with("**Package-manager caches:**"));
         assert!(note.contains("loom stage block"));
         assert!(!note.contains("report it as a blocker"));
+    }
+
+    #[test]
+    fn the_package_cache_note_states_the_per_session_caches() {
+        let mut note = String::new();
+        append_package_cache_note(&mut note);
+
+        assert!(note.starts_with("**Package-manager caches:**"));
+        assert!(note.contains("read-only"));
+        assert!(note.contains("CARGO_HOME"));
+    }
+
+    #[test]
+    fn the_package_cache_note_no_longer_grants_the_real_caches() {
+        let mut note = String::new();
+        append_package_cache_note(&mut note);
+
+        for retired in ["are writable", "allow_write entry", "does not exist yet"] {
+            assert!(!note.contains(retired), "{retired}");
+        }
     }
 }

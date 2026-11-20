@@ -64,3 +64,24 @@ fn a_relative_home_refuses_the_spawn_and_loom_run() {
         assert_root_refusal(&run, &case);
     }
 }
+
+/// A stage's cache root is a session-writable root: an operator `PATH` entry
+/// above it (`~/.cache`) must not get a deny that beats the root's `allowWrite`.
+#[test]
+fn every_stages_cache_root_is_a_writable_root() {
+    let temp = TempDir::new().unwrap();
+    let repo = temp.path().join("repo");
+    let work_dir = repo.join(".loom/work");
+    fs::create_dir_all(&work_dir).unwrap();
+    let stage = crate::models::stage::Stage::new("cache-stage".to_string(), None);
+    crate::verify::save_stage(&stage, &work_dir).unwrap();
+
+    let roots = writable_roots(&work_dir, &repo, &temp.path().join("scratch"), None);
+
+    let cache = resolve_stage_cache(&work_dir, &repo, &stage.id).unwrap();
+    assert!(
+        roots.iter().any(|root| root == cache.root()),
+        "{roots:?} must hold {}",
+        cache.root().display()
+    );
+}

@@ -219,8 +219,8 @@ impl SessionDenies {
 /// other entry of `writable_roots` (the scratch root, an `allowWrite` grant,
 /// or a package-manager/codex cache). A `LOOM_HOOK_PATH` entry lands here on
 /// nothing more than a PATH coincidence — e.g. `~/src` on `PATH` with the
-/// repo checked out at `~/src/loom`, or `~/.bun` on `PATH` with a granted
-/// `~/.bun/install/cache` — and denying it would deny writes across
+/// repo checked out at `~/src/loom`, or `~/.cache` on `PATH` above the
+/// stage cache root `~/.cache/loom/stage-cache/<hash>` — and denying it would deny writes across
 /// everything below it, the writable root included, rather than just the
 /// executable it holds.
 ///

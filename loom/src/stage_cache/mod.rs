@@ -9,12 +9,16 @@
 //! or another user's directory), so a stage never adopts a cache it did not
 //! create.
 
+pub mod cleanup;
 mod developer;
 mod environment;
 mod roots;
+pub mod session;
 
 #[cfg(test)]
 mod contract_tests;
+#[cfg(test)]
+mod session_contract_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

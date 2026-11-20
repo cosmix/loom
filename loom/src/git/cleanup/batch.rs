@@ -33,7 +33,14 @@ pub fn cleanup_after_merge(
     let ownership = spool_ownership(stage_id, repo_root, config.force_worktree_removal)?;
     let branch_name = branch_name_for_stage(stage_id);
     drain_spool_before_removal(stage_id, repo_root, ownership);
-    let (worktree_removed, warnings) = cleanup_stage_worktree(stage_id, repo_root, config)?;
+    let (worktree_removed, mut warnings) = cleanup_stage_worktree(stage_id, repo_root, config)?;
+    // A retained worktree is a live stage: its cache stays with it.
+    if !Worktree::worktree_path(repo_root, stage_id).exists() {
+        if let Err(error) = crate::stage_cache::cleanup::remove_stage_cache_of(repo_root, stage_id)
+        {
+            warnings.push(format!("stage cache not removed: {error:#}"));
+        }
+    }
     let branch_deleted = cleanup_branch(stage_id, repo_root, config.force_branch_deletion)
         .with_context(|| format!("Failed to delete branch '{branch_name}'"))?;
     let base_branch_deleted = cleanup_base_branch(stage_id, repo_root)

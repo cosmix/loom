@@ -16,6 +16,7 @@ use crate::git::branch::{
 use crate::git::cleanup::{
     cleanup_all_base_branches, cleanup_multiple_stages, prune_worktrees, CleanupConfig,
 };
+use crate::models::worktree::Worktree;
 
 /// Non-destructive default for a flagless `loom clean`.
 ///
@@ -202,16 +203,13 @@ pub(super) fn clean_worktrees(repo_root: &Path) -> Result<(usize, usize)> {
     }
 
     // Collect all stage IDs from .worktrees/ directory
-    let mut stage_ids = Vec::new();
-    if let Ok(entries) = fs::read_dir(&worktrees_dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                let stage_id = entry.file_name().to_string_lossy().to_string();
-                stage_ids.push(stage_id);
-            }
-        }
-    }
+    let stage_ids: Vec<String> = fs::read_dir(&worktrees_dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|entry| entry.path().is_dir())
+        .map(|entry| entry.file_name().to_string_lossy().to_string())
+        .collect();
 
     // Use shared cleanup utilities for batch cleanup
     let config = CleanupConfig::forced();
@@ -272,6 +270,8 @@ pub(super) fn clean_worktrees(repo_root: &Path) -> Result<(usize, usize)> {
         }
     }
 
+    remove_stage_caches(repo_root, &stage_ids);
+
     // Remove the .worktrees directory itself if it still exists
     if worktrees_dir.exists() {
         fs::remove_dir_all(&worktrees_dir).with_context(|| {
@@ -288,6 +288,27 @@ pub(super) fn clean_worktrees(repo_root: &Path) -> Result<(usize, usize)> {
     }
 
     Ok((worktrees_removed, branches_removed))
+}
+
+/// A stage whose worktree survived cleanup still loses its worktree directory
+/// with `.worktrees/`, so its stage cache goes too; a failure is a warning.
+/// A stage whose worktree is gone already had its cache removal attempted (and
+/// any warning printed) by `cleanup_after_merge`.
+fn remove_stage_caches(repo_root: &Path, stage_ids: &[String]) {
+    let survivors = stage_ids
+        .iter()
+        .filter(|id| Worktree::worktree_path(repo_root, id).exists());
+    for stage_id in survivors {
+        if let Err(error) = crate::stage_cache::cleanup::remove_stage_cache_of(repo_root, stage_id)
+        {
+            println!(
+                "  {} {}: stage cache not removed: {}",
+                "⚠".yellow().bold(),
+                stage_id,
+                format!("{error:#}").dimmed()
+            );
+        }
+    }
 }
 
 #[cfg(test)]

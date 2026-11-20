@@ -1,10 +1,12 @@
 //! The boundary's environment, built from scratch, and the command the Cargo
 //! scratch reads it from.
+use std::collections::BTreeMap;
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use super::BOUNDARY_TMPDIR;
+use crate::stage_cache::{Consumer, StageCache};
 
 /// Where the launcher is mounted inside the boundary.
 pub(super) const LOOM_BIN: &str = "/loom-bin/loom";
@@ -85,4 +87,57 @@ pub(super) fn scratch_probe(
         probe.env("CARGO_HOME", cargo);
     }
     probe
+}
+
+/// `env` by name, as the host environment the stage cache reads its seeds
+/// from; a name that is not UTF-8 is skipped.
+pub(super) fn host_map(env: &[(OsString, OsString)]) -> BTreeMap<String, OsString> {
+    env.iter()
+        .filter_map(|(name, value)| Some((name.to_str()?.to_string(), value.clone())))
+        .collect()
+}
+
+/// `env` with the worker's stage cache variables set over it, each replacing
+/// a variable of the same name.
+pub(super) fn with_stage_cache(
+    env: &[(OsString, OsString)],
+    cache: &StageCache,
+    worktree: &Path,
+) -> Vec<(OsString, OsString)> {
+    let vars = cache.environment(Consumer::Worker, worktree, &host_map(env), None);
+    let mut merged: Vec<_> = env
+        .iter()
+        .filter(|(name, _)| name.to_str().is_none_or(|name| !vars.contains_key(name)))
+        .cloned()
+        .collect();
+    merged.extend(vars.into_iter().map(|(name, value)| (name.into(), value)));
+    merged
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_worker_cache_replaces_same_named_variables_and_keeps_the_rest() {
+        let home = tempfile::tempdir().unwrap();
+        let cache = StageCache::resolve(home.path(), "alpha", home.path(), None).unwrap();
+        let env = environment(&[("HOME".into(), home.path().into())], false, None);
+
+        let merged = with_stage_cache(&env, &cache, home.path());
+
+        let value = |name: &str| lookup(&merged, name).map(Path::new);
+        assert_eq!(
+            value("GOCACHE"),
+            Some(cache.root().join("go-build").as_path())
+        );
+        assert_eq!(value("HOME"), Some(home.path()));
+        assert_eq!(value("TMPDIR"), Some(Path::new(BOUNDARY_TMPDIR)));
+        let socket = cache.root().join("w.sock");
+        assert!(value("SCCACHE_SERVER_UDS").is_none_or(|uds| uds == socket));
+        assert_eq!(
+            merged.iter().filter(|(name, _)| name == "GOCACHE").count(),
+            1
+        );
+    }
 }

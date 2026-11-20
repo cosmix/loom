@@ -47,6 +47,7 @@ impl RealFixture {
             codex_program: pkg.join("bin/codex"),
             proxy_socket: pkg.join("proxy/proxy.sock"),
             loom_program: pkg.join("loom"),
+            stage_cache: None,
         };
         Self {
             _dirs: vec![home_tmp, w_tmp, pkg_tmp],

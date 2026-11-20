@@ -27,7 +27,7 @@ file tests/integration/plan_verify.rs 1027
 
 function src/cli/dispatch.rs dispatch 57
 function src/commands/clean/mod.rs print_summary 52
-function src/commands/clean/worktrees.rs clean_worktrees 110
+function src/commands/clean/worktrees.rs clean_worktrees 109
 function src/commands/graph/display.rs build_graph_display 52
 function src/commands/graph/tests.rs test_build_graph_display_shows_all_deps 70
 function src/commands/graph/tree.rs build_tree_display 57
