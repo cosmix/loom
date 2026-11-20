@@ -13,6 +13,7 @@ use tempfile::TempDir;
 use super::runner::{fail_queued, HostJobRunner, RunnerConfig};
 use super::store::{load_current, save_current, start_guarded_group};
 use super::submit::{cancel, submit, Submission, SubmitRequest};
+use super::tests_runner_group::require_guardians;
 use super::{JobKind, JobRecord, JobState};
 use crate::models::stage::{Stage, StageStatus};
 use crate::verify::criteria::GroupAnchor;
@@ -125,8 +126,10 @@ impl Criterion {
 
 impl Drop for Criterion {
     fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
+        // A sandbox that refuses the kill leaves `sleep 600` running: never wait.
+        if self.0.kill().is_ok() {
+            let _ = self.0.wait();
+        }
     }
 }
 
@@ -228,6 +231,7 @@ fn one_slot_runs_queued_jobs_one_after_the_other() {
 
 #[test]
 fn a_job_past_its_deadline_fails_and_its_child_and_criteria_die() {
+    require_guardians!("a_job_past_its_deadline_fails_and_its_child_and_criteria_die");
     let (_dir, work) = state_root();
     let mut runner = HostJobRunner::new(work.clone(), shell("sleep 600", 1))
         .with_deadline_override(Duration::from_secs(1));
@@ -256,6 +260,7 @@ fn a_job_past_its_deadline_fails_and_its_child_and_criteria_die() {
 
 #[test]
 fn cancelling_a_running_job_kills_its_child_and_criteria() {
+    require_guardians!("cancelling_a_running_job_kills_its_child_and_criteria");
     let (_dir, work) = state_root();
     let mut runner = HostJobRunner::new(work.clone(), shell("sleep 600", 1));
     let job = queue(&work, STAGE, Utc::now());
@@ -305,6 +310,7 @@ fn a_failed_start_pass_still_returns_the_records_already_settled() {
     if unsafe { libc::geteuid() } == 0 {
         return; // root lists any directory, so the failure cannot be injected
     }
+    require_guardians!("a_failed_start_pass_still_returns_the_records_already_settled");
     let (_dir, work) = state_root();
     let mut runner = HostJobRunner::new(work.clone(), shell("sleep 30", 1));
     let job = queue(&work, STAGE, Utc::now());
@@ -348,6 +354,7 @@ fn a_failed_start_pass_still_returns_the_records_already_settled() {
 
 #[test]
 fn a_child_killed_mid_run_takes_its_criteria_with_it() {
+    require_guardians!("a_child_killed_mid_run_takes_its_criteria_with_it");
     let (_dir, work) = state_root();
     let mut runner = HostJobRunner::new(work.clone(), shell("kill -9 $$", 1));
     let job = queue(&work, STAGE, Utc::now());

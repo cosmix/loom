@@ -37,6 +37,9 @@ fn stdout_of(spec: &CommandSpec, confinement: CommandConfinement) -> String {
 #[test]
 #[serial]
 fn confined_shell_command_does_not_see_ambient_secret() {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     std::env::set_var(CANARY_VAR, CANARY_VALUE);
 
     let environment = stdout_of(&CommandSpec::shell("env"), CommandConfinement::Confined);
@@ -78,6 +81,9 @@ fn inherited_shell_command_does_see_ambient_secret() {
 #[test]
 #[serial]
 fn confined_level_is_the_default_for_plain_criteria() {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     std::env::set_var(CANARY_VAR, CANARY_VALUE);
 
     let result = crate::verify::criteria::run_single_criterion("env", None)
@@ -94,6 +100,9 @@ fn confined_level_is_the_default_for_plain_criteria() {
 
 #[test]
 fn program_spec_passes_metacharacters_as_literal_arguments() {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     // Every one of these is shell soup; none of it may be interpreted.
     let hostile = "; rm -rf / $(whoami) `id` && echo pwned | tee /dev/null";
 
@@ -114,6 +123,9 @@ fn program_spec_passes_metacharacters_as_literal_arguments() {
 
 #[test]
 fn program_spec_reports_the_program_and_arguments_on_failure() {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     let spec = CommandSpec::program("loom-no-such-program", ["--flag"]);
     assert_eq!(spec.to_string(), "loom-no-such-program --flag");
 
@@ -129,6 +141,9 @@ fn program_spec_reports_the_program_and_arguments_on_failure() {
 #[test]
 #[serial]
 fn confined_spawn_excludes_an_ambient_rustc_wrapper() {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     let scratch = tempfile::Builder::new()
         .prefix("loom-confined-wrapper-")
         .tempdir_in(std::env::temp_dir())
@@ -166,6 +181,9 @@ fn confined_spawn_excludes_an_ambient_rustc_wrapper() {
 
 #[test]
 fn working_dir_is_honored_for_both_spec_kinds() {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     let temp = TempDir::new().unwrap();
     let dir = temp.path().canonicalize().unwrap();
     std::fs::write(dir.join("marker.txt"), "here").unwrap();
@@ -194,6 +212,9 @@ fn working_dir_is_honored_for_both_spec_kinds() {
 #[cfg(unix)]
 #[test]
 fn spawned_child_leads_its_own_process_group() {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     if crate::process::sandbox_probe::skip_unless(
         crate::process::sandbox_probe::process_group_visible(),
         "verify::criteria::tests::confine_tests::spawned_child_leads_its_own_process_group",

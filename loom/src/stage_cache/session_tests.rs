@@ -74,7 +74,16 @@ fn a_worktree_that_is_not_utf8_is_left_out() {
 /// host job or worker is granted, never in the shared stage root.
 #[test]
 fn the_session_socket_is_in_its_scratch_directory() {
-    let home = tempfile::tempdir().unwrap();
+    // A host job's TMPDIR is longer than `sun_path`, which turns the socket off.
+    let short = tempfile::tempdir_in("/tmp");
+    if crate::process::sandbox_probe::skip_unless(
+        short.is_ok(),
+        "the_session_socket_is_in_its_scratch_directory",
+        "/tmp is not writable, so no socket path fits sun_path",
+    ) {
+        return;
+    }
+    let home = short.unwrap();
     let scratch = home.path().join("scratch/session-1");
     let cache = cache_in(home.path()).with_socket_dir(&scratch);
 
@@ -82,6 +91,7 @@ fn the_session_socket_is_in_its_scratch_directory() {
     let exported = evaluated(&exports, home.path());
 
     let socket = scratch.join("s.sock").display().to_string();
+    assert!(socket.len() < 104, "{socket} does not fit sun_path");
     assert_eq!(
         exported.get("SCCACHE_SERVER_UDS"),
         Some(&socket),

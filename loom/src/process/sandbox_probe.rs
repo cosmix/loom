@@ -145,27 +145,29 @@ pub fn home_dir_resolvable() -> bool {
     *RESULT.get_or_init(|| dirs::home_dir().is_some())
 }
 
-/// Whether a bubblewrap-confined command can start here (Linux), using the
-/// namespace and mount options the verification runner relies on. A session
-/// sandbox that already nests bubblewrap, or forbids user namespaces, makes
-/// every confined verification command fail regardless of the code under test.
-/// Always true off Linux, where confinement is not bubblewrap. Memoized.
+/// Whether a confined command can start here: `bwrap` on Linux, using the
+/// namespace and mount options the verification runner relies on, or
+/// `sandbox-exec` on macOS. A session sandbox that already nests the launcher
+/// (bubblewrap, or a Seatbelt profile that differs from the outer one), or
+/// forbids user namespaces, makes every confined verification command fail
+/// regardless of the code under test. Always true on other platforms. Memoized.
 ///
-/// When it is false, every call prints why on stderr — `bwrap` missing, or
-/// `bwrap` failing with its exit status and first stderr line — so the
-/// caller's `SKIP` line beside it says which, and on every test that asks.
+/// When it is false, every call goes through `skip_unless`: it prints a `SKIP`
+/// line naming why (the launcher missing, or failing with its exit status and
+/// first stderr line), or panics under `LOOM_TEST_REQUIRE_SANDBOX_FREE=1` so CI
+/// cannot pass with these tests silently skipped. Callers return on false.
 pub fn confined_commands_runnable() -> bool {
     match confined_commands_blocker() {
         None => true,
         Some(why) => {
-            eprintln!("SKIP reason: confined commands cannot start: {why}");
+            skip_unless(false, "confined commands", &format!("cannot start: {why}"));
             false
         }
     }
 }
 
-/// Why confined commands cannot start here (`bwrap` missing, or failing with
-/// its exit status and first stderr line), or `None` when they can. Memoized;
+/// Why confined commands cannot start here (the launcher missing, or failing
+/// with its exit status and first stderr line), or `None` when they can. Memoized;
 /// prints nothing, for callers that report the reason themselves.
 pub fn confined_commands_blocker() -> Option<&'static str> {
     static RESULT: OnceLock<Result<(), String>> = OnceLock::new();
@@ -176,13 +178,41 @@ pub fn confined_commands_blocker() -> Option<&'static str> {
         .map(String::as_str)
 }
 
-/// Run one bubblewrap-confined `true`; `Err` names why it could not.
-fn confined_command_blocker() -> Result<(), String> {
-    if !cfg!(target_os = "linux") {
-        return Ok(());
+/// Run `program args..` with a null stdin and wait. `None` when it exits 0;
+/// otherwise the reason: its exit status and first non-empty stderr line, or
+/// the spawn error when it cannot be started.
+pub fn start_blocker(program: &Path, args: &[&str]) -> Option<String> {
+    let name = program.display();
+    let output = match std::process::Command::new(program)
+        .args(args)
+        .stdin(std::process::Stdio::null())
+        .output()
+    {
+        Ok(output) => output,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Some(format!("{name} not found"));
+        }
+        Err(error) => return Some(format!("{name} could not be started ({error})")),
+    };
+    if output.status.success() {
+        return None;
     }
-    let output = std::process::Command::new("bwrap")
-        .args([
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let first_line = stderr
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .unwrap_or("no stderr");
+    Some(format!("{name} failed ({}: {first_line})", output.status))
+}
+
+/// Start one confined `true` the way this platform's launcher does (`bwrap` on
+/// Linux, `sandbox-exec` on macOS); `Err` names why it could not. Off those
+/// platforms confinement is not probed.
+fn confined_command_blocker() -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    {
+        let args = [
             "--die-with-parent",
             "--unshare-all",
             "--new-session",
@@ -195,19 +225,53 @@ fn confined_command_blocker() -> Result<(), String> {
             "/dev",
             "--",
             "true",
-        ])
-        .stdin(std::process::Stdio::null())
-        .output()
-        .map_err(|error| match error.kind() {
-            std::io::ErrorKind::NotFound => "bwrap not found".to_string(),
-            _ => format!("bwrap could not be started ({error})"),
-        })?;
-    if output.status.success() {
-        return Ok(());
+        ];
+        match start_blocker(Path::new("bwrap"), &args) {
+            Some(reason) => Err(reason),
+            None => Ok(()),
+        }
     }
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let first_line = stderr.lines().next().unwrap_or("no stderr");
-    Err(format!("bwrap failed ({}: {first_line})", output.status))
+    #[cfg(target_os = "macos")]
+    {
+        let launcher = Path::new("/usr/bin/sandbox-exec");
+        if !launcher.is_file() {
+            return Err(format!("{} is missing", launcher.display()));
+        }
+        // A nested Seatbelt profile that differs from the outer one is refused
+        // with `sandbox_apply: Operation not permitted`.
+        let args = ["-p", "(version 1)(allow default)", "/usr/bin/true"];
+        match start_blocker(launcher, &args) {
+            Some(reason) => Err(reason),
+            None => Ok(()),
+        }
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    {
+        Ok(())
+    }
+}
+
+/// Whether this process can kill the process group of a child it started. A
+/// host job's Seatbelt profile may refuse it, and then tests that expect loom
+/// to retire a process group cannot run there. Memoized.
+pub fn process_groups_signalable() -> bool {
+    use std::os::unix::process::CommandExt;
+    static RESULT: OnceLock<bool> = OnceLock::new();
+    *RESULT.get_or_init(|| {
+        let spawned = std::process::Command::new("/bin/sleep")
+            .arg("30")
+            .stdin(std::process::Stdio::null())
+            .process_group(0)
+            .spawn();
+        let Ok(mut child) = spawned else {
+            return false;
+        };
+        let group = nix::unistd::Pid::from_raw(child.id() as i32);
+        let signalled = nix::sys::signal::killpg(group, nix::sys::signal::Signal::SIGKILL).is_ok();
+        let _ = child.kill();
+        let _ = child.wait();
+        signalled
+    })
 }
 
 /// Returns true if the caller should skip: `probe_ok` is false, so the

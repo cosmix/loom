@@ -57,6 +57,9 @@ mod tests {
 
     #[test]
     fn test_verify_truth_checks_exit_code_success() {
+        if !crate::process::sandbox_probe::confined_commands_runnable() {
+            return;
+        }
         let checks = vec![TruthCheck {
             command: "echo 'test' && exit 0".to_string(),
             stdout_contains: vec![],
@@ -81,6 +84,9 @@ mod tests {
 
     #[test]
     fn test_verify_truth_checks_exit_code_failure() {
+        if !crate::process::sandbox_probe::confined_commands_runnable() {
+            return;
+        }
         let checks = vec![TruthCheck {
             command: "exit 1".to_string(),
             stdout_contains: vec![],
@@ -106,6 +112,9 @@ mod tests {
 
     #[test]
     fn test_verify_truth_checks_stdout_contains_success() {
+        if !crate::process::sandbox_probe::confined_commands_runnable() {
+            return;
+        }
         let checks = vec![TruthCheck {
             command: "echo 'Hello World'".to_string(),
             stdout_contains: vec!["Hello".to_string(), "World".to_string()],
@@ -133,6 +142,9 @@ mod tests {
 
     #[test]
     fn test_verify_truth_checks_stdout_contains_failure() {
+        if !crate::process::sandbox_probe::confined_commands_runnable() {
+            return;
+        }
         let checks = vec![TruthCheck {
             command: "echo 'Hello'".to_string(),
             stdout_contains: vec!["World".to_string()],
@@ -158,6 +170,9 @@ mod tests {
 
     #[test]
     fn test_verify_truth_checks_stdout_not_contains_success() {
+        if !crate::process::sandbox_probe::confined_commands_runnable() {
+            return;
+        }
         let checks = vec![TruthCheck {
             command: "echo 'Hello World'".to_string(),
             stdout_contains: vec![],
@@ -185,6 +200,9 @@ mod tests {
 
     #[test]
     fn test_verify_truth_checks_stdout_not_contains_failure() {
+        if !crate::process::sandbox_probe::confined_commands_runnable() {
+            return;
+        }
         let checks = vec![TruthCheck {
             command: "echo 'ERROR: something went wrong'".to_string(),
             stdout_contains: vec![],
@@ -210,6 +228,9 @@ mod tests {
 
     #[test]
     fn test_verify_truth_checks_stderr_empty_success() {
+        if !crate::process::sandbox_probe::confined_commands_runnable() {
+            return;
+        }
         let checks = vec![TruthCheck {
             command: "echo 'test'".to_string(),
             stdout_contains: vec![],
@@ -234,6 +255,9 @@ mod tests {
 
     #[test]
     fn test_verify_truth_checks_stderr_empty_failure() {
+        if !crate::process::sandbox_probe::confined_commands_runnable() {
+            return;
+        }
         let checks = vec![TruthCheck {
             command: "echo 'error' >&2".to_string(),
             stdout_contains: vec![],
@@ -259,6 +283,9 @@ mod tests {
 
     #[test]
     fn test_verify_truth_checks_multiple_criteria() {
+        if !crate::process::sandbox_probe::confined_commands_runnable() {
+            return;
+        }
         let checks = vec![TruthCheck {
             command: "echo 'Success: operation completed'".to_string(),
             stdout_contains: vec!["Success".to_string()],

@@ -75,6 +75,9 @@ fn wiring(truth: &TruthCheck) -> WiringTest {
 
 #[test]
 fn assertion_surfaces_share_exit_and_output_semantics() {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     for (command, exit, passed) in [
         ("printf ok", 0, true),
         ("exit 7", 7, true),
@@ -89,6 +92,9 @@ fn assertion_surfaces_share_exit_and_output_semantics() {
 
 #[test]
 fn first_live_run_rejects_forbidden_suffix_beyond_capture_cap() {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     let command = "head -c 10485761 /dev/zero; printf forbidden";
     assert_surfaces(check(command, 0), false);
 }
@@ -118,5 +124,8 @@ fn typed_incomplete_capture_and_timeout_cannot_pass() {
 
 #[test]
 fn literal_capture_marker_is_ordinary_output() {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     assert_surfaces(check("printf '[output truncated at 10MB]'", 0), true);
 }

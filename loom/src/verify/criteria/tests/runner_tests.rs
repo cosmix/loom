@@ -101,6 +101,9 @@ fn run(fixture: &Fixture, stage: &Stage, config: &CriteriaConfig) -> AcceptanceR
 
 #[test]
 fn empty_and_mixed_uncached_stages_keep_existing_verdicts() {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     let empty = Stage::new("empty".to_string(), None);
     assert!(run_acceptance(&empty, None).unwrap().all_passed());
 
@@ -120,6 +123,9 @@ fn empty_and_mixed_uncached_stages_keep_existing_verdicts() {
 #[test]
 #[serial]
 fn repeated_identical_successful_contract_executes_once() {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     let fixture = Fixture::new("printf 'constant output'");
     let mut stage = extended_stage("sh scripts/probe.sh", &["constant output"], &[], false, 0);
     stage.sandbox.command_confinement = Some(CommandConfinement::Confined);
@@ -145,6 +151,9 @@ fn repeated_identical_successful_contract_executes_once() {
 #[test]
 #[serial]
 fn successful_contract_source_mutation_misses_and_executes() {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     let fixture = Fixture::new("printf 'constant output'");
     let mut stage = extended_stage("sh scripts/probe.sh", &["constant output"], &[], false, 0);
     stage.sandbox.command_confinement = Some(CommandConfinement::Confined);
@@ -164,6 +173,9 @@ fn successful_contract_source_mutation_misses_and_executes() {
 #[test]
 #[serial]
 fn forbidden_output_failure_executes_and_fails_twice() {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     let fixture = Fixture::new(":");
     let mut stage = extended_stage("printf forbidden", &[], &["forbidden"], false, 0);
     stage.setup.push("sh scripts/probe.sh".to_string());
@@ -182,6 +194,9 @@ fn forbidden_output_failure_executes_and_fails_twice() {
 #[test]
 #[serial]
 fn nonempty_stderr_failure_is_never_cached() {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     let fixture = Fixture::new("printf 'diagnostic' >&2");
     let stage = extended_stage("sh scripts/probe.sh", &[], &[], true, 0);
     let config = fixture.config(Duration::from_secs(2));
@@ -197,6 +212,9 @@ fn nonempty_stderr_failure_is_never_cached() {
 #[test]
 #[serial]
 fn expected_nonzero_pass_hits_and_preserves_exit_then_mutation_misses() {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     let fixture = Fixture::new("exit 7");
     let stage = extended_stage("sh scripts/probe.sh", &[], &[], false, 7);
     let config = fixture.config(Duration::from_secs(2));
@@ -215,6 +233,9 @@ fn expected_nonzero_pass_hits_and_preserves_exit_then_mutation_misses() {
 #[test]
 #[serial]
 fn changed_pattern_and_simple_to_extended_contracts_miss() {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     let fixture = Fixture::new("printf 'alpha beta'");
     let alpha = extended_stage("sh scripts/probe.sh", &["alpha"], &[], false, 0);
     let beta = extended_stage("sh scripts/probe.sh", &["beta"], &[], false, 0);
@@ -235,6 +256,9 @@ fn changed_pattern_and_simple_to_extended_contracts_miss() {
 #[test]
 #[serial]
 fn identical_simple_contract_hits_but_timeout_mutation_misses() {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     let fixture = Fixture::new(":");
     let stage = simple_stage("sh scripts/probe.sh");
     let two_seconds = fixture.config(Duration::from_secs(2));
@@ -260,6 +284,9 @@ fn identical_simple_contract_hits_but_timeout_mutation_misses() {
 #[test]
 #[serial]
 fn confinement_change_misses_and_inherit_always_bypasses() {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     let fixture = Fixture::new(":");
     let mut stage = simple_stage("sh scripts/probe.sh");
     let config = fixture.config(Duration::from_secs(2));
@@ -305,6 +332,9 @@ impl Drop for EnvGuard {
 #[test]
 #[serial]
 fn changed_allowlisted_environment_misses() {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     let guard = EnvGuard::set("LANG", "C");
     let fixture = Fixture::new(":");
     let stage = simple_stage("sh scripts/probe.sh");
@@ -323,6 +353,9 @@ fn changed_allowlisted_environment_misses() {
 
 #[test]
 fn bypass_policy_executes_every_time() {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     let fixture = Fixture::new(":");
     let stage = simple_stage("sh scripts/probe.sh");
     let config = CriteriaConfig::default()
@@ -337,6 +370,9 @@ fn bypass_policy_executes_every_time() {
 #[test]
 #[serial]
 fn refresh_policy_never_answers_from_the_cache_but_stores_its_pass() {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     let fixture = Fixture::new(":");
     let stage = simple_stage("sh scripts/probe.sh");
     let cached = fixture.config(Duration::from_secs(2));

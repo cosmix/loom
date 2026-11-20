@@ -9,14 +9,25 @@ use std::time::Duration;
 
 pub(super) fn launcher_available(name: &str) -> bool {
     !crate::process::sandbox_probe::skip_unless(
-        super::launcher().is_some(),
+        crate::process::sandbox_probe::confined_commands_runnable(),
         name,
-        "OS sandbox launcher absent",
+        "confined commands cannot start",
     )
 }
 
 #[test]
 fn private_scratch_stays_outside_temporary_root_working_directories() {
+    // A host job's profile grants only its own TMPDIR, so no other root is writable.
+    let roots_writable = ["/tmp", "/var/tmp"]
+        .iter()
+        .all(|root| tempfile::tempdir_in(root).is_ok());
+    if crate::process::sandbox_probe::skip_unless(
+        roots_writable,
+        "private_scratch_stays_outside_temporary_root_working_directories",
+        "/tmp or /var/tmp is not writable here",
+    ) {
+        return;
+    }
     let original = Command::new("/bin/bash");
     for root in [std::env::temp_dir(), PathBuf::from("/tmp")] {
         let cwd = root.canonicalize().unwrap();

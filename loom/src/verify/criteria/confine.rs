@@ -15,6 +15,9 @@
 
 #[path = "confine_host.rs"]
 pub(super) mod host;
+#[cfg(test)]
+#[path = "confine_policy.rs"]
+mod policy;
 #[path = "confine_scratch.rs"]
 mod scratch;
 #[path = "confine_spec.rs"]
@@ -29,6 +32,9 @@ pub(crate) use host::git_roots::git_dirs;
 pub(super) use host::git_roots::GitDirs;
 #[cfg(target_os = "linux")]
 pub(crate) use scratch::CargoScratch;
+
+#[cfg(test)]
+pub(crate) use policy::{confined_policy, ConfinedPolicy};
 
 /// The OS sandbox launcher tests need, when installed.
 #[cfg(test)]

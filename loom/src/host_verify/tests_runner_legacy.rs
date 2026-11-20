@@ -7,6 +7,7 @@ use std::time::{Duration, SystemTime};
 use super::runner::recover_after_restart;
 use super::store;
 use super::tests_runner::{guarded_criterion, state_root, Criterion, STAGE};
+use super::tests_runner_group::require_guardians;
 use super::tests_runner_recovery::running_record;
 use super::{JobRecord, JobState};
 
@@ -32,6 +33,7 @@ fn report(work: &Path, record: &JobRecord) -> Vec<u8> {
 
 #[test]
 fn recovery_preserves_legacy_evidence_and_still_retires_guarded_commands() {
+    require_guardians!("recovery_preserves_legacy_evidence_and_still_retires_guarded_commands");
     let (_directory, work) = state_root();
     let record = running_record(STAGE, None);
     store::save_current(&work, &record).unwrap();
@@ -60,6 +62,7 @@ fn recovery_preserves_legacy_evidence_and_still_retires_guarded_commands() {
 
 #[test]
 fn historical_legacy_jobs_keep_their_original_evidence_through_pruning() {
+    require_guardians!("historical_legacy_jobs_keep_their_original_evidence_through_pruning");
     let (_directory, work) = state_root();
     let mut old = running_record(STAGE, None);
     old.state = JobState::Interrupted;

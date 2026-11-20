@@ -95,6 +95,9 @@ mod tests {
 
     #[test]
     fn test_dead_code_detection_no_violations() {
+        if !crate::process::sandbox_probe::confined_commands_runnable() {
+            return;
+        }
         let check = DeadCodeCheck {
             command: "echo 'build successful'".to_string(),
             fail_patterns: vec!["warning: unused".to_string()],
@@ -119,6 +122,9 @@ mod tests {
 
     #[test]
     fn test_dead_code_detection_with_violations() {
+        if !crate::process::sandbox_probe::confined_commands_runnable() {
+            return;
+        }
         let check = DeadCodeCheck {
             command: "echo 'warning: unused function `old_helper`'".to_string(),
             fail_patterns: vec!["warning: unused".to_string()],
@@ -143,6 +149,9 @@ mod tests {
 
     #[test]
     fn test_dead_code_detection_with_ignore_patterns() {
+        if !crate::process::sandbox_probe::confined_commands_runnable() {
+            return;
+        }
         let check = DeadCodeCheck {
             command: "printf 'warning: unused function `old_helper`\\nwarning: unused function `allowed_unused_fn`'"
                 .to_string(),
@@ -171,6 +180,9 @@ mod tests {
 
     #[test]
     fn test_dead_code_detection_multiple_fail_patterns() {
+        if !crate::process::sandbox_probe::confined_commands_runnable() {
+            return;
+        }
         let check = DeadCodeCheck {
             command:
                 "printf 'warning: unused function `fn1`\\nwarning: field `field1` is never read'"
@@ -194,6 +206,9 @@ mod tests {
 
     #[test]
     fn test_dead_code_detection_empty_output() {
+        if !crate::process::sandbox_probe::confined_commands_runnable() {
+            return;
+        }
         let check = DeadCodeCheck {
             command: "echo ''".to_string(),
             fail_patterns: vec!["warning: unused".to_string()],

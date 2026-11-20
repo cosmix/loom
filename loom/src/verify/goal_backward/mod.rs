@@ -158,6 +158,9 @@ mod tests {
 
     #[test]
     fn gaps_name_their_wiring_and_wiring_tests_index() {
+        if !crate::process::sandbox_probe::confined_commands_runnable() {
+            return;
+        }
         let tmp = tempfile::tempdir().unwrap();
         std::fs::write(tmp.path().join("lib.rs"), "fn main() { start(); }\n").unwrap();
         let stage_def = StageDefinition {

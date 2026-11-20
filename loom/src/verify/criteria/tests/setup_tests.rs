@@ -6,6 +6,9 @@ use crate::verify::criteria::runner::run_acceptance;
 
 #[test]
 fn test_run_acceptance_with_setup_commands() {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     let mut stage = Stage::new("test".to_string(), None);
 
     if cfg!(target_family = "unix") {
@@ -32,6 +35,9 @@ fn test_run_acceptance_with_setup_commands() {
 
 #[test]
 fn test_run_acceptance_setup_failure_fails_criterion() {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     let mut stage = Stage::new("test".to_string(), None);
 
     if cfg!(target_family = "unix") {
@@ -52,6 +58,9 @@ fn test_run_acceptance_setup_failure_fails_criterion() {
 
 #[test]
 fn test_run_acceptance_multiple_setup_commands() {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     let mut stage = Stage::new("test".to_string(), None);
 
     if cfg!(target_family = "unix") {

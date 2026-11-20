@@ -26,6 +26,9 @@ fn go_stage(output: &str, prefix: &str) -> Stage {
 
 #[test]
 fn empty_go_packages_text_and_json_fail_live_acceptance() {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     for output in [EMPTY, EMPTY_JSON] {
         let dir = TempDir::new().unwrap();
         let stage = go_stage(output, "");
@@ -47,6 +50,9 @@ fn empty_go_packages_text_and_json_fail_live_acceptance() {
 
 #[test]
 fn first_live_run_rejects_zero_test_summary_beyond_capture_cap() {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     let dir = TempDir::new().unwrap();
     let stage = go_stage(EMPTY, "head -c 10485761 /dev/zero\n");
     let result = run_acceptance(&stage, Some(dir.path())).unwrap();
@@ -69,6 +75,9 @@ fn first_live_run_rejects_zero_test_summary_beyond_capture_cap() {
 
 #[test]
 fn mixed_go_packages_preserve_execution_evidence() {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     let dir = TempDir::new().unwrap();
     for output in [
         format!("{EMPTY}--- PASS: TestReal (0.00s)\nPASS\nok\texample.invalid/tested\t0.001s\n"),

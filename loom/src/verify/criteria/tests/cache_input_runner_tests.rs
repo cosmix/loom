@@ -89,6 +89,9 @@ fn run(fixture: &InputFixture, stage: &Stage) -> crate::verify::criteria::Accept
 #[test]
 #[serial]
 fn quoted_ignored_input_with_stdout_assertion_reexecutes_after_change() {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     let fixture = InputFixture::new("true");
     std::fs::write(fixture.repo.path().join(".gitignore"), "ignored data.txt\n").unwrap();
     let ignored = fixture.repo.path().join("ignored data.txt");
@@ -111,6 +114,9 @@ fn quoted_ignored_input_with_stdout_assertion_reexecutes_after_change() {
 #[test]
 #[serial]
 fn a_changed_selector_command_does_not_reuse_the_earlier_pass() {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     let fixture = InputFixture::new("true");
     let broad = extended("sh scripts/probe.sh -t 'rejects input'", "");
     let anchored = extended("sh scripts/probe.sh -t '^rejects input$'", "");
@@ -136,6 +142,9 @@ fn a_changed_selector_command_does_not_reuse_the_earlier_pass() {
 #[test]
 #[serial]
 fn command_changing_its_tracked_input_never_publishes() {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     let fixture = InputFixture::new("printf x >> source.txt");
     let stage = extended("sh scripts/probe.sh", "");
 
@@ -150,6 +159,9 @@ fn command_changing_its_tracked_input_never_publishes() {
 #[test]
 #[serial]
 fn truncated_command_output_is_not_cached_and_reexecutes() {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     let fixture = InputFixture::new("head -c 11000000 /dev/zero | tr '\\0' 'a'");
     let stage = extended("sh scripts/probe.sh", "a");
 
@@ -169,6 +181,9 @@ fn truncated_command_output_is_not_cached_and_reexecutes() {
 #[test]
 #[serial]
 fn untracked_content_hit_has_neighboring_byte_mutation_miss() {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     let fixture = InputFixture::new("cat input.dat");
     std::fs::write(fixture.repo.path().join("input.dat"), "alpha").unwrap();
     let stage = extended("sh scripts/probe.sh", "alpha");
@@ -187,6 +202,9 @@ fn untracked_content_hit_has_neighboring_byte_mutation_miss() {
 #[test]
 #[serial]
 fn ignored_and_external_inputs_bypass_and_reexecute_after_mutation() {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     let fixture = InputFixture::new(":");
     std::fs::write(fixture.repo.path().join(".gitignore"), "ignored.dat\n").unwrap();
     git(fixture.repo.path(), &["add", ".gitignore"]);
@@ -221,6 +239,9 @@ fn ignored_and_external_inputs_bypass_and_reexecute_after_mutation() {
 #[test]
 #[serial]
 fn tracked_source_symlink_change_bypasses_and_reexecutes() {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     use std::os::unix::fs::symlink;
 
     let fixture = InputFixture::new(":");
@@ -247,6 +268,9 @@ fn tracked_source_symlink_change_bypasses_and_reexecutes() {
 #[test]
 #[serial]
 fn unreadable_and_over_budget_inputs_bypass() {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     use std::os::unix::fs::PermissionsExt;
 
     let unreadable = InputFixture::new(":");
@@ -274,6 +298,9 @@ fn unreadable_and_over_budget_inputs_bypass() {
 #[test]
 #[serial]
 fn legacy_and_corrupt_records_each_force_a_real_execution() {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     let fixture = InputFixture::new("printf valid");
     let stage = extended("sh scripts/probe.sh", "valid");
     let first = run(&fixture, &stage);
@@ -320,6 +347,9 @@ impl Drop for PathGuard {
 #[test]
 #[serial]
 fn resolved_nested_executable_change_misses_after_neighboring_hit() {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
     use std::os::unix::fs::PermissionsExt;
 
     let fixture = InputFixture::new(":");

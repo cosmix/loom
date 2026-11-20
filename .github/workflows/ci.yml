@@ -180,6 +180,7 @@ jobs:
         run: cargo test --all-targets
         env:
           LOOM_E2E_REQUIRE_TMUX: "1"
+          LOOM_TEST_REQUIRE_SANDBOX_FREE: "1"
 
       - name: Run the bubblewrap capsule probe
         working-directory: loom
@@ -359,6 +360,7 @@ jobs:
         run: cargo test --all-targets --no-fail-fast
         env:
           LOOM_E2E_REQUIRE_TMUX: "1"
+          LOOM_TEST_REQUIRE_SANDBOX_FREE: "1"
 
       # Seeds the host caches that stage_cache::toolchain_tests:: reads, then
       # exports the coordinates the probes need through GITHUB_ENV.

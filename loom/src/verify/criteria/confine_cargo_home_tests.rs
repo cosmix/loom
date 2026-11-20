@@ -9,9 +9,9 @@ use std::process::Command;
 
 fn launcher_available(name: &str) -> bool {
     !crate::process::sandbox_probe::skip_unless(
-        super::launcher().is_some(),
+        crate::process::sandbox_probe::confined_commands_runnable(),
         name,
-        "OS sandbox launcher absent",
+        "confined commands cannot start",
     )
 }
 

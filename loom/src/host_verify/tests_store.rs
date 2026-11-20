@@ -374,6 +374,9 @@ fn pruning_keeps_a_job_cancelled_after_its_start_before_its_pid_was_written() {
 
 #[test]
 fn pruning_keeps_an_old_job_with_a_live_group_guardian() {
+    super::tests_runner_group::require_guardians!(
+        "pruning_keeps_an_old_job_with_a_live_group_guardian"
+    );
     let (_dir, work) = state_root();
     let mut old = record(JobState::Cancelled);
     old.started_at = Some(Utc::now() - chrono::Duration::minutes(3));
