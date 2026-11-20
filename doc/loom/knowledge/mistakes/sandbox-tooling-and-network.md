@@ -385,3 +385,13 @@ unprivileged user namespace `bwrap` creates. With both steps the confined tests 
 **Prevention**: Run these tests with TMPDIR pointing to the existing output/playwright/tmp workspace directory.
 
 **Fix**: Repeat collection with that explicit TMPDIR; distinguish this setup failure from test failures.
+
+## Plan Dry Run Timed Out Every Cargo Criterion on macOS
+
+**What happened:** `loom plan verify --dry-run` on this repository ran 35 minutes without judging one criterion. Every cargo criterion hit its 300 s timeout and its rerun. The cold build in the dry-run checkout never got through `aws-lc-sys`'s build script, where each `cc` call started an `xcodebuild -sdk ... -version PlatformPath` lookup.
+
+**Why:** `verify/criteria/confine.rs::apply_confined_environment` put the real developer tools on `PATH` (and set `SDKROOT`, `DEVELOPER_DIR`) only when a stage cache was passed, and the dry run passes none. Every bare `cc` went through the `/usr/bin` xcrun shim, whose cache the boundary denies, at about 1.5 s per call. A killed build script keeps none of its progress, so the warm-cache rerun started `aws-lc-sys` from scratch each time.
+
+**Prevention:** an environment fix the boundary forces (here, the xcrun cache denial) applies to every confined command, never only to the callers that carry an unrelated option such as the stage cache. When a dry run times out on a cold build, look at the slowest build script's children before raising the timeout.
+
+**Fix:** `apply_confined_environment` applies `DeveloperTools::environment` whenever `DeveloperTools::detect()` finds the tools, cache or not; `a_command_without_a_stage_cache_resolves_git_in_the_developer_directory` (`verify/criteria/confine_stage_cache_tests.rs`) covers it.

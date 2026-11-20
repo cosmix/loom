@@ -132,3 +132,13 @@ include `INDEX.md` in it.
 **Prevention:** Pass `--` before a positional section body that may begin with a hyphen.
 
 **Fix:** Retry the replacement with the option terminator.
+
+## Deleted Another Agent's Knowledge Entry After Fixing What It Described
+
+**What happened:** after fixing the plan dry run's missing xcrun bypass, the main agent ran `loom knowledge delete-section` on the concern another agent had filed about it ("Plan Dry Run on macOS Lacks the xcrun Bypass, So Cargo Criteria Time Out" in `concerns/sandbox-and-confinement-gaps.md`). The operator corrected it, and the section was restored from git.
+
+**Why:** the agent read the current-truth rule as licence to remove an entry whose problem it had just fixed.
+
+**Prevention:** never remove a knowledge entry someone else wrote, resolved or not. Leave it in place, or ask the operator; `delete-section` is only for an entry the operator asks to remove.
+
+**Fix:** `git checkout -- doc/loom/knowledge/concerns/sandbox-and-confinement-gaps.md` restored the section.

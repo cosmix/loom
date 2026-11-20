@@ -157,7 +157,7 @@
 | [host-verify-group-containment](mistakes/host-verify-group-containment.md) |  | 47 |
 | [knowledge-base-drift](mistakes/knowledge-base-drift.md) |  | 276 |
 | [knowledge-cli-invariants](mistakes/knowledge-cli-invariants.md) | Rules | 241 |
-| [knowledge-write-channel](mistakes/knowledge-write-channel.md) | Writes | 134 |
+| [knowledge-write-channel](mistakes/knowledge-write-channel.md) | Writes | 144 |
 | [ledger-tui-rendering](mistakes/ledger-tui-rendering.md) |  | 84 |
 | [live-state-pollution](mistakes/live-state-pollution.md) |  | 133 |
 | [maintainability-baseline](mistakes/maintainability-baseline.md) |  | 103 |
@@ -187,7 +187,7 @@
 | [sandbox-hook-preflight](mistakes/sandbox-hook-preflight.md) | Check 5 hook preflight: why extending its program denylist fails | 13 |
 | [sandbox-protected-hooks-dir](mistakes/sandbox-protected-hooks-dir.md) |  | 37 |
 | [sandbox-state-channels](mistakes/sandbox-state-channels.md) |  | 299 |
-| [sandbox-tooling-and-network](mistakes/sandbox-tooling-and-network.md) |  | 387 |
+| [sandbox-tooling-and-network](mistakes/sandbox-tooling-and-network.md) |  | 397 |
 | [sandbox-write-rules-inert](mistakes/sandbox-write-rules-inert.md) |  | 67 |
 | [schema-reuse-and-silent-skips](mistakes/schema-reuse-and-silent-skips.md) |  | 130 |
 | [session-identity-env](mistakes/session-identity-env.md) | Env | 126 |
