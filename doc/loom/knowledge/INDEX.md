@@ -53,7 +53,7 @@
 | [plan-lifecycle-and-fields](architecture/plan-lifecycle-and-fields.md) |  | 284 |
 | [plan-server](architecture/plan-server.md) | Chat | 293 |
 | [planner-feature-screens](architecture/planner-feature-screens.md) | Spine | 48 |
-| [planner-uploads-and-drafts](architecture/planner-uploads-and-drafts.md) |  | 35 |
+| [planner-uploads-and-drafts](architecture/planner-uploads-and-drafts.md) |  | 37 |
 | [planner-web-shell](architecture/planner-web-shell.md) | Shell | 147 |
 | [planning-document-model](architecture/planning-document-model.md) | Docs | 183 |
 | [planning-guidance](architecture/planning-guidance.md) |  | 43 |
@@ -172,7 +172,7 @@
 | [planner-follow-ups-delivery](mistakes/planner-follow-ups-delivery.md) | Slips | 196 |
 | [planner-polish](mistakes/planner-polish.md) | Polish | 127 |
 | [planner-redesign](mistakes/planner-redesign.md) |  | 80 |
-| [planner-review-fixes](mistakes/planner-review-fixes.md) |  | 139 |
+| [planner-review-fixes](mistakes/planner-review-fixes.md) |  | 149 |
 | [planner-ui-repair](mistakes/planner-ui-repair.md) | Repair | 215 |
 | [planner-visual-feedback-shortfall](mistakes/planner-visual-feedback-shortfall.md) | Visual | 24 |
 | [planning-sandbox-delivery](mistakes/planning-sandbox-delivery.md) |  | 90 |
@@ -232,6 +232,7 @@
 | [native-codex-qualification](concerns/native-codex-qualification.md) |  | 95 |
 | [plan-chat-followups](concerns/plan-chat-followups.md) | Chat | 41 |
 | [planner-follow-ups-followups](concerns/planner-follow-ups-followups.md) |  | 91 |
+| [planner-kickoff-fixes-followups](concerns/planner-kickoff-fixes-followups.md) | Kickoff-fixes open items: web/dist hook, gate env, reviewer suggestions | 31 |
 | [planner-ui-repair-followups](concerns/planner-ui-repair-followups.md) | UI | 214 |
 | [planning-document-model-followups](concerns/planning-document-model-followups.md) |  | 170 |
 | [planning-guidance-followups](concerns/planning-guidance-followups.md) |  | 43 |
