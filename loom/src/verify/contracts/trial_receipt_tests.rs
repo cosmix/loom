@@ -37,6 +37,7 @@ fn job(
         finished_at: None,
         pid: None,
         detail: None,
+        at_base: false,
     };
     job_store::save_current(work_dir, &record).unwrap();
     let result = JobResult {

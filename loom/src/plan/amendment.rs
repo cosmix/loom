@@ -288,5 +288,6 @@ mod tests;
 mod transaction;
 pub use apply::apply_amendment;
 pub use journal::plan_versions_dir;
+pub(crate) use journal::read_audit_rows;
 use journal::*;
 pub use recovery::verify_plan_versions_consistency;

@@ -155,6 +155,7 @@ impl Fixture {
             finished_at: None,
             pid: None,
             detail: None,
+            at_base: false,
         };
         store::save_current(&self.work_dir, &record).expect("save current record");
         record

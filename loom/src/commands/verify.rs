@@ -5,7 +5,8 @@
 //! - WIRING: Critical connections between components
 //!
 //! A full run of a `standard` stage whose contracts are frozen also runs the
-//! contracts; `--contracts` runs only them (`verify_selection.rs`).
+//! contracts; `--contracts` runs only them (`verify_selection.rs`). A session's
+//! `--criterion <n> --at-base` runs criteria at the stage's base as a host job.
 
 use anyhow::{bail, Context, Result};
 use colored::Colorize;
@@ -28,7 +29,7 @@ mod selection;
 mod session_relay;
 
 pub use selection::{check_selection, CheckArgs, CheckSelection};
-use selection::{run_contracts_section, TRIAL_NEEDS_SESSION};
+use selection::{run_contracts_section, AT_BASE_NEEDS_SESSION, TRIAL_NEEDS_SESSION};
 
 /// Execute the verify command for the selection `args` names. The state
 /// directory resolves in the main repository and in a worktree (where it is
@@ -51,6 +52,7 @@ pub fn execute(stage_id: &str, suggest: bool, args: &CheckArgs) -> Result<()> {
             return check.into_result(stage_id);
         }
         CheckSelection::Trial(_) => bail!(TRIAL_NEEDS_SESSION),
+        CheckSelection::AtBase(_) => bail!(AT_BASE_NEEDS_SESSION),
         CheckSelection::All => Vec::new(),
         CheckSelection::Criteria(criteria) => criteria,
     };

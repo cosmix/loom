@@ -188,6 +188,7 @@ pub(super) fn running_record(stage_id: &str, pid: Option<u32>) -> JobRecord {
         finished_at: None,
         pid,
         detail: None,
+        at_base: false,
     }
 }
 

@@ -15,7 +15,8 @@
 //!    a target that is not a regular file), so a refusal leaves the plan
 //!    unamended;
 //! 3. the verdict's `contracts` patches are applied, every one or none past
-//!    the per-stage amendment cap (which escalates, as for a criterion);
+//!    the per-stage amendment cap (which escalates, as for a criterion), and
+//!    each contract a patch deletes is recorded as a hand-off;
 //! 4. each file is written;
 //! 5. the stage's whole frozen set is re-frozen once (`apply_contract::refreeze`).
 //!
@@ -30,11 +31,13 @@ use crate::models::dispute::{
     ContractRuling, ContractRulingKind, DisputeKind, FileReplacement, PlanPatch,
 };
 use crate::models::stage::Stage;
-use crate::plan::amendment::AmendmentRequest;
+use crate::plan::amendment::{AmendmentField, AmendmentPatch, AmendmentRequest};
 use crate::stage_service::contracts::Site;
 use crate::verify::contracts::store::{contract_file, contract_files, load_freeze, FreezeRecord};
+use crate::verify::review::handoffs::Handoff;
 
-use super::apply::{amend_plan, escalate_amendment_cap};
+use super::apply::escalate_amendment_cap;
+use super::apply_accept::{amend_with_handoffs, verdict_amended};
 use super::apply_contract::{amended_ids, check_writable, conflict, refreeze, write, Refrozen};
 use super::apply_kinds::notify_and_requeue;
 use super::plan_patch::build_amendment_requests;
@@ -78,7 +81,7 @@ pub(super) fn apply(
     let Some(site) = checked_site(work_dir, stage, &record, &writes, dispute)? else {
         return Ok(());
     };
-    if !amend(work_dir, stage, requests)? {
+    if !amend(work_dir, stage, requests, (dispute, rulings))? {
         return Ok(());
     }
     let written = (&writes[..], &amended);
@@ -219,15 +222,58 @@ fn amendment_requests(
     Ok((requests, amended))
 }
 
-/// Apply `requests`; `false` when the amendment cap escalated the stage
-/// instead.
-fn amend(work_dir: &Path, stage: &mut Stage, requests: Vec<AmendmentRequest>) -> Result<bool> {
-    for request in requests {
-        if !amend_plan(work_dir, stage, request)? {
-            return Ok(false);
-        }
-    }
-    Ok(true)
+/// Record a hand-off for every contract `requests` delete, then apply them;
+/// `false` when the amendment cap escalated the stage instead. A replay that
+/// finds the verdict's amendment begun computes none: the list it would read
+/// them from is amended, and they were recorded before it was.
+fn amend(
+    work_dir: &Path,
+    stage: &mut Stage,
+    requests: Vec<AmendmentRequest>,
+    (dispute, rulings): (u32, &[ContractRuling]),
+) -> Result<bool> {
+    let handoffs = if verdict_amended(work_dir, &stage.id, &dispute.to_string())? {
+        Vec::new()
+    } else {
+        deleted_contracts(stage, &requests, dispute, rulings)
+    };
+    let stage_id = stage.id.clone();
+    amend_with_handoffs(work_dir, stage, &stage_id, requests, &handoffs)
+}
+
+/// A hand-off for each contract a `delete` of `requests` removes, read from
+/// the list before it is amended: its tests run nowhere once deleted.
+fn deleted_contracts(
+    stage: &Stage,
+    requests: &[AmendmentRequest],
+    dispute: u32,
+    rulings: &[ContractRuling],
+) -> Vec<Handoff> {
+    requests
+        .iter()
+        .filter(|request| request.field == AmendmentField::Contracts)
+        .filter_map(|request| match request.patch {
+            AmendmentPatch::Delete { index } => Some(index),
+            _ => None,
+        })
+        .filter_map(|index| Some((index, stage.contracts.get(index)?)))
+        .map(|(index, contract)| {
+            let reasoning = rulings
+                .iter()
+                .find(|ruling| ruling.contract == contract.id)
+                .map_or("", |ruling| ruling.reasoning.as_str());
+            Handoff {
+                stage: stage.id.clone(),
+                field: "contracts".to_string(),
+                index,
+                tests: vec![contract.id.clone()],
+                runs_at: "nowhere".to_string(),
+                reason: format!("{} (deleted: {reasoning})", contract.scenario),
+                dispute: dispute.to_string(),
+                verified: false,
+            }
+        })
+        .collect()
 }
 
 #[cfg(test)]

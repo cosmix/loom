@@ -37,6 +37,7 @@ fn record_trial(work_dir: &Path, head: &str, files: &[(&str, &str)]) {
         finished_at: None,
         pid: None,
         detail: None,
+        at_base: false,
     };
     store::save_current(work_dir, &record).unwrap();
     let result = JobResult {

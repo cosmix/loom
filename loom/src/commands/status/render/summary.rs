@@ -63,7 +63,29 @@ fn write_completion_summary<W: Write>(w: &mut W, summary: &CompletionSummary) ->
             icon, stage.id, status_text, duration
         )?;
     }
-    writeln!(w)
+    writeln!(w)?;
+    write_handoffs(w, summary)
+}
+
+/// The amendment count and the tests left out of stage checks, when there are any.
+fn write_handoffs<W: Write>(w: &mut W, summary: &CompletionSummary) -> io::Result<()> {
+    if summary.amendments > 0 {
+        writeln!(
+            w,
+            "Adjudicators amended {} checks in this plan.",
+            summary.amendments
+        )?;
+    }
+    if !summary.handoffs.is_empty() {
+        writeln!(w, "Tests left out of a stage check:")?;
+        for line in &summary.handoffs {
+            writeln!(w, "  {line}")?;
+        }
+    }
+    if summary.amendments > 0 || !summary.handoffs.is_empty() {
+        writeln!(w)?;
+    }
+    Ok(())
 }
 
 /// Write a simple ASCII execution graph showing stage dependencies.
@@ -160,6 +182,7 @@ mod tests {
             success_count: 2,
             failure_count: 0,
             plan_path: "doc/plans/PLAN-test.md".to_string(),
+            ..Default::default()
         });
         assert!(text.contains("\u{2713} Orchestration Complete\n"), "{text}");
         assert!(text.contains("Plan: doc/plans/PLAN-test.md"), "{text}");
@@ -176,6 +199,7 @@ mod tests {
             success_count: 0,
             failure_count: 1,
             plan_path: "unknown".to_string(),
+            ..Default::default()
         });
         assert!(
             text.contains("\u{2717} Orchestration Complete (with failures)\n"),
@@ -183,5 +207,28 @@ mod tests {
         );
         assert!(text.contains("\u{2713} 0 | \u{2717} 1"), "{text}");
         assert!(text.contains("failing"), "{text}");
+    }
+
+    #[test]
+    fn handed_off_tests_and_amendments_are_listed_only_when_there_are_any() {
+        let quiet = rendered(&CompletionSummary::default());
+        assert!(!quiet.contains("amended"), "{quiet}");
+        assert!(!quiet.contains("left out"), "{quiet}");
+
+        let text = rendered(&CompletionSummary {
+            amendments: 3,
+            handoffs: vec!["alpha acceptance[1]: slow_test -> ci: needs network".to_string()],
+            ..Default::default()
+        });
+        assert!(
+            text.contains("Adjudicators amended 3 checks in this plan.\n"),
+            "{text}"
+        );
+        assert!(
+            text.contains(
+                "Tests left out of a stage check:\n  alpha acceptance[1]: slow_test -> ci: needs network\n"
+            ),
+            "{text}"
+        );
     }
 }

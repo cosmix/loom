@@ -148,3 +148,32 @@ fn canonical_patches_inner_round_trips_through_normalize() {
     assert_eq!(out_patches, patches);
     assert_eq!(out_reason.as_deref(), Some("because"));
 }
+
+#[test]
+fn leaves_out_survives_canonicalization() {
+    let leaves_out = json!([{
+        "index": 0,
+        "tests": ["net_fetch"],
+        "runs_at": "ci",
+        "reason": "needs the network",
+    }]);
+    let raw = json!({
+        "field": "acceptance",
+        "op": "delete",
+        "index": 0,
+        "leaves_out": leaves_out,
+    });
+    let (field, patches, reason) = normalize(&raw).unwrap();
+    let inner = with_leaves_out(
+        canonical_patches_inner(field, &patches, reason.as_deref()),
+        &raw,
+    );
+    assert_eq!(inner["leaves_out"], leaves_out);
+    assert_eq!(inner["patches"], json!([{"op": "delete", "index": 0}]));
+
+    let none = with_leaves_out(
+        canonical_patches_inner(field, &patches, None),
+        &json!({"field": "acceptance"}),
+    );
+    assert!(none.get("leaves_out").is_none(), "{none}");
+}

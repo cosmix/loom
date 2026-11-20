@@ -108,6 +108,22 @@ fn replacements(
     }
 }
 
+fn selected_criteria(selection: &CheckSelection) -> Option<&[usize]> {
+    match selection {
+        CheckSelection::Criteria(criteria) | CheckSelection::AtBase(criteria) => {
+            Some(criteria.as_slice())
+        }
+        _ => None,
+    }
+}
+
+fn runs_contracts(selection: &CheckSelection) -> bool {
+    matches!(
+        selection,
+        CheckSelection::Contracts | CheckSelection::Trial(_)
+    )
+}
+
 fn request_or_wait(
     context: &RelayContext,
     stage_id: &str,
@@ -121,14 +137,7 @@ fn request_or_wait(
         Ok(found) => found,
         Err(error) => return refuse(out, &format!("{error:#}")),
     };
-    let criteria = match selection {
-        CheckSelection::Criteria(criteria) => Some(criteria.as_slice()),
-        _ => None,
-    };
-    let contracts = matches!(
-        selection,
-        CheckSelection::Contracts | CheckSelection::Trial(_)
-    );
+    let (criteria, contracts) = (selected_criteria(selection), runs_contracts(selection));
     let site = WaitSite {
         work_dir,
         stage_id,
@@ -140,6 +149,7 @@ fn request_or_wait(
         // The selection rides on the ticket; the daemon's job runs only it.
         criteria,
         contracts: contracts.then_some(replacements.as_slice()),
+        at_base: matches!(selection, CheckSelection::AtBase(_)),
         scratch_dir: &context.scratch_dir,
         budget: wait::budget_for(&target.stage),
     };

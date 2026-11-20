@@ -49,6 +49,7 @@ fn completion_retains_scheduler_error_after_following_status_update() {
             success_count: 0,
             failure_count: 1,
             plan_path: "plan".into(),
+            ..Default::default()
         },
     });
     app.handle_response(Response::StatusUpdate {
@@ -110,6 +111,7 @@ fn tui_receives_fragmented_completion_before_daemon_eof() {
             success_count: 0,
             failure_count: 0,
             plan_path: "completed.yaml".into(),
+            ..Default::default()
         },
     };
     let mut frame = Vec::new();

@@ -13,12 +13,15 @@ use loom::models::dispute::{applied_marker, request_file, verdict_file, DisputeR
 use loom::models::stage::{Stage, StageStatus};
 use loom::orchestrator::adjudication::{feedback, verdict_draft_file, AdjudicatorRegistry};
 use loom::plan::schema::AcceptanceCriterion;
+use narrowing_support::*;
 use std::path::{Path, PathBuf};
 
 #[path = "adjudication_e2e/amendment.rs"]
 mod amendment;
 #[path = "adjudication_e2e/kinds.rs"]
 mod kinds;
+#[path = "adjudication_e2e/narrowing_support.rs"]
+mod narrowing_support;
 #[path = "adjudication_e2e/sessions.rs"]
 mod sessions;
 
@@ -55,9 +58,7 @@ fn make_stage_two_criteria(id: &str) -> Stage {
         working_dir: Some(".".to_string()),
         status: StageStatus::NeedsAdjudication,
         acceptance: vec![
-            AcceptanceCriterion::Simple(
-                "test -f /__loom_intentionally_wrong/marker.txt".to_string(),
-            ),
+            AcceptanceCriterion::Simple(FIRST_CRITERION.to_string()),
             AcceptanceCriterion::Simple("ls /tmp".to_string()),
         ],
         ..Default::default()
@@ -145,45 +146,6 @@ fn verdict_reject() -> serde_json::Value {
         "citations": [
             {"file": "src/a.rs", "line": 1, "excerpt": "fn foo", "claim": "function exists"}
         ]
-    })
-}
-
-fn verdict_accept_with_amendment() -> serde_json::Value {
-    serde_json::json!({
-        "verdict": "accept",
-        "reasoning": "criterion was overspecified",
-        "citations": [
-            {"file": "src/a.rs", "line": 1, "excerpt": "X", "claim": "Y"}
-        ],
-        "plan_patch": {
-            "stage_id": "s1",
-            "field": "acceptance",
-            "patch": {"op": "delete", "index": 0},
-            "reason": "test amendment"
-        }
-    })
-}
-
-/// An Accept verdict whose `plan_patch` deletes acceptance[0]. Targets the
-/// stage seeded by [`make_stage_two_criteria`].
-fn verdict_accept_delete_first() -> serde_json::Value {
-    serde_json::json!({
-        "verdict": "accept",
-        "reasoning": "acceptance[0] references a path that cannot exist; criterion has no valid interpretation",
-        "citations": [
-            {
-                "file": "PLAN.md",
-                "line": 1,
-                "excerpt": "intentionally_wrong",
-                "claim": "path does not exist in the project root"
-            }
-        ],
-        "plan_patch": {
-            "stage_id": "s1",
-            "field": "acceptance",
-            "patch": {"op": "delete", "index": 0},
-            "reason": "criterion path is mechanically wrong"
-        }
     })
 }
 
@@ -286,6 +248,7 @@ fn failed_accept_amendment_leaves_verdict_unapplied() {
     let work = tmp.path();
     write_plan(work);
     write_stage(work, &make_stage("s1"));
+    seed_failing_base_run(work, "s1", "cargo test");
     write_dispute(work, "s1", 1);
     // Pre-seed feedback while exercising a failed amendment.
     feedback::append_questions(work, "s1", &["stale".into()], feedback::EVIDENCE_ACTION).unwrap();
@@ -343,6 +306,7 @@ fn dispute_amendment_is_idempotent_under_repeat_apply() {
     let work = tmp.path();
     write_plan_with_metadata_markers(work);
     write_stage(work, &make_stage_two_criteria("s1"));
+    seed_failing_base_run(work, "s1", FIRST_CRITERION);
     write_dispute(work, "s1", 1);
 
     let reg = AdjudicatorRegistry::new();
@@ -434,6 +398,7 @@ fn amendment_cap_exceeded_escalates_to_human_review() {
     let work = tmp.path();
     write_plan_with_cap(work, 2);
     write_stage(work, &make_stage_three_criteria("s1"));
+    seed_three_criteria_base_runs(work);
 
     let reg = AdjudicatorRegistry::new();
     let accept = verdict_accept_delete_first();

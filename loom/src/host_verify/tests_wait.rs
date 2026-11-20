@@ -60,6 +60,7 @@ impl Fx {
             contracts: None,
             scratch_dir: &self.scratch,
             budget,
+            at_base: false,
         }
     }
 
@@ -90,6 +91,7 @@ impl Fx {
             finished_at: None,
             pid: None,
             detail: None,
+            at_base: false,
         }
     }
 

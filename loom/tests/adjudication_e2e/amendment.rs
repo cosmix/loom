@@ -25,6 +25,7 @@ fn verdict_accept_delete_first_flat() -> serde_json::Value {
             "field": "acceptance",
             "op": "delete",
             "index": 0,
+            "leaves_out": leaves_out_first(),
             "reason": "criterion path is mechanically wrong"
         }
     })
@@ -96,6 +97,7 @@ fn dispute_to_amendment_to_pass() {
     let work = tmp.path();
     let plan = write_plan_with_metadata_markers(work);
     write_stage(work, &make_stage_two_criteria("s1"));
+    seed_failing_base_run(work, "s1", FIRST_CRITERION);
     write_dispute(work, "s1", 1);
 
     let reg = AdjudicatorRegistry::new();
@@ -125,6 +127,7 @@ fn dispute_to_amendment_to_pass_with_flat_plan_patch() {
     let work = tmp.path();
     let plan = write_plan_with_metadata_markers(work);
     write_stage(work, &make_stage_two_criteria("s1"));
+    seed_failing_base_run(work, "s1", FIRST_CRITERION);
     write_dispute(work, "s1", 1);
 
     let reg = AdjudicatorRegistry::new();

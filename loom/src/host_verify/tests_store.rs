@@ -45,6 +45,7 @@ fn record(state: JobState) -> JobRecord {
         finished_at: None,
         pid: None,
         detail: None,
+        at_base: false,
     }
 }
 

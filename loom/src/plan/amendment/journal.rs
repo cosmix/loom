@@ -73,18 +73,30 @@ impl PlanVersionsLock {
 /// without tooling: `version | stage_id | field | patch_op | index |
 /// applied_at | dispute_id | reason`.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct AuditRow {
-    pub(super) version: u64,
-    pub(super) stage_id: String,
-    pub(super) field: AmendmentField,
-    pub(super) patch_op: &'static str,
-    pub(super) index: usize,
-    pub(super) applied_at: DateTime<Utc>,
-    pub(super) dispute_id: Option<String>,
-    pub(super) reason: Option<String>,
+pub(crate) struct AuditRow {
+    pub(crate) version: u64,
+    pub(crate) stage_id: String,
+    pub(crate) field: AmendmentField,
+    pub(crate) patch_op: &'static str,
+    pub(crate) index: usize,
+    pub(crate) applied_at: DateTime<Utc>,
+    pub(crate) dispute_id: Option<String>,
+    pub(crate) reason: Option<String>,
 }
 
 impl AuditRow {
+    /// The field's name as the audit table writes it.
+    pub(crate) fn field_name(&self) -> &'static str {
+        match self.field {
+            AmendmentField::Acceptance => "acceptance",
+            AmendmentField::Wiring => "wiring",
+            AmendmentField::WiringTests => "wiring_tests",
+            AmendmentField::Contracts => "contracts",
+            AmendmentField::Harness => "harness",
+            AmendmentField::Reachable => "reachable",
+        }
+    }
+
     pub(super) fn to_markdown_row(&self) -> String {
         // The audit log uses a markdown table parsed by splitting on '|'.
         // We aggressively sanitise the reason cell so a stray pipe or
@@ -98,14 +110,7 @@ impl AuditRow {
             .replace('|', "/")
             .replace('\n', " ");
         let dispute = self.dispute_id.as_deref().unwrap_or("");
-        let field = match self.field {
-            AmendmentField::Acceptance => "acceptance",
-            AmendmentField::Wiring => "wiring",
-            AmendmentField::WiringTests => "wiring_tests",
-            AmendmentField::Contracts => "contracts",
-            AmendmentField::Harness => "harness",
-            AmendmentField::Reachable => "reachable",
-        };
+        let field = self.field_name();
         format!(
             "| {} | {} | {} | {} | {} | {} | {} | {} |\n",
             self.version,
@@ -127,7 +132,7 @@ pub(super) const AUDIT_HEADER: &str = "# Plan Amendment Audit\n\n\
 /// Read every audit row from `.loom/work/plan_versions/audit.md` (empty if missing).
 /// A present journal must have the published table framing. Its rows are
 /// authoritative evidence for recovery, so damaged rows cannot be skipped.
-pub(super) fn read_audit_rows(work_dir: &Path) -> Result<Vec<AuditRow>> {
+pub(crate) fn read_audit_rows(work_dir: &Path) -> Result<Vec<AuditRow>> {
     let dir = plan_versions_dir(work_dir);
     let audit_path = dir.join(AUDIT_FILE_NAME);
     if !audit_path.exists() {

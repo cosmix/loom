@@ -219,6 +219,7 @@ fn save_passing_trial(work_dir: &Path, stage_id: &str, head: &str, content: &str
         no_cache: false,
         criteria: None,
         contracts: true,
+        at_base: false,
         state: JobState::Passed,
         requests: Vec::new(),
         queued_at: chrono::Utc::now(),

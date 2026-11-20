@@ -100,6 +100,10 @@ fn collect_completion_with_details(work_dir: &Path) -> Result<(CompletionSummary
             "{failure_count} stage(s) did not complete successfully"
         ));
     }
+    let (handoffs, amendments) = completion_handoffs(work_dir, &stages, &mut errors);
+    if !errors.is_empty() && failure_count == 0 {
+        failure_count = 1;
+    }
     Ok((
         CompletionSummary {
             total_duration_secs,
@@ -107,9 +111,35 @@ fn collect_completion_with_details(work_dir: &Path) -> Result<(CompletionSummary
             success_count,
             failure_count,
             plan_path,
+            handoffs,
+            amendments,
         },
         errors,
     ))
+}
+
+/// The rendered hand-off lines and the amendment count of the plan. A journal
+/// that cannot be read is a diagnostic, never an empty list.
+fn completion_handoffs(
+    work_dir: &Path,
+    stages: &[StageCompletionInfo],
+    errors: &mut Vec<String>,
+) -> (Vec<String>, usize) {
+    use crate::orchestrator::signals::{handoff_line, plan_amendments, stage_handoffs};
+
+    let handoffs = stage_handoffs(work_dir, stages.iter().map(|stage| stage.id.as_str()))
+        .map(|found| found.iter().map(handoff_line).collect())
+        .unwrap_or_else(|error| {
+            errors.push(format!("Cannot read recorded hand-offs: {error:#}"));
+            Vec::new()
+        });
+    let amendments = plan_amendments(work_dir)
+        .map(|found| found.len())
+        .unwrap_or_else(|error| {
+            errors.push(format!("Cannot read the amendment journal: {error:#}"));
+            0
+        });
+    (handoffs, amendments)
 }
 
 fn summarize_stages(records: Vec<Stage>) -> (Vec<StageCompletionInfo>, usize, usize, i64) {

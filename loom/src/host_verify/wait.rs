@@ -50,6 +50,9 @@ pub struct WaitSite<'a> {
     /// replacement files it trials, none for a plain contracts check; `None`
     /// for every other job.
     pub contracts: Option<&'a [FileReplacement]>,
+    /// A check of `criteria` at the stage's base commit (`loom check
+    /// --at-base`); only a check sets it.
+    pub at_base: bool,
     pub scratch_dir: &'a Path,
     pub budget: Duration,
 }
@@ -198,6 +201,7 @@ fn state_matches(site: &WaitSite<'_>, state: &RequestState, head: &str, digest: 
         && state.no_cache == site.no_cache
         && state.criteria.as_deref() == site.criteria
         && state.contracts == site.contracts.map(trial_files)
+        && state.at_base == site.at_base
 }
 
 /// A passed completion, and a freeze job that passed or failed, are decided
@@ -272,6 +276,7 @@ fn request(
         criteria: site.criteria.map(<[usize]>::to_vec),
         contracts: site.contracts.is_some(),
         replacements: site.contracts.map(<[_]>::to_vec).unwrap_or_default(),
+        at_base: site.at_base,
     })
     .context("the request was not sent")?;
     let state = RequestState {
@@ -281,6 +286,7 @@ fn request(
         no_cache: site.no_cache,
         criteria: site.criteria.map(<[usize]>::to_vec),
         contracts: site.contracts.map(trial_files),
+        at_base: site.at_base,
         submitted_at: Utc::now(),
     };
     write_state(path, &state).context("the request was not sent")?;

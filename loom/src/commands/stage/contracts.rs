@@ -147,6 +147,7 @@ fn relay_freeze(context: &RelayContext, call: &FreezeCall<'_>, out: &mut dyn Wri
         contracts: None,
         scratch_dir: &context.scratch_dir,
         budget: wait::budget_for(&call.site.stage),
+        at_base: false,
     };
     freeze_pending::refuse_other_flags(&site, call.choices)?;
     let mut ticket = TicketSink::default();

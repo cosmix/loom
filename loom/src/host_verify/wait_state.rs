@@ -29,6 +29,9 @@ pub(super) struct RequestState {
     /// (`trial_files`), empty for a plain contracts check; `None` otherwise.
     #[serde(default)]
     pub(super) contracts: Option<Vec<TrialFile>>,
+    /// A check of `criteria` at the stage's base commit.
+    #[serde(default)]
+    pub(super) at_base: bool,
     pub(super) submitted_at: DateTime<Utc>,
 }
 
@@ -42,9 +45,13 @@ pub(super) fn state_path(site: &WaitSite<'_>) -> Result<PathBuf> {
 }
 
 /// Bounded, dot-free identity of one selection and cache flag. A contracts
-/// check adds its replaced files and their bytes' hashes.
+/// check adds its replaced files and their bytes' hashes; a run at the base
+/// is its own selection.
 fn selection_key(site: &WaitSite<'_>) -> String {
     let mut text = format!("{:?}|{}", site.criteria, site.no_cache);
+    if site.at_base {
+        text.push_str("|at-base");
+    }
     if let Some(replacements) = site.contracts {
         let files = trial_files(replacements);
         text.push_str("|contracts");
@@ -190,6 +197,7 @@ fn pruned(site: &WaitSite<'_>, state: &RequestState, job_id: &str) -> JobRecord 
         no_cache: state.no_cache,
         criteria: state.criteria.clone(),
         contracts: state.contracts.is_some(),
+        at_base: state.at_base,
         state: JobState::Cancelled,
         requests: vec![state.request_id.clone()],
         queued_at: state.submitted_at,

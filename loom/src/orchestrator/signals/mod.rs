@@ -4,6 +4,7 @@ mod contract;
 mod crud;
 mod format;
 mod generate;
+mod handoffs;
 mod helpers;
 mod knowledge;
 mod merge;
@@ -26,6 +27,9 @@ mod allocation_contract_tests;
 
 #[cfg(test)]
 mod budget_contract_tests;
+
+#[cfg(test)]
+mod handoffs_contract_tests;
 
 #[cfg(test)]
 mod native_doctrine_contract_tests;
@@ -95,6 +99,7 @@ pub use generate::{
     build_embedded_context_with_stage, generate_signal, generate_signal_with_metrics,
     generate_signal_with_skills, DEFAULT_MAX_SKILL_RECOMMENDATIONS,
 };
+pub(crate) use handoffs::{handoff_line, plan_amendments, stage_handoffs};
 pub use knowledge::generate_knowledge_signal;
 pub use merge::{generate_merge_signal, read_merge_signal};
 pub use merge_discovery::find_live_merge_session_for_stage;

@@ -343,6 +343,7 @@ fn orchestration_complete_round_trip() {
             success_count: 1,
             failure_count: 0,
             plan_path: "doc/plans/PLAN-test.md".to_string(),
+            ..Default::default()
         },
     };
     let mut buffer = Vec::new();

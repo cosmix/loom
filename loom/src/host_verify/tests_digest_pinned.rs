@@ -92,6 +92,7 @@ fn record(head: String, tree_digest: String) -> JobRecord {
         finished_at: None,
         pid: None,
         detail: None,
+        at_base: false,
     }
 }
 

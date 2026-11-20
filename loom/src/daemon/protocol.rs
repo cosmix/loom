@@ -38,7 +38,7 @@ pub struct StageCompletionInfo {
 ///
 /// Sent to all status subscribers when the orchestrator finishes
 /// executing all stages (successfully or with failures).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CompletionSummary {
     /// Total orchestration duration in seconds
     pub total_duration_secs: i64,
@@ -50,6 +50,12 @@ pub struct CompletionSummary {
     pub failure_count: usize,
     /// Path to the plan that was executed
     pub plan_path: String,
+    /// One line per test an adjudicator left out of a stage's check
+    #[serde(default)]
+    pub handoffs: Vec<String>,
+    /// Number of amendments adjudicators made to the plan
+    #[serde(default)]
+    pub amendments: usize,
 }
 
 /// Configuration parameters for daemon mode.

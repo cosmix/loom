@@ -19,7 +19,7 @@
 //!
 //! Which verdicts a dispute takes depends on its kind: the rules above are
 //! those of a criterion dispute, whose accept must also amend a list the
-//! disputed one admits (see `admits`); `verdict_kinds` holds the findings,
+//! disputed one admits (see `plan_patch::admits`); `verdict_kinds` holds the findings,
 //! integrity and impact-test rules, built from the same parts. Freeze-refusal
 //! and contract verdicts are checked against their stage instead, and refused
 //! rather than coerced (`parse_and_validate_in`, `verdict_freeze_refusal`,
@@ -31,8 +31,9 @@ use std::path::Path;
 
 use crate::models::dispute::{Citation, CriterionField, DisputeKind, DisputeVerdict, PlanPatch};
 use crate::models::stage::Stage;
-use crate::plan::amendment::AmendmentField;
 
+use super::plan_patch::{admits, admitted_fields, wrong_list};
+use super::verdict_narrowing::{check_narrowing, narrowing_inputs};
 use super::{plan_patch, verdict_contract, verdict_freeze_refusal, verdict_kinds};
 
 /// Result of parsing + validating raw JSON from the model.
@@ -81,7 +82,9 @@ pub(crate) struct RecordContext<'a> {
 /// contract dispute's against the stage and its freeze record
 /// (`verdict_contract`); every defect is an `Err` naming it for the judge to
 /// correct: coerced to needs-more-evidence, it would reach the agent and cost
-/// it an evidence round. Every other kind keeps its self-correcting rules.
+/// it an evidence round. Every other kind keeps its self-correcting rules; a
+/// criterion accept that narrows the acceptance is also checked against the
+/// stage's base runs (`verdict_narrowing`).
 pub(crate) fn parse_and_validate_in(
     raw: &str,
     kind: &DisputeKind,
@@ -91,7 +94,11 @@ pub(crate) fn parse_and_validate_in(
         kind,
         DisputeKind::FreezeRefusal { .. } | DisputeKind::Contract { .. }
     ) {
-        return Ok(parse_and_validate_for(raw, kind));
+        let outcome = parse_and_validate_for(raw, kind);
+        if let Some(n) = narrowing_inputs(&outcome, kind, context)? {
+            check_narrowing(&context.stage.id, "", n.plan_patch, &n.current, &n.evidence)?;
+        }
+        return Ok(outcome);
     }
     let json = parse_json_lenient(raw)
         .map_err(|e| format!("the verdict is not valid JSON: {e}; write a single JSON object"))?;
@@ -269,44 +276,14 @@ fn validate_accept(json: &Value, disputed: CriterionField) -> ValidationOutcome 
     }
     ValidationOutcome::Verdict(DisputeVerdict::Accept {
         plan_patch: PlanPatch {
-            inner: plan_patch::canonical_patches_inner(field, &patches, patch_reason.as_deref()),
+            inner: plan_patch::with_leaves_out(
+                plan_patch::canonical_patches_inner(field, &patches, patch_reason.as_deref()),
+                &plan_patch_raw,
+            ),
         },
         citations,
         reasoning,
     })
-}
-
-/// Whether an accept on a dispute over `disputed`'s list may amend `field`:
-/// an acceptance dispute may amend `acceptance` or `wiring`, a wiring or
-/// wiring-tests dispute only its own list.
-fn admits(disputed: CriterionField, field: AmendmentField) -> bool {
-    field == disputed.amendment_field()
-        || (disputed == CriterionField::Acceptance && field == AmendmentField::Wiring)
-}
-
-/// The `plan_patch.field` values an accept on a dispute over `disputed`'s
-/// list may carry, as a re-prompt spells them.
-fn admitted_fields(disputed: CriterionField) -> &'static str {
-    match disputed {
-        CriterionField::Acceptance => "\"acceptance\"|\"wiring\"",
-        CriterionField::Wiring => "\"wiring\"",
-        CriterionField::WiringTests => "\"wiring-tests\"",
-    }
-}
-
-/// The question for an accept whose `plan_patch` amends a list the dispute
-/// does not contest: it names the disputed list and the field to use.
-fn wrong_list(disputed: CriterionField, plan_patch_raw: &Value) -> String {
-    let amended = plan_patch_raw
-        .get("field")
-        .and_then(Value::as_str)
-        .unwrap_or_default();
-    format!(
-        "Accept verdict 'plan_patch' amends '{amended}', but this dispute contests the \
-         stage's {} list. Re-emit plan_patch with \"field\": {}.",
-        disputed.as_str(),
-        admitted_fields(disputed)
-    )
 }
 
 pub(super) fn validate_reject(json: &Value) -> ValidationOutcome {

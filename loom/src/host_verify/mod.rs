@@ -20,6 +20,7 @@ pub mod apply;
 mod apply_rejection;
 pub(crate) mod apply_retry;
 pub mod child;
+mod child_base;
 mod child_complete;
 mod child_contracts;
 pub(crate) mod child_policy;
@@ -51,6 +52,8 @@ mod tests_apply;
 mod tests_apply_recovery;
 #[cfg(test)]
 mod tests_child;
+#[cfg(test)]
+mod tests_child_base;
 #[cfg(test)]
 mod tests_child_complete;
 #[cfg(test)]
@@ -186,6 +189,10 @@ pub struct JobRecord {
     /// the job's `replacements.json` file. Only a check sets it.
     #[serde(default)]
     pub contracts: bool,
+    /// A check of `criteria` against a checkout of the stage's base commit
+    /// (`loom check --at-base`), recorded as base evidence. Only a check sets it.
+    #[serde(default)]
+    pub at_base: bool,
     pub state: JobState,
     /// Relay request ids joined to this job, the last 16 kept.
     pub requests: Vec<String>,
