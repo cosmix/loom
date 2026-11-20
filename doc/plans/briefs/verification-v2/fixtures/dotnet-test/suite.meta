@@ -1,0 +1,3 @@
+command: dotnet test
+exit: 1
+cwd: .

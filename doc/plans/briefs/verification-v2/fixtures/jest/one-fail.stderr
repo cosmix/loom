@@ -1,0 +1,23 @@
+FAIL ./fixture.test.js
+  ● beta_fails
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 5
+    Received: 4
+
+       8 |
+       9 | test('beta_fails', () => {
+    > 10 |   expect(add(2, 2)).toBe(5);
+         |                     ^
+      11 | });
+      12 |
+      13 | test('gamma_passes', () => {
+
+      at Object.toBe (fixture.test.js:10:21)
+
+Test Suites: 1 failed, 1 total
+Tests:       1 failed, 2 skipped, 3 total
+Snapshots:   0 total
+Time:        0.176 s, estimated 1 s
+Ran all test suites matching fixture.test.js with tests matching "beta_fails".

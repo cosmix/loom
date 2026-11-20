@@ -1,0 +1,3 @@
+command: python3 -m pytest test_fixture.py -q --color=no
+exit: 1
+cwd: .

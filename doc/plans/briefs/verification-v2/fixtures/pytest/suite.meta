@@ -1,0 +1,3 @@
+command: python3 -m pytest test_fixture.py -q
+exit: 1
+cwd: .

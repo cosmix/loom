@@ -1,0 +1,3 @@
+command: dart test test/fixture_test.dart
+exit: 1
+cwd: .

@@ -1,0 +1,3 @@
+command: flutter test test/fixture_test.dart --plain-name 'delta_missing' --no-color
+exit: 1
+cwd: .

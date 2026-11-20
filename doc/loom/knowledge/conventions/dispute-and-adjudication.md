@@ -136,3 +136,11 @@ loom stage dispute-contract <stage> --contract <id> --replacement <path> --reaso
 - **Judging.** The prompt adds `## Proposed replacement` and a frozen → replacement diff (`prompt/contract_replacement.rs`). The judge runs no code: the contract command in the prompt runs the frozen content, and the judge reviews the replacement statically. Completion runs it after an accept. Every contract prompt forbids asking the agent to edit a frozen file.
 - **Accept** writes the bytes from the admitted dispute record into the worktree before the re-freeze ([Accepted Dispute Re-Freeze](../architecture/contract-phase.md#accepted-dispute-re-freeze)). The write is uncommitted: the accept notice tells the agent to `git add` the file and commit it through `loom stage commit`. A reject leaves the worktree unchanged.
 - **Needs more evidence.** For a contract dispute the feedback says never to edit a frozen file and to re-file with a complete `--replacement`; an earlier replacement is not carried over. `apply.rs::apply_needs_more_evidence` still owns the evidence-round cap.
+
+## Verification Design Priorities
+
+Every change to verification, completion, disputes or adjudication is judged against three priorities, in this order. A lower one never buys an exception to a higher one.
+
+1. **No stage code runs outside a sandbox.** System integrity comes first. An unwrapped run, `sandbox.command_confinement: inherit` used as a fix, and a broker or job that applies a profile the stage authored are all rejected, whatever autonomy they would buy.
+2. **A person is the last resort.** `NeedsHumanReview` and `--force-unsafe` are for needs only a person can meet. A design that sends a class of stage there routinely is rejected: an environment-caused failure needs an exit the stage and the adjudicator can take alone.
+3. **A stage agent cannot game its own checks.** A contract is never skipped or exempted. The adjudicator may narrow, rewrite or delete a criterion or a contract that is wrong, meaning it cannot pass whatever the implementation; it never does so as the easy way out, and the stage agent never does so at all.

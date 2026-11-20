@@ -1,0 +1,11 @@
+
+ RUN  v5.0.1 /tmp/claude-1000/-home-dkaponis-src-loom/99212933-6012-4c4f-a6a4-f4e7f5668350/scratchpad/runner-projects/vitest
+
+ ❯ fixture.test.js (3 tests | 1 failed | 2 skipped) 6ms
+   × beta_fails 5ms
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 2 skipped (3)
+   Start at  17:53:38
+   Duration  107ms (transform 39%, import 28%, tests 22%, worker 10%)
+

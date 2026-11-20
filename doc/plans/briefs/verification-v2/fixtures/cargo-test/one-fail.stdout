@@ -1,0 +1,20 @@
+
+running 1 test
+test tests::beta_fails ... FAILED
+
+failures:
+
+---- tests::beta_fails stdout ----
+
+thread 'tests::beta_fails' (3701442) panicked at src/lib.rs:16:9:
+assertion `left == right` failed: deliberate failure
+  left: 4
+ right: 5
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    tests::beta_fails
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+

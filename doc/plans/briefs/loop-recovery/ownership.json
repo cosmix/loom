@@ -1,0 +1,294 @@
+{
+  "worker-evidence": {
+    "W1": {
+      "brief": "doc/plans/briefs/loop-recovery/worker-evidence/w1-lifecycle.md",
+      "files": [
+        "loom-hooks/subagent-start.sh",
+        "loom-hooks/subagent-stop.sh",
+        "loom-hooks/teammate-idle.sh",
+        "loom/src/commands/subagents/classify.rs",
+        "loom/src/commands/subagents/classify/entry.rs",
+        "loom/src/commands/subagents/classify_recovery_tests.rs",
+        "loom/src/commands/subagents/classify_tests.rs",
+        "loom/src/commands/subagents/ledger.rs",
+        "loom/src/commands/subagents/ledger_tests.rs",
+        "loom/src/commands/subagents/render.rs",
+        "loom/src/commands/subagents/summary.rs",
+        "loom/src/commands/subagents/table.rs",
+        "loom/src/fs/permissions/constants.rs",
+        "loom/src/fs/permissions/tests/constants_tests.rs",
+        "loom/src/fs/permissions/tests/hooks_tests.rs",
+        "loom/src/hooks/config.rs",
+        "loom/src/hooks/tests.rs",
+        "loom/src/subagent_lifecycle/**",
+        "loom/src/subagent_lifecycle/claude.rs",
+        "loom/src/subagent_lifecycle/mod.rs",
+        "loom/src/subagent_lifecycle/model.rs",
+        "loom/src/subagent_lifecycle/store.rs",
+        "loom/tests/worker_evidence.rs"
+      ],
+      "new_helper_namespaces": [
+        "loom/src/subagent_lifecycle/**"
+      ]
+    },
+    "W2": {
+      "brief": "doc/plans/briefs/loop-recovery/worker-evidence/w2-codex.md",
+      "files": [
+        "agents/loom-codex-forwarder.md",
+        "loom-hooks/_codex-direct.py",
+        "loom-hooks/codex-forward-guard.sh",
+        "loom-hooks/codex-forward-result.sh",
+        "loom-hooks/codex-forward.sh",
+        "loom-hooks/tests/codex-forward-records-model.sh",
+        "loom-hooks/tests/codex-forward-wrapper.sh",
+        "loom-hooks/tests/run-all.sh",
+        "loom/src/codex_lifecycle.rs",
+        "loom/src/codex_lifecycle/**",
+        "loom/src/commands/status/data/execution_models.rs",
+        "loom/src/fs/permissions/constants.rs",
+        "loom/src/fs/permissions/hooks/config.rs",
+        "loom/src/fs/permissions/tests/constants_tests.rs",
+        "loom/src/fs/permissions/tests/hooks_tests.rs",
+        "loom/src/lib.rs",
+        "loom/src/orchestrator/monitor/core.rs",
+        "loom/src/orchestrator/signals/format/codex.rs",
+        "loom/src/orchestrator/signals/tests_cache.rs",
+        "loom/src/orchestrator/signals/tests_doctrine.rs",
+        "loom/tests/codex_evidence.rs"
+      ],
+      "new_helper_namespaces": [
+        "loom/src/codex_lifecycle/**"
+      ]
+    },
+    "ledger": {
+      "brief": "doc/plans/briefs/loop-recovery/common.md",
+      "files": [
+        "loom/maintainability-baseline.txt"
+      ]
+    }
+  },
+  "owned-waits": {
+    "w1-wait": {
+      "brief": "doc/plans/briefs/loop-recovery/owned-waits/w1-wait.md",
+      "files": [
+        "loom/src/commands/subagents/mod.rs",
+        "loom/src/commands/subagents/render.rs",
+        "loom/src/commands/subagents/resolve.rs",
+        "loom/src/commands/subagents/wait/**",
+        "loom/src/commands/subagents/wait/engine.rs",
+        "loom/src/commands/subagents/wait/identity.rs",
+        "loom/src/commands/subagents/wait/lease.rs",
+        "loom/src/commands/subagents/wait/mod.rs",
+        "loom/src/commands/subagents/wait/model.rs",
+        "loom/src/commands/subagents/wait/tests.rs",
+        "loom/tests/subagent_owned_wait.rs"
+      ],
+      "new_helper_namespaces": [
+        "loom/src/commands/subagents/wait/**"
+      ]
+    },
+    "w2-progress": {
+      "brief": "doc/plans/briefs/loop-recovery/owned-waits/w2-progress.md",
+      "files": [
+        "CLAUDE.md.template",
+        "loom-hooks/_post-tool-heartbeat.sh",
+        "loom-hooks/_progress-classification.sh",
+        "loom-hooks/poll-guard.sh",
+        "loom-hooks/post-tool-use.sh",
+        "loom-hooks/session-start.sh",
+        "loom-hooks/subagent-stop.sh",
+        "loom-hooks/teammate-idle.sh",
+        "loom-hooks/tests/poll-guard-subagent-waits.sh",
+        "loom-hooks/tests/progress-heartbeat.sh",
+        "loom-hooks/tests/run-all.sh",
+        "loom/src/commands/status/data/collector_activity_tests.rs",
+        "loom/src/commands/status/data/heartbeat_facts.rs",
+        "loom/src/fs/permissions/constants.rs",
+        "loom/src/fs/permissions/tests/constants_tests.rs",
+        "loom/src/fs/permissions/tests/hooks_tests.rs",
+        "loom/src/fs/session_files/exact.rs",
+        "loom/src/models/session/methods.rs",
+        "loom/src/orchestrator/core/event_handler.rs",
+        "loom/src/orchestrator/core/heartbeat_apply.rs",
+        "loom/src/orchestrator/monitor/detection.rs",
+        "loom/src/orchestrator/monitor/events.rs",
+        "loom/src/orchestrator/monitor/heartbeat.rs",
+        "loom/src/orchestrator/monitor/heartbeat/tests.rs",
+        "loom/src/orchestrator/monitor/heartbeat_store.rs",
+        "loom/src/orchestrator/monitor/hung_latch.rs",
+        "loom/src/orchestrator/monitor/mod.rs",
+        "loom/src/orchestrator/monitor/progress/**",
+        "loom/src/orchestrator/monitor/tests/ceiling_retries.rs",
+        "loom/src/orchestrator/monitor/tests/heartbeats.rs",
+        "loom/src/orchestrator/signals/format/helpers.rs",
+        "loom/src/orchestrator/signals/tests_doctrine_waiting.rs"
+      ],
+      "new_helper_namespaces": [
+        "loom/src/orchestrator/monitor/progress/**"
+      ]
+    },
+    "ledger": {
+      "brief": "doc/plans/briefs/loop-recovery/common.md",
+      "files": [
+        "loom/maintainability-baseline.txt"
+      ]
+    }
+  },
+  "completion-recovery": {
+    "W1": {
+      "brief": "doc/plans/briefs/loop-recovery/completion-recovery/w1-checkpoints.md",
+      "files": [
+        "loom/src/commands/handoff/create.rs",
+        "loom/src/commands/handoff/create/tests.rs",
+        "loom/src/commands/stage/session.rs",
+        "loom/src/commands/stage/tests/session.rs",
+        "loom/src/fs/session_files.rs",
+        "loom/src/fs/session_files/exact.rs",
+        "loom/src/handoff/completion/**",
+        "loom/src/handoff/generator/content.rs",
+        "loom/src/handoff/generator/formatter.rs",
+        "loom/src/handoff/generator/lookup.rs",
+        "loom/src/handoff/generator/mod.rs",
+        "loom/src/handoff/generator/tests.rs",
+        "loom/src/handoff/mod.rs",
+        "loom/src/handoff/schema/completion.rs",
+        "loom/src/handoff/schema/mod.rs",
+        "loom/src/handoff/schema/types.rs",
+        "loom/src/handoff/schema/v2.rs",
+        "loom/src/models/session/completion/**",
+        "loom/src/models/session/methods.rs",
+        "loom/src/models/session/mod.rs",
+        "loom/src/models/session/tests/helpers.rs",
+        "loom/src/models/session/tests/session_status_transitions.rs",
+        "loom/src/models/session/tests/session_transitions.rs",
+        "loom/src/models/session/tests/session_workflows.rs",
+        "loom/src/models/session/transitions.rs",
+        "loom/src/models/session/types.rs",
+        "loom/src/orchestrator/continuation/context.rs",
+        "loom/src/orchestrator/continuation/tests.rs",
+        "loom/src/orchestrator/monitor/handlers.rs"
+      ],
+      "new_helper_namespaces": [
+        "loom/src/handoff/completion/**",
+        "loom/src/models/session/completion/**"
+      ]
+    },
+    "W3": {
+      "brief": "doc/plans/briefs/loop-recovery/completion-recovery/w3-recovery.md",
+      "files": [
+        "loom/src/commands/stage/state.rs",
+        "loom/src/commands/stage/state/loop_recovery/**",
+        "loom/src/orchestrator/core/completion_handler.rs",
+        "loom/src/orchestrator/core/event_handler.rs",
+        "loom/src/orchestrator/core/event_handler/governor_retry_tests.rs",
+        "loom/src/orchestrator/core/event_handler/governor_tests.rs",
+        "loom/src/orchestrator/core/event_handler/governor_tests_restart.rs",
+        "loom/src/orchestrator/core/event_handler/recover_hung.rs",
+        "loom/src/orchestrator/core/event_handler/recover_hung_tests.rs",
+        "loom/src/orchestrator/core/event_handler/stage_takedown.rs",
+        "loom/src/orchestrator/core/event_handler/stalled_judge.rs",
+        "loom/src/orchestrator/core/event_handler/stalled_judge_tests.rs",
+        "loom/src/orchestrator/core/event_handler/takedown_identity_tests.rs",
+        "loom/src/orchestrator/core/event_handler/verdict_retirement_tests.rs",
+        "loom/src/orchestrator/core/judge_close.rs",
+        "loom/src/orchestrator/core/loop_recovery/**",
+        "loom/src/orchestrator/core/merge_handler.rs",
+        "loom/src/orchestrator/core/merge_handler_attempt_tests.rs",
+        "loom/src/orchestrator/core/recovery.rs",
+        "loom/src/orchestrator/core/recovery_sync_tests.rs",
+        "loom/src/orchestrator/core/verdict_apply.rs",
+        "loom/src/orchestrator/core/verdict_apply_tests.rs",
+        "loom/src/orchestrator/monitor/completion_blockers.rs",
+        "loom/src/orchestrator/monitor/core.rs",
+        "loom/src/orchestrator/monitor/detection.rs",
+        "loom/src/orchestrator/monitor/events.rs",
+        "loom/src/orchestrator/monitor/mod.rs",
+        "loom/src/orchestrator/monitor/session_events.rs",
+        "loom/src/plan/graph/mod.rs",
+        "loom/src/plan/graph/tests.rs"
+      ],
+      "new_helper_namespaces": [
+        "loom/src/orchestrator/core/loop_recovery/**",
+        "loom/src/commands/stage/state/loop_recovery/**"
+      ]
+    },
+    "W4": {
+      "brief": "doc/plans/briefs/loop-recovery/completion-recovery/w4-status.md",
+      "files": [
+        "loom/src/commands/status/data/collector.rs",
+        "loom/src/commands/status/data/collector_activity_tests.rs",
+        "loom/src/commands/status/data/collector_tests.rs",
+        "loom/src/commands/status/data/completion_view/**",
+        "loom/src/commands/status/data/mod.rs",
+        "loom/src/commands/status/data/sanitize.rs",
+        "loom/src/commands/status/render/activity.rs",
+        "loom/src/commands/status/render/attention.rs",
+        "loom/src/commands/status/render/attention_model.rs",
+        "loom/src/commands/status/render/attention_model_tests.rs",
+        "loom/src/commands/status/render/attention_tests.rs",
+        "loom/src/commands/status/render/compact.rs",
+        "loom/src/commands/status/render/completion_view/**",
+        "loom/src/commands/status/render/graph_tests.rs",
+        "loom/src/commands/status/ui/tui/ledger/cells.rs",
+        "loom/src/commands/status/ui/tui/ledger/rows.rs",
+        "loom/src/commands/status/ui/tui/ledger/tests.rs",
+        "loom/src/commands/status/ui/tui/ledger/tests_alignment.rs",
+        "loom/src/commands/status/ui/tui/state.rs",
+        "loom/src/commands/status/web/model_tests_stages.rs",
+        "loom/src/daemon/wire_tests.rs",
+        "web/src/api/schema.test.ts",
+        "web/src/api/schema.ts",
+        "web/src/components/graph/stage-node.tsx",
+        "web/src/components/ledger-row.tsx",
+        "web/src/components/stage-heading.tsx",
+        "web/src/components/stage-modal.test.tsx",
+        "web/src/components/stage-sections.test.tsx",
+        "web/src/components/stage-sections.tsx",
+        "web/src/lib/format.test.ts",
+        "web/src/lib/format.ts",
+        "web/src/lib/graph.test.ts",
+        "web/src/lib/graph.ts"
+      ],
+      "new_helper_namespaces": [
+        "loom/src/commands/status/data/completion_view/**",
+        "loom/src/commands/status/render/completion_view/**"
+      ]
+    },
+    "W2": {
+      "brief": "doc/plans/briefs/loop-recovery/completion-recovery/w2-completion.md",
+      "files": [
+        "loom-hooks/loom-control-complete.sh",
+        "loom-hooks/tests/loom-control-complete.sh",
+        "loom-hooks/tests/loom-control-tokenized-prefilter.sh",
+        "loom/src/commands/stage/complete.rs",
+        "loom/src/commands/stage/completion_evidence.rs",
+        "loom/src/commands/stage/completion_evidence/**",
+        "loom/src/commands/stage/control_complete.rs",
+        "loom/src/commands/stage/control_session.rs",
+        "loom/src/commands/stage/mod.rs",
+        "loom/src/daemon/protocol.rs",
+        "loom/src/daemon/server/client.rs",
+        "loom/src/daemon/server/completion_dispatch.rs",
+        "loom/src/daemon/server/completion_dispatch/**",
+        "loom/src/daemon/server/completion_evidence.rs",
+        "loom/src/daemon/server/control_complete.rs",
+        "loom/src/daemon/server/mod.rs",
+        "loom/src/daemon/server/self_service.rs",
+        "loom/src/daemon/server/tests/self_service_client.rs",
+        "loom/src/process/environment.rs",
+        "loom/src/verify/criteria/tests/confine_tests.rs",
+        "loom/tests/completion_replay.rs"
+      ],
+      "new_helper_namespaces": [
+        "loom/src/commands/stage/completion_evidence/**",
+        "loom/src/daemon/server/completion_dispatch/**"
+      ]
+    },
+    "ledger": {
+      "brief": "doc/plans/briefs/loop-recovery/common.md",
+      "files": [
+        "loom/maintainability-baseline.txt"
+      ]
+    }
+  }
+}

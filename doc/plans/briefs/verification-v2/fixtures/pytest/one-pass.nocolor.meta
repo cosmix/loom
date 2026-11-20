@@ -1,0 +1,3 @@
+command: python3 -m pytest 'test_fixture.py::test_alpha_passes' -q --color=no
+exit: 0
+cwd: .

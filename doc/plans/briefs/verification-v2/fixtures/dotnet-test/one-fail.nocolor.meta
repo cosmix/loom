@@ -1,0 +1,3 @@
+command: DOTNET_NOLOGO=1 NO_COLOR=1 dotnet test --filter "FullyQualifiedName=FixtureDotnet.FixtureTests.BetaFails"
+exit: 1
+cwd: .

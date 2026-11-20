@@ -1,0 +1,3 @@
+command: NO_COLOR=1 node --test --test-name-pattern='^delta_missing$' fixture.test.js
+exit: 0
+cwd: .

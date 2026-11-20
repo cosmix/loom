@@ -266,3 +266,23 @@ knowledge-distill the rewrite, or the stage changes it. Raise a cap to the measu
 **Why:** the bookends were added by rule, without asking what the plan was for. The full-suite criterion also had no `timeout_secs`, though the loom suite needs more than 300 s even warm.
 
 **Prevention:** a throwaway plan that exists to observe loom behaviour is the implementation stage alone, accepting the strict-verify warnings, or the operator is asked first. Any integration-verify criterion that runs the full loom suite sets `timeout_secs` of at least 900.
+
+## Framed a Loom Fix as Amending the Running Plan (2026-11-20)
+
+**What happened:** while designing fixes for the contract-dispute loop, the proposals were sequenced against the in-progress plan ("rows 1 and 2 go first, before stage 2 completes", "amend stage 2's acceptance") and described as a "reduced plan" although no plan file existed. The operator rejected the framing: the fixes are a new plan, and the running plan cannot see them.
+
+**Why:** the running plan executes with the installed binary, and its stages work in worktrees already branched from main (`loom/stage-cache-sessions` already contains the stage-1 commit), so nothing committed to main reaches them; [Install a New loom Binary Only After the Running Plan Completes](../conventions/git-and-build-workflow.md#install-a-new-loom-binary-only-after-the-running-plan-completes) already states that fixes committed mid-plan take effect for the next plan.
+
+**Prevention:** scope a fix to loom as its own plan for the next run. Never order its work against a running plan's stages or propose amending that plan's stages as part of it; a running plan's exposure is reported separately, as information for the operator.
+
+**Fix:** the design discussion was restated as a proposal for a new plan, with no running-plan sequencing.
+
+## Deferred the Gaps a Fix Exposed to a Follow-up Plan (2026-11-20)
+
+**What happened:** the design for the contract-dispute loop exposed related gaps in the same mechanism (an adjudicator narrowing acceptance criteria without evidence or a recorded hand-off, a frozen file edited in the worktree and re-frozen by an accept). The proposal moved them to a follow-up to keep the plan small. The operator rejected that: a plan closes the tangential issues its analysis uncovers.
+
+**Why:** plan size was weighed above closure, and "not needed to fix the reported bug" was treated as a reason to defer.
+
+**Prevention:** a gap found in the mechanism a plan already changes goes into that plan, with its cost stated. Leave out only what has no known fix, and name it as an open limit. Judge scope against [Verification Design Priorities](../conventions/dispute-and-adjudication.md#verification-design-priorities).
+
+**Fix:** the plan scope took both gaps back in.

@@ -1,0 +1,3 @@
+command: NO_COLOR=1 bun test fixture.test.js -t 'delta_missing'
+exit: 1
+cwd: .

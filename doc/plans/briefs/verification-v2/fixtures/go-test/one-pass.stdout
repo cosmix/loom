@@ -1,0 +1,4 @@
+=== RUN   TestAlphaPasses
+--- PASS: TestAlphaPasses (0.00s)
+PASS
+ok  	fixturego	0.002s

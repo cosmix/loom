@@ -1,0 +1,16 @@
+Test project /tmp/claude-1000/-home-dkaponis-src-loom/99212933-6012-4c4f-a6a4-f4e7f5668350/scratchpad/runner-projects/ctest/build
+    Start 1: alpha_passes
+1/3 Test #1: alpha_passes .....................   Passed    0.00 sec
+    Start 2: beta_fails
+2/3 Test #2: beta_fails .......................Subprocess aborted***Exception:   1.08 sec
+beta_fails: /tmp/claude-1000/-home-dkaponis-src-loom/99212933-6012-4c4f-a6a4-f4e7f5668350/scratchpad/runner-projects/ctest/beta_fails.c:9: main: Assertion `add(2, 2) == 5' failed.
+
+    Start 3: gamma_passes
+3/3 Test #3: gamma_passes .....................   Passed    0.00 sec
+
+67% tests passed, 1 tests failed out of 3
+
+Total Test time (real) =   1.09 sec
+
+The following tests FAILED:
+	  2 - beta_fails (Subprocess aborted)

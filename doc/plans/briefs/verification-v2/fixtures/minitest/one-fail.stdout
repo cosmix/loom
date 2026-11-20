@@ -1,0 +1,15 @@
+Run options: -n "/^test_beta_fails$/" --seed 27918
+
+# Running:
+
+F
+
+Finished in 0.005062s, 197.5596 runs/s, 197.5596 assertions/s.
+
+  1) Failure:
+FixtureTest#test_beta_fails [fixture_test.rb:13]:
+deliberate failure.
+Expected: 5
+  Actual: 4
+
+1 runs, 1 assertions, 1 failures, 0 errors, 0 skips

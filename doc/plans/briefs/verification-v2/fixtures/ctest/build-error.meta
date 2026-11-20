@@ -1,0 +1,3 @@
+command: /usr/bin/cmake --build build && /usr/bin/ctest --test-dir build -R '^alpha_passes$' --output-on-failure
+exit: 2
+cwd: .

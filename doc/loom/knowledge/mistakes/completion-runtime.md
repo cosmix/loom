@@ -92,3 +92,13 @@ Three things hid the cause:
 **Prevention:** parallel implementers in one Rust crate do not run in parallel. Give each its own worktree and target dir (cold build cost paid once), or run them in sequence; budget one compile cycle as ~1-2 min, not seconds, when sizing waves. An agent uses `cargo check` or `cargo clippy` until the code compiles, runs its module's tests once at the end (again only after a failure), and never loops on `cargo test --lib`, because each call relinks the lib binary.
 
 **Fix:** let the run finish; size later fan-outs with per-agent worktrees and target dirs.
+
+## Confined Contract Tests Looped Through Six Accepted Disputes (2026-11-20)
+
+**What happened:** `stage-cache-host` of `PLAN-toolchain-build-caches` spent about 4h40m in completion. Five frozen contracts in `src/stage_cache/contract_tests.rs` run a confined command; in the completion host job every one exits 71 with `sandbox-exec: sandbox_apply: Operation not permitted`. The adjudicator accepted six disputes (three criterion, three contract), each reran completion, and the same contracts failed again until the stage blocked itself and the operator ran `loom stage complete <id> --force-unsafe`. Run outside any sandbox, all 10 contracts passed in 0.16 s.
+
+**Why:** three defects together. The contracts launch a confined command from inside the host job, and macOS refuses a nested Seatbelt profile that differs from the outer one, so no implementation could pass them; the freeze saw only a build failure and could not tell. Accepting a contract dispute with no replacement and no patch only re-freezes the contract files at their current content, so the same contracts ran again, and `dispute-contract` takes one contract per filing. The criterion disputes were accepted by skipping the launching tests and naming integration-verify as where they would run; integration-verify runs in the same confined host job and cannot run them either.
+
+**Prevention:** a contract is never skipped or exempted ([Verification Design Priorities](../conventions/dispute-and-adjudication.md#verification-design-priorities)). A contract about confinement asserts on the policy loom generates and launches nothing. A non-contract test that launches a confined command probes that a trivial one starts (`confined_runs_start()`, `seatbelt_unavailable()` in `tests/planning_summary_seatbelt.rs`) and skips otherwise, and that skip must be fatal in CI. A contract that cannot run where completion runs is fixed with a `--replacement`; a plain accept changes nothing. A test handed to another stage needs a stage that can run it.
+
+**Fix:** none in the tree yet; the stage was force-completed at `346e6628e`.

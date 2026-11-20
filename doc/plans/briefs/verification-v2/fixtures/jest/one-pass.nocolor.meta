@@ -1,0 +1,3 @@
+command: CI=1 bunx jest fixture.test.js -t 'alpha_passes' --colors=false
+exit: 0
+cwd: .

@@ -1,0 +1,3 @@
+command: bun test fixture.test.js -t 'beta_fails'
+exit: 1
+cwd: .

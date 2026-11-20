@@ -1,0 +1,10 @@
+   Compiling fixture_cargo v0.1.0 (/tmp/claude-1000/-home-dkaponis-src-loom/99212933-6012-4c4f-a6a4-f4e7f5668350/scratchpad/runner-projects/cargo-test)
+error: expected one of `.`, `;`, `?`, `}`, or an operator, found `this`
+  --> src/lib.rs:11:35
+   |
+11 |         assert_eq!(add(2, 2), 4)  this is a deliberate syntax error
+   |                                   ^^^^ expected one of `.`, `;`, `?`, `}`, or an operator
+
+error: could not compile `fixture_cargo` (lib) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `fixture_cargo` (lib test) due to 1 previous error

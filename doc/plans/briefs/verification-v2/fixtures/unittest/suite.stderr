@@ -1,0 +1,17 @@
+test_alpha_passes (test_fixture.FixtureTests.test_alpha_passes) ... ok
+test_beta_fails (test_fixture.FixtureTests.test_beta_fails) ... FAIL
+test_gamma_passes (test_fixture.FixtureTests.test_gamma_passes) ... ok
+
+======================================================================
+FAIL: test_beta_fails (test_fixture.FixtureTests.test_beta_fails)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/claude-1000/-home-dkaponis-src-loom/99212933-6012-4c4f-a6a4-f4e7f5668350/scratchpad/runner-projects/unittest/test_fixture.py", line 13, in test_beta_fails
+    self.assertEqual(add(2, 2), 5, "deliberate failure")
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 4 != 5 : deliberate failure
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.000s
+
+FAILED (failures=1)

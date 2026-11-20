@@ -1,0 +1,14 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_______________________________ test_beta_fails ________________________________
+
+    def test_beta_fails():
+>       assert add(2, 2) == 5, "deliberate failure"
+E       AssertionError: deliberate failure
+E       assert 4 == 5
+E        +  where 4 = add(2, 2)
+
+test_fixture.py:10: AssertionError
+=========================== short test summary info ============================
+FAILED test_fixture.py::test_beta_fails - AssertionError: deliberate failure
+1 failed, 2 deselected in 0.01s

@@ -1,0 +1,5 @@
+Test Suites: 1 passed, 1 total
+Tests:       2 skipped, 1 passed, 3 total
+Snapshots:   0 total
+Time:        0.236 s
+Ran all test suites matching fixture.test.js with tests matching "alpha_passes".

@@ -1,0 +1,3 @@
+command: bunx mocha fixture.test.js --grep 'beta_fails' --no-color
+exit: 1
+cwd: .
