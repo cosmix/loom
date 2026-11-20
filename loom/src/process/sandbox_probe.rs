@@ -251,6 +251,29 @@ fn confined_command_blocker() -> Result<(), String> {
     }
 }
 
+/// Whether this process can kill the process group of a child it started. A
+/// host job's Seatbelt profile may refuse it, and then tests that expect loom
+/// to retire a process group cannot run there. Memoized.
+pub fn process_groups_signalable() -> bool {
+    use std::os::unix::process::CommandExt;
+    static RESULT: OnceLock<bool> = OnceLock::new();
+    *RESULT.get_or_init(|| {
+        let spawned = std::process::Command::new("/bin/sleep")
+            .arg("30")
+            .stdin(std::process::Stdio::null())
+            .process_group(0)
+            .spawn();
+        let Ok(mut child) = spawned else {
+            return false;
+        };
+        let group = nix::unistd::Pid::from_raw(child.id() as i32);
+        let signalled = nix::sys::signal::killpg(group, nix::sys::signal::Signal::SIGKILL).is_ok();
+        let _ = child.kill();
+        let _ = child.wait();
+        signalled
+    })
+}
+
 /// Returns true if the caller should skip: `probe_ok` is false, so the
 /// environment cannot support what `test_name` needs, for reasons that have
 /// nothing to do with the code under test. Prints a loud `SKIP` line naming

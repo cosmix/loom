@@ -64,6 +64,15 @@ fn provisioning_takes_the_session_goproxy_chain() {
     ) {
         return;
     }
+    // A host job's own GOPROXY ends in `,off`, and the session chain inherits it.
+    let host_job = std::env::var("GOPROXY").is_ok_and(|value| value.ends_with(",off"));
+    if crate::process::sandbox_probe::skip_unless(
+        !host_job,
+        "provisioning_takes_the_session_goproxy_chain",
+        "the process GOPROXY is a host job's",
+    ) {
+        return;
+    }
     let dirs = ["repo", "home", "tree"].map(|name| {
         let dir = tempfile::tempdir().unwrap();
         (dir.path().canonicalize().unwrap(), dir, name)
