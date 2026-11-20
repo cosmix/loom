@@ -128,8 +128,11 @@ impl<'a> MergeLifecycle<'a> {
         config: &CleanupConfig,
     ) -> CleanupOutcome {
         if !needs_cleanup(self.stage_id, self.repo_root) {
-            // Nothing left on disk, so any old warning is stale.
-            self.record_cleanup_warning(None);
+            // No worktree or branch is left, so any old warning is stale; a
+            // stage that never had a worktree (a knowledge stage) still owns
+            // its build cache.
+            let cache_warning = self.remove_worktreeless_cache(cwd);
+            self.record_cleanup_warning(cache_warning);
             return CleanupOutcome::NothingToDo;
         }
 
@@ -145,6 +148,22 @@ impl<'a> MergeLifecycle<'a> {
         }
 
         self.finish_cleanup(cleanup_after_merge(self.stage_id, self.repo_root, config))
+    }
+
+    /// Remove the build cache of a stage that has no worktree to carry its
+    /// removal, unless a live session may still use it. A failure is a warning
+    /// for the stage record, never an error: the merge already succeeded.
+    fn remove_worktreeless_cache(&self, cwd: Option<&Path>) -> Option<String> {
+        if self.deferral_reason(cwd).is_some() {
+            return None;
+        }
+        match crate::stage_cache::cleanup::remove_stage_cache_of(self.repo_root, self.stage_id) {
+            Ok(_) => None,
+            Err(error) => {
+                tracing::warn!(stage = %self.stage_id, error = %format!("{error:#}"), "Stage cache not removed");
+                Some(format!("stage cache not removed: {error:#}"))
+            }
+        }
     }
 
     /// Why cleanup must wait: the caller's cwd is inside the stage worktree,

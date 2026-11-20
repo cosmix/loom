@@ -5,31 +5,43 @@ use super::*;
 use std::os::unix::ffi::OsStringExt;
 use std::process::Command;
 
+use crate::stage_cache::environment::HOST_ENV_NAMES;
+use crate::stage_cache::host_env_from_process;
+
 fn cache_in(home: &Path) -> StageCache {
     StageCache::resolve(home, "alpha", home, None).unwrap()
 }
 
-/// The variables `/bin/sh` gives a child of an `exec env -i` line made of `exports`.
-fn evaluated(exports: &str) -> BTreeMap<String, String> {
+/// The variables `/bin/sh`, started in `cwd`, gives a child of an
+/// `exec env -i` line made of `exports`.
+fn evaluated(exports: &str, cwd: &Path) -> BTreeMap<String, String> {
     let script = format!("exec /usr/bin/env -i \\\n{exports}    /usr/bin/env\n");
-    let output = Command::new("/bin/sh").arg("-c").arg(&script).output();
+    let output = Command::new("/bin/sh")
+        .arg("-c")
+        .arg(&script)
+        .current_dir(cwd)
+        .output();
     let stdout = String::from_utf8(output.unwrap().stdout).unwrap();
     let pairs = stdout.lines().filter_map(|line| line.split_once('='));
     pairs.map(|(k, v)| (k.to_string(), v.to_string())).collect()
 }
 
+/// The shell runs in `home`, so a command substitution that ran would leave
+/// `pwned` there.
 #[test]
 fn a_value_with_shell_metacharacters_reaches_the_session_unchanged() {
     let home = tempfile::tempdir().unwrap();
     let cache = cache_in(home.path());
     let hostile = "-Dx='a b' $(touch pwned) `id` \"q\" ; & | *";
-    let host = BTreeMap::from([("MAVEN_OPTS".to_string(), OsString::from(hostile))]);
-    let worktree = home.path().join("it's a $tree");
+    let host = BTreeMap::from([("GOFLAGS".to_string(), OsString::from(hostile))]);
+    let worktree = home
+        .path()
+        .join("it's a $tree $(touch pwned) `touch pwned` \"q\" ; & | *");
 
     let exports = wrapper_exports(&cache, &worktree, &host);
-    let exported = evaluated(&exports);
+    let exported = evaluated(&exports, home.path());
 
-    assert!(exported["MAVEN_OPTS"].starts_with(hostile), "{exports}");
+    assert!(exported["GOFLAGS"].starts_with(hostile), "{exports}");
     assert_eq!(exported["CCACHE_BASEDIR"], worktree.display().to_string());
     assert!(!home.path().join("pwned").exists());
 }
@@ -44,6 +56,41 @@ fn a_value_that_is_not_utf8_is_left_out() {
 
     assert!(!exports.contains("GOPROXY"), "{exports}");
     assert!(exports.contains("GOCACHE="), "{exports}");
+}
+
+#[test]
+fn a_worktree_that_is_not_utf8_is_left_out() {
+    let home = tempfile::tempdir().unwrap();
+    let cache = cache_in(home.path());
+    let worktree = home.path().join(OsString::from_vec(vec![0xff, 0xfe]));
+
+    let exports = wrapper_exports(&cache, &worktree, &BTreeMap::new());
+
+    assert!(!exports.contains("CCACHE_BASEDIR"), "{exports}");
+    assert!(exports.contains("GOCACHE="), "{exports}");
+}
+
+/// The session's sccache socket is in its own scratch directory, which no
+/// host job or worker is granted, never in the shared stage root.
+#[test]
+fn the_session_socket_is_in_its_scratch_directory() {
+    let home = tempfile::tempdir().unwrap();
+    let scratch = home.path().join("scratch/session-1");
+    let cache = cache_in(home.path()).with_socket_dir(&scratch);
+
+    let exports = wrapper_exports(&cache, home.path(), &BTreeMap::new());
+    let exported = evaluated(&exports, home.path());
+
+    let socket = scratch.join("s.sock").display().to_string();
+    assert_eq!(
+        exported.get("SCCACHE_SERVER_UDS"),
+        Some(&socket),
+        "{exports}"
+    );
+    let root = cache.root().display().to_string();
+    assert!(!exported
+        .values()
+        .any(|value| value.ends_with(".sock") && value.starts_with(&root)));
 }
 
 #[test]

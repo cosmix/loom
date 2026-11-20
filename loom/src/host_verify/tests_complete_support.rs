@@ -40,6 +40,7 @@ pub(crate) fn ignored(applied: Applied) -> String {
 }
 
 pub(crate) struct Fixture {
+    _cache_env: crate::test_cache_env::CacheEnv,
     _dir: TempDir,
     pub(crate) repo: PathBuf,
     pub(crate) work_dir: PathBuf,
@@ -50,6 +51,7 @@ pub(crate) struct Fixture {
 
 impl Fixture {
     pub(crate) fn new(stage_type: StageType, plan_version: u32) -> Self {
+        let cache_env = crate::test_cache_env::CacheEnv::pin();
         let dir = TempDir::new().expect("temp dir");
         let repo = dir.path().canonicalize().expect("canonical temp dir");
         TestRepo::builder().no_seed().init_in(&repo);
@@ -66,6 +68,7 @@ impl Fixture {
         fs::create_dir_all(work_dir.join("signals")).expect("create state root");
         crate::git::worktree::capture_main_identity(&repo, &work_dir).expect("capture identity");
         let fixture = Self {
+            _cache_env: cache_env,
             _dir: dir,
             repo,
             work_dir,

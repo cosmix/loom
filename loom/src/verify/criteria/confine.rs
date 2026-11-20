@@ -232,9 +232,7 @@ fn prepare(
     match confinement {
         // Rebuild the child's environment from the documented host allowlist so
         // plan-authored commands never inherit loom's ambient credentials.
-        CommandConfinement::Confined => {
-            apply_confined_environment(&mut cmd, cache, resolved_working_dir.as_deref())?
-        }
+        CommandConfinement::Confined => apply_confined_environment(&mut cmd, cache)?,
         // Explicit plan opt-in: the command genuinely needs what loom was given.
         CommandConfinement::Inherit => {}
     }
@@ -273,21 +271,18 @@ fn prepare(
 /// With a stage cache, the real macOS developer tools come next on `PATH`,
 /// before the program is resolved, so a bare `git` or `cc` skips the xcrun
 /// shim, whose cache the boundary denies.
-fn apply_confined_environment(
-    command: &mut Command,
-    cache: Option<&StageCache>,
-    working_dir: Option<&Path>,
-) -> Result<()> {
+fn apply_confined_environment(command: &mut Command, cache: Option<&StageCache>) -> Result<()> {
     crate::process::apply_stage_environment(command);
     let executable = std::env::current_exe().context("resolve the running Loom executable")?;
     let directory = executable
         .parent()
         .context("Loom executable has no parent directory")?;
-    // Only a stage-cache run looks the developer tools up.
+    // Only a stage-cache run asks for the developer tools; `detect` looks
+    // them up once per process and caches the answer.
     let developer = cache
         .and_then(|cache| {
             let tools = DeveloperTools::detect()?;
-            Some(developer_environment(command, cache, &tools, working_dir))
+            Some(developer_environment(command, cache, &tools))
         })
         .unwrap_or_default();
     let path = developer
@@ -315,23 +310,23 @@ fn developer_environment(
     command: &Command,
     cache: &StageCache,
     tools: &DeveloperTools,
-    working_dir: Option<&Path>,
 ) -> BTreeMap<String, OsString> {
     let host = host::command_environment(command);
-    let tree = working_dir.unwrap_or(Path::new("/"));
+    // Only the developer variables are kept, and none depends on the tree.
+    let tree = Path::new("/");
     let mut environment = cache.environment(Consumer::HostJob, tree, &host, Some(tools));
     environment.retain(|name, _| DEVELOPER_VARIABLES.contains(&name.as_str()));
     environment
 }
 
 /// The build cache of stage `stage_id` in the repository whose state
-/// directory is `work_dir`, resolved through [`stage_cache_in`].
+/// directory is `work_dir`, resolved through [`StageCache::resolve_from_process`].
 pub(crate) fn stage_cache_for(work_dir: &Path, stage_id: &str) -> Result<StageCache> {
     let repo_root = WorkDir::new(work_dir)
         .ok()
         .and_then(|work_dir| work_dir.main_project_root())
         .with_context(|| format!("no repository root above {}", work_dir.display()))?;
-    stage_cache_in(&repo_root, stage_id)
+    StageCache::resolve_from_process(&repo_root, stage_id)
 }
 
 /// [`stage_cache_for`] when `confinement` is `Confined`; an inherited run has
@@ -344,17 +339,6 @@ pub(crate) fn confined_stage_cache(
     (confinement == CommandConfinement::Confined)
         .then(|| stage_cache_for(work_dir, stage_id))
         .transpose()
-}
-
-/// The build cache of stage `stage_id` in the repository at `repo_root`, under
-/// this process's `HOME` and `XDG_CACHE_HOME`: the same root the stage's
-/// session and workers resolve.
-fn stage_cache_in(repo_root: &Path, stage_id: &str) -> Result<StageCache> {
-    let home = std::env::var_os("HOME")
-        .filter(|home| !home.is_empty())
-        .context("HOME is not set: the stage build cache lives below it")?;
-    let xdg = std::env::var_os("XDG_CACHE_HOME").map(PathBuf::from);
-    StageCache::resolve(repo_root, stage_id, Path::new(&home), xdg.as_deref())
 }
 
 /// Effective confinement for one stage's plan-authored commands.

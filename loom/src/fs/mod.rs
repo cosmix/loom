@@ -12,6 +12,7 @@ pub(crate) mod lexical;
 mod lexical_contract_tests;
 pub mod locking;
 pub mod memory;
+pub(crate) mod no_follow_tree;
 pub mod permissions;
 pub mod plan_lifecycle;
 pub mod plan_review;

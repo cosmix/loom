@@ -219,11 +219,11 @@ fn an_executable_dir_that_is_an_ancestor_of_the_scratch_root_is_not_denied() {
 
 #[test]
 fn an_executable_dir_that_is_an_ancestor_of_an_allow_write_grant_is_not_denied() {
-    // `~/.bun` on `PATH` with a granted `~/.bun/install/cache` must not
+    // `~/.cargo` on `PATH` with a granted `~/.cargo/registry` must not
     // deny the grant it sits above.
     let repo_root = PathBuf::from("/home/op/src/repo");
-    let grant_parent = PathBuf::from("/home/op/.bun");
-    let grant = grant_parent.join("install").join("cache");
+    let grant_parent = PathBuf::from("/home/op/.cargo");
+    let grant = grant_parent.join("registry");
     let unrelated = PathBuf::from("/opt/hooks");
 
     let denies = session_denies(&DenyInputs {

@@ -45,14 +45,19 @@ pub(super) struct Seeds {
 
 impl Seeds {
     /// Resolve the seeds from `host_env`; each is kept only when its directory
-    /// exists and it does not expose a credential path.
+    /// exists and it does not expose a credential path. The Go, ccache and
+    /// Maven seeds go into list syntax (`GOPROXY`, `CCACHE_REMOTE_STORAGE`,
+    /// `MAVEN_OPTS`), so one whose path holds whitespace, `,` or `|` is
+    /// left out: the tool would read it as two entries.
     pub(super) fn resolve(host_env: &BTreeMap<String, OsString>) -> Seeds {
         let home = home(host_env);
         let lookup = |name: &str| absolute(host_env, name);
         let under_home = |relative: &str| home.as_ref().map(|home| home.join(relative));
         let credentials = home.as_deref().map(credential_paths).unwrap_or_default();
+        // A seed is named by its canonical path, the one its read root grants.
         let keep = |path: Option<PathBuf>| {
-            path.filter(|path| path.is_dir() && !exposes_credentials(path, &credentials))
+            path.and_then(|path| path.canonicalize().ok())
+                .filter(|path| path.is_dir() && !exposes_credentials(path, &credentials))
         };
         let go_path = host_env
             .get("GOPATH")
@@ -74,13 +79,23 @@ impl Seeds {
             .or_else(|| under_home(".gradle"))
             .map(|home| home.join("caches"))
             .filter(|caches| caches.join("modules-2").is_dir());
+        let listable = |path: Option<PathBuf>| keep(path).filter(|path| fits_a_list(path));
         Seeds {
-            go: keep(mod_cache.map(|path| path.join("cache/download"))),
-            ccache: keep(ccache),
-            maven: keep(under_home(".m2/repository")),
+            go: listable(mod_cache.map(|path| path.join("cache/download"))),
+            ccache: listable(ccache),
+            maven: listable(under_home(".m2/repository")),
             gradle: keep(gradle),
         }
     }
+}
+
+/// Whether `path` can be an entry of a list separated by whitespace, `,` or `|`.
+fn fits_a_list(path: &Path) -> bool {
+    !path
+        .as_os_str()
+        .as_encoded_bytes()
+        .iter()
+        .any(|byte| byte.is_ascii_whitespace() || matches!(byte, b',' | b'|'))
 }
 
 /// The existing seed directories [`super::StageCache::environment`] names,
@@ -99,13 +114,24 @@ pub fn seed_read_roots(host_env: &BTreeMap<String, OsString>) -> Vec<PathBuf> {
 
 /// The existing toolchain install roots and `PATH` entries strictly below
 /// HOME, plus `/opt` and `/nix/store`, canonical and deduplicated. HOME
-/// itself and every entry that is, lies inside or contains a credential
-/// directory are left out.
+/// itself, every root containing HOME, and every entry that is, lies inside
+/// or contains a credential directory are left out.
 pub fn toolchain_read_roots(host_env: &BTreeMap<String, OsString>) -> Vec<PathBuf> {
+    toolchain_read_roots_in(host_env, &SYSTEM_ROOTS.map(Path::new))
+}
+
+/// [`toolchain_read_roots`] with `systems` as the system-wide install roots.
+pub(super) fn toolchain_read_roots_in(
+    host_env: &BTreeMap<String, OsString>,
+    systems: &[&Path],
+) -> Vec<PathBuf> {
+    let home = home(host_env);
+    let canonical_home = home
+        .as_ref()
+        .map(|home| home.canonicalize().unwrap_or_else(|_| home.clone()));
+    let credentials = home.as_deref().map(credential_paths).unwrap_or_default();
     let mut roots = Vec::new();
-    if let Some(home) = home(host_env) {
-        let canonical_home = home.canonicalize().unwrap_or_else(|_| home.clone());
-        let credentials = credential_paths(&home);
+    if let (Some(home), Some(canonical_home)) = (&home, &canonical_home) {
         let path_entries = host_env
             .get("PATH")
             .map(|path| std::env::split_paths(path).collect::<Vec<_>>())
@@ -118,15 +144,20 @@ pub fn toolchain_read_roots(host_env: &BTreeMap<String, OsString>) -> Vec<PathBu
             let Ok(canonical) = candidate.canonicalize() else {
                 continue;
             };
-            let below_home = canonical.starts_with(&canonical_home) && canonical != canonical_home;
+            let below_home = canonical.starts_with(canonical_home) && canonical != *canonical_home;
             if below_home && canonical.is_dir() && !exposes_credentials(&canonical, &credentials) {
                 push_unique(&mut roots, canonical);
             }
         }
     }
-    for system in SYSTEM_ROOTS.map(Path::new) {
-        if system.is_dir() {
-            push_canonical(&mut roots, system);
+    let homes: Vec<&PathBuf> = home.iter().chain(&canonical_home).collect();
+    for system in systems {
+        let Ok(canonical) = system.canonicalize() else {
+            continue;
+        };
+        let holds_home = homes.iter().any(|home| home.starts_with(&canonical));
+        if canonical.is_dir() && !holds_home && !exposes_credentials(&canonical, &credentials) {
+            push_unique(&mut roots, canonical);
         }
     }
     roots

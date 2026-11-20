@@ -34,6 +34,7 @@ pub(super) fn confinement_unavailable(test_name: &str) -> bool {
 /// the state root `<repo>/.loom/work` holding the stage, and a plan without
 /// goal checks that the state root's `config.toml` names.
 pub(super) struct Fixture {
+    _cache_env: crate::test_cache_env::CacheEnv,
     _dir: TempDir,
     repo: PathBuf,
     pub(super) work_dir: PathBuf,
@@ -43,6 +44,7 @@ pub(super) struct Fixture {
 
 impl Fixture {
     pub(super) fn new(acceptance: &[&str], stage_type: StageType) -> Self {
+        let cache_env = crate::test_cache_env::CacheEnv::pin();
         let dir = TempDir::new().expect("temp dir");
         let repo = dir.path().canonicalize().expect("canonical temp dir");
         TestRepo::builder().no_seed().init_in(&repo);
@@ -66,6 +68,7 @@ impl Fixture {
         fs::create_dir_all(&work_dir).expect("create state root");
         crate::git::worktree::capture_main_identity(&repo, &work_dir).expect("capture identity");
         let fixture = Self {
+            _cache_env: cache_env,
             _dir: dir,
             repo,
             work_dir,

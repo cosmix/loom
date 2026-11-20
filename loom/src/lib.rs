@@ -54,6 +54,9 @@ pub mod yaml;
 #[path = "../tests/test_support/git_repo.rs"]
 pub(crate) mod test_git;
 
+#[cfg(test)]
+pub(crate) mod test_cache_env;
+
 /// ASCII art logo for loom CLI
 pub const LOGO: &str = "   ╷
    │  ┌─┐┌─┐┌┬┐

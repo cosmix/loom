@@ -15,7 +15,7 @@ fn test_before_after_stage_checks_pass() {
     }];
 
     let working_dir = env::temp_dir();
-    let gaps = run_before_stage_checks(&before_checks, &working_dir, None).unwrap();
+    let gaps = run_before_stage_checks(&before_checks, &working_dir, None, None).unwrap();
     assert!(
         gaps.is_empty(),
         "Before-stage checks should pass when pre-conditions match"
@@ -36,7 +36,7 @@ fn test_before_stage_checks_fail_when_precondition_not_met() {
     }];
 
     let working_dir = env::temp_dir();
-    let gaps = run_before_stage_checks(&before_checks, &working_dir, None).unwrap();
+    let gaps = run_before_stage_checks(&before_checks, &working_dir, None, None).unwrap();
     assert_eq!(
         gaps.len(),
         1,
@@ -114,7 +114,7 @@ fn test_after_stage_checks_fail_when_postcondition_not_met() {
 fn test_before_after_empty_checks() {
     let working_dir = env::temp_dir();
 
-    let gaps = run_before_stage_checks(&[], &working_dir, None).unwrap();
+    let gaps = run_before_stage_checks(&[], &working_dir, None, None).unwrap();
     assert!(
         gaps.is_empty(),
         "Empty before checks should produce no gaps"
@@ -139,7 +139,7 @@ fn test_before_stage_stdout_not_contains() {
     }];
 
     let working_dir = env::temp_dir();
-    let gaps = run_before_stage_checks(&checks, &working_dir, None).unwrap();
+    let gaps = run_before_stage_checks(&checks, &working_dir, None, None).unwrap();
     assert!(
         gaps.is_empty(),
         "Check should pass when forbidden pattern is absent"

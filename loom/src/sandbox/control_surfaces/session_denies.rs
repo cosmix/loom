@@ -41,10 +41,11 @@ pub(crate) struct DenyInputs<'a> {
     pub plugin_entries: Option<&'a [String]>,
     /// Every root a session could write
     /// (`sandbox::control_surfaces::session_writable_roots`, threaded through
-    /// as `HostFacts::writable_roots`): the scratch root, each stage's
-    /// `allowWrite` grants, and the package-manager and codex caches. An
-    /// `executable_dirs` entry that is an ancestor of one is skipped, on top
-    /// of `repo_root` and `worktree` below.
+    /// as `HostFacts::writable_roots`, plus every stage's cache root that
+    /// `launch/host.rs::writable_roots` adds): the scratch root, each stage's
+    /// `allowWrite` grants, the package-manager and codex caches, and the
+    /// stage cache roots. An `executable_dirs` entry that is an ancestor of
+    /// one is skipped, on top of `repo_root` and `worktree` below.
     pub writable_roots: &'a [PathBuf],
 }
 
@@ -217,10 +218,11 @@ impl SessionDenies {
 /// Whether `dir` is an ancestor of, or equal to, a root the session may
 /// already write: the repository root, the worktree (inside one), or any
 /// other entry of `writable_roots` (the scratch root, an `allowWrite` grant,
-/// or a package-manager/codex cache). A `LOOM_HOOK_PATH` entry lands here on
-/// nothing more than a PATH coincidence — e.g. `~/src` on `PATH` with the
-/// repo checked out at `~/src/loom`, or `~/.cache` on `PATH` above the
-/// stage cache root `~/.cache/loom/stage-cache/<hash>` — and denying it would deny writes across
+/// a package-manager/codex cache, or a stage cache root). A `LOOM_HOOK_PATH`
+/// entry lands here on nothing more than a PATH coincidence — e.g. `~/src` on
+/// `PATH` with the repo checked out at `~/src/loom`, or `~/.cache` on `PATH`
+/// above the stage cache root `~/.cache/loom/stage-cache/<hash>` — and denying
+/// it would deny writes across
 /// everything below it, the writable root included, rather than just the
 /// executable it holds.
 ///

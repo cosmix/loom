@@ -44,6 +44,7 @@ pub(super) fn confinement_unavailable(test_name: &str) -> bool {
 /// stage's running contract session, and one contract whose test is the
 /// shell `command`.
 pub(super) struct Fixture {
+    _cache_env: crate::test_cache_env::CacheEnv,
     _tmp: TempDir,
     pub(super) work_dir: PathBuf,
     pub(super) worktree: PathBuf,
@@ -65,6 +66,7 @@ impl Fixture {
     }
 
     fn over(make_worktree: fn(&Path, &str) -> PathBuf, edit: impl FnOnce(&mut Stage)) -> Self {
+        let cache_env = crate::test_cache_env::CacheEnv::pin();
         let tmp = TempDir::new().unwrap();
         let repo = tmp.path().canonicalize().unwrap().join("repo");
         let worktree = make_worktree(&repo, STAGE);
@@ -82,6 +84,7 @@ impl Fixture {
         stage.harness = vec![HARNESS.to_string()];
         save_stage(&stage, &work_dir).unwrap();
         Self {
+            _cache_env: cache_env,
             _tmp: tmp,
             work_dir,
             worktree,

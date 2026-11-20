@@ -18,6 +18,8 @@ pub mod session;
 #[cfg(test)]
 mod contract_tests;
 #[cfg(test)]
+mod host_env_tests;
+#[cfg(test)]
 mod session_contract_tests;
 #[cfg(test)]
 mod tests;
@@ -25,6 +27,7 @@ mod tests;
 mod toolchain_tests;
 
 pub use developer::DeveloperTools;
+pub use environment::{go_proxy, goproxy_has_userinfo, host_env_from, host_env_from_process};
 pub use roots::{seed_read_roots, toolchain_read_roots};
 
 use anyhow::{Context, Result};
@@ -56,6 +59,9 @@ const ROOT_NAME_LEN: usize = 24;
 pub struct StageCache {
     base: PathBuf,
     root: PathBuf,
+    /// The consumer's private directory for a `Session` or `Worker` sccache
+    /// socket ([`StageCache::with_socket_dir`]).
+    socket_dir: Option<PathBuf>,
 }
 
 impl StageCache {
@@ -95,7 +101,38 @@ impl StageCache {
         let mut root = base.clone();
         root.extend(PARENTS);
         root.push(name);
-        Ok(StageCache { base, root })
+        Ok(StageCache {
+            base,
+            root,
+            socket_dir: None,
+        })
+    }
+
+    /// [`StageCache::resolve`] under this process's `HOME` and
+    /// `XDG_CACHE_HOME`, the one resolver every consumer and cleanup uses, so
+    /// the CLI and the daemon (whose environment keeps both) name one root.
+    pub fn resolve_from_process(repo_root: &Path, stage_id: &str) -> Result<StageCache> {
+        let home = std::env::var_os("HOME")
+            .filter(|home| !home.is_empty())
+            .context("HOME is not set: the stage build cache lives below it")?;
+        let xdg = std::env::var_os("XDG_CACHE_HOME").map(PathBuf::from);
+        StageCache::resolve(repo_root, stage_id, Path::new(&home), xdg.as_deref())
+    }
+
+    /// This cache with `dir` as the private directory of a `Session` or
+    /// `Worker` sccache socket: one no other consumer of the stage is granted.
+    /// Without it those consumers get no `SCCACHE_SERVER_UDS`.
+    pub fn with_socket_dir(mut self, dir: &Path) -> StageCache {
+        self.socket_dir = Some(dir.to_path_buf());
+        self
+    }
+
+    /// This cache re-rooted at `root`, the canonical path [`StageCache::ensure`]
+    /// returned, so the variables a consumer gets name the path its boundary
+    /// grants (the configured root may reach it through a symlink).
+    pub fn at_root(mut self, root: PathBuf) -> StageCache {
+        self.root = root;
+        self
     }
 
     /// The stage's cache root.
@@ -107,16 +144,25 @@ impl StageCache {
     /// down), opening every component without following a symlink. Refuses a
     /// symlinked or foreign-owned component; an existing root is closed to
     /// this user. Entries already in the root are the stage's own and stay.
-    pub fn ensure(&self) -> Result<()> {
+    ///
+    /// Returns the canonical root: the canonical base joined with the fixed
+    /// components just opened without following links. A boundary grants this
+    /// path, never one resolved again later, which a stage could by then have
+    /// swapped for a symlink (the root itself is the stage's to write).
+    pub fn ensure(&self) -> Result<PathBuf> {
         std::fs::DirBuilder::new()
             .recursive(true)
             .mode(0o700)
             .create(&self.base)
             .with_context(|| format!("create cache base {}", self.base.display()))?;
+        let base = self
+            .base
+            .canonicalize()
+            .with_context(|| format!("resolve cache base {}", self.base.display()))?;
         let flags = OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_CLOEXEC;
-        let mut directory = Dir::open(&self.base, flags, Mode::empty())
-            .with_context(|| format!("open cache base {}", self.base.display()))?;
-        let mut path = self.base.clone();
+        let mut directory = Dir::open(&base, flags, Mode::empty())
+            .with_context(|| format!("open cache base {}", base.display()))?;
+        let mut path = base;
         for name in PARENTS {
             path.push(name);
             directory = open_owned(directory.as_fd(), name, &path)?;
@@ -125,12 +171,13 @@ impl StageCache {
             .root
             .file_name()
             .context("stage cache root has no name")?;
-        let root = open_owned(directory.as_fd(), name, &self.root)?;
+        path.push(name);
+        let root = open_owned(directory.as_fd(), name, &path)?;
         if fstat(&root)?.st_mode & 0o777 != 0o700 {
             fchmod(&root, Mode::S_IRWXU)
                 .with_context(|| format!("close stage cache {}", self.root.display()))?;
         }
-        Ok(())
+        Ok(path)
     }
 }
 

@@ -80,6 +80,7 @@ fn crate_with(source: &str) -> TempDir {
 
 // Toolchain lookup reads process-wide HOME/PATH; callers share the environment-test lock.
 fn problems_for(temp: &TempDir) -> Vec<String> {
+    let _env = crate::test_cache_env::CacheEnv::pin();
     let _toolchain = crate::verify::test_support::ToolchainReadRoot::from_runner();
     let acceptance = [
         AcceptanceCriterion::Simple("cargo fmt --check".to_string()),

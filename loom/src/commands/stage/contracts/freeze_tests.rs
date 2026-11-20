@@ -124,6 +124,7 @@ fn site_checking_formatting_of(source: &str) -> (tempfile::TempDir, ContractSite
 #[test]
 #[serial_test::serial]
 fn freeze_refuses_a_contract_file_that_fails_the_formatter_check() {
+    let _env = crate::test_cache_env::CacheEnv::pin();
     let _toolchain = crate::verify::test_support::ToolchainReadRoot::from_runner();
     let (_temp, site) = site_checking_formatting_of("pub fn  add(a:u32,b:u32)->u32{a+b}\n");
 
@@ -143,6 +144,7 @@ fn freeze_refuses_a_contract_file_that_fails_the_formatter_check() {
 #[test]
 #[serial_test::serial]
 fn freeze_goes_on_when_the_contract_files_are_formatted() {
+    let _env = crate::test_cache_env::CacheEnv::pin();
     let _toolchain = crate::verify::test_support::ToolchainReadRoot::from_runner();
     let (_temp, site) =
         site_checking_formatting_of("pub fn add(a: u32, b: u32) -> u32 {\n    a + b\n}\n");
@@ -155,6 +157,7 @@ fn freeze_goes_on_when_the_contract_files_are_formatted() {
 #[test]
 #[serial_test::serial]
 fn freeze_refuses_an_unformatted_writer_file_named_by_an_after_stage_formatter() {
+    let _env = crate::test_cache_env::CacheEnv::pin();
     let _toolchain = crate::verify::test_support::ToolchainReadRoot::from_runner();
     let (_temp, mut site) = site_checking_formatting_of("pub fn  add(a:u32,b:u32)->u32{a+b}\n");
     site.stage.acceptance.clear();

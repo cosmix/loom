@@ -72,6 +72,7 @@ fn queued_stage(work: &Path, before_stage: Vec<TruthCheck>) -> Stage {
 /// beside a plain directory no repository does. Returns the gate's answer and
 /// the stage as the gate left it on disk.
 fn gate(commands: &[&str], before_stage: Vec<TruthCheck>, worktree: &Path) -> (bool, Stage) {
+    let _env = crate::test_cache_env::CacheEnv::pin();
     let temp = TempDir::new().unwrap();
     let root = worktree
         .parent()
@@ -164,6 +165,7 @@ fn failing_check() -> TruthCheck {
 }
 
 #[test]
+#[serial_test::serial]
 fn a_failing_provision_blocks_the_stage_with_its_reason() {
     let worktree = TempDir::new().unwrap();
 
@@ -181,6 +183,7 @@ fn a_failing_provision_blocks_the_stage_with_its_reason() {
 }
 
 #[test]
+#[serial_test::serial]
 fn a_failing_before_stage_check_blocks_before_provisioning() {
     let worktree = TempDir::new().unwrap();
 
@@ -196,6 +199,7 @@ fn a_failing_before_stage_check_blocks_before_provisioning() {
 }
 
 #[test]
+#[serial_test::serial]
 fn a_snapshot_without_entries_leaves_the_gate_to_before_stage() {
     let worktree = TempDir::new().unwrap();
 
@@ -207,6 +211,7 @@ fn a_snapshot_without_entries_leaves_the_gate_to_before_stage() {
 }
 
 #[test]
+#[serial_test::serial]
 fn a_passing_provision_runs_in_the_worktree() {
     let worktree = TempDir::new().unwrap();
 
@@ -218,6 +223,7 @@ fn a_passing_provision_runs_in_the_worktree() {
 }
 
 #[test]
+#[serial_test::serial]
 fn a_provision_that_leaves_an_unignored_file_blocks_the_stage() {
     let repo = repo_ignoring_node_modules();
     let command = "mkdir -p node_modules && touch node_modules/x && touch provisioned";
@@ -238,6 +244,7 @@ fn a_provision_that_leaves_an_unignored_file_blocks_the_stage() {
 }
 
 #[test]
+#[serial_test::serial]
 fn an_unignored_file_name_reaches_the_reason_without_its_escape_bytes() {
     let repo = repo_ignoring_node_modules();
 
@@ -261,7 +268,9 @@ fn an_unignored_file_name_reaches_the_reason_without_its_escape_bytes() {
 
 /// Calling `run_provision` outside `busy::while_busy` writes no tick, so this fails.
 #[test]
+#[serial_test::serial]
 fn provisioning_stamps_the_daemon_tick() {
+    let _env = crate::test_cache_env::CacheEnv::pin();
     let work = TempDir::new().unwrap();
     let worktree = TempDir::new().unwrap();
     assert!(tick::read(work.path()).unwrap().is_none());
@@ -275,6 +284,7 @@ fn provisioning_stamps_the_daemon_tick() {
 }
 
 #[test]
+#[serial_test::serial]
 fn a_provision_that_writes_only_ignored_files_spawns() {
     let repo = repo_ignoring_node_modules();
 
@@ -290,6 +300,7 @@ fn a_provision_that_writes_only_ignored_files_spawns() {
 }
 
 #[test]
+#[serial_test::serial]
 fn a_retry_does_not_count_its_own_earlier_unignored_files() {
     let repo = repo_ignoring_node_modules();
     fs::write(repo.path().join("provisioned"), "").unwrap();
@@ -300,7 +311,9 @@ fn a_retry_does_not_count_its_own_earlier_unignored_files() {
 }
 
 #[test]
+#[serial_test::serial]
 fn the_gate_reads_the_snapshot_not_the_plan() {
+    let _env = crate::test_cache_env::CacheEnv::pin();
     let temp = work_dir();
     let work = temp.path().join(".loom").join("work");
     let worktree = TempDir::new().unwrap();
@@ -332,6 +345,7 @@ fn the_gate_reads_the_snapshot_not_the_plan() {
 }
 
 #[test]
+#[serial_test::serial]
 fn a_provision_that_modifies_a_tracked_file_blocks_and_names_its_full_path() {
     let repo = repo_tracking("web/bun.lock");
 
@@ -345,6 +359,7 @@ fn a_provision_that_modifies_a_tracked_file_blocks_and_names_its_full_path() {
 }
 
 #[test]
+#[serial_test::serial]
 fn a_pre_existing_modified_tracked_file_is_not_a_new_entry() {
     let repo = repo_tracking("a.txt");
     fs::write(repo.path().join("a.txt"), "edited before provisioning\n").unwrap();
@@ -364,6 +379,7 @@ fn a_pre_existing_modified_tracked_file_is_not_a_new_entry() {
 /// rejects such a name (EILSEQ), so the provision cannot write it on macOS.
 #[cfg(not(target_os = "macos"))]
 #[test]
+#[serial_test::serial]
 fn a_provision_that_writes_a_non_utf8_name_blocks_the_stage() {
     let repo = repo_ignoring_node_modules();
 

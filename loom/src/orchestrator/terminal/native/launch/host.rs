@@ -148,16 +148,17 @@ impl LaunchHost {
     }
 
     /// The wrapper's `LOOM_SCRATCH_DIR`, `LOOM_BIN`, `LOOM_HOOK_PATH` and
-    /// `LOOM_BOOT_ID`, and the session's stage cache exports for `cwd`.
+    /// `LOOM_BOOT_ID`, and the stage cache exports for `cwd` (sccache socket in the scratch dir).
     pub(super) fn wrapper_env(
         &self,
         scratch_dir: PathBuf,
         cache: &StageCache,
         cwd: &Path,
     ) -> WrapperHostEnv {
-        let host_env = crate::stage_cache::session::host_env_from_process();
+        let host_env = crate::stage_cache::host_env_from_process();
+        let cache = cache.clone().with_socket_dir(&scratch_dir);
         WrapperHostEnv {
-            cache_exports: crate::stage_cache::session::wrapper_exports(cache, cwd, &host_env),
+            cache_exports: crate::stage_cache::session::wrapper_exports(&cache, cwd, &host_env),
             scratch_dir: Some(scratch_dir),
             loom_bin: Some(self.facts.loom_bin.clone()),
             hook_path: self.facts.hook_path.clone(),

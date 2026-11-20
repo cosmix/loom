@@ -16,7 +16,7 @@ use super::environment::{
 };
 use super::mounts::{self, codex_package, CodexPackage};
 use super::{tmpdir, BoundarySpec, SpawnedBoundary, BOUNDARY_TMPDIR};
-use crate::stage_cache::{seed_read_roots, toolchain_read_roots, StageCache};
+use crate::stage_cache::{host_env_from, seed_read_roots, toolchain_read_roots, StageCache};
 use crate::verify::criteria::{
     bind_read_roots, bubblewrap, read_roots, CargoScratch, NetworkAccess,
 };
@@ -133,10 +133,15 @@ impl Plan {
         })
     }
 
-    /// `env` with the stage cache's variables over it, when the plan has one.
-    fn run_environment(&self, env: &[(OsString, OsString)]) -> Vec<(OsString, OsString)> {
+    /// `env` with the stage cache's variables over it, when the plan has one;
+    /// its seeds resolve from `host`.
+    fn run_environment(
+        &self,
+        env: &[(OsString, OsString)],
+        host: &[(OsString, OsString)],
+    ) -> Vec<(OsString, OsString)> {
         match &self.stage_cache {
-            Some(cache) => with_stage_cache(env, cache, &self.worktree),
+            Some(cache) => with_stage_cache(env, host, cache, &self.worktree),
             None => env.to_vec(),
         }
     }
@@ -184,7 +189,7 @@ pub(super) fn command(
     // `/tmp` itself stays outside the Codex turn policy's writable roots, so a
     // sandboxed command cannot rename anything bound below it.
     command.args(["--perms", "0700", "--dir", BOUNDARY_TMPDIR]);
-    let run_env = plan.run_environment(&env);
+    let run_env = plan.run_environment(&env, host);
     command
         .env_clear()
         .envs(run_env.iter().map(|(k, v)| (k, v)));
@@ -197,7 +202,7 @@ pub(super) fn command(
         command.arg("--bind").arg(home).arg(home);
         command.env("CARGO_HOME", home);
     }
-    bind_stage_cache(&mut command, plan, &probe, &env)?;
+    bind_stage_cache(&mut command, plan, &probe, &env, host)?;
     mounts::worktree(&mut command, &plan.worktree, plan.codex_home.is_some())?;
     if let Some(codex_home) = &plan.codex_home {
         bind_codex_home(&mut command, plan, codex_home, &probe)?;
@@ -229,29 +234,27 @@ fn bind_codex_home(
     mounts::codex_home(command, codex_home, package_root)
 }
 
-/// The stage cache root writable, over the host seeds and toolchain roots its
-/// environment names, read-only. A seed or toolchain root already under a
-/// read root, or overlapping the root or the worktree (a read-only bind would
-/// make part of either read-only), is not bound again.
+/// The stage cache root writable, over the host seeds `host` names and the
+/// toolchain roots of the boundary's `env`, read-only. A seed or toolchain
+/// root already under a read root, or overlapping the root or the worktree (a
+/// read-only bind would make part of either read-only), is not bound again.
 fn bind_stage_cache(
     command: &mut Command,
     plan: &Plan,
     probe: &Command,
     env: &[(OsString, OsString)],
+    host: &[(OsString, OsString)],
 ) -> Result<()> {
     let Some(cache) = &plan.stage_cache else {
         return Ok(());
     };
-    cache.ensure()?;
-    let root = cache.root();
-    let canonical_root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+    let canonical_root = cache.ensure()?;
     let installed = read_roots(probe);
-    let host_env = host_map(env);
-    let host_roots = seed_read_roots(&host_env)
+    let host_roots = seed_read_roots(&host_env_from(host.iter().cloned()))
         .into_iter()
-        .chain(toolchain_read_roots(&host_env));
+        .chain(toolchain_read_roots(&host_map(env)));
     command.args(stage_cache_args(
-        root,
+        cache.root(),
         &canonical_root,
         &plan.worktree,
         &installed,
@@ -262,7 +265,9 @@ fn bind_stage_cache(
 
 /// The mount arguments of [`bind_stage_cache`]: a read-only bind of each host
 /// root not already under `installed` and not overlapping the canonical cache
-/// root or the worktree, then the writable bind of the root itself.
+/// root or the worktree, then the writable bind of `canonical_root`, the path
+/// [`StageCache::ensure`] opened without following links, at `root`, the path
+/// the environment names.
 fn stage_cache_args(
     root: &Path,
     canonical_root: &Path,
@@ -289,7 +294,7 @@ fn stage_cache_args(
     }
     args.extend([
         OsString::from("--bind"),
-        root.as_os_str().to_owned(),
+        canonical_root.as_os_str().to_owned(),
         root.as_os_str().to_owned(),
     ]);
     args

@@ -44,7 +44,7 @@ fn seatbelt_path_rules(
 ) -> Result<String> {
     let mut profile = String::new();
     let writable = writable_roots(tree, scratch, grants);
-    let read_only = read_roots_beside(original, &writable);
+    let read_only = read_roots_beside(original, &writable, grants.seed_env().as_ref());
     let readable = writable.iter().map(|path| path.to_path_buf());
     let git_roots = grants
         .git
@@ -117,9 +117,9 @@ const HIDDEN_IN_M2: [&str; 2] = ["settings.xml", "settings-security.xml"];
 /// The host-job sccache server socket in the stage cache root
 /// (`SCCACHE_SERVER_UDS`), the only Unix socket a confined command may bind or
 /// connect to: the session's and the workers' servers run compilers outside
-/// this boundary. The variable names the root as given, which can differ from
-/// the canonical `root` by a `/private` or firmlink prefix, so each spelling
-/// gets the rule.
+/// this boundary. The variable names the canonical root, which a process can
+/// also reach through a `/private` or firmlink spelling, so each spelling gets
+/// the rule.
 fn sccache_socket_rule(root: &Path) -> Result<String> {
     let mut rules = String::new();
     for socket in ancestors::seatbelt_spellings(&root.join("h.sock")) {
@@ -130,6 +130,57 @@ fn sccache_socket_rule(root: &Path) -> Result<String> {
         ));
     }
     Ok(rules)
+}
+
+/// Provisioning reaches the network, DNS included (the resolver's
+/// `mDNSResponder` socket), but no stage's cache root and no session's scratch
+/// directory, where the stage cache's and the sessions' sccache servers
+/// listen: they run compilers outside this boundary. These denials precede
+/// the path rules, so [`sccache_socket_rule`]'s later grant of the host-job
+/// socket still wins.
+fn provision_network_rules(grants: &Grants<'_>) -> Result<String> {
+    let mut rules = String::from("(allow network-outbound)");
+    let stage_roots = grants.cache_root.and_then(Path::parent);
+    let scratch = crate::relay::scratch_root_from_env().ok();
+    for base in stage_roots
+        .map(Path::to_path_buf)
+        .into_iter()
+        .chain(scratch)
+    {
+        let canonical = base.canonicalize().ok().filter(|path| *path != base);
+        for spelling in std::iter::once(base).chain(canonical) {
+            for path in ancestors::seatbelt_spellings(&spelling) {
+                let prefix = regex_prefix(&path)?;
+                rules.push_str(&format!(
+                    "(deny network-outbound (remote unix-socket (path-regex #\"{prefix}\")))"
+                ));
+            }
+        }
+    }
+    Ok(rules)
+}
+
+/// An SBPL regex literal body matching every path below `directory`. A
+/// regex literal has no escape for `"`, so a path holding one (or a control
+/// character) is refused, naming it.
+fn regex_prefix(directory: &Path) -> Result<String> {
+    quote(directory)?;
+    let text = directory.to_string_lossy();
+    if text.contains('"') {
+        anyhow::bail!(
+            "confined verification cannot name {directory:?} in a Seatbelt profile: \
+             the path holds a double quote"
+        );
+    }
+    let mut regex = String::from("^");
+    for character in text.trim_end_matches('/').chars() {
+        if "\\.^$|?*+()[]{}".contains(character) {
+            regex.push('\\');
+        }
+        regex.push(character);
+    }
+    regex.push('/');
+    Ok(regex)
 }
 
 /// Files in a Cargo home that never reach a confined command, as Bubblewrap's
@@ -189,7 +240,7 @@ pub(super) fn platform_command(
     // dyld opens the root directory while discovering the system Cryptex cache.
     let mut profile = String::from("(version 1)(deny default)(allow process*)(allow sysctl-read)(allow mach-lookup)(allow file-read-metadata)(allow file-read* (literal \"/\"))");
     if network == NetworkAccess::Provision {
-        profile.push_str("(allow network-outbound)");
+        profile.push_str(&provision_network_rules(grants)?);
     }
     profile.push_str(&seatbelt_path_rules(original, tree, scratch, grants)?);
     let mut command = Command::new(launcher);
@@ -204,3 +255,7 @@ pub(super) fn platform_command(
 #[cfg(test)]
 #[path = "confine_seatbelt_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "confine_provision_tests.rs"]
+mod provision_tests;
