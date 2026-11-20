@@ -219,24 +219,24 @@ the worker can open. Plan authors: rubric in
 
 ## Plan version 2 stages
 
-A version 2 stage must satisfy more than its criteria. Its signal names the frozen contracts,
-the review gate and carried findings; this section is the flow.
+The signal names contracts, review gate and carried findings; this is the flow.
 
-**Contracts** (standard stages with `contracts`). A contract session wrote the contract tests and
-harness files, confirmed each fails, and froze them. Never edit a frozen file; name them
-read-only in every brief. `loom stage contracts show <stage-id>`
-prints the freeze record; `loom stage contracts restore <stage-id> [--contract <id>]` copies
-the frozen content back. A wrong contract is disputed, never edited; a change to a frozen file
-travels as a replacement: copy it to `$LOOM_SCRATCH_DIR`, edit the copy, run the stage's formatter
-check on it, and file `loom stage dispute-contract <stage-id> --contract <id>...
---replacement <frozen-file>=<path> --reason "..."` (one filing for every contract with the same
-cause; refused while a frozen file is edited). An accept writes it into the worktree; commit it.
+**Contracts** (standard stages with `contracts`). Never edit a frozen file; name them read-only in
+every brief. `loom stage contracts show|restore <stage-id>` prints or restores the frozen files.
+Contracts run in loom's confinement (no network, writes only in the worktree and TMPDIR, no nested
+sandbox): run `loom check <stage-id> --contracts` once they compile; a plain `loom check
+<stage-id>` runs them after the goal-backward checks. A wrong contract is disputed; a frozen file
+changes only by replacement: copy it to `$LOOM_SCRATCH_DIR`, edit the copy, format-check it,
+trial it with `loom check <stage-id> --contracts --replacement <frozen-file>=<path>`, then file
+ONE `loom stage dispute-contract <stage-id> --contract <id>... --replacement <frozen-file>=<path>
+--reason "..."` for all affected contracts (refused without a passing trial of those bytes at
+HEAD). An accept writes it to the worktree.
 
 **The review loop** (standard and integration-verify stages):
 
 1. Spawn `loom-code-reviewer` BY AGENT TYPE, without `name` or model override.
    The guard uses `models.code_reviewer_model` (opus by default) for the first round,
-   `models.code_reviewer_followup_model` (sonnet by default) for later rounds in the stage.
+   `models.code_reviewer_followup_model` (sonnet by default) for later rounds.
    Only this type records rounds. Its hook reads the `loom-review` block from its
    `SubagentHandback` report, else its final message. Invalid/missing blocks do not count. Reviewers lack the signal:
    paste the stage's acceptance criteria (with `exit_code` and `stdout_contains` where set)

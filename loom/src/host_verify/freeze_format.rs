@@ -45,7 +45,7 @@ pub(super) fn verdict_line(report: &ContractRunReport, shared_from: Option<&str>
 /// the tree digest, and the freeze job compares the digest before and after
 /// the run. The untracked files the gate created are therefore removed
 /// afterwards, also when it refused, but only those [`GateWrites`] covers.
-pub(super) fn format_outcome(
+pub(in crate::host_verify) fn format_outcome(
     site: &ContractSite,
     git: &WorktreeGit,
     confinement: CommandConfinement,

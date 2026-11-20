@@ -51,6 +51,7 @@ impl Fx {
             kind: JobKind::Freeze,
             no_cache: false,
             criteria: None,
+            contracts: None,
             scratch_dir: &self.scratch,
             budget: Duration::ZERO,
         }
@@ -71,6 +72,7 @@ impl Fx {
             tree_digest: String::new(),
             no_cache: false,
             criteria: None,
+            contracts: false,
             state: JobState::Failed,
             requests: vec!["r1".to_string()],
             queued_at: Utc::now(),

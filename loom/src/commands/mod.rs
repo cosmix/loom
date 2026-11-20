@@ -30,4 +30,6 @@ pub mod subagents;
 pub mod target;
 pub mod usage;
 pub mod verify;
+#[cfg(test)]
+mod verify_contract_tests;
 pub mod worktree_cmd;

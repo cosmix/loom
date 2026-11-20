@@ -21,6 +21,7 @@ mod apply_rejection;
 pub(crate) mod apply_retry;
 pub mod child;
 mod child_complete;
+mod child_contracts;
 pub(crate) mod child_policy;
 mod child_watchdog;
 pub mod digest;
@@ -43,6 +44,8 @@ mod wait_report;
 mod wait_state;
 
 #[cfg(test)]
+mod child_cache_tests;
+#[cfg(test)]
 mod tests_apply;
 #[cfg(test)]
 mod tests_apply_recovery;
@@ -51,7 +54,11 @@ mod tests_child;
 #[cfg(test)]
 mod tests_child_complete;
 #[cfg(test)]
+mod tests_child_contracts;
+#[cfg(test)]
 mod tests_child_impact;
+#[cfg(test)]
+mod tests_child_overlay_undo;
 #[cfg(test)]
 mod tests_child_reuse;
 #[cfg(test)]
@@ -80,6 +87,8 @@ mod tests_runner_recovery;
 mod tests_store;
 #[cfg(test)]
 mod tests_submit;
+#[cfg(test)]
+mod tests_submit_contracts;
 #[cfg(test)]
 mod tests_submit_pending;
 #[cfg(test)]
@@ -172,6 +181,11 @@ pub struct JobRecord {
     /// The 0-based acceptance criteria a check runs (`loom check
     /// --criterion`); `None` runs every one. Only a check carries one.
     pub criteria: Option<Vec<usize>>,
+    /// A check of the stage's frozen contracts (`loom check --contracts`)
+    /// instead of its acceptance criteria; a trial's replacement files are
+    /// the job's `replacements.json` file. Only a check sets it.
+    #[serde(default)]
+    pub contracts: bool,
     pub state: JobState,
     /// Relay request ids joined to this job, the last 16 kept.
     pub requests: Vec<String>,

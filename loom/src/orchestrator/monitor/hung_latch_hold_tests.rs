@@ -164,6 +164,7 @@ fn save_job(work_dir: &Path, state: JobState, started_secs_ago: i64) {
         tree_digest: "b".repeat(64),
         no_cache: false,
         criteria: None,
+        contracts: false,
         state,
         requests: Vec::new(),
         queued_at: started,

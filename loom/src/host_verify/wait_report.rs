@@ -11,13 +11,32 @@ use super::digest;
 use super::store::{job_dir, read_progress};
 use super::wait::{WaitOutcome, WaitSite};
 use super::{CriterionOutcome, JobKind, JobRecord, JobResult, JobState};
+use crate::verify::contracts::completion::guidance;
 
 const SHORT_HEAD: usize = 12;
 
+/// The line a passing trial ends with.
+const TRIAL_PASSED: &str = "Trial passed: file the dispute with the same --replacement values.";
+
 /// `Host job: <state> (<kind>, <short head>)`, the first line of every call.
 pub fn heading(kind: JobKind, state: &str, head: &str) -> String {
+    labelled(kind.name(), state, head)
+}
+
+/// [`heading`] for the job `site` follows: a contracts check and a trial
+/// are named as such.
+pub(super) fn site_heading(site: &WaitSite<'_>, state: &str, head: &str) -> String {
+    let kind = match site.contracts {
+        None => site.kind.name(),
+        Some([]) => "contracts check",
+        Some(_) => "contracts trial",
+    };
+    labelled(kind, state, head)
+}
+
+fn labelled(kind: &str, state: &str, head: &str) -> String {
     let short: String = head.chars().take(SHORT_HEAD).collect();
-    format!("Host job: {state} ({}, {short})", kind.name())
+    format!("Host job: {state} ({kind}, {short})")
 }
 
 /// A refused call: its first line, then `message`. Returns the exit code, 1.
@@ -25,7 +44,21 @@ pub fn heading(kind: JobKind, state: &str, head: &str) -> String {
 /// contract freeze ends here, so the doctrine's "read the first line" holds
 /// even when the call failed before it had a job.
 pub fn refusal(out: &mut dyn Write, kind: JobKind, head: &str, message: &str) -> Result<i32> {
-    writeln!(out, "{}", heading(kind, "refused", head))?;
+    refused(out, &heading(kind, "refused", head), message)
+}
+
+/// [`refusal`] under `site`'s heading.
+pub(super) fn site_refusal(
+    out: &mut dyn Write,
+    site: &WaitSite<'_>,
+    head: &str,
+    message: &str,
+) -> Result<i32> {
+    refused(out, &site_heading(site, "refused", head), message)
+}
+
+fn refused(out: &mut dyn Write, first: &str, message: &str) -> Result<i32> {
+    writeln!(out, "{first}")?;
     writeln!(out, "{message}")?;
     out.flush()?;
     Ok(1)
@@ -47,12 +80,12 @@ pub(super) fn report(
     let text = match outcome {
         WaitOutcome::Requested { .. } => return Ok(()),
         WaitOutcome::Refused(reason) => {
-            refusal(out, site.kind, head, reason)?;
+            site_refusal(out, site, head, reason)?;
             return Ok(());
         }
         WaitOutcome::Pending { done } => format!(
             "{}: {done} criteria done. Run the same command again to keep waiting.\n",
-            heading(site.kind, "pending", head)
+            site_heading(site, "pending", head)
         ),
         WaitOutcome::Finished(record, result) => {
             finished_text(site, head, record, result.as_ref())?
@@ -79,7 +112,7 @@ fn finished_text(
         None => read_progress(site.work_dir, site.stage_id, &record.id)?,
     };
     let dir = job_dir(site.work_dir, site.stage_id, &record.id)?;
-    let mut text = format!("{}\n", heading(site.kind, word, head));
+    let mut text = format!("{}\n", site_heading(site, word, head));
     for outcome in outcomes.iter().filter(|outcome| !outcome.passed) {
         write_failure(&mut text, &dir, outcome);
     }
@@ -95,6 +128,13 @@ fn finished_text(
     }
     if word == "stopped" {
         let _ = writeln!(text, "Run the same command again to request a new run.");
+    }
+    let contract_failed = |o: &CriterionOutcome| !o.passed && o.label.starts_with("contract:");
+    if word == "failed" && outcomes.iter().any(contract_failed) {
+        let _ = writeln!(text, "{}", guidance(site.stage_id));
+    }
+    if word == "passed" && site.contracts.is_some_and(|files| !files.is_empty()) {
+        let _ = writeln!(text, "{TRIAL_PASSED}");
     }
     Ok(text)
 }

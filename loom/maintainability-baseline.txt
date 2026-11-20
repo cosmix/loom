@@ -45,7 +45,6 @@ function src/commands/skill_index.rs parse_skill_triggers 80
 function src/commands/status.rs execute_static 81
 function src/commands/status/render/graph.rs render_graph 64
 function src/commands/status/ui/tui/renderer.rs render_completion 120
-function src/commands/verify.rs execute 63
 function src/completions/dynamic/mod.rs complete_after_subcommand 56
 function src/completions/install.rs install 52
 function src/context/refresh/tests_source_graph/enumeration.rs an_unreadable_file_survives_as_a_reported_lexical_only_entry 62

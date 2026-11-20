@@ -18,6 +18,7 @@ pub use restore::restore;
 pub use show::show;
 
 use std::io::Write;
+use std::path::Path;
 use std::time::Instant;
 
 use anyhow::{bail, Context, Result};
@@ -143,6 +144,7 @@ fn relay_freeze(context: &RelayContext, call: &FreezeCall<'_>, out: &mut dyn Wri
         kind: JobKind::Freeze,
         no_cache: false,
         criteria: None,
+        contracts: None,
         scratch_dir: &context.scratch_dir,
         budget: wait::budget_for(&call.site.stage),
     };
@@ -161,10 +163,7 @@ fn relay_freeze(context: &RelayContext, call: &FreezeCall<'_>, out: &mut dyn Wri
         Ok(line.id)
     };
     let outcome = wait::wait_or_request(&site, &mut relay, out)?;
-    // Best effort: a stale local refusal note must not strand a request already relayed.
-    if let Err(error) = refusal::clear(&context.scratch_dir) {
-        tracing::warn!(error = %format!("{error:#}"), "Cannot clear the local freeze refusal note");
-    }
+    clear_refusal_note(&context.scratch_dir);
     match outcome {
         WaitOutcome::Requested { request_id } => {
             freeze_pending::record_sent(&site, &request_id, call.choices);
@@ -180,6 +179,13 @@ fn relay_freeze(context: &RelayContext, call: &FreezeCall<'_>, out: &mut dyn Wri
             })
         }
         other => Ok(wait::exit_code(&other)),
+    }
+}
+
+/// Best effort: a stale local refusal note must not strand a request already relayed.
+fn clear_refusal_note(scratch_dir: &Path) {
+    if let Err(error) = refusal::clear(scratch_dir) {
+        tracing::warn!(error = %format!("{error:#}"), "Cannot clear the local freeze refusal note");
     }
 }
 

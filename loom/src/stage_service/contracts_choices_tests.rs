@@ -96,6 +96,7 @@ impl Fixture {
             tree_digest: self.tree(),
             no_cache: false,
             criteria: None,
+            contracts: false,
             state: JobState::Queued,
             requests: vec!["r0".to_string()],
             queued_at: Utc::now(),

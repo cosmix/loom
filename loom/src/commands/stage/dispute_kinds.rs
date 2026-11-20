@@ -84,7 +84,11 @@ fn snapshot(work_dir: &Path, stage_id: &str, target: DisputeTarget) -> Result<Di
             replacements,
         } => Ok(DisputeKind::Contract {
             contract_ids,
-            replacements: read_replacements(work_dir, stage_id, &replacements)?,
+            replacements: read_replacements(
+                work_dir,
+                stage_id,
+                &parse_replacements(&replacements)?,
+            )?,
         }),
         DisputeTarget::Integrity(event_ids) => {
             let stage = load_stage(stage_id, work_dir)?;
@@ -103,35 +107,43 @@ fn snapshot(work_dir: &Path, stage_id: &str, target: DisputeTarget) -> Result<Di
     }
 }
 
-/// The replacements `values` name, each `<frozen-file>=<path>`. A value
-/// without `=`, with an empty side, or naming a frozen file a second time is
-/// refused. The frozen file is kept in the freeze record's path form.
-fn read_replacements(
-    work_dir: &Path,
-    stage_id: &str,
-    values: &[String],
-) -> Result<Vec<FileReplacement>> {
+/// The `(frozen file, replacement path)` pairs `values` name, each
+/// `<frozen-file>=<path>`, for a contract dispute and a replacement trial
+/// alike. A value without `=`, with an empty side, or naming a frozen file a
+/// second time is refused. The frozen file is kept in the freeze record's
+/// path form.
+pub(crate) fn parse_replacements(values: &[String]) -> Result<Vec<(String, PathBuf)>> {
     let mut named = HashSet::new();
     let mut parsed = Vec::with_capacity(values.len());
     for value in values {
         let (file, path) = parse_replacement(value)?;
         if !named.insert(file.clone()) {
             bail!(
-                "--replacement names the frozen file '{file}' twice: file one replacement per file"
+                "--replacement names the frozen file '{file}' twice: name one replacement per file"
             );
         }
-        parsed.push((file, Path::new(path)));
+        parsed.push((file, PathBuf::from(path)));
     }
-    if parsed.is_empty() {
+    Ok(parsed)
+}
+
+/// Read each of `files`, pairs [`parse_replacements`] returned, under
+/// [`read_replacement`]'s rules.
+pub(crate) fn read_replacements(
+    work_dir: &Path,
+    stage_id: &str,
+    files: &[(String, PathBuf)],
+) -> Result<Vec<FileReplacement>> {
+    if files.is_empty() {
         return Ok(Vec::new());
     }
     let worktree_root = stage_worktree_root(work_dir, stage_id)?;
-    parsed
-        .into_iter()
+    files
+        .iter()
         .map(|(file, path)| {
             Ok(FileReplacement {
                 content: read_replacement(&worktree_root, path)?,
-                file,
+                file: file.clone(),
                 base_sha256: None,
             })
         })
@@ -141,7 +153,7 @@ fn read_replacements(
 /// The canonical root of the stage's worktree. A session reaches the state
 /// directory through its worktree's `.loom/work` symlink; the repository root
 /// is the one the resolved path names.
-fn stage_worktree_root(work_dir: &Path, stage_id: &str) -> Result<PathBuf> {
+pub(crate) fn stage_worktree_root(work_dir: &Path, stage_id: &str) -> Result<PathBuf> {
     let stage = load_stage(stage_id, work_dir)?;
     let state_dir = work_dir
         .canonicalize()
@@ -150,7 +162,7 @@ fn stage_worktree_root(work_dir: &Path, stage_id: &str) -> Result<PathBuf> {
 }
 
 /// `<frozen-file>=<path>` split at its first `=`, the frozen file normalized.
-fn parse_replacement(value: &str) -> Result<(String, &str)> {
+pub(crate) fn parse_replacement(value: &str) -> Result<(String, &str)> {
     let Some((file, path)) = value.split_once('=') else {
         bail!("--replacement '{value}' is not `<frozen-file>=<path>`");
     };
@@ -170,7 +182,7 @@ fn parse_replacement(value: &str) -> Result<(String, &str)> {
 /// A path that canonicalizes into the worktree is refused whatever it names
 /// (`./` spellings and symlinks resolve first): the replacement is the daemon's
 /// to write there on an accept, and the agent never edits a frozen file.
-fn read_replacement(worktree_root: &Path, path: &Path) -> Result<String> {
+pub(crate) fn read_replacement(worktree_root: &Path, path: &Path) -> Result<String> {
     let resolved = path
         .canonicalize()
         .with_context(|| format!("cannot read the replacement file {}", path.display()))?;

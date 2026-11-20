@@ -2,7 +2,7 @@
 
 use crate::orchestrator::signals::helpers::CONTEXT_CEILING_HANDOFF;
 
-/// Rules 1 to 6: what to write and what to do before freezing.
+/// Rules 1 to 7: what to write and what to do before freezing.
 const WRITING_RULES: &str =
     "1. Write each contract test above in its file. You may also write files matching \
      the harness globs and make the scaffold edits listed above. Implement nothing: no \
@@ -19,7 +19,12 @@ const WRITING_RULES: &str =
      Rust, `cargo fmt --all`), and keep every test function under 50 lines and every \
      file under 400 (CLAUDE.md Rule 17): the freeze runs the stage's formatter, lint and \
      search checks over what you wrote (run them first), and a frozen file cannot change \
-     afterwards.\n";
+     afterwards.\n\
+     7. Every contract runs inside loom's confinement at freeze and at completion: no \
+     network, writes only inside the worktree and TMPDIR, and no nested OS sandbox, so a \
+     test that starts sandbox-exec, bwrap or a confined loom command cannot start there. \
+     Assert on what the code generates (arguments, profile, environment) and do not launch \
+     it. The freeze refuses a red caused by the environment.\n";
 
 /// Append the writer's rules.
 pub(super) fn append_rules(content: &mut String, stage_id: &str) {
@@ -31,11 +36,11 @@ pub(super) fn append_rules(content: &mut String, stage_id: &str) {
     content.push_str(CONTEXT_CEILING_HANDOFF);
 }
 
-/// Rule 7, the freeze: the choice flags it takes, how its wait reads, and
+/// Rule 8, the freeze: the choice flags it takes, how its wait reads, and
 /// when a refusal comes back to the writer instead of going to an adjudicator.
 fn freeze_rule(stage_id: &str) -> String {
     format!(
-        "7. Finish with `loom stage contracts freeze {stage_id} --test <id>=<identifier> ...`: \
+        "8. Finish with `loom stage contracts freeze {stage_id} --test <id>=<identifier> ...`: \
          one `--test` per contract that shows `(you choose)` or whose hint you replace, plus \
          any `--runner` or `--cwd` you choose; a later freeze keeps the flags it does not \
          repeat. The freeze waits for the host run as `loom check` does. While `Host job:` \
@@ -56,17 +61,17 @@ fn freeze_rule(stage_id: &str) -> String {
     )
 }
 
-/// Rules 8 to 10: follow-up questions, the plan being out of reach, blocking.
+/// Rules 9 to 11: follow-up questions, the plan being out of reach, blocking.
 fn closing_rules(stage_id: &str) -> String {
     format!(
-        "8. If the Adjudicator Feedback section asks questions, answer each with `loom memory \
+        "9. If the Adjudicator Feedback section asks questions, answer each with `loom memory \
          note \"freeze-dispute: answer <n>: <evidence>\"`, then run the freeze and stop; \
          that is your follow-up. Do not commit.\n\
-         9. You cannot change the plan, and neither can the operator's answer to a question: \
+         10. You cannot change the plan, and neither can the operator's answer to a question: \
          do not ask the operator to amend contracts, harness or criteria, or to run commands \
          for you. A refused freeze reaches the adjudicator on its own. Ask the operator only \
          what only a person can decide.\n\
-         10. If the work needs something only a person can provide (a credential, a host \
+         11. If the work needs something only a person can provide (a credential, a host \
          install), run `loom stage block {stage_id} \"<what and why>\"`.\n\n"
     )
 }

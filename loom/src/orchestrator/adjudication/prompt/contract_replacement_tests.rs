@@ -44,7 +44,7 @@ fn the_replacement_is_quoted_and_diffed_against_the_frozen_file() {
 
     assert!(prompt.evidence.contains(&format!(
         "## Proposed replacement\n\nFile: `tests/x_contract.rs` (contracts: rejects-x)\n\n\
-         ```text\n{BROKEN_REPLACEMENT}```\n"
+         Trial: no matching trial receipt is still recorded\n\n```text\n{BROKEN_REPLACEMENT}```\n"
     )));
     let diff_at = prompt
         .evidence
@@ -108,9 +108,10 @@ fn a_replacement_is_judged_by_reading_not_by_the_command_that_runs_the_frozen_fi
 
     let instructions = &prompt.instructions;
     assert!(instructions.contains(
-        "The commands above run the frozen content; a replacement has not been run. Judge each \
-         replacement by reading it against the scenario and rejects clause of the contracts in \
-         its file. Completion runs it after an accept."
+        "The commands above run the frozen content, not a replacement; its trial result is the \
+         `Trial:` line under `## Proposed replacement`. Judge each replacement by reading it \
+         against the scenario and rejects clause of the contracts in its file. Completion runs \
+         it after an accept."
     ));
     assert!(instructions.contains(
         "accept: the contract's replacement, or the `plan_patch` you give for it, still sets up \
@@ -126,4 +127,123 @@ fn a_replacement_is_judged_by_reading_not_by_the_command_that_runs_the_frozen_fi
     ] {
         assert!(!instructions.contains(claim), "{claim}");
     }
+}
+
+/// A replacement that weakens an assertion lists the frozen statement the
+/// judge must find covered, and the verdict semantics ask for that citation.
+#[test]
+fn the_assertions_a_replacement_drops_are_listed_and_must_be_covered() {
+    let weakened = "#[test]\nfn rejects_x() { assert!(true); }\n";
+    let prompt = build(&input_of(&fixture_with(Some(weakened))));
+
+    let section = prompt
+        .evidence
+        .split("### Assertions the replacement drops or changes")
+        .nth(1)
+        .expect("a lost-assertions section");
+    assert!(section.contains("File: `tests/x_contract.rs`"), "{section}");
+    assert!(section.contains("assert!(rejects(\"x\"))"), "{section}");
+    assert!(prompt.instructions.contains(
+        "cite what in the replacement covers the same behaviour, or reject the contracts of \
+         that file"
+    ));
+
+    let kept = build(&input_of(&fixture_with(Some(
+        "#[test]\nfn rejects_x() { assert!(rejects(\"x\")); }\nfn helper() {}\n",
+    ))));
+    let section = kept
+        .evidence
+        .split("### Assertions the replacement drops or changes")
+        .nth(1)
+        .expect("a lost-assertions section");
+    assert!(section.contains("\nnone\n"), "{section}");
+}
+
+/// The trial line names the commit the recorded passing trial ran at.
+#[test]
+fn the_proposed_replacement_names_the_trial_that_passed() {
+    let fx = fixture_with(Some(BROKEN_REPLACEMENT));
+    assert!(!build(&input_of(&fx)).evidence.contains("Trial: passed"));
+    save_passing_trial(&fx.work_dir, "demo", "abc123", BROKEN_REPLACEMENT);
+
+    let prompt = build(&input_of(&fx));
+
+    assert!(prompt.evidence.contains(
+        "Trial: passed in a confined host job at abc123 (format and static gates, then the \
+         contracts)"
+    ));
+    assert!(!prompt.evidence.contains("no matching trial receipt"));
+}
+
+/// Without a receipt (never run, or pruned) the line says so, since the
+/// first step tells the judge to read it.
+#[test]
+fn without_a_receipt_the_trial_line_says_none_is_recorded() {
+    let fx = fixture_with(Some(BROKEN_REPLACEMENT));
+
+    let prompt = build(&input_of(&fx));
+
+    assert!(prompt
+        .evidence
+        .contains("Trial: no matching trial receipt is still recorded"));
+    assert!(!prompt.evidence.contains("Trial: passed"));
+}
+
+/// A receipt of other bytes for the file proves nothing for this filing.
+#[test]
+fn a_receipt_of_other_bytes_is_no_trial_of_this_filing() {
+    let fx = fixture_with(Some(BROKEN_REPLACEMENT));
+    save_passing_trial(&fx.work_dir, "demo", "abc123", "an earlier replacement\n");
+
+    let prompt = build(&input_of(&fx));
+
+    assert!(prompt
+        .evidence
+        .contains("Trial: no matching trial receipt is still recorded"));
+    assert!(!prompt.evidence.contains("Trial: passed"));
+}
+
+/// Leave a passing contracts check of stage `stage_id` at `head` and its
+/// receipt, which hashed `content` for the disputed file.
+fn save_passing_trial(work_dir: &Path, stage_id: &str, head: &str, content: &str) {
+    use crate::host_verify::{new_job_id, store, JobKind, JobRecord, JobResult, JobState};
+    use crate::verify::contracts::trial::{TrialFile, TrialReceipt, RECEIPT_FILE};
+    let record = JobRecord {
+        id: new_job_id(),
+        submission_order: 1,
+        stage_id: stage_id.to_string(),
+        session_id: "session-1".to_string(),
+        kind: JobKind::Check,
+        head: head.to_string(),
+        tree_digest: "digest".to_string(),
+        no_cache: false,
+        criteria: None,
+        contracts: true,
+        state: JobState::Passed,
+        requests: Vec::new(),
+        queued_at: chrono::Utc::now(),
+        started_at: None,
+        finished_at: None,
+        pid: None,
+        detail: None,
+    };
+    store::save_current(work_dir, &record).unwrap();
+    let result = JobResult {
+        job_id: record.id.clone(),
+        head: head.to_string(),
+        passed: true,
+        criteria: Vec::new(),
+        error: None,
+        policy_hash: None,
+    };
+    store::save_result(work_dir, stage_id, &result).unwrap();
+    let receipt = TrialReceipt {
+        head: head.to_string(),
+        files: vec![TrialFile {
+            path: "tests/x_contract.rs".to_string(),
+            sha256: crate::utils::sha256_hex(content.as_bytes()),
+        }],
+    };
+    let bytes = serde_json::to_vec(&receipt).unwrap();
+    store::save_job_file(work_dir, stage_id, &record.id, RECEIPT_FILE, &bytes).unwrap();
 }

@@ -118,8 +118,9 @@ fn completion_fails_when_frozen_contract_changed() {
 
     assert!(error.contains(CONTRACT_FILE), "{error}");
     assert!(error.contains("loom stage contracts restore s1"), "{error}");
-    let dispute = "dispute-contract s1 --contract <id> --replacement <frozen-file>=<path>";
-    assert!(error.contains(dispute), "{error}");
+    let dispute = "dispute-contract s1 --contract <id> [--contract <id> ...] --replacement";
+    let trial = "loom check s1 --contracts --replacement <frozen-file>=<path>";
+    assert!(error.contains(dispute) && error.contains(trial), "{error}");
 }
 
 #[test]

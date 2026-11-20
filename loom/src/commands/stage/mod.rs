@@ -48,6 +48,7 @@ pub use contracts::{
 };
 pub use dispute_criteria::dispute_criteria;
 pub use dispute_kinds::{file_dispute, DisputeFiling, DisputeTarget};
+pub(crate) use dispute_kinds::{parse_replacements, read_replacements};
 pub use human_review::human_review;
 pub use integrity_status::review_integrity;
 pub use merge::merge;

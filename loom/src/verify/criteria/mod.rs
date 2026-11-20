@@ -55,6 +55,9 @@ mod cache_ignore;
 mod config;
 mod confine;
 mod criterion_eval;
+pub(crate) mod environment;
+#[cfg(test)]
+mod environment_contract_tests;
 mod executor;
 pub(crate) mod output;
 #[cfg(target_os = "linux")]

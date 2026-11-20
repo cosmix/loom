@@ -59,7 +59,8 @@ use crate::verify::transitions::load_stage;
 
 #[path = "freeze_format.rs"]
 mod format;
-use format::{format_outcome, outcome, verdict_line};
+pub(super) use format::format_outcome;
+use format::{outcome, verdict_line};
 
 /// The job file a passing run leaves for its application.
 pub(crate) const REPORTS_FILE: &str = "contract-reports.json";

@@ -1,5 +1,6 @@
 use super::*;
 use crate::models::stage::Stage;
+use crate::utils::sha256_hex;
 use crate::verify::contracts::store::{
     faults, refreeze_set, write_freeze, FreezeRecord, FrozenFile, FREEZE_RECORD_VERSION,
 };

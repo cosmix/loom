@@ -62,6 +62,7 @@ fn state(id: &str) -> RequestState {
         tree_digest: "tree".into(),
         no_cache: false,
         criteria: None,
+        contracts: None,
         submitted_at: Utc::now(),
     }
 }

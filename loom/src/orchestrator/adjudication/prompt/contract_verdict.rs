@@ -3,6 +3,18 @@
 
 use super::FROZEN_SET_HEADING;
 
+/// What an accepted replacement does, and what the judge must establish for
+/// the assertions it drops.
+const ACCEPTED_REPLACEMENT: &str =
+    "  An accepted replacement is written into the worktree before the re-freeze. A \
+     file holding several contracts is written only when all of them are accepted. A \
+     harness file (one holding no contract) is written only when every ruling is \
+     accept. Do not both accept a replacement of a contract's file and delete that \
+     contract with `plan_patch`: recording refuses it.\n\
+     \x20 For each statement listed under `### Assertions the replacement drops or changes`, \
+     cite what in the replacement covers the same behaviour, or reject the contracts of \
+     that file.\n";
+
 /// The verdict semantics. `has_replacement` adds what a replacement means for
 /// an accept, which no briefing without one mentions.
 pub(super) fn semantics(has_replacement: bool) -> String {
@@ -31,14 +43,7 @@ pub(super) fn semantics(has_replacement: bool) -> String {
          files listed under `{FROZEN_SET_HEADING}` too.\n"
     ));
     if has_replacement {
-        s.push_str(
-            "  An accepted replacement is written into the worktree before the re-freeze. A \
-             file holding several contracts is written only when all of them are accepted. A \
-             harness file (one holding no contract) is written only when every ruling is \
-             accept. Do not \
-             both accept a replacement of a contract's file and delete that contract with \
-             `plan_patch`: recording refuses it.\n",
-        );
+        s.push_str(ACCEPTED_REPLACEMENT);
     }
     s.push_str(
         "- reject: the change would weaken the contract's scenario or rejects clause, or the \

@@ -18,6 +18,7 @@ use crate::verify::contracts::format_gate::{format_problems, static_problems};
 use crate::verify::contracts::site::ContractSite;
 use crate::verify::contracts::{is_contract_or_harness, normalize};
 use crate::verify::criteria::confined_stage_cache;
+use crate::verify::criteria::environment::environment_marker;
 
 /// How long one contract test may run.
 const CONTRACT_TIMEOUT: Duration = Duration::from_secs(300);
@@ -80,12 +81,15 @@ pub(crate) fn check_changes(inputs: &FreezeInputs<'_>) -> Result<(), Vec<String>
 
 /// D8 step 3 for one run: `Failed` or `BuildFailed` is required. An adapter
 /// that could not read the output, or no adapter at all, leaves only the
-/// exit code, which must then be non-zero.
+/// exit code, which must then be non-zero. With the run's `(stdout, stderr)`,
+/// a red whose output carries an environment marker is refused: such a red
+/// proves nothing about the implementation. `BuildFailed` stays accepted.
 pub(crate) fn judge_run(
     contract: &ContractSpec,
     adapter: Option<&dyn TestRunnerAdapter>,
     summary: RunSummary,
     exit: Option<i32>,
+    streams: Option<(&str, &str)>,
 ) -> Result<ContractRunReport, String> {
     let id = &contract.id;
     let outcome = match adapter.map(|_| classify(&summary, exit)) {
@@ -114,6 +118,15 @@ pub(crate) fn judge_run(
             ))
         }
     };
+    if outcome != BUILD_FAILED {
+        if let Some(marker) = streams.and_then(|(out, err)| environment_marker(out, err)) {
+            return Err(format!(
+                "contract '{id}' fails for an environment reason ({marker}), so its red proves \
+                 nothing about the implementation: the test must run inside loom's confinement \
+                 (no network, no nested OS sandbox, writes only in the tree and TMPDIR)"
+            ));
+        }
+    }
     Ok(ContractRunReport {
         contract_id: id.clone(),
         adapter: adapter.map(|adapter| adapter.name().to_string()),
@@ -294,3 +307,7 @@ pub(crate) fn refuse(stage_id: &str, problems: Vec<String>, fix: &str) -> Result
 
 mod prepared;
 pub(crate) use prepared::{prepare_contract, run_prepared, JudgedRun, PreparedContract};
+
+#[cfg(test)]
+#[path = "freeze_environment_tests.rs"]
+mod environment_tests;

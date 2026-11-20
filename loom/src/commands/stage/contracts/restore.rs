@@ -7,16 +7,12 @@
 
 use anyhow::{bail, Context, Result};
 use std::os::fd::AsRawFd;
-use std::path::Path;
 
 use crate::fs::safe_fs::{safe_create_dir_all_in_workdir, safe_open_dirfd};
-use crate::fs::safe_read::read_bounded;
 use crate::fs::safe_replace::restore_no_follow;
-use crate::utils::sha256_hex;
+use crate::verify::contracts::frozen_restore::read_frozen;
 use crate::verify::contracts::normalize;
-use crate::verify::contracts::store::{
-    frozen_file_path_for_record, load_freeze, FreezeRecord, MAX_FROZEN_FILE_BYTES,
-};
+use crate::verify::contracts::store::load_freeze;
 
 use super::ContractSite;
 
@@ -77,23 +73,4 @@ fn contract_file(site: &ContractSite, id: &str) -> Result<String> {
         Some(contract) => Ok(normalize(&contract.file)),
         None => bail!("Stage '{}' has no contract `{id}`", site.stage.id),
     }
-}
-
-/// Read the frozen copy of `rel` and confirm it still hashes to what the
-/// freeze recorded.
-fn read_frozen(work_dir: &Path, record: &FreezeRecord, rel: &str, sha256: &str) -> Result<Vec<u8>> {
-    let copy = frozen_file_path_for_record(work_dir, record, rel);
-    let relative = copy
-        .strip_prefix(work_dir)
-        .with_context(|| format!("Frozen copy path {} is malformed", copy.display()))?;
-    let root = work_dir.canonicalize()?;
-    let content = read_bounded(&root, relative, MAX_FROZEN_FILE_BYTES)
-        .with_context(|| format!("Failed to read the frozen copy {}", copy.display()))?;
-    if sha256_hex(&content) != sha256 {
-        bail!(
-            "The frozen copy {} no longer matches the hash the freeze recorded",
-            copy.display()
-        );
-    }
-    Ok(content)
 }

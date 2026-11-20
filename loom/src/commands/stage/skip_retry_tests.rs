@@ -316,6 +316,7 @@ mod silence_report_tests {
             tree_digest: "b".repeat(64),
             no_cache: false,
             criteria: None,
+            contracts: false,
             state: JobState::Running,
             requests: Vec::new(),
             queued_at: started,

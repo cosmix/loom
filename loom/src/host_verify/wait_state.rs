@@ -15,6 +15,7 @@ use super::store::{load_current, load_job_record};
 use super::wait::WaitSite;
 use super::{JobKind, JobRecord, JobState};
 use crate::fs::inbox::{read_ledger, LedgerOutcome};
+use crate::verify::contracts::trial::{trial_files, TrialFile};
 
 /// The request this session last relayed for a kind of job and, for a check, one selection.
 #[derive(Debug, Serialize, Deserialize)]
@@ -24,6 +25,10 @@ pub(super) struct RequestState {
     pub(super) tree_digest: String,
     pub(super) no_cache: bool,
     pub(super) criteria: Option<Vec<usize>>,
+    /// A contracts check's replaced files with their replacement hashes
+    /// (`trial_files`), empty for a plain contracts check; `None` otherwise.
+    #[serde(default)]
+    pub(super) contracts: Option<Vec<TrialFile>>,
     pub(super) submitted_at: DateTime<Utc>,
 }
 
@@ -36,9 +41,17 @@ pub(super) fn state_path(site: &WaitSite<'_>) -> Result<PathBuf> {
     Ok(site.scratch_dir.join("host-verify").join(name))
 }
 
-/// Bounded, dot-free identity of one selection and cache flag.
+/// Bounded, dot-free identity of one selection and cache flag. A contracts
+/// check adds its replaced files and their bytes' hashes.
 fn selection_key(site: &WaitSite<'_>) -> String {
-    let text = format!("{:?}|{}", site.criteria, site.no_cache);
+    let mut text = format!("{:?}|{}", site.criteria, site.no_cache);
+    if let Some(replacements) = site.contracts {
+        let files = trial_files(replacements);
+        text.push_str("|contracts");
+        for file in files {
+            text.push_str(&format!("|{}={}", file.path, file.sha256));
+        }
+    }
     crate::utils::sha256_hex(text.as_bytes())[..16].to_string()
 }
 
@@ -176,6 +189,7 @@ fn pruned(site: &WaitSite<'_>, state: &RequestState, job_id: &str) -> JobRecord 
         tree_digest: state.tree_digest.clone(),
         no_cache: state.no_cache,
         criteria: state.criteria.clone(),
+        contracts: state.contracts.is_some(),
         state: JobState::Cancelled,
         requests: vec![state.request_id.clone()],
         queued_at: state.submitted_at,

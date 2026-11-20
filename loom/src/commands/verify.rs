@@ -3,6 +3,9 @@
 //! Validates OUTCOMES beyond acceptance criteria by checking:
 //! - ARTIFACTS: Files exist with real implementation
 //! - WIRING: Critical connections between components
+//!
+//! A full run of a `standard` stage whose contracts are frozen also runs the
+//! contracts; `--contracts` runs only them (`verify_selection.rs`).
 
 use anyhow::{bail, Context, Result};
 use colored::Colorize;
@@ -13,85 +16,82 @@ use crate::commands::stage::acceptance_runner::{
     resolve_stage_execution_paths, run_selected_acceptance, AcceptanceDisplayOptions,
     StageExecutionPaths,
 };
+use crate::models::stage::Stage;
 use crate::plan::parser::parse_plan;
+use crate::verify::contracts::completion;
 use crate::verify::goal_backward::GoalBackwardResult;
 use crate::verify::transitions::load_stage;
 
+#[path = "verify_selection.rs"]
+mod selection;
 #[path = "verify_relay.rs"]
 mod session_relay;
 
-/// `loom check`'s run options.
-#[derive(Debug, Clone, clap::Args)]
-pub struct CheckArgs {
-    /// Skip the acceptance-criterion pass cache lookup: run every criterion
-    /// for real even if an identical tree already passed it. Passes are
-    /// still stored, so a later `loom stage complete` can reuse them.
-    #[arg(long = "no-cache")]
-    pub no_cache: bool,
+pub use selection::{check_selection, CheckArgs, CheckSelection};
+use selection::{run_contracts_section, TRIAL_NEEDS_SESSION};
 
-    /// Run only the acceptance criterion at this 0-based index, the number in
-    /// its `[criterion <n>]` label (repeatable). A subset run skips the
-    /// goal-backward checks.
-    #[arg(long = "criterion", value_name = "INDEX")]
-    pub criterion: Vec<usize>,
-}
-
-/// Execute the verify command. `criteria` limits the run to those 0-based
-/// acceptance criteria; empty runs every criterion and the goal-backward
-/// checks. The state directory resolves in the main repository and in a
-/// worktree (where it is a symlink); outside a loom workspace this bails.
-pub fn execute(stage_id: &str, suggest: bool, criteria: &[usize]) -> Result<()> {
-    let criteria = normalized_criteria(criteria);
+/// Execute the verify command for the selection `args` names. The state
+/// directory resolves in the main repository and in a worktree (where it is
+/// a symlink); outside a loom workspace this bails.
+pub fn execute(stage_id: &str, suggest: bool, args: &CheckArgs) -> Result<()> {
+    let selection = check_selection(args)?;
     let work_dir = crate::commands::common::work_dir_path()?;
-    session_relay::run(stage_id, &work_dir, suggest, &criteria)?;
+    session_relay::run(stage_id, &work_dir, suggest, &selection)?;
     let stage = load_stage(stage_id, &work_dir)
         .with_context(|| format!("Failed to load stage '{stage_id}'"))?;
-
-    // Resolve plan source path (handles both absolute and relative paths,
-    // follows the state directory symlink in worktrees to find the main project root)
-    let plan_path = crate::fs::resolve_source_path(&work_dir)?
-        .context("No plan source path configured in config.toml")?;
-
-    // Parse plan to get stage definition
-    let plan = parse_plan(&plan_path)
-        .with_context(|| format!("Failed to parse plan: {}", plan_path.display()))?;
-
-    let stage_def = plan
-        .stages
-        .iter()
-        .find(|s| s.id == stage_id)
-        .with_context(|| format!("Stage '{stage_id}' not found in plan"))?;
-
-    // Resolve acceptance directory using shared stage execution logic
+    // Resolve the acceptance directory using shared stage execution logic
     let execution_paths = resolve_stage_execution_paths(&stage)?;
+    let criteria = match selection {
+        CheckSelection::Contracts => {
+            println!(
+                "{} Running the frozen contracts of '{stage_id}'...",
+                "→".cyan().bold()
+            );
+            let check = run_contracts_section(&stage, &execution_paths, &work_dir)?;
+            return check.into_result(stage_id);
+        }
+        CheckSelection::Trial(_) => bail!(TRIAL_NEEDS_SESSION),
+        CheckSelection::All => Vec::new(),
+        CheckSelection::Criteria(criteria) => criteria,
+    };
+    run_gate(&stage, &execution_paths, &work_dir, suggest, &criteria)
+}
 
+/// The acceptance criteria (`criteria`, empty for every one), then for a run
+/// of every criterion the goal-backward checks and the frozen contracts.
+fn run_gate(
+    stage: &Stage,
+    execution_paths: &StageExecutionPaths,
+    work_dir: &Path,
+    suggest: bool,
+    criteria: &[usize],
+) -> Result<()> {
+    let stage_id = stage.id.as_str();
+    let has_goal_checks = plan_has_goal_checks(stage_id, work_dir)?;
     println!(
         "{} Running goal-backward verification for '{}'...\n",
         "→".cyan().bold(),
         stage_id
     );
-
-    // 1. Run standard acceptance criteria first
     println!("{}", "Acceptance Criteria:".bold());
-    let only = selection(&criteria);
+    let only = selection(criteria);
     let acceptance_passed = run_selected_acceptance(
-        &stage,
+        stage,
         stage_id,
-        &execution_paths,
-        &work_dir,
+        execution_paths,
+        work_dir,
         AcceptanceDisplayOptions::default(),
         only.as_ref(),
     )?;
-
-    // 2. Run goal-backward verification
-    let goal_passed = if let Some(only) = &only {
+    if let Some(only) = &only {
         print_subset_summary(only, acceptance_passed);
-        true
-    } else if stage_def.has_any_goal_checks() {
+        return ensure_passed(acceptance_passed, true);
+    }
+    let goal_passed = if has_goal_checks {
+        let paths = (execution_paths, work_dir);
         run_goal_section(
             stage_id,
-            &execution_paths,
-            &work_dir,
+            paths,
             stage.plan_version,
             suggest,
             acceptance_passed,
@@ -100,8 +100,29 @@ pub fn execute(stage_id: &str, suggest: bool, criteria: &[usize]) -> Result<()> 
         print_no_goal_checks(acceptance_passed);
         true
     };
+    let contracts = if completion::runs_in_full_check(stage, work_dir)? {
+        Some(run_contracts_section(stage, execution_paths, work_dir)?)
+    } else {
+        None
+    };
+    ensure_passed(acceptance_passed, goal_passed)?;
+    contracts.map_or(Ok(()), |check| check.into_result(stage_id))
+}
 
-    ensure_passed(acceptance_passed, goal_passed)
+/// Whether the plan defines artifacts or wiring for `stage_id`. The plan
+/// source path resolves both absolute and relative paths, following the
+/// state directory symlink in worktrees to the main project root.
+fn plan_has_goal_checks(stage_id: &str, work_dir: &Path) -> Result<bool> {
+    let plan_path = crate::fs::resolve_source_path(work_dir)?
+        .context("No plan source path configured in config.toml")?;
+    let plan = parse_plan(&plan_path)
+        .with_context(|| format!("Failed to parse plan: {}", plan_path.display()))?;
+    let stage_def = plan
+        .stages
+        .iter()
+        .find(|s| s.id == stage_id)
+        .with_context(|| format!("Stage '{stage_id}' not found in plan"))?;
+    Ok(stage_def.has_any_goal_checks())
 }
 
 /// The criteria a `--criterion` list selects; `None` when it names none.
@@ -176,8 +197,7 @@ fn print_goal_result(result: &GoalBackwardResult, suggest: bool) {
 /// Run goal-backward verification and print its result and the summary.
 fn run_goal_section(
     stage_id: &str,
-    execution_paths: &StageExecutionPaths,
-    work_dir: &Path,
+    (execution_paths, work_dir): (&StageExecutionPaths, &Path),
     plan_version: u32,
     suggest: bool,
     acceptance_passed: bool,

@@ -502,7 +502,8 @@ loom run [--manual] [--max-parallel N] [--foreground] [--watch] [--no-merge] [--
 loom status [--live] [--compact] [--verbose] [--web [PORT] [--host HOST] [--terminals]]
 loom stop
 loom resume <stage-id>
-loom check <stage-id> [--suggest] [--no-cache] [--criterion <n>]...
+loom check <stage-id> [--suggest] [--no-cache] [--criterion <n>]...   # without --criterion, a frozen standard stage also runs its contracts after the goal-backward checks
+loom check <stage-id> --contracts [--replacement <frozen-file>=<path>]...   # Plan version 2: run the stage's contracts; with --replacement, trial an edited copy of a frozen file
 loom pressure <plan-path> [--rounds N] [--claude-model M] [--claude-effort E] [--codex-model M] [--codex-effort E] [--address-model M] [--address-effort E] [--dry-run]
 ```
 
@@ -581,7 +582,7 @@ loom stage merge [stage-id] [--resolved]
 loom stage human-review <stage-id> [--approve|--force-complete|--reject <reason>]
 loom stage dispute-criteria <stage-id> [--field acceptance|wiring|wiring-tests] --criterion-index N --reason <text> [--evidence-commit <sha>] [--failure-output <path>]
 loom stage dispute-findings <stage-id> --finding <id>... --reason <text>       # Plan version 2: challenge open review findings
-loom stage dispute-contract <stage-id> --contract <id>... [--replacement <frozen-file>=<path>]... --reason <text>  # Plan version 2: challenge frozen contracts; one filing names every contract with the same cause; each --replacement pairs a frozen file with an edited copy outside the worktree (max 32 KiB each) that an accept writes in
+loom stage dispute-contract <stage-id> --contract <id>... [--replacement <frozen-file>=<path>]... --reason <text>  # Plan version 2: challenge frozen contracts; one filing names every contract with the same cause; each --replacement pairs a frozen file with an edited copy outside the worktree (max 32 KiB each) that an accept writes in; a replacement is filed only after `loom check <stage-id> --contracts --replacement <frozen-file>=<path>` passed for the same bytes at the worktree's head
 loom stage dispute-integrity <stage-id> --event <id>... --reason <text>       # Plan version 2: challenge a test-integrity event
 loom stage dispute-criteria <stage-id> --field impact-tests --test <id>... --reason <text>  # Plan version 2: challenge failing impact-selected tests the stage did not cause
 loom stage adjudicate --stage <stage-id> --dispute <n> --verdict-file <path>
@@ -995,6 +996,8 @@ Completion runs a Rust contract by test name, so the freeze and completion also 
 For `standard` and `integration-verify` stages, acceptance criteria or at least one goal-backward check must be defined.
 
 In a version 2 plan, `loom stage complete` also runs, in order: the contract check (every frozen contract file unchanged, every contract test passing), test integrity (fewer test declarations or assertions, removed or changed assertion statements, or a loosened `ratchet_files` entry each raise an event that must be fixed or accepted through an adjudicated dispute; a reflow, a multi-line rewrap, a test moved to a file the runner still collects and a tightened ratchet raise nothing, and every final code review sees the stage's events in a brief loom computes), the tests reached from the changed code in the source graph, and the review gate. A criterion that runs a recognised test runner and selects zero tests fails. The gate needs a `loom-code-reviewer` round on the final change fingerprint with every finding fixed or ruled on; editing any file after the last round, formatting included, needs another round, while committing does not. The loom daemon that owns the worktree computes this fingerprint, once, for both the round a review records and the completion that checks it; a session runs no check locally: its `loom stage complete` relays the request, and the daemon runs test integrity and the review gate once, when it applies a passing run. Integration-verify re-checks every stage's `reachable` and wiring on the merged tree and lists the full test command.
+
+In a version 2 plan, `loom check <stage-id> --contracts` runs the stage's frozen contracts the way completion does and prints one outcome per contract (`contract:<id>`): in a session as a host job the daemon runs, from the operator's shell locally. A plain `loom check <stage-id>` on a `standard` stage whose contracts are frozen runs them too, after the goal-backward checks, so the gate run before `loom stage complete` shows a failing contract. Every contract runs inside loom's confinement, at freeze and at completion: no network, writes only inside the worktree and `TMPDIR`, and no nested OS sandbox, so a test that starts `sandbox-exec`, `bwrap` or a confined loom command cannot start there. The freeze refuses a red whose output shows such an environment failure. Run the check as soon as the contract tests compile. A contract that fails for a reason no implementation can change is disputed at once: add `--replacement <frozen-file>=<path>` (repeatable, one per file) to run an edited copy of the frozen file in place of it, after the format and static gates. A trial runs only as a host job requested from the stage's session; the operator's shell refuses it. A passing trial leaves a receipt for the head commit and the replacement's bytes, and `loom stage dispute-contract` refuses a replacement without one. The adjudicator sees the trial result and the assertions the replacement drops or changes.
 
 ### Verification Is Enforced, Not Self-Reported
 

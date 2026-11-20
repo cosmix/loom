@@ -19,9 +19,16 @@ pub(super) fn retire(work_dir: &Path, stage_id: &str, job_id: &str, process: &mu
     kill_groups(work_dir, stage_id, job_id);
 }
 
+/// Stop a job's criteria, then undo a trial overlay its stopped child left
+/// behind. Every caller runs once the child is gone or being killed.
+pub(super) fn kill_groups(work_dir: &Path, stage_id: &str, job_id: &str) {
+    signal_groups(work_dir, stage_id, job_id);
+    super::child_contracts::undo_stopped_overlay(work_dir, stage_id, job_id);
+}
+
 /// Ask every recorded guardian to stop its own group. Legacy entries without
 /// a control endpoint fail closed; they cannot safely name a process group.
-pub(super) fn kill_groups(work_dir: &Path, stage_id: &str, job_id: &str) {
+fn signal_groups(work_dir: &Path, stage_id: &str, job_id: &str) {
     let groups = match store::load_group_anchors(work_dir, stage_id, job_id) {
         Ok(groups) => groups,
         Err(error) => {
