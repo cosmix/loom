@@ -10,30 +10,21 @@ The contract freeze runs through `host_verify/freeze.rs::run_contracts` and `fre
 
 Revisit when a measured first build exceeds the project's acceptable stage-start budget. Preserve parallel stages, confinement, stage-keyed worktree identity and the operator's restriction against copying build trees or introducing a worktree pool.
 
-## Build sharing does not happen today
+## Build sharing: what the stage cache covers and what stays cold
 
-- Sandboxed sessions get no `RUSTC_WRAPPER`: `orchestrator/terminal/native/build_cache.rs::sccache_usable_in`
-  is `!sandbox.enabled || network.allow_all_unix_sockets` (the gate added after the AF_UNIX denial broke
-  every cargo command, see mistakes/sandbox-tooling-and-network.md).
-- Confined host jobs (freeze, completion, criteria) start from `env_clear()`, and
-  `process/environment.rs::STAGE_HOST_ENV_ALLOWLIST` forwards `SCCACHE_DIR` and `SCCACHE_CACHE_SIZE` but
-  never `RUSTC_WRAPPER`, by design (comment at the allowlist). The running daemon's environment holds no
-  `RUSTC_WRAPPER` either.
-- Even with the variable set, a host job could not reach an sccache server on the host: Linux confinement
-  is bubblewrap `--unshare-all` with `--share-net` only for `NetworkAccess::Provision`
-  (`verify/criteria/confine_host.rs::platform_command`); the macOS Seatbelt profile allows
-  `network-outbound` only for `Provision`.
-- Result on this machine: `~/.cache/sccache` holds 4 KB, so nothing has ever been cached.
-  mistakes/cargo-under-confinement.md, "Every Stage Worktree Compiled Its Dependencies From Scratch",
-  names sccache as the fix; the gates above leave it inert in both places that compile.
+Every stage has one build-cache root outside its worktree, shared by its session, its Linux workers and its confined host jobs, with the host's caches as read-only seeds and the operator's toolchains readable ([Stage Build Cache](../architecture/stage-build-cache.md)). It was built from option 3 below, with the write scope settled per stage. It is warm for dependencies and cold for everything a stage compiles itself:
 
-**What a confined host job can reach** (`confine_host.rs::read_roots`, `writable_roots`): read-only
-`~/.rustup`, `~/.bun/bin`, `~/.bun/install/cache`, `~/.cache/uv`, `~/Library/Caches/uv`,
-`~/.local/share/uv/python`, and `$CARGO_HOME/{bin,registry,git}`; writable only the working tree, the
-command scratch and the linked Cargo home. No root covers `GOCACHE`/`GOMODCACHE`, `~/.npm`, the pnpm
-store, `~/.gradle`, `~/.m2` or a ccache directory. Unverified at runtime: what a Go, npm, pnpm, Gradle or
-Maven build does inside the jail with those caches missing, and whether a uv or bun cache miss there
-fails or silently refetches.
+- Go (`GOCACHE`, `GOMODCACHE` seeded from the host module cache), Maven (`repo.local.tail`), Gradle (`GRADLE_RO_DEP_CACHE`) and ccache resolve host-seeded dependencies. The Linux probe built and ran every toolchain probe except Maven's offline resolve (its seed lacked the plugins) and left the bubblewrap host-launcher tests and Go's `std_build_is_reused_by_the_second_command` unconfirmed; CI is the gate.
+- Cargo's registry and git checkouts are the host's own, read in place (macOS) or bound at the host path (Linux), so dependencies stay warm; workspace crates in the dev profile always rebuild, because sccache does not cache incremental compilations and the target directory stays in the worktree.
+- `RUSTC_WRAPPER` stays unset for host jobs (`process/environment.rs`), and a sandboxed session gets one only where `orchestrator/terminal/native/build_cache.rs::sccache_usable_in` allows it. sccache serves host-job builds only where a project's own build names it (a CMake launcher), through the consumer's private socket.
+
+What stays cold:
+
+- Compiled objects on a stage's first build in each ecosystem: the stage's own crates, packages and C objects. The seed warms dependencies only.
+- npm, pnpm, yarn, bun, deno, uv and pip downloads on a stage's first install: those tools have no seed in the table, so a fresh stage downloads or links from an empty cache. Installing needs a `provision` entry (network), and the downloads then stay in the stage's root for its later commands.
+- Maven older than 3.9: it ignores `maven.repo.local.tail`, so the host repository is not a seed.
+- Directories that live in the worktree: `node_modules`, `.venv`, framework build outputs (`.next`, vite, tsc incremental, turbo).
+- macOS tools reached through an xcrun shim with a non-default SDK ([residual](sandbox-and-confinement-gaps.md#xcrun-shims-are-bypassed-not-cached)).
 
 ## Constraints set by the operator
 
@@ -56,9 +47,9 @@ fails or silently refetches.
 | JVM | dependency resolution, compile | `~/.m2`, `~/.gradle/caches`, the Gradle build cache |
 | Rust, C/C++ | compile | sccache (Rust, gcc, clang, MSVC, nvcc, HIP) or ccache; sccache does not cache incremental compilations, so Cargo workspace crates in the dev profile always rebuild |
 
-Most ecosystems already ship a cache that is safe across parallel worktrees; the gap is that loom's
-sessions and host jobs cannot reach it. Rust and C/C++ are the ecosystems where a reachable cache still
-leaves the workspace crates cold.
+Most ecosystems already ship a cache that is safe across parallel worktrees, and the stage cache gives
+loom's sessions and host jobs one per stage. Rust and C/C++ are the ecosystems where a reachable cache
+still leaves the workspace crates cold.
 
 ## Options considered
 
@@ -67,27 +58,13 @@ leaves the workspace crates cold.
    general mechanism.
 2. **Move a finished predecessor's build directory into the next stage.** `rename` is instant and adds
    no disk. Rejected: it helps only a sequential chain, and parallel stages are common.
-3. **Reach each tool's own shared cache from sessions and host jobs.** Open; the recommended first step.
-   - A data-driven table per ecosystem names the cache directories and environment variables
-     (`GOCACHE`, `GOMODCACHE`, `UV_CACHE_DIR`, `BUN_INSTALL_CACHE_DIR`, the pnpm store, `npm_config_cache`,
-     `GRADLE_USER_HOME`, `~/.m2`, `SCCACHE_DIR`, `CCACHE_DIR`). Sessions and host jobs mount (bubblewrap)
-     or allow (Seatbelt `file-read*`/`file-write*` subpath rules) those paths and forward the variables.
-     `read_roots` already holds a hand-written subset (bun, uv, Cargo registry); the table would replace it.
-   - Rust and C/C++: the host job starts its own sccache server inside the jail, so no socket crosses the
-     confinement and `--unshare-all` stays. On macOS sccache talks to its server over localhost TCP, which
-     the Seatbelt profile must allow (`network*` to localhost) for those jobs. In sessions it stays gated
-     by `sccache_usable_in` unless a socket-free path exists; sccache's local read-only mode
-     (`SCCACHE_LOCAL_RW_MODE=READ_ONLY`, availability in 0.13 unverified) would let sessions read without
-     writing.
-   - Coverage: dependencies in every ecosystem, on both platforms, for any number of parallel stages. It
-     does not warm Cargo workspace crates, `node_modules` under npm, or framework build directories.
-   - Open decision, cache write scope. Any cache that a stage's own code can write can be poisoned: a
-     `build.rs`, a postinstall script or a test writes a bad entry under a valid key, and a later stage or
-     the operator's own build links it (the same class as
-     [state-confinement-gaps](state-confinement-gaps.md)). Choices: one global cache (warmest, widest blast
-     radius), one cache per plan (parallel stages of a plan share it; damage stays inside the plan), or
-     writes only from host jobs with sessions read-only (host jobs still run agent-written build scripts,
-     so this narrows the vector without closing it).
+3. **Reach each tool's own shared cache from sessions and host jobs.** Built as the stage cache
+   ([Stage Build Cache](../architecture/stage-build-cache.md)): one root per stage (the write scope is
+   per stage, so a stage's own `build.rs`, postinstall script or test can poison only its own cache),
+   the host's Go, ccache, Maven and Gradle caches as read-only seeds, toolchains under the operator's
+   home readable, and one sccache server per consumer. Per-plan and global roots were rejected for the
+   blast radius of a poisoned entry (the same class as [state-confinement-gaps](state-confinement-gaps.md)).
+   It does not warm Cargo workspace crates, `node_modules` under npm, or framework build directories.
 4. **Copy-on-write seed of the main checkout's build directories.** Dropped as the primary mechanism;
    kept as a possible addition for directories that option 3 leaves cold.
    - Linux: an overlay with the warm seed as the read-only lower layer and a per-worktree upper layer.
@@ -126,11 +103,6 @@ leaves the workspace crates cold.
 
 ## Next steps when this is picked up
 
-- Probe what a confined host job reaches today, per ecosystem: run a Go, npm, pnpm, uv, bun and Gradle
-  build through `loom check <stage> --no-cache` on a fresh worktree and record which caches are hit, missed
-  or unreachable.
-- Measure the loom split between dependency and workspace-crate compile time in a cold worktree, to size
-  what option 3 can save for Rust.
-- Decide the cache write scope in option 3 before any cache becomes session-writable.
-- Revisit condition: a stage whose first build in a fresh worktree exceeds about a minute in any
-  ecosystem, or any change to `read_roots`, `STAGE_HOST_ENV_ALLOWLIST` or `sccache_usable_in`.
+- Measure the split between dependency and workspace-crate compile time in a cold worktree, to size what a seed of the main checkout's build directories (option 4) could still save for Rust.
+- Decide whether npm, pnpm, yarn, bun, deno, uv and pip get host seeds; none has one today.
+- Revisit condition: a stage whose first build in a fresh worktree exceeds about a minute in any ecosystem, or any change to `stage_cache::roots::TOOLCHAIN_ROOTS`, `HOST_ENV_NAMES`, `STAGE_HOST_ENV_ALLOWLIST` or `sccache_usable_in`.

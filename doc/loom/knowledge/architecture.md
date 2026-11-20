@@ -187,6 +187,10 @@ Topics: [source-graph](architecture/source-graph.md) (contract, extractors, cach
 
 Plan-authored commands run through `spawn_confined`, which scrubs the environment and enforces OS isolation through Seatbelt or bubblewrap (`verify/criteria/confine_host.rs::wrap`). They run only in a host job child (`loom stage verify-host`, see [Host Verification Jobs](architecture/verification-v2-gates.md)), never inside a session. → [Execution Containment](architecture/execution-containment.md)
 
+## Stage Build Cache (`loom/src/stage_cache/`)
+
+Each stage has one build-cache root outside its worktree, `<base>/loom/stage-cache/<24 hex>`, shared by its session, its Linux workers and its confined host jobs. Per-ecosystem variables point every tool's cache there, host caches are read-only seeds, toolchains under the operator's home are readable, each consumer runs its own sccache server, and on macOS the real developer binaries replace the xcrun shims. → [Stage Build Cache](architecture/stage-build-cache.md)
+
 ## Memory Spool and Drain (`fs/memory/spool.rs`, `orchestrator/core/spool_drain.rs`) [DETAILED]
 
 A sandboxed stage cannot write `.loom/work/memory/<stage>.md` — `.loom/work` is a symlink out of the

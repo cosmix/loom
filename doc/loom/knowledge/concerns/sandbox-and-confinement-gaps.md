@@ -29,6 +29,8 @@ not receive the proxy variables, the CA bundle locations (`SSL_CERT_FILE`, `SSL_
 `NIX_SSL_CERT_FILE`), `CARGO_HOME` or `RUSTUP_HOME`, although plan-authored commands do, and no
 list forwards `CLAUDE_CONFIG_DIR`.
 
+The stage cache variables are a fourth route that bypasses these lists: `stage_cache/session.rs::wrapper_exports` appends them to the wrapper's `exec env -i` line, and the daemon list keeps the nine names the cache reads (`stage_cache/environment.rs::HOST_ENV_NAMES`), among them `GOPROXY` and `GOFLAGS` ([Stage Build Cache](../architecture/stage-build-cache.md)). A credential-bearing `GOPROXY` is dropped when the cache reads it, but it still sits in the daemon's own environment, inherited by `Inherit` commands and the tmux server ([open suggestion](stage-build-cache-gaps.md#open-reviewer-suggestions-from-the-stage-cache-plan)).
+
 **Concrete failure mode:** on a host behind a corporate proxy, a plan-authored acceptance command
 can fetch and a stage agent session cannot, and the symptom is a network failure inside the agent
 with no error pointing at an env allowlist. A relocated `CARGO_HOME` hides the same way.
@@ -352,15 +354,15 @@ The `config.worktree` read has no window: pinned git reads a validated private c
 
 ## Per-Command Package-Manager Caches
 
-`verify/criteria/confine_scratch.rs::apply_environment` points `UV_CACHE_DIR`, `BUN_INSTALL_CACHE_DIR` and `XDG_CACHE_HOME` at subdirectories of the per-command scratch. On Linux, `cache_lowers` and `overlay_supported` make the uv and Bun ones overlays whose lower is the host's default cache (`~/.cache/uv`, `~/.bun/install/cache`), so a dependency present only there resolves offline and the command's own writes stay in its private upper (`confine_scratch/warm_cache_tests.rs`, `warm_cache_bun_tests.rs`, against real tools).
+Only a confined command that runs without a stage cache gets per-command caches: `verify/criteria/confine_scratch.rs::apply_environment` points `UV_CACHE_DIR`, `BUN_INSTALL_CACHE_DIR` and `XDG_CACHE_HOME` at subdirectories of the per-command scratch. That path serves plan dry-run, `spawn_confined`, `format_problems` and tests. On Linux, `cache_lowers` and `overlay_supported` make the uv and Bun ones overlays whose lower is the host's default cache (`~/.cache/uv`, `~/.bun/install/cache`), so a dependency present only there resolves offline and the command's own writes stay in its private upper (`confine_scratch/warm_cache_tests.rs`, `warm_cache_bun_tests.rs`, against real tools). They start cold under Seatbelt, bubblewrap before 0.11, or a filesystem that refuses the overlay mount, and when the command's environment points a cache anywhere but the host default (it warns and uses an empty private cache).
 
-What still starts cold:
+Every stage's session, workers and host jobs use the stage cache instead ([Stage Build Cache](../architecture/stage-build-cache.md)); what that leaves cold is in [Worktree Build Cold Start](worktree-build-cold-start.md#build-sharing-what-the-stage-cache-covers-and-what-stays-cold). The Cargo home has its own stable reset ([execution containment](../architecture/execution-containment.md#read-this-first-what-containment-means-in-loom)).
 
-- `XDG_CACHE_HOME`, on purpose, so Go's build cache and the like are empty on every command.
-- uv and Bun under Seatbelt on macOS, bubblewrap before 0.11, or a filesystem that refuses the overlay mount. Warm reuse on macOS is not implemented. Such a command needs a `provision` entry.
-- A cache the command's environment points anywhere but the host default, which warns and uses an empty private cache.
+## xcrun Shims Are Bypassed, Not Cached
 
-The Cargo home has its own stable reset ([execution containment](../architecture/execution-containment.md#read-this-first-what-containment-means-in-loom)).
+A confined command cannot read or write xcrun's cache database (`xcrun_db` under `$(getconf DARWIN_USER_TEMP_DIR)`, which `TMPDIR` does not move), and that stays denied: a writable database would let a confined command plant tool paths the operator's own builds follow. `stage_cache/developer.rs::DeveloperTools` avoids the shims instead, by putting the real developer binaries first on `PATH` ([how](../architecture/stage-build-cache.md#macos-developer-tools-bypass-the-xcrun-shims)).
+
+Residual: a tool reached only through xcrun with a non-default SDK (`xcrun --sdk iphoneos ...`) or a command that spells `/usr/bin/git` still goes through the uncached shim and pays the `xcodebuild` lookup. The detection runs once per process, so a developer-directory switch (`xcode-select -s`) needs a daemon restart. The xcrun denial also still prints `output of xcrun while finding MacOSX.sdk` warnings from tools that call it directly; those are the cost of the denial, not a defect in the code under test ([the Seatbelt denial classification](../mistakes/sandbox-tooling-and-network.md#seatbelt-denials-read-as-build-warnings-and-test-failures-that-are-environment-not-code-2026-10-15)).
 
 ## A Read-Only Bind Inside a Writable Tree Escapes Through a Renamed Parent
 
