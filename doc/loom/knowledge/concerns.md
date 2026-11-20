@@ -205,9 +205,9 @@ The planning trace's open checks (journeys that need a real session or tmux, the
 
 ## Every Stage Worktree Builds From Cold [DETAILED]
 
-A new stage worktree has no build state, so its first compile or install is cold in every ecosystem; the contract freeze pays it first (about 2 min 20 s of a 3.5-minute contract phase on loom). sccache is gated off in sandboxed sessions and stripped from confined host jobs, so nothing is shared. Options, constraints (parallel stages, all languages, macOS and Linux, no copies, no worktree pool) and next steps:
+A new stage worktree has no build state, so its first compile or install is cold in every ecosystem; the contract freeze pays it first (about 2 min 20 s of a 3.5-minute contract phase on loom). Each stage now has one build-cache root shared by its session, workers and host jobs, so dependencies are warm; compiled objects on a stage's first build, npm/uv/bun downloads on a first install and Maven older than 3.9 stay cold. Options, constraints (parallel stages, all languages, macOS and Linux, no copies, no worktree pool) and next steps:
 
-→ [Every Stage Worktree Builds From Cold](concerns/worktree-build-cold-start.md)
+→ [Every Stage Worktree Builds From Cold](concerns/worktree-build-cold-start.md), [Stage Build Cache Gaps](concerns/stage-build-cache-gaps.md) (open reviewer suggestions, the xcrun residual)
 
 ## Concept Mode Open Items
 

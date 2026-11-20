@@ -8,11 +8,11 @@
 
 | File | Description | Lines |
 | --- | --- | --- |
-| [architecture.md](architecture.md) | High-level component relationships, data flow, module dependencies | 246 |
+| [architecture.md](architecture.md) | High-level component relationships, data flow, module dependencies | 250 |
 | [entry-points.md](entry-points.md) | Key files agents should read first | 86 |
 | [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 200 |
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 250 |
-| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 254 |
+| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 258 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 116 |
 | [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 248 |
 
@@ -38,7 +38,7 @@
 | [daemon-launch](architecture/daemon-launch.md) |  | 71 |
 | [daemon-owned-commits](architecture/daemon-owned-commits.md) |  | 151 |
 | [directory-structure](architecture/directory-structure.md) | Tree | 50 |
-| [execution-containment](architecture/execution-containment.md) |  | 393 |
+| [execution-containment](architecture/execution-containment.md) |  | 398 |
 | [hook-system](architecture/hook-system.md) |  | 339 |
 | [knowledge-bootstrap](architecture/knowledge-bootstrap.md) | KB | 83 |
 | [knowledge-hierarchy](architecture/knowledge-hierarchy.md) | KB fs | 264 |
@@ -73,6 +73,7 @@
 | [source-graph-evaluation](architecture/source-graph-evaluation.md) |  | 68 |
 | [source-graph-resolution](architecture/source-graph-resolution.md) |  | 125 |
 | [source-graph-view](architecture/source-graph-view.md) |  | 78 |
+| [stage-build-cache](architecture/stage-build-cache.md) | Per-stage cache root: env, seeds, sockets, read roots, xcrun bypass | 50 |
 | [status-data-model](architecture/status-data-model.md) | Fields | 268 |
 | [summary-store](architecture/summary-store.md) |  | 352 |
 | [target-guard](architecture/target-guard.md) | Tip | 127 |
@@ -194,6 +195,7 @@
 | [shell-command-matchers](mistakes/shell-command-matchers.md) |  | 295 |
 | [source-graph-delivery](mistakes/source-graph-delivery.md) | Misses | 182 |
 | [spurious-waiting-for-input](mistakes/spurious-waiting-for-input.md) | Idle | 53 |
+| [stage-build-cache-delivery](mistakes/stage-build-cache-delivery.md) | Stage cache delivery: credential forwarding, sockets, seeds, gate timing | 44 |
 | [status-broadcast-hardening](mistakes/status-broadcast-hardening.md) |  | 75 |
 | [store-without-consumer](mistakes/store-without-consumer.md) | Unread | 104 |
 | [subagent-briefing](mistakes/subagent-briefing.md) |  | 394 |
@@ -239,12 +241,13 @@
 | [planning-session-sandbox-limits](concerns/planning-session-sandbox-limits.md) |  | 238 |
 | [platform-and-commit-gaps](concerns/platform-and-commit-gaps.md) |  | 246 |
 | [runtime-and-session-safety](concerns/runtime-and-session-safety.md) |  | 137 |
-| [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) |  | 373 |
+| [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) |  | 375 |
 | [source-graph-known-gaps](concerns/source-graph-known-gaps.md) | Limits | 94 |
 | [source-graph-review-backlog](concerns/source-graph-review-backlog.md) | Todo | 295 |
+| [stage-build-cache-gaps](concerns/stage-build-cache-gaps.md) | Open reviewer suggestions and residuals of the stage build cache | 25 |
 | [state-confinement-gaps](concerns/state-confinement-gaps.md) | Caches | 21 |
 | [token-accounting-and-proof-defects](concerns/token-accounting-and-proof-defects.md) |  | 333 |
 | [typed-config-values](concerns/typed-config-values.md) | Gap | 22 |
 | [verification-v2-followups](concerns/verification-v2-followups.md) |  | 234 |
 | [web-dashboard-latent-issues](concerns/web-dashboard-latent-issues.md) | UI | 96 |
-| [worktree-build-cold-start](concerns/worktree-build-cold-start.md) | Cold | 136 |
+| [worktree-build-cold-start](concerns/worktree-build-cold-start.md) | Cold | 108 |

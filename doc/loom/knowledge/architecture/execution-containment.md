@@ -12,7 +12,7 @@ Linux criteria get a private `--tmpfs /tmp` and `--tmpfs /var/tmp`, mounted befo
 
 In Confined mode only, a linked worktree's git metadata is bound read-only (`verify/criteria/confine_git.rs::git_dirs`): the worktree's admin dir and the common dir's `config`, `objects`, `refs`, `packed-refs`, `reftable`, `info`, `HEAD` and `shallow`, never `hooks`, other worktrees' admin dirs, the main index or `FETCH_HEAD`. The tree's `.git` file is agent-writable, so the anchor is loom's own layout: the tree's parent must be `.worktrees`, the repository is its grandparent, `<repository>/.git` must be a real directory, the admin dir must sit in `<common>/worktrees`, its `commondir` must resolve to the common dir and its `gitdir` back to `<tree>/.git`, all read through bounded, no-follow, non-blocking reads; a common entry is bound only when its canonical path is its own. Any mismatch binds nothing and git fails inside the sandbox. The pass-cache fingerprint keys on content: a manifest of (path, mode, git blob oid) for tracked and untracked non-ignored files, with every path `git status` lists read from disk (`verify/criteria/cache_manifest.rs`), plus the worktree's `HEAD` text, i.e. the branch name (`cache_git_state.rs`). Commit identity, refs and staging are deliberately not inputs, so committing exactly the tree `loom check` passed keeps every pass for `loom stage complete`; criteria that run git are never cached (`cache.rs`). An unreadable state, or an assume-unchanged, skip-worktree, unmerged, symlink or submodule entry, makes the run uncacheable. `loom check --no-cache` skips the lookup and still stores verified passes.
 
-Private per-command scratch (`verify/criteria/confine_scratch.rs`) stays outside the working tree so recursive linting does not traverse Cargo cache symlinks. Both acceptance and provisioning direct Bun, uv, and XDG caches into this scratch (temporary files go to the private `/tmp` on Linux, to the scratch elsewhere), granted writable as one exact path. Selected installed Bun/uv caches and uv Python runtimes remain read-only; the real home stays protected. Owned process retirement releases scratch. See [the Biome traversal regression](../mistakes/sandbox-and-settings.md#verifier-scratch-participates-in-project-lint-traversal). Those package-manager caches start empty for every command ([open gap](../concerns/sandbox-and-confinement-gaps.md#per-command-package-manager-caches-start-empty)).
+Private per-command scratch (`verify/criteria/confine_scratch.rs`) stays outside the working tree so recursive linting does not traverse Cargo cache symlinks. A confined command of a stage runs with the stage's build cache ([Stage Build Cache](stage-build-cache.md)): its package-manager, Go, ccache, Maven and Gradle caches live in one root per stage, which is the only writable cache path, with the host's caches readable as seeds and toolchains under the operator's home readable. The per-command scratch caches apply only without a stage cache (plan dry-run, `spawn_confined`, `format_problems`, tests): Bun, uv and XDG caches go to the scratch (temporary files to the private `/tmp` on Linux, to the scratch elsewhere), granted writable as one exact path, with selected installed Bun/uv caches and uv Python runtimes read-only and the real home protected ([what still starts cold](../concerns/sandbox-and-confinement-gaps.md#per-command-package-manager-caches)). Owned process retirement releases scratch. See [the Biome traversal regression](../mistakes/sandbox-and-settings.md#verifier-scratch-participates-in-project-lint-traversal).
 
 `CARGO_HOME` inside the boundary is the host's own path wherever the launcher allows it: Cargo fingerprints registry packages by their absolute `$CARGO_HOME/registry/src` path, so any other path rebuilds every dependency (`Dirty <crate>: the path to the source changed`), and a target directory the session's own builds share flips between two builds ([home per command](../mistakes/completion-runtime.md), [linked home on macOS](../mistakes/cargo-under-confinement.md#the-contract-freeze-rebuilt-every-dependency-on-macos-because-its-cargo-home-path-differed-from-the-sessions)).
 
@@ -114,29 +114,33 @@ The planning sessions' settings are the second producer: `loom::plan_session::sa
 ## Package-Manager Caches Are Granted To Every Stage
 
 `sandbox::PACKAGE_MANAGER_CACHE_WRITE_PATHS` (`sandbox/package_caches.rs`) lists the
-per-user cache directories of bun, npm, pnpm, yarn, deno, cargo, rustup, uv, pip and
-go, in tilde form. It is emitted into `sandbox.filesystem.allowWrite` of every
-session capsule through `sandbox/settings/policy.rs::filesystem_settings` (order:
-plan `allow_write` entries, then the package caches, then codex's own state paths
-when that lane is licensed). The capsule is their only carrier: nothing merges them into
-the main checkout's `.claude/settings.local.json`.
+Cargo and rustup cache directories, in tilde form: `~/.cargo/registry`, `~/.cargo/git`,
+the three Cargo lock and tracking files, and `~/.rustup/{downloads,tmp,update-hashes}`.
+It is emitted into `sandbox.filesystem.allowWrite` of every session capsule through
+`sandbox/settings/policy.rs::filesystem_settings` (order: plan `allow_write` entries, the
+Cargo and rustup caches, then codex's own state paths when that lane is licensed). The
+capsule is their only carrier: nothing merges them into the main checkout's
+`.claude/settings.local.json`. Every other ecosystem (bun, npm, pnpm, yarn, deno, uv, pip,
+go, ccache, sccache, gradle, maven) writes the stage's cache root, which
+`stage_cache/session.rs::apply_session_grant` adds to the same list
+([Stage Build Cache](stage-build-cache.md)); the host caches of those tools are not
+session-writable.
 
 **Cache-only policy.** Only cache directories are listed, never a
-credential-bearing parent — `~/.cargo/registry` and `~/.cargo/git` are granted,
-`~/.cargo` as a whole is not (`~/.cargo/credentials.toml` lives there); same
-reasoning excludes `~/.rustup`, `~/.bun`, `~/.yarn`, `~/go` as whole directories.
+credential-bearing parent: `~/.cargo` as a whole is not granted
+(`~/.cargo/credentials.toml` lives there), nor `~/.rustup/toolchains`, `~/.m2`,
+`~/.gradle` or `~/.config`.
 
-**Two limits, same as any `allowWrite` entry:** (1) a cache directory that does
-not exist on the host at session start is skipped by the sandbox, not created —
-a manager used for the first time on that machine still fails until the
-directory exists; (2) a cache relocated by an env var (`XDG_CACHE_HOME`,
-`CARGO_HOME`, `BUN_INSTALL_CACHE_DIR`, `UV_CACHE_DIR`, ...) is not covered and
-needs an explicit plan `allow_write` entry.
+**Two limits, same as any `allowWrite` entry:** (1) a directory that does not exist on the
+host at session start is skipped by the sandbox, not created, so a Cargo or rustup cache of
+a machine that never ran them fails until it exists (the stage cache root is `ensure()`d
+before the capsule names it); (2) a relocation by `CARGO_HOME` or `RUSTUP_HOME` is not
+covered and needs an explicit plan `allow_write` entry.
 
-**Detection rule:** `EROFS` / `Read-only file system` from a package manager
-inside a stage means one of those two limits, not a code bug — check whether the
-cache dir exists on the host, and whether an env var relocated it, before
-assuming the grant is missing.
+**Detection rule:** `EROFS` / `Read-only file system` from Cargo or rustup inside a stage
+means one of those two limits, not a code bug. From any other package manager it means the
+command ran outside the stage cache environment (a stage without the wrapper exports) or a
+cache variable was overridden to a path outside the root.
 
 ## The Test Pattern That Makes A Boundary Test Able To Fail
 
@@ -162,6 +166,7 @@ produced.
 | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
 | `loom/src/verify/criteria/confine.rs`                          | `spawn_confined`, `resolve_confinement`, `plan_confinement` — start here                  |
 | `loom/src/process/environment.rs`                              | the allowlist and `apply_stage_environment`                                               |
+| `loom/src/stage_cache/mod.rs`                                  | `StageCache`: the per-stage build-cache root every confined consumer shares ([Stage Build Cache](stage-build-cache.md)) |
 | `loom/src/models/stage/sandbox_config.rs::CommandConfinement`  | `CommandConfinement`; `NetworkConfig`                                              |
 | `loom/src/plan/schema/types.rs::SandboxConfig`                 | plan-level `command_confinement`                                                          |
 | `loom/src/sandbox/settings.rs`                                 | per-stage session sandbox emission                                                        |
