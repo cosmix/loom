@@ -12,16 +12,19 @@ use crate::plan_server::context::PlanContext;
 use crate::plan_server::ids::ConnCtx;
 use crate::plan_server::wire::kickoff::KickoffShape;
 use crate::plan_session::attachments::{AttachmentInput, MAX_ATTACHMENTS};
-use crate::plan_session::bridge::{Bridge, BridgeError, EndCause, EndMode};
+use crate::plan_session::bridge::{BridgeError, EndCause, EndMode};
 use crate::plan_session::input::sanitize;
 
 const UNKNOWN: &str = "There is no such unfinished kickoff";
 const WROTE_FILES: &str = "This draft wrote files; delete them too or keep the draft";
+const NOT_REMOVED: &str = "The draft could not be deleted; try again";
+/// A stored target of another size than its draft's: a hand-edited draft file.
+pub(super) const SIZE_MISMATCH: &str = "This draft's target does not match its size";
 
 /// How long a confirmed kickoff's closing write may take once the holder sets it aside; the
 /// server's 600 s bound is for an end nobody is watching. Revisit if a slow closing write loses
 /// work the user wanted kept.
-const SET_ASIDE_BOUND: Duration = Duration::from_secs(60);
+pub(super) const SET_ASIDE_BOUND: Duration = Duration::from_secs(60);
 
 /// What a kickoff start puts into its first draft: the typed text and the attachment inputs.
 pub(super) struct StartDraft(Option<Seed>);
@@ -103,7 +106,8 @@ pub(super) fn known_draft(
 
 /// `set_aside_kickoff`: end the running kickoff `session` and keep its draft. An unconfirmed
 /// kickoff has nothing to write and `now` means stop at once: both tear down. A confirmed one is
-/// interrupted, then given a bounded closing write.
+/// interrupted (unless its closing turn already runs), then given a write bounded by
+/// [`SET_ASIDE_BOUND`].
 pub(super) fn set_aside(ctx: &PlanContext, conn: &ConnCtx, session: &str, now: bool) -> Outcome {
     let state = chat_state(ctx)?;
     let draft = known_draft(ctx, &state, session)?;
@@ -113,32 +117,15 @@ pub(super) fn set_aside(ctx: &PlanContext, conn: &ConnCtx, session: &str, now: b
         }
         match now || draft.target.is_none() {
             true => bridge.end(id, EndMode::Teardown, EndCause::Holder),
-            false => close_within_bound(bridge, id),
+            false => bridge.close_within(id, EndCause::Holder, SET_ASIDE_BOUND),
         }
     })
 }
 
-/// Stop the running turn so the closing message reaches an idle agent, then end with a final
-/// write bounded by [`SET_ASIDE_BOUND`]. The texts the interrupt and the end take off the queue
-/// both go back to the caller.
-fn close_within_bound(bridge: &Bridge, id: &str) -> Result<Vec<String>, BridgeError> {
-    let mut returned = match bridge.interrupt(id) {
-        Ok(texts) => texts,
-        // No turn is running: the closing write can go out at once.
-        Err(BridgeError::NotRunning) => Vec::new(),
-        Err(error) => {
-            tracing::debug!(session = %id, %error, "set aside: the turn was not interrupted");
-            Vec::new()
-        }
-    };
-    let ended = bridge.end_within(id, EndMode::FinalWrite, EndCause::Holder, SET_ASIDE_BOUND)?;
-    returned.extend(ended);
-    Ok(returned)
-}
-
 /// `discard_kickoff`: delete the draft of an ended kickoff, and with `delete_files` the files its
 /// confirmed target wrote. The files come from the stored target through `drafts`, never from
-/// the request.
+/// the request. Holding the start lock orders it against a continuation of the same draft:
+/// whichever runs second reads the draft as it is then.
 pub(super) fn discard(
     ctx: &PlanContext,
     conn: &ConnCtx,
@@ -147,6 +134,7 @@ pub(super) fn discard(
 ) -> Outcome {
     writable(ctx)?;
     let state = chat_state(ctx)?;
+    let _starting = state.starting();
     // Nobody holds authoring once a chat has ended; another browser's hold still refuses.
     match ctx.require_authoring(&conn.browser, Take::HolderOnly) {
         Ok(()) | Err(Refusal::NoHolder) => {}
@@ -157,20 +145,35 @@ pub(super) fn discard(
         return Err("Set it aside first".to_owned());
     }
     if let Some(target) = draft.target.as_deref() {
-        match delete_files {
-            true => {
-                drafts::remove_written(ctx.root(), target)?;
-            }
-            false if wrote_files(ctx, target) => return Err(WROTE_FILES.to_owned()),
-            false => {}
-        }
+        discard_files(ctx, &draft, target, delete_files)?;
     }
-    drafts::remove(ctx, &state, session);
-    Ok(Vec::new())
+    match drafts::remove(ctx, &state, session) {
+        true => Ok(Vec::new()),
+        false => Err(NOT_REMOVED.to_owned()),
+    }
 }
 
-/// Whether the confirmed `target` has files on disk. A target that is no kickoff target
-/// has none to protect: only the draft goes.
+/// The file half of a discard of `draft`, whose confirmed document is `target`. A target of
+/// another size than the draft's (a hand-edited draft file) names no files of this draft: they
+/// are never deleted, and keeping them lets the draft go.
+fn discard_files(
+    ctx: &PlanContext,
+    draft: &Draft,
+    target: &str,
+    delete_files: bool,
+) -> Result<(), String> {
+    let foreign = drafts::target_size(target).is_ok_and(|size| size != draft.size);
+    match (delete_files, foreign) {
+        (true, true) => Err(SIZE_MISMATCH.to_owned()),
+        (true, false) => drafts::remove_written(ctx.root(), target).map(drop),
+        (false, false) if wrote_files(ctx, target) => Err(WROTE_FILES.to_owned()),
+        (false, _) => Ok(()),
+    }
+}
+
+/// Whether the confirmed `target` has files on disk. A target that is no kickoff target has
+/// none to protect, and an I/O refusal while looking reads as none too: the safe direction,
+/// since only the draft goes and every file stays.
 fn wrote_files(ctx: &PlanContext, target: &str) -> bool {
     drafts::written(ctx.root(), target).is_ok_and(|written| !written.paths.is_empty())
 }

@@ -86,11 +86,7 @@ impl SessionScope {
     /// at once, so the target and bundle stay writable although they exist; they are the
     /// draft's own, so no existing-target check runs and `existing` stays empty (only
     /// `arm_kickoff` reads it, and it refuses a scope that already has a grant).
-    pub fn kickoff_resumed(
-        _project_root: &Path,
-        size: KickoffSize,
-        name: &str,
-    ) -> Result<SessionScope> {
+    pub fn kickoff_resumed(size: KickoffSize, name: &str) -> Result<SessionScope> {
         ensure!(is_feature_name(name), "Invalid kickoff grant name");
         Ok(Self::Kickoff(KickoffScope {
             size,

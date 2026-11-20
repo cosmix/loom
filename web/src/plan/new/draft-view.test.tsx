@@ -310,3 +310,58 @@ it("the committed note shows only for committed files, and a refusal keeps the d
   expect(screen.getByRole("status").textContent).toBe("Files changed since they were written");
   expect(screen.getByRole("group", { name: "Confirm delete" })).toBeTruthy();
 });
+
+it("the confirm takes focus, Escape or Keep it closes it, and focus returns to Discard", async () => {
+  mount(`?session=${ID}`);
+  fireEvent.click(await screen.findByRole("button", { name: "Discard" }));
+  const group = screen.getByRole("group", { name: "Confirm discard" });
+  expect(group.contains(document.activeElement)).toBe(true);
+  fireEvent.click(within(group).getByRole("button", { name: "Keep it" }));
+  expect(document.activeElement).toBe(screen.getByRole("button", { name: "Discard" }));
+
+  fireEvent.click(screen.getByRole("button", { name: "Discard" }));
+  fireEvent.keyDown(screen.getByRole("group", { name: "Confirm discard" }), { key: "Escape" });
+  expect(screen.queryByRole("group", { name: "Confirm discard" })).toBeNull();
+  expect(document.activeElement).toBe(screen.getByRole("button", { name: "Discard" }));
+});
+
+it("Escape from a button inside the delete confirm closes it and refocuses Delete", async () => {
+  served = { status: 200, body: { ...detail, written: ["doc/plans/PLAN-microvm.md"] } };
+  const { socket } = mount(`?session=${ID}`);
+  fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
+  const group = screen.getByRole("group", { name: "Confirm delete" });
+  expect(group.contains(document.activeElement)).toBe(true);
+  fireEvent.keyDown(within(group).getByRole("button", { name: "Delete for good" }), {
+    key: "Escape",
+  });
+  expect(screen.queryByRole("group", { name: "Confirm delete" })).toBeNull();
+  expect(document.activeElement).toBe(screen.getByRole("button", { name: "Delete" }));
+  expect(socket.send).not.toHaveBeenCalled();
+});
+
+it("the plan's bundle is listed as a folder, with everything in it", async () => {
+  const bundle = "doc/plans/briefs/microvm";
+  served = { status: 200, body: { ...detail, written: ["doc/plans/PLAN-microvm.md", bundle] } };
+  mount(`?session=${ID}`);
+  fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
+  const confirm = within(screen.getByRole("group", { name: "Confirm delete" }));
+  const items = confirm.getAllByRole("listitem").map((item) => item.textContent);
+  expect(items).toEqual(["doc/plans/PLAN-microvm.md", `${bundle}/ and everything in it`]);
+  expect(confirm.getByText(bundle).closest("ul")?.classList.contains("font-mono")).toBe(true);
+});
+
+it("the open notice is a polite live region that names Stop now while setting aside", () => {
+  const running = { ...draft, name: null, live: true };
+  const { store } = mount("", liveSession(ID), [running]);
+  const note = screen.getByText(
+    (_, element) => element?.textContent === `${draftTitle(running)} is still open`,
+  );
+  expect(note.getAttribute("aria-live")).toBe("polite");
+  expect(screen.queryByText("Stop now skips its closing write.")).toBeNull();
+
+  const ending = liveSession(ID, "ending");
+  act(() => store.set(snapshotAtom, { session: ending, turns: [], queue: [], previous: null }));
+  expect(note.textContent).toBe(`${draftTitle(running)} is being set aside…`);
+  const hint = screen.getByText("Stop now skips its closing write.");
+  expect(hint.getAttribute("aria-live")).toBe("polite");
+});

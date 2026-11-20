@@ -226,15 +226,22 @@
   gap: var(--space-2) var(--space-3);
 }
 
-[data-loom-plan] .kickoff-draft__confirm > p,
 [data-loom-plan] .kickoff-draft__actions > p {
   flex-basis: 100%;
   margin: 0;
   font-size: var(--type-body);
 }
 
-[data-loom-plan] .kickoff-draft__confirm > p {
-  flex-basis: auto;
+/* The question shares the row with its buttons. */
+[data-loom-plan] .kickoff-draft__confirm > p:not(.plan-fine) {
+  margin: 0;
+  font-size: var(--type-body);
+}
+
+/* The committed note keeps `.plan-fine`'s type, on a row of its own. */
+[data-loom-plan] .kickoff-draft__confirm > .plan-fine {
+  flex-basis: 100%;
+  margin: 0;
 }
 
 [data-loom-plan] .kickoff-draft__list {

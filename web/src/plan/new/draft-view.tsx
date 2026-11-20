@@ -1,5 +1,5 @@
 import { useAtomValue, useStore } from "jotai";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type RefObject } from "react";
 import { Link, useNavigate } from "react-router";
 
 import {
@@ -77,9 +77,14 @@ export function OpenDraftNotice({ draft }: { draft: KickoffDraftView }) {
   const ending = session?.id === draft.session && session.state === "ending";
   return (
     <div className="kickoff-open">
-      <p className="kickoff-open__text">
+      {/* Polite regions, so the change to "being set aside" and the Stop now it brings are heard.
+          The chat's own regions name the session state ("Writing final notes"), never these words. */}
+      <p aria-live="polite" aria-atomic="true" className="kickoff-open__text">
         <Untrusted text={draftTitle(draft)} /> {ending ? "is being set aside…" : "is still open"}
       </p>
+      <span aria-live="polite" className="sr-only">
+        {ending ? "Stop now skips its closing write." : ""}
+      </span>
       <div className="kickoff-open__actions">
         <Link to={kickoffHref(draft.session)} data-look="secondary" className="plan-button">
           Continue
@@ -138,6 +143,39 @@ function useDraftDetail(id: string): Load {
 }
 
 /**
+ * Whether an entry of `written` is a folder. The server lists the draft's document, always a
+ * `.md` file, and for a plan its brief bundle, a directory named by the plan's slug (which never
+ * holds a dot); deleting the bundle removes everything in it.
+ */
+function isFolder(path: string): boolean {
+  return !path.endsWith(".md");
+}
+
+/** The files a confirmed delete removes, with a note when git history still holds some. */
+function WrittenFiles({ written, committed }: { written: string[]; committed: boolean }) {
+  return (
+    <>
+      <ul className="m-0 basis-full list-none p-0 font-mono text-xs break-all">
+        {written.map((path) => (
+          <li key={path}>
+            <Untrusted text={path} />
+            {isFolder(path) && (
+              <>
+                <span data-folder="">/</span>
+                <span className="font-sans"> and everything in it</span>
+              </>
+            )}
+          </li>
+        ))}
+      </ul>
+      {committed && (
+        <p className="plan-fine">Some of these files are committed; git history still has them.</p>
+      )}
+    </>
+  );
+}
+
+/**
  * The in-page confirm (never a browser dialog). A draft that wrote nothing is discarded as the
  * draft file alone; one that wrote files lists them and asks before deleting them too.
  */
@@ -155,33 +193,28 @@ function DiscardConfirm({
   onKeep: () => void;
 }) {
   const deleting = written.length > 0;
+  const group = useRef<HTMLDivElement>(null);
+  // Focus lands in the confirm when it opens; Escape closes it like Keep it (DESIGN.md, Focus).
+  useEffect(() => group.current?.focus(), []);
   return (
     <div
+      ref={group}
+      tabIndex={-1}
       role="group"
       aria-label={deleting ? "Confirm delete" : "Confirm discard"}
       className="kickoff-draft__confirm"
+      onKeyDown={(event) => {
+        if (event.key !== "Escape") return;
+        event.preventDefault();
+        onKeep();
+      }}
     >
       <p>
         {deleting
           ? "Delete this draft and the files it wrote?"
           : "Discard this draft? It cannot be brought back."}
       </p>
-      {deleting && (
-        <>
-          <ul className="m-0 basis-full list-none p-0 font-mono text-xs break-all">
-            {written.map((path) => (
-              <li key={path}>
-                <Untrusted text={path} />
-              </li>
-            ))}
-          </ul>
-          {committed && (
-            <p className="plan-fine">
-              Some of these files are committed; git history still has them.
-            </p>
-          )}
-        </>
-      )}
+      {deleting && <WrittenFiles written={written} committed={committed} />}
       <DisabledReason reason={reason} onClick={() => onDiscard(deleting)}>
         {deleting ? "Delete for good" : "Discard for good"}
       </DisabledReason>
@@ -192,6 +225,21 @@ function DiscardConfirm({
   );
 }
 
+/**
+ * When the confirm closes (Keep it, Escape), focus goes back to the Delete or Discard button that
+ * opened it, the only quiet button in `container` then. The selector reads the look because
+ * `DisabledReason` forwards neither a ref nor `data-*` attributes.
+ */
+function useRestoreFocus(container: RefObject<HTMLDivElement | null>, confirming: boolean) {
+  const wasConfirming = useRef(false);
+  useEffect(() => {
+    if (wasConfirming.current && !confirming) {
+      container.current?.querySelector<HTMLButtonElement>('button[data-look="quiet"]')?.focus();
+    }
+    wasConfirming.current = confirming;
+  }, [container, confirming]);
+}
+
 function DraftActions({ detail }: { detail: KickoffDraftDetail }) {
   const session = detail.draft.session;
   const { written, committed } = detail;
@@ -199,6 +247,8 @@ function DraftActions({ detail }: { detail: KickoffDraftDetail }) {
   const navigate = useNavigate();
   const { reason, status, run } = useDraftCommand();
   const [confirming, setConfirming] = useState(false);
+  const actions = useRef<HTMLDivElement>(null);
+  useRestoreFocus(actions, confirming);
   const [late, setLate] = useState(false);
   const wait = useRef<AbortController | null>(null);
   useEffect(() => () => wait.current?.abort(), []);
@@ -216,7 +266,7 @@ function DraftActions({ detail }: { detail: KickoffDraftDetail }) {
     }
   };
   return (
-    <div className="kickoff-draft__actions">
+    <div ref={actions} className="kickoff-draft__actions">
       {confirming ? (
         <DiscardConfirm
           written={written}

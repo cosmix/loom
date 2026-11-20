@@ -213,6 +213,31 @@ fn discard_of_a_draft_whose_files_are_gone_removes_only_the_draft() {
     assert!(!draft_file(&f, OLD).exists());
 }
 
+/// A feature draft (hand-edited) whose target is a plan document: its files are never deleted,
+/// it does not continue under the plan's grant, and it can still go on its own.
+#[test]
+fn a_draft_whose_target_is_of_another_size_never_deletes_or_resumes_it() {
+    const MISMATCH: &str = "This draft's target does not match its size";
+    let f = fixture(false);
+    let tab = f.connect(&browser());
+    write_draft(&f, OLD, json!({"size": "feature", "target": PLAN}));
+    let document = f.ctx.root().join(PLAN);
+    fs::create_dir_all(document.parent().unwrap()).unwrap();
+    fs::write(&document, "# Plan\n").unwrap();
+
+    let deleting = f.command(&tab, discard_files_cmd(OLD, true));
+    assert_eq!(deleting, refused(MISMATCH));
+    assert!(document.exists() && draft_file(&f, OLD).exists());
+    assert_eq!(f.command(&tab, continue_cmd(OLD)), refused(MISMATCH));
+    assert!(
+        f.bridge.chat_session_id().is_none(),
+        "no continuation started"
+    );
+
+    assert_eq!(f.command(&tab, discard_files_cmd(OLD, false)), ok_result());
+    assert!(document.exists() && !draft_file(&f, OLD).exists());
+}
+
 #[test]
 fn an_ended_session_is_finished_only_when_the_agent_asked() {
     let f = fixture(false);

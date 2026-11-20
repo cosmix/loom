@@ -57,7 +57,7 @@ pub(super) fn prepare_scope(
 ) -> anyhow::Result<()> {
     if let Some(size) = offer_size(offer) {
         let scope = match resume {
-            Some(grant) => SessionScope::kickoff_resumed(ctx.root(), grant.size, &grant.name)?,
+            Some(grant) => SessionScope::kickoff_resumed(grant.size, &grant.name)?,
             None => SessionScope::kickoff(ctx.root(), size)?,
         };
         return scope::write(dir, &scope);
@@ -108,20 +108,24 @@ pub(super) fn observe_kickoff(
     }
 }
 
-/// The size of `id`'s kickoff scope, `None` for any other scope; read once per session.
+/// The size of `id`'s kickoff scope, `None` for any other scope; read once per session. A read
+/// that fails is not cached, so the next event reads the scope again.
 fn kickoff_size(ctx: &PlanContext, state: &ChatState, id: &str) -> Option<KickoffSize> {
     let mut scopes = lock(&state.kickoff_scopes);
-    *scopes.entry(id.to_owned()).or_insert_with(|| {
-        let dir = SessionDir::new(ctx.runtime().sessions.join(id));
-        match scope::load(&dir) {
-            Ok(SessionScope::Kickoff(kickoff)) => Some(kickoff.size),
-            Ok(_) => None,
-            Err(error) => {
-                tracing::debug!(session = %id, %error, "cannot read kickoff scope");
-                None
-            }
+    if let Some(size) = scopes.get(id) {
+        return *size;
+    }
+    let dir = SessionDir::new(ctx.runtime().sessions.join(id));
+    let size = match scope::load(&dir) {
+        Ok(SessionScope::Kickoff(kickoff)) => Some(kickoff.size),
+        Ok(_) => None,
+        Err(error) => {
+            tracing::debug!(session = %id, %error, "cannot read kickoff scope");
+            return None;
         }
-    })
+    };
+    scopes.insert(id.to_owned(), size);
+    size
 }
 
 pub(super) fn publish_draft_team(

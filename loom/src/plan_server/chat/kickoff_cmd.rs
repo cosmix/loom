@@ -77,16 +77,7 @@ pub(super) fn record_owner(bridge: &Bridge, id: &str, size: KickoffSize, name: &
 }
 
 fn confirmation(size: KickoffSize, name: &str) -> String {
-    let target = match size {
-        KickoffSize::Feature => ArmedTarget {
-            document: format!("doc/product/{name}/index.md").into(),
-            bundle: None,
-        },
-        KickoffSize::Plan => ArmedTarget {
-            document: format!("doc/plans/PLAN-{name}.md").into(),
-            bundle: Some(format!("doc/plans/briefs/{name}").into()),
-        },
-    };
+    let target = scope::kickoff_target(size, name);
     let size = match size {
         KickoffSize::Feature => "feature",
         KickoffSize::Plan => "standalone plan",

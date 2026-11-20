@@ -217,9 +217,7 @@ impl Bridge {
         mode: EndMode,
         cause: EndCause,
     ) -> Result<Vec<String>, BridgeError> {
-        let ended = self.with_session(id, |session, step| session.request_end(mode, cause, step));
-        self.flush();
-        ended.unwrap_or(Err(BridgeError::NoSession))
+        self.end_bounded(id, mode, cause, None)
     }
 
     /// `end` whose final write must finish within `bound` instead of the configured
@@ -231,9 +229,21 @@ impl Bridge {
         cause: EndCause,
         bound: Duration,
     ) -> Result<Vec<String>, BridgeError> {
+        self.end_bounded(id, mode, cause, Some(bound))
+    }
+
+    fn end_bounded(
+        &self,
+        id: &str,
+        mode: EndMode,
+        cause: EndCause,
+        bound: Option<Duration>,
+    ) -> Result<Vec<String>, BridgeError> {
         let ended = self.with_session(id, |session, step| {
             let texts = session.request_end(mode, cause, step)?;
-            session.bound_end(bound);
+            if let Some(bound) = bound {
+                session.bound_end(bound);
+            }
             Ok(texts)
         });
         self.flush();
@@ -332,7 +342,7 @@ impl Session {
     /// Only while a turn runs; one Escape per turn (px-state-04). A message accepted at an
     /// idle and held since (a task notification started a turn first) comes back too: nothing
     /// is pasted at the idle the interrupt causes.
-    fn interrupt(&mut self, step: &mut Step) -> Result<Vec<String>, BridgeError> {
+    pub(super) fn interrupt(&mut self, step: &mut Step) -> Result<Vec<String>, BridgeError> {
         let running = matches!(
             self.state(),
             SessionState::Working | SessionState::Permission

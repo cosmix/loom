@@ -16,6 +16,9 @@ use crate::plan_session::kind::SessionKind::Authoring;
 use crate::plan_session::model::{DenyReason, FailureKind, Item, SessionState};
 use crate::process::IdentityStatus;
 
+#[path = "tests_close_bound.rs"]
+mod close_bound;
+
 fn denial(h: &Harness, request: &str) -> Option<DenyReason> {
     let previous = h.bridge.chat_snapshot(false).previous?;
     let items = previous.turns.into_iter().flat_map(|turn| turn.items);
@@ -188,6 +191,24 @@ fn a_final_write_ends_at_the_bound_without_a_stop() {
     wait_until("the end", || h.ended(&s.id) == Some(EndOutcome::TornDown));
     assert!(asked.elapsed() < Duration::from_secs(3));
     assert_eq!(h.sent(&s), [CLOSING]);
+}
+
+/// An end's own bound never outlasts `final_write_bound`, all that drain and recovery wait.
+#[test]
+fn an_ends_own_bound_is_clamped_to_the_final_write_bound() {
+    let h = Harness::ready(|c| c.final_write_bound = Duration::from_millis(800));
+    let s = h.idle(Authoring);
+    h.working(&s);
+    let (asked, long) = (Instant::now(), Duration::from_secs(60));
+    h.bridge
+        .end_within(&s.id, EndMode::FinalWrite, EndCause::Holder, long)
+        .unwrap();
+    wait_until("the end", || h.ended(&s.id) == Some(EndOutcome::TornDown));
+    assert!(
+        asked.elapsed() < Duration::from_secs(3),
+        "{:?}",
+        asked.elapsed()
+    );
 }
 
 #[test]
