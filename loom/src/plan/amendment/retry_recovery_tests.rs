@@ -1,11 +1,36 @@
 use super::*;
 
+/// A criterion is narrowed only on a failing base run: loom's run of "one".
+fn seed_failing_base_run(work: &Path) {
+    use crate::verify::review::handoffs::{save_base_evidence, BaseEvidence};
+    let evidence = BaseEvidence {
+        index: 0,
+        command: "one".into(),
+        passed: false,
+        executed: Some(3),
+        failed: Some(1),
+        build_failed: false,
+        timed_out: false,
+    };
+    save_base_evidence(work, "a", &evidence).unwrap();
+}
+
+fn deleting_patch() -> serde_json::Value {
+    serde_json::json!({
+        "field": "acceptance",
+        "patches": [{"op": "delete", "index": 0}],
+        "leaves_out": [{"index": 0, "tests": ["one"],
+                        "runs_at": "integration-verify", "reason": "runs nowhere here"}],
+    })
+}
+
 fn accepted_verdict(work: &Path, plan: &Path) -> PathBuf {
     use crate::models::dispute::{
         CriterionField, DisputeKind, DisputeRequest, DisputeVerdict, DisputeVerdictRecord,
         PlanPatch,
     };
     prepare_disputed_stage(work, plan);
+    seed_failing_base_run(work);
     let record = DisputeVerdictRecord {
         id: 1,
         stage_id: "a".into(),
@@ -15,9 +40,7 @@ fn accepted_verdict(work: &Path, plan: &Path) -> PathBuf {
         session_id: None,
         verdict: DisputeVerdict::Accept {
             plan_patch: PlanPatch {
-                inner: serde_json::json!({
-                    "field": "acceptance", "op": "delete", "index": 0,
-                }),
+                inner: deleting_patch(),
             },
             citations: vec![],
             reasoning: "remove incorrect criterion".into(),
