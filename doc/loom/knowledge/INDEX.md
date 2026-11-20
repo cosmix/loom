@@ -38,7 +38,7 @@
 | [daemon-launch](architecture/daemon-launch.md) |  | 71 |
 | [daemon-owned-commits](architecture/daemon-owned-commits.md) |  | 151 |
 | [directory-structure](architecture/directory-structure.md) | Tree | 50 |
-| [execution-containment](architecture/execution-containment.md) |  | 392 |
+| [execution-containment](architecture/execution-containment.md) |  | 393 |
 | [hook-system](architecture/hook-system.md) |  | 339 |
 | [knowledge-bootstrap](architecture/knowledge-bootstrap.md) | KB | 83 |
 | [knowledge-hierarchy](architecture/knowledge-hierarchy.md) | KB fs | 264 |
@@ -134,7 +134,8 @@
 | [adjudication-autonomy-deadlock](mistakes/adjudication-autonomy-deadlock.md) |  | 238 |
 | [ambient-filesystem-trust](mistakes/ambient-filesystem-trust.md) |  | 186 |
 | [briefs-and-bug-reports](mistakes/briefs-and-bug-reports.md) |  | 386 |
-| [ci-toolchain-and-cargo](mistakes/ci-toolchain-and-cargo.md) |  | 433 |
+| [cargo-under-confinement](mistakes/cargo-under-confinement.md) | Cargo in sandboxes and confined runs: audit fetches, cold builds, Seatbelt | 83 |
+| [ci-toolchain-and-cargo](mistakes/ci-toolchain-and-cargo.md) |  | 363 |
 | [codex-direct-mode-invisible](mistakes/codex-direct-mode-invisible.md) |  | 23 |
 | [codex-lane-rogue-wrapper](mistakes/codex-lane-rogue-wrapper.md) |  | 187 |
 | [codex-navigation](mistakes/codex-navigation.md) | Reader | 202 |

@@ -108,7 +108,7 @@ Settled disputes of the partial-staging guard: rename detection, why `commit -a`
 
 ## Lint and Test-Discipline Summary
 
-Lint and test-discipline lessons spanning `--all-targets`, `--no-fail-fast`, ambient git config in tests, the maintainability ledger, `TODO` in string literals and platform-specific Bash/Rust traps. Racy tests (inherited descriptors, ETXTBSY, serial env, stdin hangs, real-home writes) and CI toolchain drift (clippy on rustup `stable`, offline `cargo audit`, `install.sh`, dependency build caches) have their own topics. → [Testing & Lint](mistakes/testing-and-lint.md), [Test Concurrency & Fixtures](mistakes/test-concurrency-and-fixtures.md), [CI Toolchain & Cargo](mistakes/ci-toolchain-and-cargo.md), [Test Sweep & Fixture Discipline](mistakes/test-sweep-and-fixture-discipline.md)
+Lint and test-discipline lessons spanning `--all-targets`, `--no-fail-fast`, ambient git config in tests, the maintainability ledger, `TODO` in string literals and platform-specific Bash/Rust traps. Racy tests (inherited descriptors, ETXTBSY, serial env, stdin hangs, real-home writes) and CI toolchain drift (clippy on rustup `stable`, `install.sh`) and Cargo under confinement (offline `cargo audit`, dependency rebuilds from a Cargo home path that differs from the session's, Seatbelt `stat`) have their own topics. → [Testing & Lint](mistakes/testing-and-lint.md), [Test Concurrency & Fixtures](mistakes/test-concurrency-and-fixtures.md), [CI Toolchain & Cargo](mistakes/ci-toolchain-and-cargo.md), [Cargo Under Confinement](mistakes/cargo-under-confinement.md), [Test Sweep & Fixture Discipline](mistakes/test-sweep-and-fixture-discipline.md)
 
 ## Verification v2 Delivery Mistakes
 

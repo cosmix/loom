@@ -81,46 +81,6 @@ steps' own success output as a harness artifact, not evidence the install failed
 **Prevention:** When a CI clippy failure doesn't reproduce locally, check `rustup check` FIRST — if stable has moved, `rustup update stable` and re-run before hunting for any other cause. Most new-lint fallout is machine-applicable: `cargo clippy --fix --all-targets --allow-dirty`, then review the diff (non-trivial rewrites like `question_mark` can leave awkward leftover blocks worth hand-cleaning).
 **Fix:** Updated local stable to 1.97.1, applied `cargo clippy --fix`, hand-simplified the `?`-operator rewrite in `fs/work_dir.rs`, verified clippy + fmt + full test suite green.
 
-## `cargo audit` Git-Fetches Its Database First — It Cannot Pass in a No-Network Stage Sandbox (2026-09-12)
-
-**What happened:** a plan copied `cargo audit -f loom/Cargo.lock -d loom/target/advisory-db`
-verbatim from a sibling plan's pre-push gate into a stage whose sandbox declares "No
-network access." `cargo-audit` git-fetches the RustSec advisory database into that path
-before scanning anything; `loom/target/advisory-db` does not exist in a fresh worktree,
-so the fetch fails ("couldn't fetch advisory database: git operation failed") before the
-audit itself ever runs — the criterion fails regardless of whether the dependency tree
-has any advisories.
-
-**Why:** the criterion was copied from a plan whose stage DOES have network access,
-without checking the destination stage's own network policy.
-
-**Prevention:** a plan step that runs `cargo audit` inside a no-network stage must use
-`cargo audit --no-fetch -d "$HOME/.cargo/advisory-db"` against a database path already
-present on the machine (populated by an earlier `cargo audit` run outside a stage
-sandbox), never a fresh in-worktree path the offline run cannot populate itself. When
-copying a gate list between plans, re-check each criterion against the destination
-stage's own sandbox network policy — a criterion that passed in the source plan is not
-evidence it will pass in the copy.
-
-## Plain `cargo audit` Cannot Refresh Its Database Inside the Agent's Bash-Tool Sandbox (2026-09-13)
-
-**What happened:** run interactively (not as a plan's acceptance criterion), plain `cargo audit`
-fails inside the Claude Code Bash sandbox: `~/.cargo/advisory-db` is read-only there, so the
-database refresh fails, and a `--db` fetch fails on host-key verification. A note written then
-concluded `cargo audit` cannot pass inside an agent session at all.
-
-**Why that was wrong:** only the fetch cannot run. The sandbox grants write to the lock file
-`~/.cargo/advisory-db..lock` and reads the database directory, so `cargo audit --no-fetch` scans
-against a database the operator already refreshed on the host. The platform-portability stage of
-PLAN-open-issues-19-24 ran it that way as an acceptance criterion; the plan's host prerequisite was
-one host `cargo audit` in `loom/` before the run.
-
-**Prevention:** inside an agent session or a no-network stage use `cargo audit --no-fetch`, and
-treat a failure naming a missing or stale database as an environment gap to report (the operator
-refreshes it on the host), not as an audit result. Plain `cargo audit` stays a pre-push step. Run
-it from the directory that holds `Cargo.lock`: the command has no `--manifest-path`, so
-`loom plan verify` flags it when the stage's `working_dir` is the repository root.
-
 ## `libc::mode_t` Width Differs by Platform — `.into()` Is a Clippy Error on Linux (2026-08-10)
 
 `libc::mode_t` is `u32` on Linux and `u16` on macOS, while the std APIs we call
@@ -138,26 +98,6 @@ lint-clean on exactly one.
 **Also:** the pre-push hook runs Clippy, the pre-commit hook does not. A lint-broken commit lands
 locally and only surfaces at push time. Run `cargo clippy --all-targets -- -D warnings` before
 committing, not after.
-
-## Every Stage Worktree Compiled Its Dependencies From Scratch (2026-09-02)
-
-**What happened:** each stage worktree has its own `target/` directory, so every stage spent minutes recompiling the same dependency crates before its first test ran.
-
-**Why:** a shared `CARGO_TARGET_DIR` across worktrees is unsafe here — parallel stages would overwrite each other's `debug/loom`, which acceptance criteria invoke by relative path — and nothing else shared compiled output between worktrees.
-
-**Prevention:** share rustc output through `sccache`, which caches per input hash and leaves every worktree its own `target/` untouched.
-
-**Fix (attempted, inert):** `orchestrator/terminal/native/build_cache.rs` locates `sccache` (`LOOM_SCCACHE=0` disables it, `LOOM_SCCACHE=<path>` pins it, otherwise `which` then `~/.cargo/bin`, `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`), and `loom run` and `loom doctor` print whether it was found. It shares nothing in practice: `sccache_usable_in` withholds `RUSTC_WRAPPER` from every sandboxed session whose seccomp filter denies `AF_UNIX` (see "The Sandbox's AF_UNIX Denial Also Kills sccache" in [sandbox-tooling-and-network.md](sandbox-tooling-and-network.md)), and confined host jobs start from `env_clear()` with `process/environment.rs::STAGE_HOST_ENV_ALLOWLIST` forwarding `SCCACHE_DIR` and `SCCACHE_CACHE_SIZE` but never `RUSTC_WRAPPER`. The earlier text here claimed the session wrapper exports `RUSTC_WRAPPER` for every session kind and the confined environment allows it; neither holds. An empty `~/.cache/sccache` on the development machine confirms nothing is cached. The open problem, for every ecosystem, is [concerns/worktree-build-cold-start.md](../concerns/worktree-build-cold-start.md).
-
-## The Same Suite Ran Once Per Stage, Per Check, Per Judge (2026-09-02)
-
-**What happened:** five stages of one plan each carried the unfiltered `cargo test --all-targets` gate as an acceptance criterion. Each copy ran once in the agent's own `loom check`, again in `loom stage complete`, and again for every adjudication of that criterion; integration-verify then ran the whole suite once more.
-
-**Why:** the plan proved the entire repository at every stage instead of proving each stage's own code, and nothing remembered a pass already recorded against an unchanged tree.
-
-**Prevention:** run the full suite once, in integration-verify. A standard stage's acceptance criterion should be `cargo test --lib <module>::`, `cargo test --test <target>`, or an equivalent name filter. `loom plan verify` now warns on a full-suite run outside integration-verify (`plan/schema/validation_suite.rs::is_full_suite_run`), and the plan-writer skill states the rule as item 6 of its acceptance checklist.
-
-**Fix:** `verify/criteria/cache.rs` caches criterion passes under `<work_dir>/acceptance-cache/<sha256>.json`, keyed by the criterion text, the acceptance directory, `git rev-parse HEAD`, the raw `git status --porcelain=v2 --untracked-files=all -z` output, and the content hash of every listed path. Failures are never cached. A command mentioning `$HOME`, `~/`, `mktemp`, or `LOOM_HOME` is never cached. `loom check --no-cache`, `loom stage complete --no-cache`, or `LOOM_ACCEPTANCE_CACHE=0` bypass the cache; a cached pass prints as `✓ passed (cached)`. A command that references any git-ignored path (a built binary under target/, for instance) is never cached, because the digest covers the tracked tree only; cargo test and cargo build stay cacheable since they rebuild from that tree. That key later proved too strict: hashing the commit id made every commit after `loom check` invalidate its passes. The current key (commit 865eed49) is a `(path, mode, blob oid)` content manifest plus the HEAD text, prepared env, executables and containment revision (`verify/criteria/cache_fingerprint.rs`); `--no-cache` now refreshes (stores without reading) and only `LOOM_ACCEPTANCE_CACHE=0` bypasses; any command containing `$` or running `git` is never cached.
 
 ## A Test That Assumed a Dev Build Blocked the Release-Tag Push (2026-09-14)
 
@@ -411,16 +351,6 @@ This catches macOS dead code and unused imports. It cannot run tests, so macOS r
 **Prevention:** when a CI test job hangs, cancel it and read the raw log with `gh api repos/<owner>/<repo>/actions/jobs/<id>/logs`, searching for `has been running for over`. Reproduce the `/var` trap on Linux by running the failing tests with `TMPDIR` pointing through a symlink. A path check that compares a target with a canonical root canonicalizes the part above the tree on both sides.
 
 **Fix:** `split_under_root` in `loom/src/fs/safe_replace.rs` matches the root across spellings above the tree and walks the rest without following links. The daemon writer polls before each send off Linux. Tests whose setup macOS cannot create are gated or adapted, each with a comment naming the platform fact.
-
-## A Seatbelt `file-read*` Deny Did Not Hide a File From `stat` (2026-11-18)
-
-**What happened:** to make an ancestor `Cargo.toml` above a stage worktree look absent under the macOS sandbox, as it is under bubblewrap, the profile added `(deny file-read* (literal P))` after its global `(allow file-read-metadata)`. A unit test confirmed the rule text and order, but under the real `sandbox-exec` `test -e` still saw the file and cargo still failed with "failed searching for potential workspace … Operation not permitted". That took one more CI round to find.
-
-**Why:** in SBPL a rule that names `file-read-metadata` outranks the `file-read*` wildcard, so the earlier named allow won. `access(F_OK)` is a separate operation, `file-test-existence`. Checking the profile text cannot catch this, because the semantics live in the kernel.
-
-**Prevention:** to hide a path from a Seatbelt profile that allows metadata globally, deny the operations by name: `(deny file-read-metadata file-test-existence (literal P))` plus `(deny file-read* (literal P))`, on the canonical `/private/...` path. Test it under the real `sandbox-exec` (`confine_seatbelt_tests.rs`), never by asserting profile text alone. A macOS test that can fail in CI prints its diagnostics in the assertion message, so one CI round settles the cause.
-
-**Fix:** `confine_ancestors.rs` emits the named-operation denies for every spelling `seatbelt_spellings` produces. `confine_seatbelt_probe_tests.rs` prints the profile in use and the results of six rule variants when the absence test fails.
 
 ## killpg Answers EPERM on macOS for a Zombie-Only Group, and a CPU-Bound Test Fixture Outran a Timeout (2026-11-19)
 

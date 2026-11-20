@@ -24,7 +24,7 @@ Revisit when a measured first build exceeds the project's acceptable stage-start
   (`verify/criteria/confine_host.rs::platform_command`); the macOS Seatbelt profile allows
   `network-outbound` only for `Provision`.
 - Result on this machine: `~/.cache/sccache` holds 4 KB, so nothing has ever been cached.
-  mistakes/ci-toolchain-and-cargo.md, "Every Stage Worktree Compiled Its Dependencies From Scratch",
+  mistakes/cargo-under-confinement.md, "Every Stage Worktree Compiled Its Dependencies From Scratch",
   names sccache as the fix; the gates above leave it inert in both places that compile.
 
 **What a confined host job can reach** (`confine_host.rs::read_roots`, `writable_roots`): read-only
