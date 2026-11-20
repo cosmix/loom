@@ -11,9 +11,8 @@ fn findings(ids: &[&str]) -> DisputeKind {
 
 fn contract() -> DisputeKind {
     DisputeKind::Contract {
-        contract_id: "rejects-x".to_string(),
-        replacement: None,
-        replacement_base_sha256: None,
+        contract_ids: vec!["rejects-x".to_string()],
+        replacements: Vec::new(),
     }
 }
 
@@ -90,32 +89,6 @@ fn a_closing_ruling_needs_a_citation_and_a_deferral_a_target() {
 }
 
 #[test]
-fn a_contract_accept_takes_only_a_contracts_patch() {
-    let bare = json!({"verdict": "accept", "reasoning": "r", "citations": citation()});
-    let ValidationOutcome::Verdict(DisputeVerdict::Accept { plan_patch, .. }) =
-        parse_and_validate(&bare.to_string(), &contract())
-    else {
-        panic!("a contract accept without a plan_patch is valid");
-    };
-    assert_eq!(plan_patch.inner, json!({}));
-
-    let flat = json!({"verdict": "accept", "reasoning": "r", "citations": citation(),
-        "plan_patch": {"field": "contracts", "op": "delete", "index": 0}});
-    let ValidationOutcome::Verdict(DisputeVerdict::Accept { plan_patch, .. }) =
-        parse_and_validate(&flat.to_string(), &contract())
-    else {
-        panic!("a contracts patch is valid");
-    };
-    assert_eq!(plan_patch.inner["field"], "contracts");
-    assert_eq!(plan_patch.inner["patch"]["op"], "delete");
-
-    let wrong_field = json!({"verdict": "accept", "reasoning": "r", "citations": citation(),
-        "plan_patch": {"field": "acceptance", "op": "delete", "index": 0}});
-    let asked = question(parse_and_validate(&wrong_field.to_string(), &contract()));
-    assert!(asked.contains("must be contracts"), "{asked}");
-}
-
-#[test]
 fn a_verdict_foreign_to_the_kind_is_turned_into_a_question() {
     let rulings = json!({"verdict": "rulings", "rulings": []});
     let asked = question(parse_and_validate(&rulings.to_string(), &contract()));
@@ -154,6 +127,9 @@ fn an_impact_test_dispute_takes_accept_without_a_patch_or_reject_but_no_rulings(
         "{asked}"
     );
 }
+
+#[path = "verdict_contract_tests.rs"]
+mod contract_rulings;
 
 #[path = "verdict_freeze_refusal_tests.rs"]
 mod freeze_refusal;

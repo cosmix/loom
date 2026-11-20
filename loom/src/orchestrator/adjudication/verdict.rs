@@ -20,9 +20,10 @@
 //! Which verdicts a dispute takes depends on its kind: the rules above are
 //! those of a criterion dispute, whose accept must also amend a list the
 //! disputed one admits (see `admits`); `verdict_kinds` holds the findings,
-//! contract and integrity rules, built from the same parts. A freeze-refusal
-//! verdict is checked against its stage and worktree instead, and refused
-//! rather than coerced (`parse_and_validate_in`, `verdict_freeze_refusal`).
+//! integrity and impact-test rules, built from the same parts. Freeze-refusal
+//! and contract verdicts are checked against their stage instead, and refused
+//! rather than coerced (`parse_and_validate_in`, `verdict_freeze_refusal`,
+//! `verdict_contract`).
 
 use serde::Deserialize;
 use serde_json::Value;
@@ -32,7 +33,7 @@ use crate::models::dispute::{Citation, CriterionField, DisputeKind, DisputeVerdi
 use crate::models::stage::Stage;
 use crate::plan::amendment::AmendmentField;
 
-use super::{plan_patch, verdict_freeze_refusal, verdict_kinds};
+use super::{plan_patch, verdict_contract, verdict_freeze_refusal, verdict_kinds};
 
 /// Result of parsing + validating raw JSON from the model.
 ///
@@ -76,20 +77,27 @@ pub(crate) struct RecordContext<'a> {
 }
 
 /// [`parse_and_validate_for`] at recording, where the stage and its worktree
-/// are at hand. A freeze-refusal verdict is checked against both, and every
-/// defect is an `Err` naming it for the judge to correct: coerced to
-/// needs-more-evidence, it would reach the contract writer and cost it a
-/// filing. Every other kind keeps its self-correcting rules.
+/// are at hand. A freeze-refusal verdict is checked against both, and a
+/// contract dispute's against the stage and its freeze record
+/// (`verdict_contract`); every defect is an `Err` naming it for the judge to
+/// correct: coerced to needs-more-evidence, it would reach the agent and cost
+/// it an evidence round. Every other kind keeps its self-correcting rules.
 pub(crate) fn parse_and_validate_in(
     raw: &str,
     kind: &DisputeKind,
     context: &RecordContext<'_>,
 ) -> Result<ValidationOutcome, String> {
-    if !matches!(kind, DisputeKind::FreezeRefusal { .. }) {
+    if !matches!(
+        kind,
+        DisputeKind::FreezeRefusal { .. } | DisputeKind::Contract { .. }
+    ) {
         return Ok(parse_and_validate_for(raw, kind));
     }
     let json = parse_json_lenient(raw)
         .map_err(|e| format!("the verdict is not valid JSON: {e}; write a single JSON object"))?;
+    if matches!(kind, DisputeKind::Contract { .. }) {
+        return verdict_contract::validate(&json, kind, context);
+    }
     verdict_freeze_refusal::validate(&json, context).map(ValidationOutcome::Verdict)
 }
 

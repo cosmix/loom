@@ -1,7 +1,7 @@
 //! End-to-end filing of a frozen-contract dispute that carries a replacement file.
 //!
-//! `loom stage dispute-contract --replacement` (real binary), the real
-//! `loom-relay.sh` hook, then `Orchestrator::drain_session_inboxes` through
+//! `loom stage dispute-contract --replacement <frozen-file>=<path>` (real
+//! binary), the real `loom-relay.sh` hook, then `Orchestrator::drain_session_inboxes` through
 //! admission to `request.md`. The fixture follows `relay_commit_e2e.rs`: a
 //! repository with a registered worktree at `.worktrees/<stage>`, here holding
 //! a plan v2 stage with one frozen contract. No socket is opened.
@@ -9,7 +9,7 @@
 use chrono::Utc;
 use loom::fs::inbox::{read_ledger, LedgerOutcome};
 use loom::fs::stage_request::StageRequest;
-use loom::models::dispute::{DisputeKind, MAX_REPLACEMENT_BYTES};
+use loom::models::dispute::{DisputeKind, FileReplacement, MAX_REPLACEMENT_BYTES};
 use loom::orchestrator::adjudication::read_request;
 use loom::process::sandbox_probe::skip_unless;
 use loom::relay::{new_request_id, RelayLine, RequestKind, Ticket, MAX_TICKET_BYTES};
@@ -20,7 +20,8 @@ use super::helpers;
 #[path = "relay_dispute_replacement_fixture.rs"]
 mod fixture;
 use fixture::{
-    build_fixture, drain_once, run_hook, sha256_hex, Fixture, CONTRACT_ID, FROZEN, REASON, STAGE,
+    build_fixture, drain_once, run_hook, sha256_hex, Fixture, CONTRACT_FILE, CONTRACT_ID, FROZEN,
+    REASON, STAGE,
 };
 
 /// File `text` as a replacement through the CLI, the hook and the drain, and
@@ -53,28 +54,30 @@ fn file_and_assert_recorded(fx: &Fixture, text: &str) {
 
     let request = read_request(&fx.work_dir, STAGE, 1).expect("admission wrote request.md");
     let DisputeKind::Contract {
-        contract_id,
-        replacement: recorded,
-        replacement_base_sha256,
+        contract_ids,
+        replacements,
     } = request.kind
     else {
         panic!("not a contract dispute");
     };
-    assert_eq!(contract_id, CONTRACT_ID);
-    assert_eq!(
-        recorded.as_deref(),
-        Some(text),
-        "the bytes survive the chain"
-    );
-    assert_eq!(replacement_base_sha256, Some(sha256_hex(FROZEN)));
+    assert_eq!(contract_ids, [CONTRACT_ID]);
+    let [recorded] = replacements.as_slice() else {
+        panic!("one replacement is recorded: {replacements:?}");
+    };
+    assert_eq!(recorded.file, CONTRACT_FILE);
+    assert_eq!(recorded.content, text, "the bytes survive the chain");
+    assert_eq!(recorded.base_sha256, Some(sha256_hex(FROZEN)));
 }
 
 /// Byte size of the ticket the CLI writes for a dispute carrying `text`.
 fn encoded_ticket_len(text: &str) -> usize {
     let kind = DisputeKind::Contract {
-        contract_id: CONTRACT_ID.to_string(),
-        replacement: Some(text.to_string()),
-        replacement_base_sha256: None,
+        contract_ids: vec![CONTRACT_ID.to_string()],
+        replacements: vec![FileReplacement {
+            file: CONTRACT_FILE.to_string(),
+            content: text.to_string(),
+            base_sha256: None,
+        }],
     };
     let request = StageRequest::FileDispute {
         kind,

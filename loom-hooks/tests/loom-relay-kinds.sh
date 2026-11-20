@@ -130,6 +130,7 @@ expect file-dispute 'loom stage dispute-criteria stage-a --field=impact-tests --
 expect dispute 'loom stage dispute-criteria stage-a --field wiring --criterion-index 0 --reason "impact-tests"'
 expect file-dispute 'loom stage dispute-findings stage-a --finding F-1-1 --reason "wrong"'
 expect file-dispute 'loom stage dispute-contract stage-a --contract rejects-x --reason "wrong"'
+expect file-dispute 'loom stage dispute-contract stage-a --contract rejects-x --contract rejects-y --replacement tests/x.rs=/tmp/x.rs --reason "wrong"'
 expect file-dispute 'loom stage dispute-integrity stage-a --event E-1 --reason "sound"'
 expect handoff 'loom handoff --stage stage-a --session s --trigger ceiling'
 expect merge-resolved 'loom stage merge stage-a --resolved'
@@ -157,6 +158,7 @@ expect '' 'loom stage block stage-a --reason r' general-purpose
 expect '' 'loom stage contracts freeze stage-a' general-purpose
 expect '' 'loom stage dispute-findings stage-a --finding F-1-1 --reason "wrong"' general-purpose
 expect '' 'loom stage dispute-contract stage-a --contract rejects-x --reason "wrong"' general-purpose
+expect '' 'loom stage dispute-contract stage-a --contract rejects-x --contract rejects-y --reason "wrong"' general-purpose
 expect '' 'loom stage dispute-integrity stage-a --event E-1 --reason "sound"' general-purpose
 expect memory 'loom memory note x; loom handoff --trigger ceiling' general-purpose
 expect telemetry 'loom knowledge context --query x' general-purpose

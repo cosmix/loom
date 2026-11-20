@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn full_briefing_quotes_each_source_and_the_diff() {
+fn full_briefing_quotes_each_spec_and_its_frozen_file() {
     let fx = contract_fixture();
     freeze(
         &fx.work_dir,
@@ -29,15 +29,14 @@ fn full_briefing_quotes_each_source_and_the_diff() {
         "rejects: accepting x",
         "## Frozen content",
         "assert!(false);",
-        "## Current content",
-        "assert!(rejects_x());",
+        "File: `tests/x_contract.rs` (contracts: rejects-x)",
         "## Agent's reason",
         "the new assertion still rejects x",
-        "## Diff (frozen vs current)",
-        "-assert!(false);",
-        "+assert!(rejects_x());",
     ] {
         assert!(prompt.evidence.contains(expected), "missing {expected}");
+    }
+    for stale in ["## Current content", "## Diff (frozen vs current)"] {
+        assert!(!prompt.evidence.contains(stale), "{stale} is gone");
     }
     assert!(prompt
         .instructions

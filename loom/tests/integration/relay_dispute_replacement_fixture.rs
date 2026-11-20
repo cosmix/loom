@@ -199,8 +199,8 @@ impl Fixture {
     /// The `loom stage dispute-contract` command line for `replacement`.
     pub(super) fn dispute_command(&self, replacement: &Path) -> String {
         format!(
-            "loom stage dispute-contract {STAGE} --contract {CONTRACT_ID} --replacement {} \
-             --reason {REASON}",
+            "loom stage dispute-contract {STAGE} --contract {CONTRACT_ID} --replacement \
+             {CONTRACT_FILE}={} --reason {REASON}",
             replacement.display()
         )
     }
@@ -216,7 +216,7 @@ impl Fixture {
                 CONTRACT_ID,
             ])
             .arg("--replacement")
-            .arg(replacement)
+            .arg(format!("{CONTRACT_FILE}={}", replacement.display()))
             .args(["--reason", REASON]);
         command
             .stdin(Stdio::null())

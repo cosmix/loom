@@ -94,9 +94,8 @@ fn with_input<T>(
         id: 4,
         stage_id: "demo".to_string(),
         kind: DisputeKind::Contract {
-            contract_id: "rejects-x".to_string(),
-            replacement: None,
-            replacement_base_sha256: None,
+            contract_ids: vec!["rejects-x".to_string()],
+            replacements: Vec::new(),
         },
         reason: "r".to_string(),
         evidence_commit: None,

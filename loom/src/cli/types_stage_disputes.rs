@@ -178,9 +178,10 @@ pub struct DisputeContractArgs {
     #[arg(value_parser = clap_id_validator)]
     pub stage_id: String,
 
-    /// Id of the frozen contract, as `loom stage contracts show` lists it.
-    #[arg(long)]
-    pub contract: String,
+    /// Id of a frozen contract, as `loom stage contracts show` lists it. One
+    /// filing names every contract a change touches.
+    #[arg(long = "contract", required = true, num_args = 1..)]
+    pub contract: Vec<String>,
 
     /// Why the contract is wrong (max 500 chars).
     #[arg(long, value_parser = clap_description_validator)]
@@ -190,11 +191,12 @@ pub struct DisputeContractArgs {
     #[arg(long = "evidence-commit")]
     pub evidence_commit: Option<String>,
 
-    /// File holding the complete replacement for the frozen contract file,
-    /// outside the stage worktree (max 32 KiB, UTF-8). An accept writes it into
-    /// the worktree.
-    #[arg(long)]
-    pub replacement: Option<PathBuf>,
+    /// `<frozen-file>=<path>`: the frozen file, as `loom stage contracts show`
+    /// lists it, and a file holding its complete replacement, outside the
+    /// stage worktree (max 32 KiB, UTF-8). Repeat for each frozen file
+    /// replaced. An accept writes each into the worktree.
+    #[arg(long, action = clap::ArgAction::Append, num_args = 1)]
+    pub replacement: Vec<String>,
 }
 
 #[derive(Args)]
@@ -233,8 +235,8 @@ impl From<DisputeContractArgs> for DisputeFiling {
         Self {
             stage_id: args.stage_id,
             target: DisputeTarget::Contract {
-                contract_id: args.contract,
-                replacement: args.replacement,
+                contract_ids: args.contract,
+                replacements: args.replacement,
             },
             reason: args.reason,
             evidence_commit: args.evidence_commit,

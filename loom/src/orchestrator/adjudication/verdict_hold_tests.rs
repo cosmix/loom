@@ -6,9 +6,12 @@ use serde_json::json;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
-use super::tests::{make_stage, reject_verdict, write_request, write_stage, write_verdict};
+use super::contract_verdict_fixtures::{contract_kind, rulings_verdict};
+use super::tests::{make_stage, write_request, write_stage, write_verdict};
 use super::{feedback, hand_back_held_stage, is_held_for_completion, AdjudicatorRegistry};
-use crate::models::dispute::{Citation, DisputeKind, DisputeVerdict, FindingSnapshot, PlanPatch};
+use crate::models::dispute::{
+    Citation, ContractRulingKind, DisputeKind, DisputeVerdict, FindingSnapshot, PlanPatch,
+};
 use crate::models::stage::{Stage, StageStatus};
 use crate::verify::impact_tests::{FailureKind, ImpactFailure};
 use crate::verify::integrity::{EventKind, IntegrityEvent};
@@ -139,15 +142,11 @@ fn a_last_verdict_that_requeues_overrides_an_earlier_hold() {
     let work = tmp.path();
     write_stage(work, &make_stage("s1"));
     write_request(work, "s1", 1, integrity());
-    let contract = DisputeKind::Contract {
-        contract_id: "rejects-x".to_string(),
-        replacement: None,
-        replacement_base_sha256: None,
-    };
-    write_request(work, "s1", 2, contract);
+    write_request(work, "s1", 2, contract_kind(&["rejects-x"], Vec::new()));
     write_verdict(work, "s1", 1, accept(), 1);
     apply(work, 1);
-    write_verdict(work, "s1", 2, reject_verdict(), 1);
+    let reject = rulings_verdict(&[("rejects-x", ContractRulingKind::Reject)], json!({}));
+    write_verdict(work, "s1", 2, reject, 1);
 
     apply(work, 2);
 

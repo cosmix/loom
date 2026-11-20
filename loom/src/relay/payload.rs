@@ -23,7 +23,7 @@ pub struct HandoffRequest {
 }
 
 /// `{dispute_id, verdict}` for a `verdict` request. Validated again
-/// daemon-side by `verdict::parse_and_validate_for`.
+/// daemon-side by the stage-aware `verdict::parse_and_validate_in`.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct VerdictRequest {
@@ -301,7 +301,7 @@ mod tests {
     fn decodes_file_dispute_and_refuses_it_under_dispute() {
         let file_dispute = serde_json::json!({
             "request": "file_dispute",
-            "kind": {"kind": "contract", "contract_id": "rejects-x"},
+            "kind": {"kind": "contract", "contract_ids": ["rejects-x"]},
             "reason": "the contract tests the wrong error",
         });
         assert!(matches!(

@@ -8,10 +8,11 @@ use serde_json::json;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
+use super::contract_verdict_fixtures::{contract_kind, rulings_verdict};
 use super::tests::{make_stage, write_request, write_stage, write_verdict};
 use super::AdjudicatorRegistry;
 use crate::fs::work_dir::WorkDir;
-use crate::models::dispute::{Citation, DisputeKind, DisputeVerdict, PlanPatch};
+use crate::models::dispute::ContractRulingKind;
 use crate::models::stage::Stage;
 use crate::plan::schema::ContractSpec;
 use crate::utils::sha256_hex;
@@ -76,12 +77,23 @@ fn fixture_with_harness() -> Fixture {
 /// [`fixture`] with each of `harness` written to the worktree and frozen
 /// beside the contract file.
 fn fixture_with(cwd: Option<&str>, harness: &[(&str, &[u8])]) -> Fixture {
+    fixture_of(cwd, vec![contract()], harness)
+}
+
+/// A stage holding `contracts`, each frozen with the run directory `cwd`,
+/// and [`CONTRACT_FILE`] plus each of `files` written to the worktree and
+/// frozen.
+pub(super) fn fixture_of(
+    cwd: Option<&str>,
+    contracts: Vec<ContractSpec>,
+    files: &[(&str, &[u8])],
+) -> Fixture {
     let tmp = TempDir::new().unwrap();
     let repo = tmp.path().join("repo");
     let worktree = contract_worktree(&repo, "s1");
     std::fs::create_dir_all(worktree.join("tests/support")).unwrap();
     let mut copies = vec![(CONTRACT_FILE.to_string(), CONTRACT_CONTENT.to_vec())];
-    for (path, content) in harness {
+    for (path, content) in files {
         std::fs::write(worktree.join(path), content).unwrap();
         copies.push((path.to_string(), content.to_vec()));
     }
@@ -89,16 +101,25 @@ fn fixture_with(cwd: Option<&str>, harness: &[(&str, &[u8])]) -> Fixture {
     workspace.adopt_existing().unwrap();
     let work = workspace.root().to_path_buf();
     write_plan(&repo, &work);
-    write_stage(&work, &stage(vec![contract()]));
-    let frozen = red_reports()
-        .iter()
-        .map(|report| FrozenContract {
-            file: Some(CONTRACT_FILE.to_string()),
-            cwd: cwd.map(str::to_string),
-            ..FrozenContract::from(report)
-        })
-        .collect();
-    let record = FreezeRecord {
+    let record = freeze_record(cwd, &contracts, &copies);
+    write_stage(&work, &stage(contracts));
+    contract_store::write_freeze(&work, &record, &copies).unwrap();
+    Fixture {
+        _tmp: tmp,
+        work,
+        worktree,
+    }
+}
+
+/// The freeze record of `contracts`, each with the run directory `cwd`, over
+/// the `copies` of the frozen files.
+fn freeze_record(
+    cwd: Option<&str>,
+    contracts: &[ContractSpec],
+    copies: &[(String, Vec<u8>)],
+) -> FreezeRecord {
+    let report = &red_reports()[0];
+    FreezeRecord {
         version: contract_store::FREEZE_RECORD_VERSION,
         stage_id: "s1".to_string(),
         session_id: "contract-session".to_string(),
@@ -111,13 +132,15 @@ fn fixture_with(cwd: Option<&str>, harness: &[(&str, &[u8])]) -> Fixture {
                 sha256: sha256_hex(content),
             })
             .collect(),
-        contracts: frozen,
-    };
-    contract_store::write_freeze(&work, &record, &copies).unwrap();
-    Fixture {
-        _tmp: tmp,
-        work,
-        worktree,
+        contracts: contracts
+            .iter()
+            .map(|spec| FrozenContract {
+                id: spec.id.clone(),
+                file: Some(spec.file.clone()),
+                cwd: cwd.map(str::to_string),
+                ..FrozenContract::from(report)
+            })
+            .collect(),
     }
 }
 
@@ -149,22 +172,8 @@ fn write_plan(repo: &Path, work: &Path) {
 
 /// Accept the dispute over [`CONTRACT_ID`] with `plan_patch`, and apply it.
 fn accept(fx: &Fixture, plan_patch: serde_json::Value) {
-    let kind = DisputeKind::Contract {
-        contract_id: CONTRACT_ID.to_string(),
-        replacement: None,
-        replacement_base_sha256: None,
-    };
-    write_request(&fx.work, "s1", 1, kind);
-    let verdict = DisputeVerdict::Accept {
-        plan_patch: PlanPatch { inner: plan_patch },
-        citations: vec![Citation {
-            file: CONTRACT_FILE.to_string(),
-            line: Some(1),
-            excerpt: "fn rejects_x()".to_string(),
-            claim: "the contract's spec is wrong".to_string(),
-        }],
-        reasoning: "the disputed contract is wrong".to_string(),
-    };
+    write_request(&fx.work, "s1", 1, contract_kind(&[CONTRACT_ID], Vec::new()));
+    let verdict = rulings_verdict(&[(CONTRACT_ID, ContractRulingKind::Accept)], plan_patch);
     write_verdict(&fx.work, "s1", 1, verdict, 1);
     AdjudicatorRegistry::new()
         .apply_verdict(&fx.work, "s1", 1)
@@ -175,7 +184,7 @@ fn accept(fx: &Fixture, plan_patch: serde_json::Value) {
 pub(super) fn replacing_contract(spec: &str) -> serde_json::Value {
     json!({
         "field": "contracts",
-        "patch": {"op": "replace", "index": 0, "value": spec},
+        "patches": [{"op": "replace", "index": 0, "value": spec}],
         "reason": "the contract's spec is wrong",
     })
 }
@@ -275,7 +284,7 @@ fn an_inserted_contract_has_its_file_frozen() {
                 runner: cargo-test\nscenario: z arrives\nrejects: accepting z\n";
     let insert = json!({
         "field": "contracts",
-        "patch": {"op": "insert", "index": 1, "value": spec},
+        "patches": [{"op": "insert", "index": 1, "value": spec}],
         "reason": "the stage needs a contract for z",
     });
 

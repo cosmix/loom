@@ -300,9 +300,8 @@ fn file_dispute_debug_output_redacts_credential_reason_and_ids() {
         stage_id: "stage".to_string(),
         session_id: "session-1".to_string(),
         kind: crate::models::dispute::DisputeKind::Contract {
-            contract_id: "private-contract".to_string(),
-            replacement: None,
-            replacement_base_sha256: None,
+            contract_ids: vec!["private-contract".to_string()],
+            replacements: Vec::new(),
         },
         reason: "private reason".to_string(),
         evidence_commit: None,

@@ -111,8 +111,9 @@ fn failed_completion_refusal(stage_id: &str, failing: &[usize]) -> String {
          (`--field wiring` or `--field wiring-tests` for wiring entries, `--field impact-tests \
          --test <id>` for failing impact-selected tests); open review findings go to `loom \
          stage dispute-findings`, test-integrity events to `loom stage dispute-integrity`, a \
-         frozen contract to `loom stage dispute-contract`. A filing past the dispute budget \
-         goes to the operator automatically.",
+         frozen contract to `loom stage dispute-contract` (`--contract <id>` once for each \
+         contract with the same cause). A filing past the dispute budget goes to the operator \
+         automatically.",
         flags.join(" ")
     )
 }

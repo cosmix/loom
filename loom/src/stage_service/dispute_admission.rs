@@ -2,16 +2,19 @@
 //! re-derivation of the evidence it names.
 
 use anyhow::{bail, Context, Result};
+use std::collections::HashSet;
 use std::path::Path;
 
 use crate::fs::session_files::load_session_exact_unlocked;
 use crate::models::dispute::{
-    select_events, select_findings, select_impact, DisputeKind, MAX_REPLACEMENT_BYTES,
+    select_events, select_findings, select_impact, DisputeKind, FileReplacement,
+    MAX_REPLACEMENT_BYTES,
 };
 use crate::models::stage::{Stage, StageStatus, StageType};
 use crate::utils::sha256_hex;
-use crate::verify::contracts::normalize;
-use crate::verify::contracts::store::load_freeze;
+use crate::verify::contracts::drift::{frozen_drift, Drift, DriftKind};
+use crate::verify::contracts::site::stage_site;
+use crate::verify::contracts::store::{contract_files, load_freeze, FreezeRecord, FrozenFile};
 use crate::verify::impact_tests::{check_failure_id, load_observed};
 use crate::verify::review::store::open_findings;
 
@@ -80,58 +83,144 @@ fn check_unfrozen(work_dir: &Path, stage: &Stage) -> Result<Option<String>> {
     Ok(None)
 }
 
-/// The contract dispute to record: `contract_id` must name a frozen contract.
-/// A replacement is bounded, must differ from the frozen file, and is bound to
-/// the frozen file's hash, which overwrites any value the client sent
-/// (`apply_contract_replacement.rs` refuses an accept once the file moved on).
+/// The contract dispute to record. `contract_ids` must be distinct frozen
+/// contracts of the stage. Each replacement must name a frozen file, at most
+/// once, be bounded and differ from the frozen content, and a replaced file
+/// holding a contract needs every frozen contract in it disputed too. No frozen
+/// file may have drifted in the worktree: a frozen file changes only through a
+/// replacement. Each replacement is bound to its frozen file's hash, which
+/// overwrites any value the client sent (`apply_contract_replacement.rs`
+/// refuses an accept once the file moved on).
 fn confirm_contract(
     work_dir: &Path,
     stage: &Stage,
-    contract_id: String,
-    replacement: Option<String>,
+    contract_ids: Vec<String>,
+    mut replacements: Vec<FileReplacement>,
 ) -> Result<DisputeKind> {
     let Some(record) = load_freeze(work_dir, &stage.id)? else {
         bail!("the contracts of stage '{}' are not frozen", stage.id);
     };
-    if !record
-        .contracts
-        .iter()
-        .any(|frozen| frozen.id == contract_id)
-    {
-        bail!("'{contract_id}' names no frozen contract of this stage");
+    check_contract_ids(stage, &record, &contract_ids)?;
+    let mut replaced = HashSet::new();
+    for replacement in &mut replacements {
+        if !replaced.insert(replacement.file.clone()) {
+            bail!(
+                "the frozen file '{}' is replaced twice: file one replacement per file",
+                replacement.file
+            );
+        }
+        let frozen = frozen_file(&record, &replacement.file)?;
+        check_disputes_every_contract_of(stage, &record, &contract_ids, &replacement.file)?;
+        check_replacement_content(replacement, &frozen.sha256)?;
+        replacement.base_sha256 = Some(frozen.sha256.clone());
     }
-    let Some(text) = replacement else {
-        return Ok(DisputeKind::Contract {
-            contract_id,
-            replacement: None,
-            replacement_base_sha256: None,
-        });
-    };
-    if text.len() > MAX_REPLACEMENT_BYTES {
-        bail!(
-            "the replacement is {} bytes, over the {MAX_REPLACEMENT_BYTES}-byte limit",
-            text.len()
-        );
+    check_no_drift(work_dir, stage, &record)?;
+    Ok(DisputeKind::Contract {
+        contract_ids,
+        replacements,
+    })
+}
+
+/// At least one id, each named once, each a frozen contract the stage still
+/// lists (an accepted amendment may have deleted one the record keeps).
+fn check_contract_ids(stage: &Stage, record: &FreezeRecord, contract_ids: &[String]) -> Result<()> {
+    if contract_ids.is_empty() {
+        bail!("no contract is named: name each disputed contract with `--contract <id>`");
     }
-    let file = stage
-        .contracts
-        .iter()
-        .find(|contract| contract.id == contract_id)
-        .map(|contract| normalize(&contract.file))
-        .with_context(|| format!("stage '{}' has no contract '{contract_id}'", stage.id))?;
-    let frozen = record
+    let mut named = HashSet::new();
+    for id in contract_ids {
+        if !named.insert(id.as_str()) {
+            bail!("'{id}' is named twice: name each contract once");
+        }
+        let current = stage.contracts.iter().any(|contract| contract.id == *id);
+        if !current || !record.contracts.iter().any(|frozen| frozen.id == *id) {
+            bail!(
+                "'{id}' names no frozen contract of this stage: `loom stage contracts show` \
+                 lists them"
+            );
+        }
+    }
+    Ok(())
+}
+
+/// The freeze record's entry for `file`, which a replacement must name.
+fn frozen_file<'r>(record: &'r FreezeRecord, file: &str) -> Result<&'r FrozenFile> {
+    record
         .files
         .iter()
         .find(|frozen| frozen.path == file)
-        .with_context(|| format!("the freeze holds no file '{file}' for '{contract_id}'"))?;
-    if sha256_hex(text.as_bytes()) == frozen.sha256 {
+        .with_context(|| {
+            format!(
+                "'{file}' is no frozen file of this stage: a replacement names a file as \
+                 `loom stage contracts show` lists it"
+            )
+        })
+}
+
+/// A replaced file that holds contracts changes all of them, so the filing
+/// must dispute every contract of the stage `file` holds, by the map verdict
+/// recording and the apply share (`store::contract_files`).
+fn check_disputes_every_contract_of(
+    stage: &Stage,
+    record: &FreezeRecord,
+    contract_ids: &[String],
+    file: &str,
+) -> Result<()> {
+    let undisputed: Vec<String> = contract_files(Some(record), &stage.contracts)
+        .into_iter()
+        .filter(|(id, held)| held == file && !contract_ids.contains(id))
+        .map(|(id, _)| id)
+        .collect();
+    if !undisputed.is_empty() {
+        bail!(
+            "the replacement for '{file}' changes contracts this filing does not dispute: add \
+             `--contract {}`",
+            undisputed.join(" --contract ")
+        );
+    }
+    Ok(())
+}
+
+/// A replacement fits the inline bound and changes its frozen file.
+fn check_replacement_content(replacement: &FileReplacement, frozen_sha256: &str) -> Result<()> {
+    let file = &replacement.file;
+    let bytes = replacement.content.len();
+    if bytes > MAX_REPLACEMENT_BYTES {
+        bail!(
+            "the replacement for '{file}' is {bytes} bytes, over the \
+             {MAX_REPLACEMENT_BYTES}-byte limit"
+        );
+    }
+    if sha256_hex(replacement.content.as_bytes()) == frozen_sha256 {
         bail!("the replacement is identical to the frozen '{file}': there is nothing to change");
     }
-    Ok(DisputeKind::Contract {
-        contract_id,
-        replacement: Some(text),
-        replacement_base_sha256: Some(frozen.sha256.clone()),
-    })
+    Ok(())
+}
+
+/// Refuse while any frozen file differs from the freeze in the stage's
+/// worktree, read where the freeze read it (`stage_service::contracts::read_files`).
+fn check_no_drift(work_dir: &Path, stage: &Stage, record: &FreezeRecord) -> Result<()> {
+    let (worktree_root, working_dir) = stage_site(work_dir, stage)?;
+    let drift = frozen_drift(record, &working_dir, &worktree_root)?;
+    if drift.is_empty() {
+        return Ok(());
+    }
+    let problems: Vec<String> = drift
+        .iter()
+        .map(|Drift { path, kind }| {
+            let what = match kind {
+                DriftKind::Changed => "changed in the worktree".to_string(),
+                DriftKind::Missing => "is missing from the worktree".to_string(),
+                DriftKind::Unreadable(error) => format!("cannot be read as frozen ({error})"),
+            };
+            format!(
+                "frozen file '{path}' {what}: restore it with `loom stage contracts restore {}` \
+                 and file the change as `--replacement {path}=<file>`",
+                stage.id
+            )
+        })
+        .collect();
+    bail!("{}", problems.join("; "))
 }
 
 /// The dispute to record: `kind` with every id checked against what exists
@@ -174,10 +263,9 @@ fn confirm_evidence(work_dir: &Path, stage: &Stage, kind: DisputeKind) -> Result
             })
         }
         DisputeKind::Contract {
-            contract_id,
-            replacement,
-            ..
-        } => confirm_contract(work_dir, stage, contract_id, replacement),
+            contract_ids,
+            replacements,
+        } => confirm_contract(work_dir, stage, contract_ids, replacements),
         DisputeKind::Integrity { event_ids, .. } => {
             let events = crate::stage_service::observer::integrity_events(work_dir, stage)?;
             let evidence = select_events(&events, &event_ids)?;

@@ -102,7 +102,7 @@ fn an_agent_block_after_a_failed_completion_is_refused_with_the_dispute_route() 
         "--field impact-tests",
         "loom stage dispute-findings",
         "loom stage dispute-integrity",
-        "loom stage dispute-contract",
+        "loom stage dispute-contract` (`--contract <id>` once for each contract with the same cause)",
         "operator automatically",
     ] {
         assert!(message.contains(route), "missing {route:?}: {message}");

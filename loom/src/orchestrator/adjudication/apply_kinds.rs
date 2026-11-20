@@ -18,10 +18,11 @@
 //!   `defer` whose target is missing, completed or not downstream of the
 //!   stage, or any `defer` from an integration-verify stage (integration-verify
 //!   never defers), turns the verdict into `NeedsMoreEvidence` naming why.
-//! * contract `accept`: amends `contracts` when the verdict carries a patch,
-//!   writes the dispute's replacement file when it carries one, then
-//!   re-freezes the contract's file at its current worktree content;
-//!   `reject`: feedback to restore the frozen contract (`apply_contract.rs`).
+//! * contract `contract-rulings`: with an accept, amends `contracts` by the
+//!   verdict's patches, writes the replacement files the rulings admit, then
+//!   re-freezes the stage's frozen set; with none, feedback that every
+//!   contract stands (`apply_contract_rulings.rs`). A plain `accept` or
+//!   `reject` on a contract dispute is an error: recording refuses it.
 //! * integrity `accept`: records each event in `reviews/<stage>/integrity.json`
 //!   with the counts and hashes the adjudicator judged; `reject`: feedback to
 //!   revert the changes behind the events.
@@ -37,12 +38,10 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
 
 use crate::models::dispute::{
-    DisputeKind, DisputeVerdict, DisputeVerdictRecord, FindingRuling, FindingSnapshot,
-    IntegritySnapshot,
+    DisputeKind, DisputeVerdict, DisputeVerdictRecord, FindingRuling, FindingSnapshot, PlanPatch,
 };
 use crate::models::stage::{Stage, StageStatus, StageType};
 use crate::utils::text::single_line;
-use crate::verify::integrity::AcceptedEvent;
 use crate::verify::review::store::{CarriedFinding, Ruling, RulingKind};
 use crate::verify::review::verdict_records;
 use crate::verify::transitions::list_all_stages;
@@ -52,7 +51,11 @@ use super::apply_accept::apply_accept;
 use super::requeue::{
     hold_for_completion_or_remaining_disputes, requeue_or_hold_for_remaining_disputes,
 };
-use super::{apply_contract, apply_freeze_refusal, apply_impact, feedback};
+use super::{apply_contract_rulings, apply_freeze_refusal, apply_impact, feedback};
+
+#[path = "apply_integrity.rs"]
+mod integrity;
+use integrity::{apply_integrity_accept, integrity_reject_notice};
 
 /// Apply `record` to `stage` by the kind of the dispute it answers.
 pub(super) fn apply_by_kind(
@@ -69,35 +72,56 @@ pub(super) fn apply_by_kind(
         DisputeVerdict::Rulings { rulings } => {
             apply_rulings(work_dir, stage, dispute, rulings, kind)
         }
+        DisputeVerdict::ContractRulings {
+            rulings,
+            plan_patch,
+        } => apply_contract_rulings::apply(work_dir, stage, dispute, kind, (rulings, plan_patch)),
+        DisputeVerdict::Accept { .. } | DisputeVerdict::Reject { .. }
+            if matches!(kind, DisputeKind::Contract { .. }) =>
+        {
+            bail!(
+                "dispute {dispute} of stage '{}' is a contract dispute, whose verdict is \
+                 contract-rulings",
+                stage.id
+            )
+        }
         DisputeVerdict::Accept {
             plan_patch,
             reasoning,
             ..
-        } => match kind {
-            DisputeKind::Contract { .. } => {
-                let accepted = apply_contract::accept(work_dir, stage, dispute, kind, plan_patch)?;
-                accepted.map_or(Ok(()), |body| notify_and_requeue(work_dir, stage, &body))
-            }
-            DisputeKind::Integrity {
-                event_ids,
-                evidence,
-            } => apply_integrity_accept(work_dir, stage, dispute, event_ids, evidence),
-            DisputeKind::ImpactTests { test_ids, evidence } => {
-                let body = apply_impact::accept(work_dir, stage, dispute, test_ids, evidence)?;
-                notify_and_hold(work_dir, stage, &body)
-            }
-            DisputeKind::FreezeRefusal { .. } => {
-                apply_freeze_refusal::accept(work_dir, stage, dispute, plan_patch, reasoning)
-            }
-            _ => {
-                let amended = kind.amended_stage(&stage.id).to_string();
-                apply_accept(work_dir, stage, &amended, plan_patch, dispute, reasoning)
-            }
-        },
+        } => apply_accept_by_kind(work_dir, stage, record.id, (plan_patch, reasoning), kind),
         DisputeVerdict::Reject {
             reasoning,
             citations,
         } => apply_rejection(work_dir, stage, dispute, reasoning, citations, kind),
+    }
+}
+
+/// Apply an accept verdict `(plan_patch, reasoning)` by the kind of the
+/// dispute it answers.
+fn apply_accept_by_kind(
+    work_dir: &Path,
+    stage: &mut Stage,
+    dispute: u32,
+    (plan_patch, reasoning): (&PlanPatch, &str),
+    kind: &DisputeKind,
+) -> Result<()> {
+    match kind {
+        DisputeKind::Integrity {
+            event_ids,
+            evidence,
+        } => apply_integrity_accept(work_dir, stage, dispute, event_ids, evidence),
+        DisputeKind::ImpactTests { test_ids, evidence } => {
+            let body = apply_impact::accept(work_dir, stage, dispute, test_ids, evidence)?;
+            notify_and_hold(work_dir, stage, &body)
+        }
+        DisputeKind::FreezeRefusal { .. } => {
+            apply_freeze_refusal::accept(work_dir, stage, dispute, plan_patch, reasoning)
+        }
+        _ => {
+            let amended = kind.amended_stage(&stage.id).to_string();
+            apply_accept(work_dir, stage, &amended, plan_patch, dispute, reasoning)
+        }
     }
 }
 
@@ -126,19 +150,6 @@ fn apply_rejection(
     kind: &DisputeKind,
 ) -> Result<()> {
     match kind {
-        DisputeKind::Contract {
-            contract_id,
-            replacement,
-            ..
-        } => {
-            let body = apply_contract::reject_notice(
-                &stage.id,
-                contract_id,
-                reasoning,
-                replacement.is_some(),
-            );
-            notify_and_requeue(work_dir, stage, &body)
-        }
         DisputeKind::Integrity { event_ids, .. } => {
             let body = integrity_reject_notice(&stage.id, event_ids, reasoning);
             notify_and_requeue(work_dir, stage, &body)
@@ -348,49 +359,4 @@ fn rulings_notice(rulings: &[FindingRuling]) -> String {
     }
     body.push_str(action);
     body
-}
-
-fn apply_integrity_accept(
-    work_dir: &Path,
-    stage: &mut Stage,
-    dispute: u32,
-    event_ids: &[String],
-    evidence: &[IntegritySnapshot],
-) -> Result<()> {
-    let accepted = event_ids
-        .iter()
-        .map(|id| {
-            let event = evidence
-                .iter()
-                .find(|event| event.id == *id)
-                .with_context(|| format!("dispute {dispute} holds no evidence for event '{id}'"))?;
-            Ok(AcceptedEvent {
-                event: event.id.clone(),
-                kind: event.kind,
-                language: event.language.clone(),
-                path: event.path.clone(),
-                base: event.base,
-                accepted_current: event.current,
-                accepted_sha256: event.current_sha256.clone(),
-                dispute,
-            })
-        })
-        .collect::<Result<Vec<_>>>()?;
-    verdict_records::append_integrity_acceptance(work_dir, &stage.id, &accepted)?;
-    let body = format!(
-        "The adjudicator accepted your integrity dispute: {} accepted as judged. A later \
-         change that makes one of them worse needs a new dispute.\n",
-        event_ids.join(", ")
-    );
-    notify_and_hold(work_dir, stage, &body)
-}
-
-fn integrity_reject_notice(stage_id: &str, event_ids: &[String], reasoning: &str) -> String {
-    format!(
-        "The adjudicator rejected your integrity dispute: {} stand.\n\n### Reasoning\n\n{}\n\n\
-         Action: revert the changes behind these events (`loom stage review integrity \
-         {stage_id}` lists what each one lost), then complete the stage again.\n",
-        event_ids.join(", "),
-        reasoning.trim()
-    )
 }

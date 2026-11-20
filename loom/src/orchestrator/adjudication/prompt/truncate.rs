@@ -28,8 +28,9 @@ pub(super) fn truncate_to_budget(prompt: &mut Prompt) {
     let candidates = [
         super::impact::STAGE_DIFF_HEADING,
         "## Evidence commit diff (git show)",
-        // A contract briefing quotes the contract file twice and diffs it once;
-        // these go before the frozen-set section at its tail is cut.
+        // A contract briefing quotes each contract file, each replacement and
+        // the diff between them; these go before the frozen-set section at its
+        // tail is cut.
         DIFF_HEADING,
         REPLACEMENT_DIFF_HEADING,
         FROZEN_CONTENT_HEADING,
@@ -94,7 +95,13 @@ fn section_body(evidence: &str, header: &str) -> Option<(usize, usize)> {
         if fence > 0 {
             if ticks >= fence && content[ticks..].trim().is_empty() {
                 if let Some(start) = body_start {
-                    return Some((start, offset));
+                    // A contract briefing repeats a heading once per file:
+                    // pass over a section already halved to find the next.
+                    if !evidence[start..offset].ends_with(TRUNCATION_MARKER) {
+                        return Some((start, offset));
+                    }
+                    selected = false;
+                    body_start = None;
                 }
                 fence = 0;
             }

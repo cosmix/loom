@@ -63,19 +63,27 @@ fn append_frozen_contracts(content: &mut String, stage: &Stage, work_dir: &Path)
             globs.join(", ")
         ));
     }
+    append_frozen_contract_commands(content, &stage.id);
+}
+
+/// The rules and commands for frozen files: never edit one, show or restore
+/// them, and file a dispute or a replacement when a contract is wrong.
+fn append_frozen_contract_commands(content: &mut String, id: &str) {
     content.push_str(&format!(
         "- Never edit a frozen file. `loom stage complete` compares every frozen file with its \
          frozen hash and fails on any change.\n\
          - `loom stage contracts show {id}` prints the freeze record and the frozen files.\n\
          - `loom stage contracts restore {id}` copies the frozen content back into the \
          worktree (`--contract <id>` for one contract).\n\
-         - `loom stage dispute-contract {id} --contract <contract-id> --reason \"...\"` files a \
-         dispute when the frozen contract itself is wrong.\n\
-         - To change a frozen contract, copy the frozen file to `$LOOM_SCRATCH_DIR`, edit the \
-         copy there, run the stage's formatter check on it, and file `loom stage dispute-contract \
-         {id} --contract <contract-id> --replacement <path> --reason \"...\"`. On accept the \
-         daemon writes it into the worktree.\n",
-        id = stage.id
+         - `loom stage dispute-contract {id} --contract <contract-id> [--contract <contract-id> \
+         ...] --reason \"...\"` files a dispute when a frozen contract itself is wrong. One filing \
+         names every contract with the same cause. A filing is refused while a frozen file in \
+         the worktree is edited: restore it first.\n\
+         - Every change to a frozen file travels as a replacement. Copy the frozen file to \
+         `$LOOM_SCRATCH_DIR`, edit the copy there, run the stage's formatter check on it, and \
+         file `loom stage dispute-contract {id} --contract <contract-id> --replacement \
+         <frozen-file>=<path> --reason \"...\"`, with one `--replacement` for each file. On \
+         accept the daemon writes it into the worktree.\n"
     ));
 }
 

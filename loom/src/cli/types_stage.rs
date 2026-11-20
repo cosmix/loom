@@ -222,8 +222,10 @@ pub enum StageCommands {
     /// Routes through the audited plan-amendment path: writes a numbered
     /// snapshot under .loom/work/plan_versions/, appends an audit row, and
     /// rewrites both the plan file and the stage file. Use when a criterion
-    /// is impossible rather than merely failing -- an agent inside a stage
-    /// should file `loom stage dispute-criteria` instead.
+    /// is impossible rather than merely failing. Refused inside a stage
+    /// session (`LOOM_WORKTREE_PATH` set): a stage may not change its own
+    /// checks, so an agent files `loom stage dispute-criteria` or
+    /// `dispute-contract` instead.
     Amend(AmendArgs),
 
     /// Manage stage outputs (structured values passed to dependent stages)

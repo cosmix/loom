@@ -219,17 +219,18 @@ the worker can open. Plan authors: rubric in
 
 ## Plan version 2 stages
 
-A version 2 stage must satisfy more than its acceptance criteria. Its signal names its frozen
-contracts, the review gate and findings carried from earlier stages; this section is the flow.
+A version 2 stage must satisfy more than its criteria. Its signal names the frozen contracts,
+the review gate and carried findings; this section is the flow.
 
-**Contracts** (standard stages with `contracts`). Loom's contract session wrote the contract tests
-and harness files, confirmed each test fails, and froze them. Never edit a frozen
-file; name the frozen files read-only in every brief. `loom stage contracts show <stage-id>`
+**Contracts** (standard stages with `contracts`). A contract session wrote the contract tests and
+harness files, confirmed each fails, and froze them. Never edit a frozen file; name them
+read-only in every brief. `loom stage contracts show <stage-id>`
 prints the freeze record; `loom stage contracts restore <stage-id> [--contract <id>]` copies
-the frozen content back. A wrong contract is disputed, never edited: copy
-the frozen file to `$LOOM_SCRATCH_DIR`, edit the copy, run the stage's formatter check on it, and
-file `loom stage dispute-contract <stage-id> --contract <id> --replacement <path> --reason "..."`.
-An accept writes it into the worktree; commit it.
+the frozen content back. A wrong contract is disputed, never edited; a change to a frozen file
+travels as a replacement: copy it to `$LOOM_SCRATCH_DIR`, edit the copy, run the stage's formatter
+check on it, and file `loom stage dispute-contract <stage-id> --contract <id>...
+--replacement <frozen-file>=<path> --reason "..."` (one filing for every contract with the same
+cause; refused while a frozen file is edited). An accept writes it into the worktree; commit it.
 
 **The review loop** (standard and integration-verify stages):
 
@@ -244,11 +245,11 @@ An accept writes it into the worktree; commit it.
    Brief with `loom stage review status <stage-id>`: rounds, all open finding ids
    (own and carried), tree match and changed files. Review changed files and findings; list each open id under `resolved` or `unresolved`.
 3. Findings block completion at every severity; suggestions do not. Fix and re-review
-   or dispute each finding. A later `resolved` closes it; a judge's `dismiss` or `defer`
+   or dispute each finding. A later `resolved`, or a judge's `dismiss` or `defer`,
    closes it; `uphold` leaves it open.
 4. Dispute a round in one command:
    `loom stage dispute-findings <stage-id> --finding <id> ... --reason "..."`.
-   Filing ends the session; a verdict that upholds no finding lets the daemon complete a passing tree. Three disputes per kind; a fourth means `NeedsHumanReview`.
+   Filing ends the session; a verdict that upholds no finding lets the daemon complete a passing tree. A fourth dispute of a kind means `NeedsHumanReview`.
 
 **Review order (plan v2):** run `loom check` once beside the final review. One fix worker handles all findings and failed criteria; re-check failures with `loom check <stage-id> --criterion <n>`, then one re-review on the follow-up model, then complete. After the final round, code edits including formatting need re-review. Comment-only lines, blank lines, and prose markdown outside skills/, agents/, commands/, loom-hooks/, tests and fixtures need none; the base must be unchanged. Block comments and every other edit need re-review. Commits do not change it.
 
@@ -259,12 +260,11 @@ cancels, an edited move or one into an undeclared file raises TI-edit), or a loo
 `ratchet_files` entry each raise an event; `loom stage review integrity <stage-id>` lists them.
 Revert the cause or dispute: `loom stage dispute-integrity <stage-id> --event <id> ...`. Reviewers
 see them; fix their findings before the final round. An accepted count event holds while its total
-does not drop; accepted TI-edit and TI-ratchet events pin the file's sha256, so any later
-edit reopens them.
+does not drop; accepted TI-edit and TI-ratchet events pin the file's sha256, so a later edit reopens them.
 
-**What `loom stage complete` checks, in order.** The daemon's host job runs acceptance first; only a
-pass continues to steps 2 to 6, each of which runs even after an earlier one failed, so one run
-names every failing check. Steps 7 and 8 are the daemon's, run once when it applies a passing run.
+**What `loom stage complete` checks, in order.** The host job runs acceptance first; only a pass continues to steps 2 to 6,
+each of which runs even after an earlier one failed, so one run names every failing check. Steps 7
+and 8 are the daemon's, run once on a passing run.
 
 1. The acceptance criteria. A criterion whose test runner selected zero tests fails.
 2. The goal-backward checks: `artifacts`, `wiring`, `wiring_tests`, the dead-code check and
@@ -277,8 +277,7 @@ names every failing check. Steps 7 and 8 are the daemon's, run once when it appl
    A failure the stage did not cause is disputed, never blocked:
    `loom stage dispute-criteria <stage-id> --field impact-tests --test <id> ... --reason "..."`,
    with the ids (`IT-<runner>:<package>`) the last failing run of the exact
-   `loom stage complete <stage-id>` listed: loom recorded those failures, and the dispute names
-   them. An accepted failure stays accepted while it gets no worse.
+   `loom stage complete <stage-id>` listed. An accepted failure stays accepted while it gets no worse.
 5. Integration-verify: every completed stage's `reachable` checks, re-run on the merged tree.
 6. The checks every stage gets: `after_stage` commands, unwired files and duplicate symbols. Integration-verify also re-runs every completed stage's `wiring` checks.
 7. Test integrity (standard and integration-verify), applied by the daemon.

@@ -1,5 +1,5 @@
-//! `loom stage dispute-contract --replacement`: what the CLI accepts as a
-//! replacement file before any ticket or request is built.
+//! `loom stage dispute-contract --replacement <frozen-file>=<path>`: what the
+//! CLI accepts as a replacement before any ticket or request is built.
 
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
@@ -33,15 +33,73 @@ fn site() -> (TempDir, PathBuf, PathBuf, PathBuf) {
 }
 
 fn read(work: &Path, path: &Path) -> Result<String> {
-    read_replacement(work, "s1", path)
+    read_replacement(&stage_worktree_root(work, "s1")?, path)
 }
 
-fn contract_dispute(replacement: String) -> DisputeKind {
+fn contract_dispute(content: String) -> DisputeKind {
     DisputeKind::Contract {
-        contract_id: "rejects-x".to_string(),
-        replacement: Some(replacement),
-        replacement_base_sha256: None,
+        contract_ids: vec!["rejects-x".to_string()],
+        replacements: vec![FileReplacement {
+            file: CONTRACT_FILE.to_string(),
+            content,
+            base_sha256: None,
+        }],
     }
+}
+
+fn read_all(work: &Path, values: &[String]) -> Result<Vec<FileReplacement>> {
+    read_replacements(work, "s1", values)
+}
+
+#[test]
+fn each_replacement_is_keyed_by_its_normalized_frozen_file() {
+    let (_tmp, work, _worktree, scratch) = site();
+    let path = scratch.join("x_contract.rs");
+    std::fs::write(&path, "new\n").unwrap();
+    let value = format!("./{CONTRACT_FILE}={}", path.display());
+
+    let replacements = read_all(&work, &[value]).unwrap();
+
+    assert_eq!(
+        replacements,
+        [FileReplacement {
+            file: CONTRACT_FILE.to_string(),
+            content: "new\n".to_string(),
+            base_sha256: None,
+        }]
+    );
+}
+
+#[test]
+fn a_replacement_value_not_of_the_form_file_eq_path_is_refused() {
+    let (_tmp, work, _worktree, scratch) = site();
+    let path = scratch.join("x_contract.rs").display().to_string();
+    for value in [
+        path.clone(),
+        format!("={path}"),
+        format!("{CONTRACT_FILE}="),
+    ] {
+        let error = format!(
+            "{:#}",
+            read_all(&work, std::slice::from_ref(&value)).unwrap_err()
+        );
+        assert!(error.contains("<frozen-file>=<path>"), "{value}: {error}");
+    }
+}
+
+#[test]
+fn a_frozen_file_replaced_twice_is_refused() {
+    let (_tmp, work, _worktree, scratch) = site();
+    let path = scratch.join("x_contract.rs");
+    std::fs::write(&path, "new\n").unwrap();
+    let value = format!("{CONTRACT_FILE}={}", path.display());
+
+    let error = format!(
+        "{:#}",
+        read_all(&work, &[value.clone(), value]).unwrap_err()
+    );
+
+    assert!(error.contains("twice"), "{error}");
 }
 
 #[test]
@@ -114,6 +172,10 @@ fn a_replacement_within_the_byte_bound_can_still_exceed_the_ticket_bound() {
     let message = format!("{error:#}");
     assert!(message.contains("32768"), "{message}");
     assert!(message.contains(&MAX_TICKET_BYTES.to_string()), "{message}");
+    assert!(
+        message.contains("separate filings, one file each"),
+        "{message}"
+    );
 }
 
 #[test]
@@ -126,9 +188,8 @@ fn a_plain_30_kib_replacement_fits_the_ticket() {
 #[test]
 fn a_dispute_without_a_replacement_is_never_measured() {
     let kind = DisputeKind::Contract {
-        contract_id: "rejects-x".to_string(),
-        replacement: None,
-        replacement_base_sha256: None,
+        contract_ids: vec!["rejects-x".to_string()],
+        replacements: Vec::new(),
     };
 
     ensure_fits_ticket(&kind, &"r".repeat(10 * 1024 * 1024), None).unwrap();

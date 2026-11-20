@@ -150,9 +150,8 @@ fn a_contract_writer_cannot_dispute_a_frozen_contract() {
     let (_tmp, work_dir) = contract_phase(SessionType::Contract);
     write_test_freeze(&work_dir, FREEZE_STAGE, "s");
     let kind = DisputeKind::Contract {
-        contract_id: contract().id,
-        replacement: None,
-        replacement_base_sha256: None,
+        contract_ids: vec![contract().id],
+        replacements: Vec::new(),
     };
 
     let response = handle_file_dispute(&work_dir, FREEZE_STAGE, kind, "r".into(), None).unwrap();

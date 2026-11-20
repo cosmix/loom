@@ -109,8 +109,9 @@ fn relay_verdict(
     // The dispute's kind is in the state directory, which this session cannot
     // read, so the notice names what each kind does with the verdict. Only a
     // needs-more-evidence draft can escalate (`parse_and_validate`), so its
-    // missing question is all this asks for; a reject or accept without its
-    // grounding is coerced or refused when recorded, with the defect named.
+    // missing question is all this asks for; a reject, accept or
+    // contract-rulings verdict without its grounding is coerced or refused
+    // when recorded, with the defect named.
     if let verdict::ValidationOutcome::Escalate { reason } = verdict::parse_and_validate(&raw) {
         writeln!(
             sink.stderr(),

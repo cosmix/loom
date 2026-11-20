@@ -23,7 +23,7 @@ pub use criterion::{CriterionField, CriterionTarget};
 
 #[path = "dispute_replacement.rs"]
 mod replacement;
-pub use replacement::MAX_REPLACEMENT_BYTES;
+pub use replacement::{ContractRuling, ContractRulingKind, FileReplacement, MAX_REPLACEMENT_BYTES};
 
 /// A disputed review finding as it stood open when the dispute was filed:
 /// `origin_stage` is set for a finding carried from another stage, `round` is
@@ -66,17 +66,13 @@ pub enum DisputeKind {
         finding_ids: Vec<String>,
         evidence: Vec<FindingSnapshot>,
     },
-    /// One frozen contract: `loom stage dispute-contract`. `replacement` is
-    /// the complete file the agent proposes in place of the frozen one.
-    /// `replacement_base_sha256` is the frozen file's sha256 the replacement
-    /// was filed against: only admission sets it, and it overwrites any value
-    /// a client sent.
+    /// Frozen contracts, distinct: `loom stage dispute-contract`.
+    /// `replacements` are the complete files proposed in place of frozen
+    /// ones, at most one per frozen file.
     Contract {
-        contract_id: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        replacement: Option<String>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        replacement_base_sha256: Option<String>,
+        contract_ids: Vec<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        replacements: Vec<FileReplacement>,
     },
     /// Current test-integrity events: `loom stage dispute-integrity`.
     Integrity {
@@ -328,6 +324,12 @@ pub enum DisputeVerdict {
     /// A findings dispute's verdict: one ruling per disputed finding.
     Rulings {
         rulings: Vec<FindingRuling>,
+    },
+    /// A contract dispute's verdict: one ruling per disputed contract, and
+    /// the `contracts` patch the accepted ones need.
+    ContractRulings {
+        rulings: Vec<ContractRuling>,
+        plan_patch: PlanPatch,
     },
 }
 

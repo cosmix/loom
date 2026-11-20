@@ -197,9 +197,8 @@ fn relay_mode_dispute_ends_the_turn() {
 
 fn contract_dispute() -> Dispute {
     let kind = crate::models::dispute::DisputeKind::Contract {
-        contract_id: "rejects-x".to_string(),
-        replacement: None,
-        replacement_base_sha256: None,
+        contract_ids: vec!["rejects-x".to_string()],
+        replacements: Vec::new(),
     };
     Dispute::of_kind("stage-a".to_string(), kind, "wrong error".to_string(), None)
 }

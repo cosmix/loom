@@ -11,15 +11,15 @@ use anyhow::{bail, Context, Result};
 use std::path::Path;
 
 use super::collection::rust::{chain_problems, run_dir_problems};
+use super::drift::{frozen_drift, Drift, DriftKind};
 use super::failed_builds::FailedBuilds;
 use super::run_dir::resolve_run;
 use super::store::{self, FreezeRecord};
 use super::{normalize, resolve_adapter};
-use crate::fs::safe_read::{is_not_found, read_bounded};
+use crate::fs::safe_read::read_bounded;
 use crate::models::stage::Stage;
 use crate::plan::schema::ContractSpec;
 use crate::testrun::{classify, registry, RunOutcome, RunOutput, TestRunnerAdapter};
-use crate::utils::sha256_hex;
 use crate::verify::criteria::{
     confined_stage_cache, plan_confinement, resolve_confinement, CachedRun, CriteriaConfig,
     CriteriaProbe, ProbeRun, ProbeRunner,
@@ -79,8 +79,9 @@ fn check_with(
     bail!(
         "contract check failed for stage '{id}':\n  - {}\n\
          Each frozen contract file must keep its frozen content: restore it with \
-         `loom stage contracts restore {id}` or dispute it with \
-         `loom stage dispute-contract {id} --contract <id> --reason ...`. A failing contract \
+         `loom stage contracts restore {id}`, and to change it file the change as a \
+         dispute, `loom stage dispute-contract {id} --contract <id> --replacement \
+         <frozen-file>=<path> --reason ...`. A failing contract \
          needs an implementation that passes it. A contract module must be declared by a \
          plain `mod` item, and its chain files must not be cfg'd out.",
         failures.join("\n  - "),
@@ -223,23 +224,17 @@ fn changed_frozen_files(
     acceptance_dir: &Path,
     worktree_root: &Path,
 ) -> Result<Vec<String>> {
-    let root = worktree_root.canonicalize()?;
-    let working = acceptance_dir.canonicalize()?;
-    let inside = working
-        .strip_prefix(&root)
-        .context("the acceptance directory is outside the worktree")?;
-    let changed = record.files.iter().filter_map(|file| {
-        let path = &file.path;
-        match read_bounded(&root, &inside.join(path), store::MAX_FROZEN_FILE_BYTES) {
-            Ok(bytes) if sha256_hex(&bytes) == file.sha256 => None,
-            Ok(_) => Some(format!("frozen file '{path}' changed after the freeze")),
-            Err(error) if is_not_found(&error) => Some(format!("frozen file '{path}' is missing")),
-            Err(error) => Some(format!(
-                "frozen file '{path}' cannot be read as frozen: {error:#}"
-            )),
-        }
-    });
-    Ok(changed.collect())
+    let drift = frozen_drift(record, acceptance_dir, worktree_root)?;
+    Ok(drift
+        .into_iter()
+        .map(|Drift { path, kind }| match kind {
+            DriftKind::Changed => format!("frozen file '{path}' changed after the freeze"),
+            DriftKind::Missing => format!("frozen file '{path}' is missing"),
+            DriftKind::Unreadable(error) => {
+                format!("frozen file '{path}' cannot be read as frozen: {error}")
+            }
+        })
+        .collect())
 }
 
 /// Why `run` does not count as a pass, if it does not.
