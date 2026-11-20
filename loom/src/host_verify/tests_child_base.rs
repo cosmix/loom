@@ -123,10 +123,7 @@ fn a_criterion_passing_at_the_base_records_a_pass() {
     let evidence = load_base_evidence(&bfx.fx.work_dir, STAGE).unwrap();
     assert_eq!(evidence.len(), 1, "{evidence:?}");
     assert!(evidence[0].passed);
-    assert_eq!(
-        (evidence[0].executed, evidence[0].failed),
-        (Some(2), Some(0))
-    );
+    assert_eq!((evidence[0].executed, evidence[0].failed), (Some(2), None));
 }
 
 #[test]

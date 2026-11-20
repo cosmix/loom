@@ -80,7 +80,7 @@ impl Fixture {
     fn write_plan(&self) {
         let plan = self.work_dir.join("PLAN-contracts.md");
         let yaml = format!(
-            "loom:\n  version: 1\n  stages:\n    - id: {STAGE}\n      name: {STAGE}\n      acceptance:\n        - \"true\"\n"
+            "loom:\n  version: 1\n  stages:\n    - id: {STAGE}\n      name: {STAGE}\n      working_dir: \".\"\n      acceptance:\n        - \"true\"\n"
         );
         let text = format!(
             "# Plan\n\n<!-- loom METADATA -->\n\n```yaml\n{yaml}```\n\n<!-- END loom METADATA -->\n"
@@ -301,10 +301,12 @@ fn a_trial_whose_overlay_changed_during_the_runs_records_no_receipt() {
         labels_and_verdicts(&result).contains(&("frozen-files", false)),
         "{result:?}"
     );
+    // The restore leaves a file holding bytes written during the run alone;
+    // the drift check reports it.
     assert_eq!(
         fx.contract_file(),
-        before,
-        "the frozen file must be restored"
+        (b"PASS, other bytes\n".to_vec(), before.1),
+        "a file written during the run is left as written"
     );
     assert!(!fx.receipt_saved(&record));
     assert_eq!(load_receipt(&fx.work_dir, STAGE).unwrap(), None);
