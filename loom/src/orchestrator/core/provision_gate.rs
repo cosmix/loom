@@ -11,9 +11,12 @@ use crate::git::worktree::WorktreeGit;
 use crate::models::failure::FailureType;
 use crate::models::stage::Stage;
 use crate::orchestrator::busy::{self, BusyOp};
-use crate::orchestrator::provision::{display_safe, read_provision_snapshot, run_provision};
+use crate::orchestrator::provision::{
+    display_safe, read_provision_snapshot, run_provision_in_stage,
+};
 use crate::orchestrator::tick::Phase;
 use crate::plan::schema::ProvisionEntry;
+use crate::verify::criteria::stage_cache_for;
 
 use super::stage_block::StageBlock;
 use super::Orchestrator;
@@ -101,6 +104,8 @@ fn provision_worktree(
     entries: &[ProvisionEntry],
     worktree_path: &Path,
 ) -> Result<(), String> {
+    let cache = stage_cache_for(work_dir, stage_id)
+        .map_err(|error| format!("cannot resolve the stage build cache: {error:#}"))?;
     let before = status_entries(work_dir, worktree_path);
     entries.iter().try_for_each(|entry| {
         busy::while_busy(
@@ -108,7 +113,7 @@ fn provision_worktree(
             Phase::Spawning,
             BusyOp::Provisioning,
             stage_id,
-            || run_provision(std::slice::from_ref(entry), worktree_path),
+            || run_provision_in_stage(std::slice::from_ref(entry), worktree_path, Some(&cache)),
         )
     })?;
     // A listing git could not produce (a plain directory, a worktree that cannot be

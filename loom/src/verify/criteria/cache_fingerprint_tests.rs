@@ -95,7 +95,8 @@ fn a_repointed_git_file_neither_runs_its_filter_nor_moves_the_fingerprint() {
     let worktree = contract_worktree(&tmp.path().join("repo"), "s1");
     let spec = CommandSpec::shell("printf ok");
     let confined = CommandConfinement::Confined;
-    let prepared = prepare_confined(&spec, Some(&worktree), Some(&worktree), confined).unwrap();
+    let prepared =
+        prepare_confined(&spec, Some(&worktree), Some(&worktree), confined, None).unwrap();
     let identity = ExecutionIdentity::from_prepared(&prepared, confined).unwrap();
     let git_file = worktree.join(".git");
     let registered = std::fs::read(&git_file).unwrap();

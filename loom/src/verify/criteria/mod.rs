@@ -76,6 +76,7 @@ pub use config::{
 };
 #[cfg(test)]
 pub(crate) use confine::host_launcher;
+pub(crate) use confine::{confined_stage_cache, stage_cache_for};
 #[cfg(target_os = "linux")]
 pub(crate) use confine::{
     git_dirs,
@@ -87,8 +88,8 @@ pub use confine::{
 };
 pub(crate) use executor::run_provision_with_timeout;
 pub use executor::{
-    run_single_criterion, run_single_criterion_with_timeout, run_spec_in_optional_tree,
-    run_spec_with_timeout,
+    run_single_criterion, run_single_criterion_with_timeout, run_spec_in_optional_stage,
+    run_spec_in_optional_tree, run_spec_in_stage, run_spec_with_timeout,
 };
 pub(crate) use output::format_criterion_result;
 pub(in crate::verify) use probe::{CachedRun, CriteriaProbe, ProbeRun, ProbeRunner};

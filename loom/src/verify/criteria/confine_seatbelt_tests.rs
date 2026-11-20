@@ -41,7 +41,7 @@ fn profile_for(tree: &Path) -> String {
     let mut original = Command::new("/bin/sh");
     original.current_dir(tree);
     crate::process::apply_stage_environment(&mut original);
-    let scratch = super::CargoScratch::prepare(&original, tree, false).unwrap();
+    let scratch = super::CargoScratch::prepare(&original, tree, false, false).unwrap();
     let wrapped = super::platform_command(
         &original,
         tree,
@@ -49,7 +49,7 @@ fn profile_for(tree: &Path) -> String {
         Path::new("/bin/sh"),
         &scratch,
         super::NetworkAccess::Denied,
-        None,
+        &Default::default(),
     )
     .unwrap();
     let args: Vec<String> = wrapped
@@ -96,11 +96,19 @@ fn a_profile_naming_a_path_with_a_control_character_is_refused() {
     std::fs::create_dir(&tree).unwrap();
     let mut original = Command::new("/bin/sh");
     original.current_dir(&tree);
-    let scratch = super::CargoScratch::prepare(&original, &tree, false).unwrap();
+    let scratch = super::CargoScratch::prepare(&original, &tree, false, false).unwrap();
     let network = super::NetworkAccess::Denied;
     let shell = Path::new("/bin/sh");
-    let error = super::platform_command(&original, &tree, &tree, shell, &scratch, network, None)
-        .expect_err("a control character in the tree path must be refused");
+    let error = super::platform_command(
+        &original,
+        &tree,
+        &tree,
+        shell,
+        &scratch,
+        network,
+        &Default::default(),
+    )
+    .expect_err("a control character in the tree path must be refused");
     let message = format!("{error:#}");
     assert!(message.contains("control character"), "{message}");
 }

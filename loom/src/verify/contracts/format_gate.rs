@@ -19,6 +19,7 @@ use crate::models::dispute::truncate_to_byte_limit;
 use crate::models::stage::{
     AcceptanceCriterion, CommandConfinement, Stage, StageSandboxConfig, TruthCheck,
 };
+use crate::stage_cache::StageCache;
 use crate::testrun::recognize::{command_args, has_flag, invocations};
 use crate::verify::contracts::refusal::run_output_line;
 use crate::verify::criteria::{
@@ -247,6 +248,7 @@ pub(crate) fn static_problems(
     confinement: CommandConfinement,
     written: &[String],
     contracts_compile: bool,
+    cache: Option<&StageCache>,
 ) -> Result<Vec<String>> {
     let selected = selected_checks(stage, working_dir, contracts_compile);
     if selected.is_empty() {
@@ -261,7 +263,9 @@ pub(crate) fn static_problems(
         },
         ..Stage::default()
     };
-    let config = CriteriaConfig::default().with_tree_root(Some(worktree_root));
+    let config = CriteriaConfig::default()
+        .with_tree_root(Some(worktree_root))
+        .with_stage_cache(cache.cloned());
     let outcome = run_acceptance_with_config(&run, Some(working_dir), &config)
         .context("Failed to run the stage's lint and search checks")?;
     Ok(outcome
@@ -297,13 +301,15 @@ fn blame(label: &str, result: &CriterionResult, written: &[String]) -> Option<St
 
 /// The stage's acceptance commands that are formatter checks, run as
 /// acceptance runs them (from `working_dir`, inside `worktree_root`); one
-/// problem per check that fails, naming its command.
+/// problem per check that fails, naming its command. A confined run also uses
+/// `cache`, the stage's build caches.
 pub fn format_problems(
     acceptance: &[AcceptanceCriterion],
     setup: &[String],
     worktree_root: &Path,
     working_dir: &Path,
     confinement: CommandConfinement,
+    cache: Option<&StageCache>,
 ) -> Result<Vec<String>> {
     let checks: Vec<AcceptanceCriterion> = acceptance
         .iter()
@@ -322,7 +328,9 @@ pub fn format_problems(
         },
         ..Stage::default()
     };
-    let config = CriteriaConfig::default().with_tree_root(Some(worktree_root));
+    let config = CriteriaConfig::default()
+        .with_tree_root(Some(worktree_root))
+        .with_stage_cache(cache.cloned());
     let outcome = run_acceptance_with_config(&stage, Some(working_dir), &config)
         .context("Failed to run the stage's formatter checks")?;
     Ok(outcome

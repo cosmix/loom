@@ -1,6 +1,6 @@
 //! Load one goal definition from the active plan, then run its checks.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
@@ -8,12 +8,14 @@ use super::{run_goal_backward_verification, GoalBackwardResult};
 use crate::models::stage::{CommandConfinement, TruthCheck};
 use crate::plan::parser::parse_plan;
 use crate::plan::schema::StageDefinition;
-use crate::verify::criteria::resolve_confinement;
+use crate::verify::criteria::{confined_stage_cache, resolve_confinement};
 use crate::verify::transitions::load_stage;
 
 pub(crate) struct LoadedGoal {
     definition: StageDefinition,
     confinement: CommandConfinement,
+    /// The state directory the stage's build cache resolves from, when run.
+    work_dir: PathBuf,
 }
 
 impl LoadedGoal {
@@ -31,11 +33,14 @@ impl LoadedGoal {
         tree: Option<&Path>,
         plan_version: u32,
     ) -> Result<GoalBackwardResult> {
+        let stage_id = &self.definition.id;
+        let cache = confined_stage_cache(&self.work_dir, stage_id, self.confinement)?;
         run_goal_backward_verification(
             &self.definition,
             verification_dir,
             tree,
             self.confinement,
+            cache.as_ref(),
             plan_version,
         )
     }
@@ -100,5 +105,6 @@ fn load_at_path(
     Ok(Some(LoadedGoal {
         definition: stage_def.clone(),
         confinement,
+        work_dir: work_dir.to_path_buf(),
     }))
 }

@@ -111,6 +111,7 @@ fn freeze_red(root: &Path) -> FrozenContract {
         &contract,
         &prepared,
         CommandConfinement::Confined,
+        None,
         |_| {},
     )
     .unwrap();

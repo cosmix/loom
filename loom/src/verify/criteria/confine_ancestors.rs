@@ -74,7 +74,7 @@ pub(super) fn seatbelt_rules(hidden: &[PathBuf], quote: impl Fn(&Path) -> String
 /// release that reports another. Revisit when the macOS probe in
 /// `confine_seatbelt_tests.rs` shows which form the kernel matches.
 #[cfg(any(target_os = "macos", test))]
-fn seatbelt_spellings(path: &Path) -> Vec<PathBuf> {
+pub(super) fn seatbelt_spellings(path: &Path) -> Vec<PathBuf> {
     let mut spellings = vec![path.to_path_buf()];
     if let Ok(rest) = path.strip_prefix("/private") {
         if ["var", "tmp", "etc"]

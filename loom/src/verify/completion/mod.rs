@@ -5,7 +5,7 @@
 use crate::models::stage::{Stage, StageType, TruthCheck};
 use crate::plan::parser::{parse_plan, ParsedPlan};
 use crate::plan::schema::CommandConfinement;
-use crate::verify::criteria::{plan_confinement, resolve_confinement};
+use crate::verify::criteria::{confined_stage_cache, plan_confinement, resolve_confinement};
 use crate::verify::duplicate_detection::detect_duplicate_symbols;
 use crate::verify::goal_backward::plan::{self, LoadedGoal};
 use crate::verify::goal_backward::VerificationGap;
@@ -146,11 +146,14 @@ fn gap_list(gaps: &[VerificationGap]) -> String {
 fn run_after_checks(checks: &VerificationChecks<'_>, after_stage: &[TruthCheck]) -> Result<()> {
     (checks.emit)(OutputStream::Stdout, "Running after-stage verification...");
     let verification_dir = checks.acceptance_dir.unwrap_or(Path::new("."));
+    let confinement = checks.command_confinement();
+    let cache = confined_stage_cache(checks.work_dir, checks.stage_id, confinement)?;
     let gaps = crate::verify::before_after::run_after_stage_checks(
         after_stage,
         verification_dir,
         checks.worktree_root,
-        checks.command_confinement(),
+        confinement,
+        cache.as_ref(),
     )?;
     if gaps.is_empty() {
         (checks.emit)(OutputStream::Stdout, "After-stage verification passed!");

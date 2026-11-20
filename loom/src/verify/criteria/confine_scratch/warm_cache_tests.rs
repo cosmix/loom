@@ -150,7 +150,7 @@ impl Harness {
             original.env_remove(inherited);
         }
         original.env("HOME", home).env("PATH", "/usr/bin:/bin");
-        let (mut wrapped, scratch, _) = wrap(&original, Some(&self.tree), network).unwrap();
+        let (mut wrapped, scratch, _) = wrap(&original, Some(&self.tree), network, None).unwrap();
         if scratch.cache_overlays().is_empty() {
             return None;
         }

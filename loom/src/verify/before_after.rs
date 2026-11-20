@@ -15,6 +15,7 @@ use anyhow::Result;
 use std::path::Path;
 
 use crate::plan::schema::{CommandConfinement, TruthCheck};
+use crate::stage_cache::StageCache;
 use crate::verify::goal_backward::{verify_truth_checks, VerificationGap};
 
 /// Run before-stage checks to verify pre-conditions.
@@ -29,7 +30,13 @@ pub fn run_before_stage_checks(
     working_dir: &Path,
     tree: Option<&Path>,
 ) -> Result<Vec<VerificationGap>> {
-    verify_truth_checks(checks, working_dir, tree, CommandConfinement::default())
+    verify_truth_checks(
+        checks,
+        working_dir,
+        tree,
+        CommandConfinement::default(),
+        None,
+    )
 }
 
 /// Look for work a previous attempt at this stage already produced.
@@ -112,14 +119,16 @@ pub fn find_prior_stage_work(
 /// If any check fails, the post-conditions are not met and the stage completion should fail.
 ///
 /// `tree` is the stage worktree root; `confinement` is the stage's resolved
-/// level for plan-authored commands.
+/// level for plan-authored commands; a confined run also uses `cache`, the
+/// stage's build caches.
 pub fn run_after_stage_checks(
     checks: &[TruthCheck],
     working_dir: &Path,
     tree: Option<&Path>,
     confinement: CommandConfinement,
+    cache: Option<&StageCache>,
 ) -> Result<Vec<VerificationGap>> {
-    verify_truth_checks(checks, working_dir, tree, confinement)
+    verify_truth_checks(checks, working_dir, tree, confinement, cache)
 }
 
 #[cfg(test)]

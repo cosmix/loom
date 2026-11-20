@@ -63,6 +63,7 @@ fn test_after_stage_checks_pass() {
         &working_dir,
         None,
         CommandConfinement::default(),
+        None,
     )
     .unwrap();
     assert!(
@@ -99,6 +100,7 @@ fn test_after_stage_checks_fail_when_postcondition_not_met() {
         &working_dir,
         None,
         CommandConfinement::default(),
+        None,
     )
     .unwrap();
     assert_eq!(
@@ -118,8 +120,8 @@ fn test_before_after_empty_checks() {
         "Empty before checks should produce no gaps"
     );
 
-    let gaps =
-        run_after_stage_checks(&[], &working_dir, None, CommandConfinement::default()).unwrap();
+    let gaps = run_after_stage_checks(&[], &working_dir, None, CommandConfinement::default(), None)
+        .unwrap();
     assert!(gaps.is_empty(), "Empty after checks should produce no gaps");
 }
 
@@ -168,7 +170,13 @@ fn test_after_stage_multiple_checks() {
     ];
 
     let working_dir = env::temp_dir();
-    let gaps =
-        run_after_stage_checks(&checks, &working_dir, None, CommandConfinement::default()).unwrap();
+    let gaps = run_after_stage_checks(
+        &checks,
+        &working_dir,
+        None,
+        CommandConfinement::default(),
+        None,
+    )
+    .unwrap();
     assert!(gaps.is_empty(), "All after-stage checks should pass");
 }

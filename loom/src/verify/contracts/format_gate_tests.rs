@@ -86,7 +86,15 @@ fn problems_for(temp: &TempDir) -> Vec<String> {
         AcceptanceCriterion::Simple("false".to_string()),
     ];
     let dir = temp.path().canonicalize().unwrap();
-    format_problems(&acceptance, &[], &dir, &dir, CommandConfinement::Confined).unwrap()
+    format_problems(
+        &acceptance,
+        &[],
+        &dir,
+        &dir,
+        CommandConfinement::Confined,
+        None,
+    )
+    .unwrap()
 }
 
 #[test]
@@ -110,8 +118,15 @@ fn no_formatter_check_runs_nothing() {
     let acceptance = [AcceptanceCriterion::Simple("false".to_string())];
     let temp = TempDir::new().unwrap();
     let dir = temp.path();
-    let problems =
-        format_problems(&acceptance, &[], dir, dir, CommandConfinement::Confined).unwrap();
+    let problems = format_problems(
+        &acceptance,
+        &[],
+        dir,
+        dir,
+        CommandConfinement::Confined,
+        None,
+    )
+    .unwrap();
     assert!(problems.is_empty());
 }
 
@@ -294,6 +309,7 @@ fn search_problems(acceptance: &str, files: &[(&str, &str)], written: &[&str]) -
         CommandConfinement::Inherit,
         &written,
         true,
+        None,
     )
     .unwrap()
 }

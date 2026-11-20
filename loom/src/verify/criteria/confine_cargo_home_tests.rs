@@ -53,8 +53,10 @@ fn every_confined_command_for_one_tree_shares_one_cargo_home() {
     std::fs::create_dir(&tree).unwrap();
     let cargo = host_cargo_home(root.path());
     let original = confined_shell(&tree, &cargo, "true");
-    let (first, first_scratch, _) = super::wrap(&original, None, NetworkAccess::Denied).unwrap();
-    let (second, second_scratch, _) = super::wrap(&original, None, NetworkAccess::Denied).unwrap();
+    let (first, first_scratch, _) =
+        super::wrap(&original, None, NetworkAccess::Denied, None).unwrap();
+    let (second, second_scratch, _) =
+        super::wrap(&original, None, NetworkAccess::Denied, None).unwrap();
     assert_ne!(first_scratch.path(), second_scratch.path());
     let home = effective_cargo_home(&first);
     assert_eq!(home, effective_cargo_home(&second));
@@ -88,7 +90,8 @@ touch "$CARGO_HOME/.package-cache" "$CARGO_HOME/.global-cache" 2>/dev/null && ex
 [[ -e "$CARGO_HOME/config.toml" || -e "$CARGO_HOME/credentials.toml" ]] && exit 1
 printf CARGO_HOME_PASSED"#;
     let original = confined_shell(&tree, &cargo, line);
-    let (mut wrapped, scratch, _) = super::wrap(&original, None, NetworkAccess::Denied).unwrap();
+    let (mut wrapped, scratch, _) =
+        super::wrap(&original, None, NetworkAccess::Denied, None).unwrap();
     assert_eq!(effective_cargo_home(&wrapped), cargo);
     scratch.populate().unwrap();
     let output = wrapped.output().unwrap();
@@ -122,7 +125,8 @@ cat "$CARGO_HOME/credentials.toml" 2>/dev/null && exit 1
 touch "$CARGO_HOME/.package-cache" "$CARGO_HOME/.package-cache-mutate" "$CARGO_HOME/.global-cache"
 printf CARGO_HOME_PASSED"#;
     let original = confined_shell(&tree, &cargo, line);
-    let (mut wrapped, scratch, _) = super::wrap(&original, None, NetworkAccess::Denied).unwrap();
+    let wrap = super::wrap(&original, None, NetworkAccess::Denied, None);
+    let (mut wrapped, scratch, _) = wrap.unwrap();
     assert_eq!(effective_cargo_home(&wrapped), cargo);
     let args: Vec<&std::ffi::OsStr> = wrapped.get_args().collect();
     let mount = args
@@ -134,10 +138,7 @@ printf CARGO_HOME_PASSED"#;
         .windows(3)
         .position(|w| w[0] == "--ro-bind" && w[1] == registry.as_os_str() && w[2] == w[1])
         .expect("the host registry is bound read-only at its own path");
-    assert!(
-        mount < sources,
-        "the read-only sources must cover the mount"
-    );
+    assert!(mount < sources, "read-only sources must cover the mount");
     scratch.populate().unwrap();
     let output = wrapped.output().unwrap();
     assert!(
@@ -176,7 +177,7 @@ fn linked_scratch(cargo: &Path) -> (super::CargoScratch, LinkedHome, Command) {
     let mut command = Command::new("true");
     command.current_dir(&tree).env("CARGO_HOME", cargo);
     let tree = tree.canonicalize().unwrap();
-    let scratch = super::CargoScratch::prepare(&command, &tree, false).unwrap();
+    let scratch = super::CargoScratch::prepare(&command, &tree, false, false).unwrap();
     let home = scratch.linked_cargo_home().unwrap().to_path_buf();
     (scratch, LinkedHome(home), command)
 }

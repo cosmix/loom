@@ -21,7 +21,8 @@ use crate::plan::schema::ContractSpec;
 use crate::testrun::{classify, registry, RunOutcome, RunOutput, TestRunnerAdapter};
 use crate::utils::sha256_hex;
 use crate::verify::criteria::{
-    plan_confinement, CachedRun, CriteriaConfig, CriteriaProbe, ProbeRun, ProbeRunner,
+    plan_confinement, stage_cache_for, CachedRun, CriteriaConfig, CriteriaProbe, ProbeRun,
+    ProbeRunner,
 };
 
 /// Fail unless every frozen file is unchanged and every contract passes.
@@ -36,7 +37,8 @@ pub fn check(
         config: CriteriaConfig::default()
             .with_plan_confinement(plan_confinement(work_dir))
             .with_cache_dir(work_dir)
-            .with_tree_root(Some(worktree_root)),
+            .with_tree_root(Some(worktree_root))
+            .with_stage_cache(Some(stage_cache_for(work_dir, &stage.id)?)),
     };
     check_with(stage, work_dir, acceptance_dir, worktree_root, &runner)
 }

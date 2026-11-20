@@ -20,14 +20,14 @@ fn private_scratch_stays_outside_temporary_root_working_directories() {
     let original = Command::new("/bin/bash");
     for root in [std::env::temp_dir(), PathBuf::from("/tmp")] {
         let cwd = root.canonicalize().unwrap();
-        let scratch = super::CargoScratch::prepare(&original, &cwd, false).unwrap();
+        let scratch = super::CargoScratch::prepare(&original, &cwd, false, false).unwrap();
         let path = scratch.path().to_path_buf();
         assert!(!path.starts_with(&cwd), "{}", path.display());
         std::fs::write(path.join("writable"), "private").unwrap();
         drop(scratch);
         assert!(!path.exists());
     }
-    assert!(super::CargoScratch::prepare(&original, Path::new("/"), false).is_err());
+    assert!(super::CargoScratch::prepare(&original, Path::new("/"), false, false).is_err());
 }
 
 // A write to `$HOME/credentials` may land in bubblewrap's private /tmp, where
@@ -81,7 +81,7 @@ fn run_cache_canary(cwd: &Path, home: &Path, port: u16, network: NetworkAccess, 
     ]);
     crate::process::apply_stage_environment(&mut original);
     original.env("HOME", home);
-    let (mut wrapped, scratch, _) = super::wrap(&original, None, network).unwrap();
+    let (mut wrapped, scratch, _) = super::wrap(&original, None, network, None).unwrap();
     let scratch_path = scratch.path().to_path_buf();
     scratch.populate().unwrap();
     let output = wrapped.output().unwrap();
@@ -138,10 +138,22 @@ fn private_scratch_does_not_change_acceptance_cache_identity() {
     }
     let root = tempfile::tempdir().unwrap();
     let spec = CommandSpec::program("/bin/bash", ["-c", "true"]);
-    let first =
-        prepare_confined(&spec, Some(root.path()), None, CommandConfinement::Confined).unwrap();
-    let second =
-        prepare_confined(&spec, Some(root.path()), None, CommandConfinement::Confined).unwrap();
+    let first = prepare_confined(
+        &spec,
+        Some(root.path()),
+        None,
+        CommandConfinement::Confined,
+        None,
+    )
+    .unwrap();
+    let second = prepare_confined(
+        &spec,
+        Some(root.path()),
+        None,
+        CommandConfinement::Confined,
+        None,
+    )
+    .unwrap();
     assert_eq!(
         first.containment_policy_revision(),
         second.containment_policy_revision()
@@ -301,7 +313,8 @@ fn actual_biome_git_worktree_keeps_cargo_sources_outside_lint_coverage() {
     original.current_dir(&cwd).args(["ci", "."]);
     crate::process::apply_stage_environment(&mut original);
     original.env("CARGO_HOME", cargo);
-    let (mut command, scratch, _) = super::wrap(&original, None, NetworkAccess::Denied).unwrap();
+    let (mut command, scratch, _) =
+        super::wrap(&original, None, NetworkAccess::Denied, None).unwrap();
     scratch.populate().unwrap();
     let output = command.output().unwrap();
     assert!(

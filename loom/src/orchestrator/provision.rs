@@ -15,6 +15,7 @@ use toml_edit::DocumentMut;
 use crate::context::untrusted::flatten_char;
 use crate::fs::work_dir::{read_config, update_config, write_plan_sandbox};
 use crate::plan::schema::{LoomConfig, ProvisionEntry};
+use crate::stage_cache::StageCache;
 use crate::verify::criteria::{run_provision_with_timeout, CommandSpec, CriterionResult};
 
 /// How long one provision command may run.
@@ -38,9 +39,19 @@ struct ProvisionSnapshot {
 /// Run the plan's provision entries in `worktree`, in order, stopping at the first
 /// failure. `Err` is the stage's block reason.
 pub fn run_provision(entries: &[ProvisionEntry], worktree: &Path) -> Result<(), String> {
+    run_provision_in_stage(entries, worktree, None)
+}
+
+/// [`run_provision`] for a stage: with `cache`, the entries fill the stage's
+/// build caches, which its later confined commands read.
+pub fn run_provision_in_stage(
+    entries: &[ProvisionEntry],
+    worktree: &Path,
+    cache: Option<&StageCache>,
+) -> Result<(), String> {
     entries
         .iter()
-        .try_for_each(|entry| run_entry(entry, worktree))
+        .try_for_each(|entry| run_entry(entry, worktree, cache))
 }
 
 /// Persist the plan-level snapshots `loom init` takes: the sandbox (as today, through
@@ -108,7 +119,11 @@ pub(crate) fn display_safe(text: &str) -> String {
         .collect()
 }
 
-fn run_entry(entry: &ProvisionEntry, worktree: &Path) -> Result<(), String> {
+fn run_entry(
+    entry: &ProvisionEntry,
+    worktree: &Path,
+    cache: Option<&StageCache>,
+) -> Result<(), String> {
     let dir = resolve_dir(entry, worktree)?;
     // The assigned worktree is the boundary; an entry may use sibling workspace
     // packages while executing from its validated subdirectory.
@@ -117,9 +132,9 @@ fn run_entry(entry: &ProvisionEntry, worktree: &Path) -> Result<(), String> {
         shell_escape::escape(dir.to_string_lossy()),
         entry.command
     );
-    let result =
-        run_provision_with_timeout(&CommandSpec::shell(command), worktree, PROVISION_TIMEOUT)
-            .map_err(|e| failure(entry, &tail_lines(&format!("{e:#}"))))?;
+    let spec = CommandSpec::shell(command);
+    let result = run_provision_with_timeout(&spec, worktree, PROVISION_TIMEOUT, cache)
+        .map_err(|e| failure(entry, &tail_lines(&format!("{e:#}"))))?;
     if result.success {
         Ok(())
     } else {

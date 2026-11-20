@@ -9,13 +9,14 @@ use crate::daemon::ContractRunReport;
 use crate::models::dispute::tail_to_byte_limit;
 use crate::models::stage::CommandConfinement;
 use crate::plan::schema::ContractSpec;
+use crate::stage_cache::StageCache;
 use crate::testrun::recognize::combined_output;
 use crate::testrun::{RunOutput, RunSummary, TestRunnerAdapter};
 use crate::verify::contracts::failed_builds::BuildKey;
 use crate::verify::contracts::refusal::run_output_line;
 use crate::verify::contracts::resolve_adapter;
 use crate::verify::contracts::run_dir::{resolve_run, ContractRun};
-use crate::verify::criteria::{run_spec_in_optional_tree, CommandSpec, CriterionResult};
+use crate::verify::criteria::{run_spec_in_optional_stage, CommandSpec, CriterionResult};
 
 /// A contract resolved to its adapter and run directory, ready to run.
 pub(crate) struct PreparedContract {
@@ -59,11 +60,13 @@ pub(crate) struct JudgedRun {
 /// Run one contract resolved by [`prepare_contract`] from its run directory with
 /// the criteria executor and judge the run. The outer `Err` means the command
 /// could not be run at all; the inner one is a problem the agent must fix.
+/// A confined run also uses `cache`, the stage's build caches.
 pub(crate) fn run_prepared(
     worktree_root: &Path,
     contract: &ContractSpec,
     prepared: &PreparedContract,
     confinement: CommandConfinement,
+    cache: Option<&StageCache>,
     emit: fn(&str),
 ) -> Result<JudgedRun> {
     let adapter = prepared.adapter;
@@ -72,12 +75,13 @@ pub(crate) fn run_prepared(
         "Running contract `{}` in {}: {}",
         contract.id, resolved.cwd, resolved.command
     ));
-    let run = run_spec_in_optional_tree(
+    let run = run_spec_in_optional_stage(
         &CommandSpec::shell(resolved.command.clone()),
         Some(worktree_root),
         Some(&resolved.dir),
         CONTRACT_TIMEOUT,
         confinement,
+        cache,
     )?;
     Ok(judge_prepared_result(contract, adapter, &run, emit))
 }

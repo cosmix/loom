@@ -9,7 +9,7 @@ use crate::models::stage::{Stage, StageStatus};
 use crate::utils::truncate_for_display;
 use crate::verify::criteria::output::format_criterion_result;
 use crate::verify::criteria::{
-    plan_confinement, run_acceptance_with_config, CriteriaConfig, CriterionResult,
+    plan_confinement, run_acceptance_with_config, stage_cache_for, CriteriaConfig, CriterionResult,
 };
 use crate::verify::execution_paths::resolve_acceptance_dir;
 use crate::verify::transitions::update_stage;
@@ -108,7 +108,8 @@ fn run_acceptance(
     }
     let config = CriteriaConfig::default()
         .with_plan_confinement(plan_confinement(work_dir))
-        .with_tree_root(Some(root));
+        .with_tree_root(Some(root))
+        .with_stage_cache(Some(stage_cache_for(work_dir, &stage.id)?));
     let result = run_acceptance_with_config(stage, acceptance_dir, &config)
         .context("Failed to run acceptance criteria")?;
     for (index, criterion) in result.results().iter().enumerate() {

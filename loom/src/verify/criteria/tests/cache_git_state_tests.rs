@@ -35,6 +35,7 @@ fn identity(tree: &Path) -> ExecutionIdentity {
         Some(tree),
         Some(tree),
         CommandConfinement::Confined,
+        None,
     )
     .unwrap();
     ExecutionIdentity::from_prepared(&prepared, CommandConfinement::Confined).unwrap()

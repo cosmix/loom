@@ -17,6 +17,12 @@
 pub(super) mod host;
 #[path = "confine_scratch.rs"]
 mod scratch;
+#[path = "confine_spec.rs"]
+mod spec;
+
+use host::wrap;
+use spec::build_command;
+pub use spec::CommandSpec;
 
 #[cfg(target_os = "linux")]
 pub(crate) use host::git_roots::git_dirs;
@@ -31,6 +37,8 @@ pub(crate) fn host_launcher() -> Option<std::path::PathBuf> {
 }
 
 use anyhow::{Context, Result};
+use std::collections::BTreeMap;
+use std::ffi::{OsStr, OsString};
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -38,32 +46,9 @@ use std::process::{Child, Command, Stdio};
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
 
+use crate::fs::work_dir::WorkDir;
 use crate::models::stage::CommandConfinement;
-
-/// Shell used to interpret a [`CommandSpec::Shell`] line.
-#[cfg(unix)]
-const SHELL: (&str, &str) = ("sh", "-c");
-#[cfg(not(unix))]
-const SHELL: (&str, &str) = ("cmd", "/C");
-
-/// What to run.
-///
-/// `Shell` is the form plans are written in: one line handed to `sh -c`, so
-/// `&&`, pipes and redirection work. `Program` is the typed form — a program
-/// and its arguments, executed directly, with no shell to interpret
-/// metacharacters in the arguments.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CommandSpec {
-    /// A shell line, executed via `sh -c` (Unix) or `cmd /C` (Windows).
-    Shell(String),
-    /// A program and its arguments, executed with no shell involved.
-    Program {
-        /// Executable to run, resolved through `PATH`.
-        program: String,
-        /// Arguments passed verbatim — never re-split, never expanded.
-        args: Vec<String>,
-    },
-}
+use crate::stage_cache::{Consumer, DeveloperTools, StageCache};
 
 /// A one-shot command whose environment and working directory are already
 /// fixed. Cache fingerprinting records its stable inputs and wrapper policy;
@@ -189,42 +174,6 @@ impl ConfinedChild {
     }
 }
 
-impl CommandSpec {
-    /// Build a shell spec from a plan-authored command line.
-    pub fn shell(command: impl Into<String>) -> Self {
-        Self::Shell(command.into())
-    }
-
-    /// Build a shell-free spec from a program and its arguments.
-    pub fn program<I, S>(program: impl Into<String>, args: I) -> Self
-    where
-        I: IntoIterator<Item = S>,
-        S: Into<String>,
-    {
-        Self::Program {
-            program: program.into(),
-            args: args.into_iter().map(Into::into).collect(),
-        }
-    }
-}
-
-impl fmt::Display for CommandSpec {
-    /// Renders the spec for error context and result records. This is a
-    /// human-readable rendering, not a re-runnable shell line.
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Shell(command) => f.write_str(command),
-            Self::Program { program, args } => {
-                f.write_str(program)?;
-                for arg in args {
-                    write!(f, " {arg}")?;
-                }
-                Ok(())
-            }
-        }
-    }
-}
-
 /// Spawn a plan-authored command as a child process under `confinement`.
 ///
 /// On Unix a normal child leads its own process group. Under the host-job
@@ -239,32 +188,33 @@ pub fn spawn_confined(
     working_dir: Option<&Path>,
     confinement: CommandConfinement,
 ) -> Result<ConfinedChild> {
-    prepare_confined(spec, working_dir, None, confinement)?.spawn()
+    prepare_confined(spec, working_dir, None, confinement, None)?.spawn()
 }
 
 /// Resolve a confined command once, without spawning it yet. It starts in
 /// `working_dir` and may read and write `tree`, the working tree containing
 /// `working_dir`; with no `tree`, the working directory is the whole tree.
+/// With `cache`, a confined command also writes the stage's build caches.
 pub(super) fn prepare_confined(
     spec: &CommandSpec,
     working_dir: Option<&Path>,
     tree: Option<&Path>,
     confinement: CommandConfinement,
+    cache: Option<&StageCache>,
 ) -> Result<PreparedCommand> {
     let network = host::NetworkAccess::Denied;
-    prepare(spec, working_dir, tree, confinement, network)
+    prepare(spec, working_dir, tree, confinement, network, cache)
 }
 
 /// Provision entries are approved package setup: retain the command boundary
 /// while permitting the network needed to fetch dependencies.
-pub(super) fn prepare_provision(spec: &CommandSpec, working_dir: &Path) -> Result<PreparedCommand> {
-    prepare(
-        spec,
-        Some(working_dir),
-        None,
-        CommandConfinement::Confined,
-        host::NetworkAccess::Provision,
-    )
+pub(super) fn prepare_provision(
+    spec: &CommandSpec,
+    working_dir: &Path,
+    cache: Option<&StageCache>,
+) -> Result<PreparedCommand> {
+    let (confined, network) = (CommandConfinement::Confined, host::NetworkAccess::Provision);
+    prepare(spec, Some(working_dir), None, confined, network, cache)
 }
 
 fn prepare(
@@ -273,25 +223,26 @@ fn prepare(
     tree: Option<&Path>,
     confinement: CommandConfinement,
     network: host::NetworkAccess,
+    cache: Option<&StageCache>,
 ) -> Result<PreparedCommand> {
+    let resolved_working_dir = working_dir
+        .map(Path::to_path_buf)
+        .or_else(|| std::env::current_dir().ok());
     let mut cmd = build_command(spec);
-
     match confinement {
         // Rebuild the child's environment from the documented host allowlist so
         // plan-authored commands never inherit loom's ambient credentials.
-        CommandConfinement::Confined => apply_confined_environment(&mut cmd)?,
+        CommandConfinement::Confined => {
+            apply_confined_environment(&mut cmd, cache, resolved_working_dir.as_deref())?
+        }
         // Explicit plan opt-in: the command genuinely needs what loom was given.
         CommandConfinement::Inherit => {}
     }
     #[cfg(unix)]
     cmd.process_group(0);
-
     cmd.stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    let resolved_working_dir = working_dir
-        .map(Path::to_path_buf)
-        .or_else(|| std::env::current_dir().ok());
     if let Some(dir) = &resolved_working_dir {
         cmd.current_dir(dir);
         if confinement == CommandConfinement::Confined {
@@ -299,7 +250,7 @@ fn prepare(
         }
     }
     let (wrapped, scratch, git) = if confinement == CommandConfinement::Confined {
-        let (wrapped, scratch, git) = host::wrap(&cmd, tree, network)
+        let (wrapped, scratch, git) = wrap(&cmd, tree, network, cache)
             .with_context(|| format!("Failed to confine command: {spec}"))?;
         (Some(wrapped), Some(scratch), git)
     } else {
@@ -319,21 +270,91 @@ fn prepare(
 
 /// The running executable is a runtime dependency of `loom ...` criteria.
 /// Derive it from this process, never from a caller-supplied `LOOM_BIN`.
-fn apply_confined_environment(command: &mut Command) -> Result<()> {
+/// With a stage cache, the real macOS developer tools come next on `PATH`,
+/// before the program is resolved, so a bare `git` or `cc` skips the xcrun
+/// shim, whose cache the boundary denies.
+fn apply_confined_environment(
+    command: &mut Command,
+    cache: Option<&StageCache>,
+    working_dir: Option<&Path>,
+) -> Result<()> {
     crate::process::apply_stage_environment(command);
     let executable = std::env::current_exe().context("resolve the running Loom executable")?;
     let directory = executable
         .parent()
         .context("Loom executable has no parent directory")?;
-    let path = command
-        .get_envs()
-        .find_map(|(key, value)| (key == "PATH").then_some(value).flatten())
-        .unwrap_or_else(|| std::ffi::OsStr::new("/usr/bin:/bin"));
+    // Only a stage-cache run looks the developer tools up.
+    let developer = cache
+        .and_then(|cache| {
+            let tools = DeveloperTools::detect()?;
+            Some(developer_environment(command, cache, &tools, working_dir))
+        })
+        .unwrap_or_default();
+    let path = developer
+        .get("PATH")
+        .map(OsString::as_os_str)
+        .or_else(|| {
+            command
+                .get_envs()
+                .find_map(|(key, value)| (key == "PATH").then_some(value).flatten())
+        })
+        .unwrap_or_else(|| OsStr::new("/usr/bin:/bin"));
     let directories = std::iter::once(directory.to_path_buf())
         .chain(std::env::split_paths(path).filter(|entry| entry != directory));
     let path = std::env::join_paths(directories).context("build the confined command PATH")?;
+    command.envs(&developer);
     command.env("PATH", path).env("LOOM_BIN", executable);
     Ok(())
+}
+
+/// Variables the stage cache sets for the macOS developer tools.
+const DEVELOPER_VARIABLES: [&str; 3] = ["PATH", "SDKROOT", "DEVELOPER_DIR"];
+
+/// The developer-tools part of the stage cache's host-job environment.
+fn developer_environment(
+    command: &Command,
+    cache: &StageCache,
+    tools: &DeveloperTools,
+    working_dir: Option<&Path>,
+) -> BTreeMap<String, OsString> {
+    let host = host::command_environment(command);
+    let tree = working_dir.unwrap_or(Path::new("/"));
+    let mut environment = cache.environment(Consumer::HostJob, tree, &host, Some(tools));
+    environment.retain(|name, _| DEVELOPER_VARIABLES.contains(&name.as_str()));
+    environment
+}
+
+/// The build cache of stage `stage_id` in the repository whose state
+/// directory is `work_dir`, resolved through [`stage_cache_in`].
+pub(crate) fn stage_cache_for(work_dir: &Path, stage_id: &str) -> Result<StageCache> {
+    let repo_root = WorkDir::new(work_dir)
+        .ok()
+        .and_then(|work_dir| work_dir.main_project_root())
+        .with_context(|| format!("no repository root above {}", work_dir.display()))?;
+    stage_cache_in(&repo_root, stage_id)
+}
+
+/// [`stage_cache_for`] when `confinement` is `Confined`; an inherited run has
+/// no boundary to grant the cache through, so it gets `None`.
+pub(crate) fn confined_stage_cache(
+    work_dir: &Path,
+    stage_id: &str,
+    confinement: CommandConfinement,
+) -> Result<Option<StageCache>> {
+    (confinement == CommandConfinement::Confined)
+        .then(|| stage_cache_for(work_dir, stage_id))
+        .transpose()
+}
+
+/// The build cache of stage `stage_id` in the repository at `repo_root`, under
+/// this process's `HOME` and `XDG_CACHE_HOME`: the same root the stage's
+/// session and workers resolve.
+fn stage_cache_in(repo_root: &Path, stage_id: &str) -> Result<StageCache> {
+    let home = std::env::var_os("HOME")
+        .filter(|home| !home.is_empty())
+        .context("HOME is not set: the stage build cache lives below it")?;
+    let xdg = std::env::var_os("XDG_CACHE_HOME").map(PathBuf::from);
+    StageCache::resolve(repo_root, stage_id, Path::new(&home), xdg.as_deref())
 }
 
 /// Effective confinement for one stage's plan-authored commands.
@@ -360,22 +381,4 @@ pub fn plan_confinement(work_dir: &Path) -> Option<CommandConfinement> {
         .ok()
         .flatten()
         .map(|sandbox| sandbox.command_confinement)
-}
-
-fn build_command(spec: &CommandSpec) -> Command {
-    match spec {
-        CommandSpec::Shell(line) => {
-            // The line is passed as a single argument: the shell interprets it,
-            // but loom never splits it into arguments itself.
-            let (shell, flag) = SHELL;
-            let mut command = Command::new(shell);
-            command.arg(flag).arg(line);
-            command
-        }
-        CommandSpec::Program { program, args } => {
-            let mut command = Command::new(program);
-            command.args(args);
-            command
-        }
-    }
 }

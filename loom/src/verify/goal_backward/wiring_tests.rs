@@ -6,8 +6,9 @@ use std::time::Duration;
 
 use super::result::{GapType, VerificationGap};
 use crate::plan::schema::{CommandConfinement, WiringTest};
+use crate::stage_cache::StageCache;
 use crate::verify::criteria::assertions::{evaluate, AssertionSpec};
-use crate::verify::criteria::{run_spec_in_optional_tree, CommandSpec};
+use crate::verify::criteria::{run_spec_in_optional_stage, CommandSpec};
 
 /// Default timeout for wiring test commands (30 seconds)
 pub(crate) const WIRING_TEST_TIMEOUT: Duration = Duration::from_secs(30);
@@ -19,22 +20,25 @@ pub(crate) const WIRING_TEST_TIMEOUT: Duration = Duration::from_secs(30);
 ///
 /// `tree` is the stage worktree root the commands may use in full (`None`: the
 /// working directory is the tree). `confinement` is the stage's resolved level
-/// for plan-authored commands.
+/// for plan-authored commands; a confined run also uses `cache`, the stage's
+/// build caches.
 pub fn verify_wiring_tests(
     wiring_tests: &[WiringTest],
     working_dir: &Path,
     tree: Option<&Path>,
     confinement: CommandConfinement,
+    cache: Option<&StageCache>,
 ) -> Result<Vec<VerificationGap>> {
     let mut gaps = Vec::new();
     for check in wiring_tests {
         let spec = CommandSpec::shell(check.command.as_str());
-        let result = run_spec_in_optional_tree(
+        let result = run_spec_in_optional_stage(
             &spec,
             tree,
             Some(working_dir),
             WIRING_TEST_TIMEOUT,
             confinement,
+            cache,
         )?;
         let assertions = AssertionSpec {
             expected_exit: check.success_criteria.exit_code.unwrap_or(0),
@@ -75,8 +79,14 @@ mod tests {
         };
 
         let working_dir = std::env::current_dir().unwrap();
-        let gaps = verify_wiring_tests(&[test], &working_dir, None, CommandConfinement::default())
-            .unwrap();
+        let gaps = verify_wiring_tests(
+            &[test],
+            &working_dir,
+            None,
+            CommandConfinement::default(),
+            None,
+        )
+        .unwrap();
 
         assert!(
             gaps.is_empty(),
@@ -98,8 +108,14 @@ mod tests {
         };
 
         let working_dir = std::env::current_dir().unwrap();
-        let gaps = verify_wiring_tests(&[test], &working_dir, None, CommandConfinement::default())
-            .unwrap();
+        let gaps = verify_wiring_tests(
+            &[test],
+            &working_dir,
+            None,
+            CommandConfinement::default(),
+            None,
+        )
+        .unwrap();
 
         assert_eq!(gaps.len(), 1);
         assert!(gaps[0].description.contains("exit code"));
@@ -120,8 +136,14 @@ mod tests {
         };
 
         let working_dir = std::env::current_dir().unwrap();
-        let gaps = verify_wiring_tests(&[test], &working_dir, None, CommandConfinement::default())
-            .unwrap();
+        let gaps = verify_wiring_tests(
+            &[test],
+            &working_dir,
+            None,
+            CommandConfinement::default(),
+            None,
+        )
+        .unwrap();
 
         assert_eq!(gaps.len(), 1);
         assert!(gaps[0]
@@ -143,8 +165,14 @@ mod tests {
         };
 
         let working_dir = std::env::current_dir().unwrap();
-        let gaps = verify_wiring_tests(&[test], &working_dir, None, CommandConfinement::default())
-            .unwrap();
+        let gaps = verify_wiring_tests(
+            &[test],
+            &working_dir,
+            None,
+            CommandConfinement::default(),
+            None,
+        )
+        .unwrap();
 
         assert_eq!(gaps.len(), 1);
         assert!(gaps[0]
@@ -166,8 +194,14 @@ mod tests {
         };
 
         let working_dir = std::env::current_dir().unwrap();
-        let gaps = verify_wiring_tests(&[test], &working_dir, None, CommandConfinement::default())
-            .unwrap();
+        let gaps = verify_wiring_tests(
+            &[test],
+            &working_dir,
+            None,
+            CommandConfinement::default(),
+            None,
+        )
+        .unwrap();
 
         assert_eq!(gaps.len(), 1);
         assert!(gaps[0].description.contains("stderr was not empty"));
