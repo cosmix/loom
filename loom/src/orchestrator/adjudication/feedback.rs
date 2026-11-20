@@ -87,14 +87,18 @@ pub const EVIDENCE_ACTION: &str =
 /// A contract dispute never asks the agent to edit the frozen file: that edit
 /// is forbidden, and a replacement travels with the dispute instead.
 pub fn evidence_action(stage_id: &str, kind: &DisputeKind) -> String {
-    let DisputeKind::Contract { contract_id, .. } = kind else {
+    let DisputeKind::Contract { contract_ids, .. } = kind else {
         return EVIDENCE_ACTION.to_string();
     };
+    let contracts: String = contract_ids
+        .iter()
+        .map(|id| format!(" --contract {id}"))
+        .collect();
     format!(
-        "answer these in your next dispute. Never edit a frozen file. If the contract must \
-         change, re-file `loom stage dispute-contract {stage_id} --contract {contract_id} \
-         --replacement <path> --reason \"...\"` with a complete replacement; an earlier \
-         replacement is not carried over."
+        "answer these in your next dispute. Never edit a frozen file. If a contract must \
+         change, re-file `loom stage dispute-contract {stage_id}{contracts} \
+         --replacement <frozen-file>=<path> --reason \"...\"` with one whole replacement \
+         per frozen file that changes; an earlier replacement is not carried over."
     )
 }
 

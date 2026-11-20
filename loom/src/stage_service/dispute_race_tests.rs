@@ -89,11 +89,17 @@ fn try_file(work: &Path, id: &str) -> Result<Response> {
     )
 }
 
-/// A plan v2 stage with a frozen contract, the fewest facts a kind admits.
+/// A plan v2 stage with a frozen contract and a worktree (`.worktrees/<id>`,
+/// holding no frozen file), the fewest facts a kind admits.
 pub(super) fn setup_contract(id: &str) -> (tempfile::TempDir, std::path::PathBuf) {
     let (temp, work) = setup(id);
+    std::fs::create_dir_all(temp.path().join(".worktrees").join(id)).unwrap();
     update_stage(id, &work, |stage| {
         stage.plan_version = 2;
+        stage.contracts = vec![crate::plan::schema::ContractSpec {
+            id: CONTRACT.into(),
+            ..crate::verify::contracts::test_support::contract()
+        }];
         Ok(())
     })
     .unwrap();
@@ -120,9 +126,8 @@ pub(super) fn setup_contract(id: &str) -> (tempfile::TempDir, std::path::PathBuf
 
 fn contract_kind() -> DisputeKind {
     DisputeKind::Contract {
-        contract_id: CONTRACT.into(),
-        replacement: None,
-        replacement_base_sha256: None,
+        contract_ids: vec![CONTRACT.into()],
+        replacements: Vec::new(),
     }
 }
 

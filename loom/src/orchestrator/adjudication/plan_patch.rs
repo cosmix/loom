@@ -1,15 +1,15 @@
 //! Normalising an adjudicator's `plan_patch` into [`AmendmentRequest`]s.
 //!
-//! A criterion verdict's canonical `plan_patch` is
+//! A criterion or contract-rulings verdict's canonical `plan_patch` is
 //! `{"field": ..., "patches": [{"op", "index", "value"}, ...], "reason": ...}`:
-//! one dispute names every failing criterion, so one verdict may amend several
-//! entries of one list. [`normalize`] also reads the single nested
-//! `{"field", "patch": {...}}` shape and the FLAT `{"field", "op", "index",
-//! "value"}` shape three adjudicator sessions emitted when the prompt named
-//! the shape only as "AmendmentRequest JSON", a Rust type the model cannot
-//! see; `verdict.rs` accepts all three at record time and records `patches`.
-//!
-//! A contract verdict keeps the single `patch` (see [`decode_patch`]).
+//! one dispute names every failing criterion or contract, so one verdict may
+//! amend several entries of one list. [`normalize`] also reads the single
+//! nested `{"field", "patch": {...}}` shape and the FLAT `{"field", "op",
+//! "index", "value"}` shape three adjudicator sessions emitted when the prompt
+//! named the shape only as "AmendmentRequest JSON", a Rust type the model
+//! cannot see; `verdict.rs` and `verdict_contract.rs` accept all three at
+//! record time and record `patches`. Which field a dispute may amend is the
+//! caller's check.
 
 use anyhow::Result;
 use serde_json::{Map, Value};
@@ -60,9 +60,10 @@ pub(super) fn normalize(
         Some("acceptance") => AmendmentField::Acceptance,
         Some("wiring") => AmendmentField::Wiring,
         Some("wiring-tests" | "wiring_tests") => AmendmentField::WiringTests,
+        Some("contracts") => AmendmentField::Contracts,
         Some(other) => {
             return Err(format!(
-                "plan_patch field '{other}' must be acceptance|wiring|wiring-tests"
+                "plan_patch field '{other}' must be acceptance|wiring|wiring-tests|contracts"
             ))
         }
         None => return Err("plan_patch missing 'field' string".to_string()),
@@ -97,8 +98,8 @@ pub(super) fn duplicate_index(patches: &[AmendmentPatch]) -> Option<usize> {
 }
 
 /// Decode the single patch and reason of `inner`, in the nested or flat
-/// shape, leaving its `field` to the caller: a contract dispute amends
-/// `contracts` with exactly one patch.
+/// shape, leaving its `field` to the caller (a freeze-refusal patch entry
+/// names its own).
 pub(super) fn decode_patch(inner: &Value) -> Result<(AmendmentPatch, Option<String>), String> {
     let patch: AmendmentPatch = if let Some(patch_obj) = inner.get("patch") {
         serde_json::from_value(patch_obj.clone())
@@ -143,17 +144,6 @@ pub(super) fn canonical_patches_inner(
 ) -> Value {
     let patches = serde_json::to_value(patches).expect("AmendmentPatch always serializes");
     canonical(field, "patches", patches, reason)
-}
-
-/// The canonical single-patch `plan_patch`, `{"field", "patch": {...},
-/// "reason"}`, a contract verdict records.
-pub(super) fn canonical_inner(
-    field: AmendmentField,
-    patch: &AmendmentPatch,
-    reason: Option<&str>,
-) -> Value {
-    let patch = serde_json::to_value(patch).expect("AmendmentPatch always serializes");
-    canonical(field, "patch", patch, reason)
 }
 
 fn canonical(field: AmendmentField, key: &str, patch: Value, reason: Option<&str>) -> Value {

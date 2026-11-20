@@ -80,6 +80,7 @@ blocked 'loom check integration-verify > o'
 blocked 'loom check integration-verify' true
 blocked 'loom check integration-verify' string
 blocked 'loom stage dispute-contract s --contract c --reason r' true
+blocked 'loom stage dispute-contract s --contract a --contract b --reason r | head'
 blocked 'loom stage commit s -m x 2>&1 | tail -3 | rg x'
 blocked 'loom stage commit s -m x | tail -3 > f'
 blocked 'loom stage commit s -m x | tail -n 3 > f'

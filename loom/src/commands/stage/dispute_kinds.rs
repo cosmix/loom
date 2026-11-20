@@ -1,6 +1,6 @@
 //! `loom stage dispute-findings`, `dispute-contract`, `dispute-integrity` and
 //! `dispute-criteria --field impact-tests` (DESIGN D15): a plan v2 stage
-//! disputes review findings, a frozen contract, test-integrity events or
+//! disputes review findings, frozen contracts, test-integrity events or
 //! failing impact-selected tests, one request for the whole batch.
 //!
 //! The client snapshots the disputed findings or events into the request; the
@@ -11,15 +11,19 @@
 //! `dispute-criteria` uses (`dispute_transport.rs`).
 
 use anyhow::{bail, Context, Result};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use super::dispute_transport::{send, Dispute};
 use super::review_status::stage_worktree_and_target;
 use crate::fs::safe_read::read_bounded;
 use crate::fs::stage_request::StageRequest;
-use crate::models::dispute::{select_events, select_findings, DisputeKind, MAX_REPLACEMENT_BYTES};
+use crate::models::dispute::{
+    select_events, select_findings, DisputeKind, FileReplacement, MAX_REPLACEMENT_BYTES,
+};
 use crate::relay::emit::{mode, EnvSnapshot, StdSink};
 use crate::relay::{new_request_id, RequestKind, Ticket, MAX_TICKET_BYTES};
+use crate::verify::contracts::normalize;
 use crate::verify::contracts::site::stage_site;
 use crate::verify::integrity::current_events;
 use crate::verify::review::store::open_findings;
@@ -30,11 +34,11 @@ use crate::verify::transitions::load_stage;
 pub enum DisputeTarget {
     /// Open review finding ids, own or carried.
     Findings(Vec<String>),
-    /// A frozen contract's id, and the file proposed in place of its frozen
-    /// content.
+    /// Frozen contract ids, and `<frozen-file>=<path>` values naming the file
+    /// proposed in place of each replaced frozen file.
     Contract {
-        contract_id: String,
-        replacement: Option<PathBuf>,
+        contract_ids: Vec<String>,
+        replacements: Vec<String>,
     },
     /// Current test-integrity event ids.
     Integrity(Vec<String>),
@@ -76,18 +80,12 @@ fn snapshot(work_dir: &Path, stage_id: &str, target: DisputeTarget) -> Result<Di
             })
         }
         DisputeTarget::Contract {
-            contract_id,
-            replacement,
-        } => {
-            let replacement = replacement
-                .map(|path| read_replacement(work_dir, stage_id, &path))
-                .transpose()?;
-            Ok(DisputeKind::Contract {
-                contract_id,
-                replacement,
-                replacement_base_sha256: None,
-            })
-        }
+            contract_ids,
+            replacements,
+        } => Ok(DisputeKind::Contract {
+            contract_ids,
+            replacements: read_replacements(work_dir, stage_id, &replacements)?,
+        }),
         DisputeTarget::Integrity(event_ids) => {
             let stage = load_stage(stage_id, work_dir)?;
             let (worktree, target) = stage_worktree_and_target(work_dir, &stage)?;
@@ -105,6 +103,66 @@ fn snapshot(work_dir: &Path, stage_id: &str, target: DisputeTarget) -> Result<Di
     }
 }
 
+/// The replacements `values` name, each `<frozen-file>=<path>`. A value
+/// without `=`, with an empty side, or naming a frozen file a second time is
+/// refused. The frozen file is kept in the freeze record's path form.
+fn read_replacements(
+    work_dir: &Path,
+    stage_id: &str,
+    values: &[String],
+) -> Result<Vec<FileReplacement>> {
+    let mut named = HashSet::new();
+    let mut parsed = Vec::with_capacity(values.len());
+    for value in values {
+        let (file, path) = parse_replacement(value)?;
+        if !named.insert(file.clone()) {
+            bail!(
+                "--replacement names the frozen file '{file}' twice: file one replacement per file"
+            );
+        }
+        parsed.push((file, Path::new(path)));
+    }
+    if parsed.is_empty() {
+        return Ok(Vec::new());
+    }
+    let worktree_root = stage_worktree_root(work_dir, stage_id)?;
+    parsed
+        .into_iter()
+        .map(|(file, path)| {
+            Ok(FileReplacement {
+                content: read_replacement(&worktree_root, path)?,
+                file,
+                base_sha256: None,
+            })
+        })
+        .collect()
+}
+
+/// The canonical root of the stage's worktree. A session reaches the state
+/// directory through its worktree's `.loom/work` symlink; the repository root
+/// is the one the resolved path names.
+fn stage_worktree_root(work_dir: &Path, stage_id: &str) -> Result<PathBuf> {
+    let stage = load_stage(stage_id, work_dir)?;
+    let state_dir = work_dir
+        .canonicalize()
+        .with_context(|| format!("cannot resolve {}", work_dir.display()))?;
+    Ok(stage_site(&state_dir, &stage)?.0)
+}
+
+/// `<frozen-file>=<path>` split at its first `=`, the frozen file normalized.
+fn parse_replacement(value: &str) -> Result<(String, &str)> {
+    let Some((file, path)) = value.split_once('=') else {
+        bail!("--replacement '{value}' is not `<frozen-file>=<path>`");
+    };
+    let file = normalize(file.trim());
+    if file.is_empty() || path.is_empty() {
+        bail!(
+            "--replacement '{value}' needs both a frozen file and a path: `<frozen-file>=<path>`"
+        );
+    }
+    Ok((file, path))
+}
+
 /// The replacement file at `path`: UTF-8 text of at most
 /// [`MAX_REPLACEMENT_BYTES`], outside the stage worktree, read without
 /// following a symlink at its last component.
@@ -112,18 +170,11 @@ fn snapshot(work_dir: &Path, stage_id: &str, target: DisputeTarget) -> Result<Di
 /// A path that canonicalizes into the worktree is refused whatever it names
 /// (`./` spellings and symlinks resolve first): the replacement is the daemon's
 /// to write there on an accept, and the agent never edits a frozen file.
-fn read_replacement(work_dir: &Path, stage_id: &str, path: &Path) -> Result<String> {
+fn read_replacement(worktree_root: &Path, path: &Path) -> Result<String> {
     let resolved = path
         .canonicalize()
         .with_context(|| format!("cannot read the replacement file {}", path.display()))?;
-    let stage = load_stage(stage_id, work_dir)?;
-    // A session reaches the state directory through its worktree's `.loom/work`
-    // symlink; the repository root is the one the resolved path names.
-    let state_dir = work_dir
-        .canonicalize()
-        .with_context(|| format!("cannot resolve {}", work_dir.display()))?;
-    let (worktree_root, _) = stage_site(&state_dir, &stage)?;
-    if resolved.starts_with(&worktree_root) {
+    if resolved.starts_with(worktree_root) {
         bail!(
             "the replacement {} lies inside the stage worktree: copy the frozen file to \
              $LOOM_SCRATCH_DIR, edit the copy there and name that copy",
@@ -151,22 +202,22 @@ fn read_replacement(work_dir: &Path, stage_id: &str, path: &Path) -> Result<Stri
         .with_context(|| format!("the replacement {} is not valid UTF-8", path.display()))
 }
 
-/// Refuse a dispute whose replacement fits [`MAX_REPLACEMENT_BYTES`] but whose
-/// encoded ticket does not: JSON escaping expands a control character to six
-/// bytes. Measures the bytes `RelayContext::emit` checks, before any ticket is
+/// Refuse a dispute whose replacements each fit [`MAX_REPLACEMENT_BYTES`] but
+/// whose encoded ticket does not: several replacements share one ticket, and
+/// JSON escaping expands a control character to six bytes. Measures the bytes
+/// `RelayContext::emit` checks for the whole kind, before any ticket is
 /// written.
 fn ensure_fits_ticket(
     kind: &DisputeKind,
     reason: &str,
     evidence_commit: Option<&String>,
 ) -> Result<()> {
-    let DisputeKind::Contract {
-        replacement: Some(replacement),
-        ..
-    } = kind
-    else {
+    let DisputeKind::Contract { replacements, .. } = kind else {
         return Ok(());
     };
+    if replacements.is_empty() {
+        return Ok(());
+    }
     let request = StageRequest::FileDispute {
         kind: kind.clone(),
         reason: reason.to_string(),
@@ -181,11 +232,12 @@ fn ensure_fits_ticket(
     };
     let encoded = ticket.encode().len();
     if encoded > MAX_TICKET_BYTES {
+        let total: usize = replacements.iter().map(|r| r.content.len()).sum();
         bail!(
-            "the replacement is {} bytes (limit {MAX_REPLACEMENT_BYTES}), but the dispute encodes \
-             to {encoded} bytes, over the {MAX_TICKET_BYTES}-byte request limit (control \
-             characters and quotes expand when encoded): shrink the replacement",
-            replacement.len()
+            "the replacements are {total} bytes in all (limit {MAX_REPLACEMENT_BYTES} each), but \
+             the dispute encodes to {encoded} bytes, over the {MAX_TICKET_BYTES}-byte request \
+             limit (control characters and quotes expand when encoded): file the replacements \
+             in separate filings, one file each, or shrink the replacement"
         );
     }
     Ok(())

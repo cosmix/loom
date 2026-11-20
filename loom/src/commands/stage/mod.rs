@@ -5,7 +5,7 @@ pub(crate) mod acceptance_runner;
 mod adjudicate;
 pub(crate) mod admin_hmac;
 pub(crate) mod admin_proof;
-mod amend;
+pub(crate) mod amend;
 pub mod commit;
 pub mod complete;
 pub(crate) mod contracts;
@@ -34,13 +34,14 @@ mod state;
 pub(crate) mod verify_host;
 
 #[cfg(test)]
+mod amend_contract_tests;
+#[cfg(test)]
 mod native_gate_contract_tests;
 #[cfg(test)]
 mod tests;
 
 // Re-export public API
 pub use adjudicate::{adjudicate, record_verdict, AdjudicateOutcome};
-pub use amend::amend;
 pub use complete::complete;
 pub use contracts::{
     freeze as contracts_freeze, restore as contracts_restore, show as contracts_show,

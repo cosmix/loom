@@ -1,15 +1,18 @@
-//! What a contract dispute's briefing adds when the dispute carries a
-//! replacement for the frozen file. The judge writes no files and runs no
-//! replacement: it reads one against the contract's scenario and rejects
-//! clause, and completion runs the accepted file before the stage can finish.
+//! What a contract dispute's briefing adds when the dispute carries
+//! replacements for frozen files. The judge writes no files and runs no
+//! replacement: it reads one against the scenario and rejects clause of the
+//! contracts in its file, and completion runs the accepted file before the
+//! stage can finish.
 
 use super::super::diff::unified_diff;
 use super::super::{fenced, KindPromptInput};
-use crate::models::dispute::DisputeKind;
+use crate::models::dispute::{DisputeKind, FileReplacement};
 use crate::plan::schema::ContractSpec;
+use crate::verify::contracts::normalize;
 
 /// The evidence headings whose fences the truncation pass halves
-/// (`truncate.rs`), next to the other contract-file sections.
+/// (`truncate.rs`), next to the other contract-file sections. Each replaced
+/// file has a section of each; a line under the heading names the file.
 pub(crate) const REPLACEMENT_HEADING: &str = "## Proposed replacement";
 pub(crate) const REPLACEMENT_DIFF_HEADING: &str = "## Diff (frozen vs replacement)";
 
@@ -18,60 +21,68 @@ pub(crate) const REPLACEMENT_DIFF_HEADING: &str = "## Diff (frozen vs replacemen
 /// produce.
 pub(super) const NEVER_EDIT_SENTENCE: &str = "Never ask the agent to edit a frozen file; ask only for evidence it can produce read-only, or for a revised `--replacement`.\n\n";
 
-/// The replacement text the dispute carries.
-pub(super) fn proposed<'a>(input: &'a KindPromptInput<'_>) -> Option<&'a str> {
+/// The replacements the dispute carries, one per frozen file.
+pub(super) fn proposed<'a>(input: &'a KindPromptInput<'_>) -> &'a [FileReplacement] {
     match &input.request.kind {
-        DisputeKind::Contract { replacement, .. } => replacement.as_deref(),
-        _ => None,
+        DisputeKind::Contract { replacements, .. } => replacements,
+        _ => &[],
     }
 }
 
-/// Appended to the first step: the command runs the frozen file, not the
-/// replacement, so its result is no evidence for the replacement.
+/// Appended to the first step: the commands run the frozen files, not the
+/// replacements, so their results are no evidence for a replacement.
 pub(super) fn first_step_note(has_replacement: bool) -> &'static str {
     if has_replacement {
-        "The command above runs the frozen content; the replacement has not been run. Judge the replacement by reading it against the scenario and rejects clause. Completion runs it after an accept.\n\n"
+        "The commands above run the frozen content; a replacement has not been run. Judge each replacement by reading it against the scenario and rejects clause of the contracts in its file. Completion runs it after an accept.\n\n"
     } else {
         ""
     }
 }
 
-/// Appended to the accept bullet of the verdict semantics.
-pub(super) fn accept_note(has_replacement: bool) -> &'static str {
-    if has_replacement {
-        "  With a proposed replacement, accept means the replacement still covers the\n  scenario and rejects the stated plausible wrong implementation. An accept\n  writes the replacement into the worktree, then re-freezes.\n"
-    } else {
-        ""
-    }
+/// The ids of the contracts whose file is `file`.
+pub(super) fn contracts_in<'a>(
+    file: &str,
+    specs: &[(&'a str, Option<&ContractSpec>)],
+) -> Vec<&'a str> {
+    let file = normalize(file);
+    specs
+        .iter()
+        .filter(|(_, spec)| spec.is_some_and(|spec| normalize(&spec.file) == file))
+        .map(|(id, _)| *id)
+        .collect()
 }
 
-/// What the citation sentence lists besides the contract and the diff.
-pub(super) fn citable(has_replacement: bool) -> &'static str {
-    if has_replacement {
-        "proposed replacement, "
-    } else {
-        ""
-    }
-}
-
-/// The `## Proposed replacement` section and the frozen -> replacement diff;
-/// empty without a replacement.
+/// Per replaced file, a `## Proposed replacement` section and a frozen ->
+/// replacement diff, each naming the file and the disputed contracts that live
+/// in it; empty without replacements. `frozen` reads a frozen file's content.
 pub(super) fn sections(
     input: &KindPromptInput<'_>,
-    contract: Option<&ContractSpec>,
-    frozen: &Result<String, String>,
+    specs: &[(&str, Option<&ContractSpec>)],
+    frozen: impl Fn(&str) -> Result<String, String>,
 ) -> String {
-    let Some(text) = proposed(input) else {
-        return String::new();
-    };
-    let mut s = format!("{REPLACEMENT_HEADING}\n\n");
-    s.push_str(&fenced("text", text));
-    s.push_str(&format!("{REPLACEMENT_DIFF_HEADING}\n\n"));
-    match (frozen, contract) {
-        (Ok(before), Some(contract)) => {
-            s.push_str(&fenced("diff", &unified_diff(before, text, &contract.file)))
+    let mut s = String::new();
+    for replacement in proposed(input) {
+        let file = &replacement.file;
+        let ids = contracts_in(file, specs);
+        let owners = if ids.is_empty() {
+            "no disputed contract (a harness or support file)".to_string()
+        } else {
+            format!("contracts: {}", ids.join(", "))
+        };
+        s.push_str(&format!(
+            "{REPLACEMENT_HEADING}\n\nFile: `{file}` ({owners})\n\n"
+        ));
+        s.push_str(&fenced("text", &replacement.content));
+        s.push_str(&format!("{REPLACEMENT_DIFF_HEADING}\n\nFile: `{file}`\n\n"));
+        match frozen(file) {
+            Ok(before) => s.push_str(&fenced(
+                "diff",
+                &unified_diff(&before, &replacement.content, file),
+            )),
+            Err(_) => {
+                s.push_str("(diff unavailable because the frozen content is unavailable)\n\n")
+            }
         }
-        _ => s.push_str("(diff unavailable because the frozen content is unavailable)\n\n"),
     }
     s
 }

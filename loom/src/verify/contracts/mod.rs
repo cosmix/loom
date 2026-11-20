@@ -7,7 +7,8 @@
 //! session changed,
 //! [`refusal`] keeps a refused freeze until the daemon files it as a
 //! `freeze-refusal` dispute for an adjudicator, [`completion`] checks the frozen contracts when the
-//! stage completes, [`run_dir`] resolves where and how a contract runs. The
+//! stage completes, [`drift`] finds frozen files the worktree changed (the completion check and
+//! contract-dispute admission both refuse on it), [`run_dir`] resolves where and how a contract runs. The
 //! helpers here are what the freeze CLI, the daemon's freeze handler and the
 //! completion check share, so the three agree on which adapter runs a contract
 //! and which paths a contract session may touch. [`collection`] derives the
@@ -18,6 +19,9 @@ pub mod changes;
 pub mod choices;
 pub mod collection;
 pub mod completion;
+pub mod drift;
+#[cfg(test)]
+mod drift_contract_tests;
 pub(crate) mod failed_builds;
 pub mod format_gate;
 pub(crate) mod freeze;

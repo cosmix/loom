@@ -2,7 +2,7 @@
 
 use super::*;
 use crate::fs::work_dir::WorkDir;
-use crate::models::dispute::DisputeRequest;
+use crate::models::dispute::{DisputeRequest, FileReplacement};
 use crate::models::stage::Stage;
 use crate::orchestrator::adjudication::prompt::truncate::truncate_to_budget;
 use crate::orchestrator::adjudication::prompt::{ExecutionSite, MAX_PROMPT_BYTES};
@@ -16,9 +16,8 @@ fn request() -> DisputeRequest {
         id: 4,
         stage_id: "demo".to_string(),
         kind: DisputeKind::Contract {
-            contract_id: "rejects-x".to_string(),
-            replacement: None,
-            replacement_base_sha256: None,
+            contract_ids: vec!["rejects-x".to_string()],
+            replacements: Vec::new(),
         },
         reason: "the new assertion still rejects x".to_string(),
         evidence_commit: None,
@@ -129,10 +128,7 @@ fn missing_worktree_leaves_a_readable_briefing() {
 
     let prompt = build(&input);
 
-    assert!(prompt
-        .evidence
-        .contains("(current file unavailable: stage worktree missing)"));
-    assert!(prompt.evidence.contains("(diff unavailable"));
+    assert!(prompt.evidence.contains("(freeze record unreadable:"));
     assert!(prompt.instructions.contains("stage worktree unavailable"));
 }
 
@@ -290,20 +286,28 @@ pub(super) fn frozen_set_of(fx: &ContractFixture) -> String {
     prompt.evidence[start..].to_string()
 }
 
-/// A contract file the cap lets the briefing quote three times must not push
-/// the frozen-set section off the end of the prompt.
+/// A contract file the cap lets the briefing quote three times (frozen,
+/// replacement, diff) must not push the frozen-set section off the end of the
+/// prompt.
 #[test]
 fn a_large_contract_file_leaves_the_frozen_set_section_after_truncation() {
-    let fx = contract_fixture();
+    let mut fx = contract_fixture();
     freeze_then_change_support_files(&fx);
     let frozen: String = (0..2500)
         .map(|n| format!("assert!(case_{n}());\n"))
         .collect();
-    let current = frozen.replace("case_1250()", "other()");
-    let file = &fx.stage.contracts[0].file;
-    let frozen_copy = store::frozen_file_path(&fx.work_dir, "demo", file);
+    let replacement = frozen.replace("case_1250()", "other()");
+    let file = fx.stage.contracts[0].file.clone();
+    let frozen_copy = store::frozen_file_path(&fx.work_dir, "demo", &file);
     fs::write(frozen_copy, &frozen).unwrap();
-    fs::write(fx.site.path.join(file), &current).unwrap();
+    fx.request.kind = DisputeKind::Contract {
+        contract_ids: vec!["rejects-x".to_string()],
+        replacements: vec![FileReplacement {
+            file,
+            content: replacement,
+            base_sha256: None,
+        }],
+    };
     let mut prompt = build(&input_of(&fx));
     assert!(
         prompt.total_len() > MAX_PROMPT_BYTES,

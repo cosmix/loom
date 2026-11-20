@@ -7,19 +7,17 @@
 //!   `defer` naming a `target_stage`; or `needs-more-evidence`. Whether the
 //!   target may take the finding is checked when the verdict is applied, since
 //!   stages move on meanwhile.
-//! - contract, integrity and impact-tests: `accept`, `reject` or
-//!   `needs-more-evidence`. A contract `accept` may carry a `plan_patch` on
-//!   `contracts`; an empty `plan_patch` object stands for none, and the only
-//!   `plan_patch` an integrity or impact-test `accept` takes.
+//! - integrity and impact-tests: `accept`, `reject` or `needs-more-evidence`;
+//!   an `accept` records an empty `plan_patch` object.
+//! - contract: `needs-more-evidence` here; its `contract-rulings` need the
+//!   stage and its freeze record (`verdict_contract.rs`).
 
 use serde::Deserialize;
 use serde_json::{Map, Value};
 
 use crate::models::dispute::{Citation, DisputeKind, DisputeVerdict, FindingRuling, PlanPatch};
-use crate::plan::amendment::AmendmentField;
 use crate::verify::review::store::RulingKind;
 
-use super::plan_patch;
 use super::verdict::{
     grounding, needs_more_evidence, parse_citations, validate_needs_more, validate_reject,
     verdict_tag, ValidationOutcome,
@@ -28,7 +26,7 @@ use super::verdict::{
 pub(super) fn classify_for_kind(json: &Value, kind: &DisputeKind) -> ValidationOutcome {
     let (name, allowed) = match kind {
         DisputeKind::Findings { .. } => ("findings", "rulings|needs-more-evidence"),
-        DisputeKind::Contract { .. } => ("contract", "accept|reject|needs-more-evidence"),
+        DisputeKind::Contract { .. } => ("contract", "contract-rulings|needs-more-evidence"),
         DisputeKind::Integrity { .. } => ("integrity", "accept|reject|needs-more-evidence"),
         DisputeKind::ImpactTests { .. } => ("impact-tests", "accept|reject|needs-more-evidence"),
         DisputeKind::Criterion { .. } => ("criterion", "accept|reject|needs-more-evidence"),
@@ -42,7 +40,8 @@ pub(super) fn classify_for_kind(json: &Value, kind: &DisputeKind) -> ValidationO
         ));
     };
     match (kind, tag.as_str()) {
-        // Its rules need the stage and its worktree: `verdict::parse_and_validate_in`.
+        // Its rules need the stage and its worktree: `verdict::parse_and_validate_in`;
+        // so do a contract dispute's, below, past its needs-more-evidence.
         (DisputeKind::FreezeRefusal { .. }, _) => needs_more_evidence(
             "A freeze-refusal verdict is checked against its stage and worktree when \
              `loom stage adjudicate` records it.",
@@ -51,15 +50,15 @@ pub(super) fn classify_for_kind(json: &Value, kind: &DisputeKind) -> ValidationO
         (DisputeKind::Findings { finding_ids, .. }, "rulings") => {
             validate_rulings(json, finding_ids)
         }
-        (
-            DisputeKind::Contract { .. }
-            | DisputeKind::Integrity { .. }
-            | DisputeKind::ImpactTests { .. },
-            "reject",
-        ) => validate_reject(json),
-        (DisputeKind::Contract { .. }, "accept") => validate_accept(json, contracts_patch(json)),
+        (DisputeKind::Contract { .. }, _) => needs_more_evidence(
+            "A contract dispute's contract-rulings verdict is checked against its stage and \
+             freeze record when `loom stage adjudicate` records it.",
+        ),
+        (DisputeKind::Integrity { .. } | DisputeKind::ImpactTests { .. }, "reject") => {
+            validate_reject(json)
+        }
         (DisputeKind::Integrity { .. } | DisputeKind::ImpactTests { .. }, "accept") => {
-            validate_accept(json, Ok(no_patch()))
+            validate_accept(json)
         }
         (_, other) => needs_more_evidence(format!(
             "Adjudicator emitted verdict '{other}', which a {name} dispute does not take. \
@@ -68,45 +67,16 @@ pub(super) fn classify_for_kind(json: &Value, kind: &DisputeKind) -> ValidationO
     }
 }
 
-/// An `accept` grounded like a criterion one, carrying `patch`.
-fn validate_accept(json: &Value, patch: Result<Value, String>) -> ValidationOutcome {
-    let (reasoning, citations) = match grounding(json, "Accept") {
-        Ok(grounded) => grounded,
-        Err(coerced) => return coerced,
-    };
-    match patch {
-        Ok(inner) => ValidationOutcome::Verdict(DisputeVerdict::Accept {
-            plan_patch: PlanPatch { inner },
+/// An `accept` grounded like a criterion one, amending nothing.
+fn validate_accept(json: &Value) -> ValidationOutcome {
+    match grounding(json, "Accept") {
+        Ok((reasoning, citations)) => ValidationOutcome::Verdict(DisputeVerdict::Accept {
+            plan_patch: PlanPatch { inner: no_patch() },
             citations,
             reasoning,
         }),
-        Err(msg) => needs_more_evidence(format!(
-            "Accept verdict 'plan_patch' is malformed: {msg}. Omit it, or re-emit it as: \
-             {{\"field\": \"contracts\", \"patch\": {{\"op\": \"replace\"|\"insert\"|\"delete\", \
-             \"index\": <0-based int>, \"value\": \"<contract YAML; omit for delete>\"}}, \
-             \"reason\": \"<why the contract is wrong>\"}}"
-        )),
+        Err(coerced) => coerced,
     }
-}
-
-/// A contract `accept`'s optional `plan_patch`, canonicalised to the nested
-/// shape; absent or `null` is no patch.
-fn contracts_patch(json: &Value) -> Result<Value, String> {
-    let raw = match json.get("plan_patch") {
-        None | Some(Value::Null) => return Ok(no_patch()),
-        Some(raw) => raw,
-    };
-    match raw.get("field").and_then(Value::as_str) {
-        Some("contracts") => {}
-        Some(other) => return Err(format!("plan_patch field '{other}' must be contracts")),
-        None => return Err("plan_patch missing 'field' string".to_string()),
-    }
-    let (patch, reason) = plan_patch::decode_patch(raw)?;
-    Ok(plan_patch::canonical_inner(
-        AmendmentField::Contracts,
-        &patch,
-        reason.as_deref(),
-    ))
 }
 
 /// The `plan_patch` of an `accept` that amends nothing.

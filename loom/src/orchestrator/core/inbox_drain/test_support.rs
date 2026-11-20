@@ -275,7 +275,7 @@ pub(super) fn payload_for(kind: RequestKind) -> Value {
         }),
         RequestKind::FileDispute => json!({
             "request": "file_dispute",
-            "kind": {"kind": "contract", "contract_id": CONTRACT_ID},
+            "kind": {"kind": "contract", "contract_ids": [CONTRACT_ID]},
             "reason": "the contract asserts the wrong error",
         }),
         RequestKind::Commit => json!({

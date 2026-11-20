@@ -76,11 +76,17 @@ fn frozen_contracts_block_names_contracts_and_commands() {
     assert!(content.contains("Never edit a frozen file"));
     assert!(content.contains("loom stage contracts show s1"));
     assert!(content.contains("loom stage contracts restore s1"));
-    assert!(content.contains("loom stage dispute-contract s1 --contract <contract-id>"));
+    assert!(content.contains(
+        "loom stage dispute-contract s1 --contract <contract-id> [--contract <contract-id> ...] \
+         --reason"
+    ));
+    assert!(content.contains("One filing names every contract with the same cause."));
+    assert!(content.contains("A filing is refused while a frozen file in the worktree is edited"));
 }
 
 /// The exact instruction, not just the flag: a signal that names `--replacement`
 /// but sends the agent to edit the frozen file in place would pass a bare grep.
+/// A replacement is the only way a frozen file changes.
 #[test]
 fn frozen_contracts_block_teaches_the_replacement_dispute() {
     let temp = tempfile::tempdir().unwrap();
@@ -88,10 +94,11 @@ fn frozen_contracts_block_teaches_the_replacement_dispute() {
     let content = render(&v2_stage(), temp.path());
 
     assert!(content.contains(
-        "- To change a frozen contract, copy the frozen file to `$LOOM_SCRATCH_DIR`, edit the \
-         copy there, run the stage's formatter check on it, and file `loom stage dispute-contract \
-         s1 --contract <contract-id> --replacement <path> --reason \"...\"`. On accept the \
-         daemon writes it into the worktree."
+        "- Every change to a frozen file travels as a replacement. Copy the frozen file to \
+         `$LOOM_SCRATCH_DIR`, edit the copy there, run the stage's formatter check on it, and \
+         file `loom stage dispute-contract s1 --contract <contract-id> --replacement \
+         <frozen-file>=<path> --reason \"...\"`, with one `--replacement` for each file. On \
+         accept the daemon writes it into the worktree."
     ));
 }
 

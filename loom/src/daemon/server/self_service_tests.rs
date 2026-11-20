@@ -34,9 +34,8 @@ fn file_dispute(session_id: &str) -> Request {
         stage_id: "build-api".to_string(),
         session_id: session_id.to_string(),
         kind: crate::models::dispute::DisputeKind::Contract {
-            contract_id: "rejects-x".to_string(),
-            replacement: None,
-            replacement_base_sha256: None,
+            contract_ids: vec!["rejects-x".to_string()],
+            replacements: Vec::new(),
         },
         reason: "r".to_string(),
         evidence_commit: None,

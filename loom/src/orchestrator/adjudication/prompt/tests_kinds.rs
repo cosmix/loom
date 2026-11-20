@@ -74,9 +74,8 @@ fn integrity_kind() -> DisputeKind {
 
 fn contract_kind() -> DisputeKind {
     DisputeKind::Contract {
-        contract_id: CONTRACT_ID.to_string(),
-        replacement: None,
-        replacement_base_sha256: None,
+        contract_ids: vec![CONTRACT_ID.to_string()],
+        replacements: Vec::new(),
     }
 }
 

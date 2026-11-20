@@ -1,6 +1,7 @@
 //! Tests for the completion contract check, over a runner that replays
 //! captured `cargo test` output instead of running anything.
 use super::*;
+use crate::utils::sha256_hex;
 use crate::verify::contracts::frozen_set::read_frozen_set;
 use crate::verify::contracts::store::{
     write_freeze, FrozenContract, FrozenFile, FREEZE_RECORD_VERSION,
@@ -117,10 +118,8 @@ fn completion_fails_when_frozen_contract_changed() {
 
     assert!(error.contains(CONTRACT_FILE), "{error}");
     assert!(error.contains("loom stage contracts restore s1"), "{error}");
-    assert!(
-        error.contains("loom stage dispute-contract s1 --contract <id> --reason ..."),
-        "{error}"
-    );
+    let dispute = "dispute-contract s1 --contract <id> --replacement <frozen-file>=<path>";
+    assert!(error.contains(dispute), "{error}");
 }
 
 #[test]

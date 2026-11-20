@@ -1,6 +1,8 @@
 //! What a freeze record says about one plan contract: the run directory the
 //! freeze ran it from and the spec completion and the readers run it with.
 
+use std::collections::BTreeMap;
+
 use super::normalize;
 use super::store::{FreezeRecord, FrozenContract};
 use crate::plan::schema::ContractSpec;
@@ -47,6 +49,42 @@ pub fn effective_contract(record: &FreezeRecord, spec: &ContractSpec) -> Contrac
         runner: spec.runner.clone().or_else(|| entry.adapter.clone()),
         ..spec.clone()
     }
+}
+
+/// The frozen file of contract `id`: the file `record` holds for it (from
+/// before any amendment, even when a retry finds the amendment applied), else
+/// the file `contracts` (the stage's list) names.
+pub fn contract_file(
+    record: Option<&FreezeRecord>,
+    contracts: &[ContractSpec],
+    id: &str,
+) -> Option<String> {
+    record
+        .and_then(|record| record.contracts.iter().find(|entry| entry.id == id))
+        .and_then(|entry| entry.file.clone())
+        .or_else(|| {
+            contracts
+                .iter()
+                .find(|contract| contract.id == id)
+                .map(|contract| normalize(&contract.file))
+        })
+}
+
+/// Each of the stage's current `contracts` with its [`contract_file`]. A
+/// contract an accepted amendment deleted stays in the record but is not
+/// listed: dispute admission, verdict recording and the apply of a contract
+/// dispute share this map, so they agree on which contracts a file holds and
+/// which replaced file is a harness file.
+pub fn contract_files(
+    record: Option<&FreezeRecord>,
+    contracts: &[ContractSpec],
+) -> BTreeMap<String, String> {
+    contracts
+        .iter()
+        .filter_map(|spec| {
+            contract_file(record, contracts, &spec.id).map(|file| (spec.id.clone(), file))
+        })
+        .collect()
 }
 
 #[cfg(test)]

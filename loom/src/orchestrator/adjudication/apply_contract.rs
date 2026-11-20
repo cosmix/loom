@@ -1,23 +1,17 @@
-//! A contract dispute's verdicts (DESIGN D15), routed here by `apply_kinds.rs`.
+//! The re-freeze an accepted contract ruling ends with (DESIGN D15), driven
+//! by `apply_contract_rulings.rs`.
 //!
-//! `accept` means the frozen contract was wrong and the agent's edit is right:
-//! the verdict's optional `contracts` amendment is applied, the dispute's
-//! replacement file, when it carries one, is written into the worktree
-//! (`apply_contract_replacement.rs`), then the stage's whole frozen set (contract and harness files) is re-frozen at its current
-//! worktree content, deleted harness files dropped, and the disputed contract
-//! and every contract the record no longer describes get their files and run
-//! directories recorded (see `refrozen_contracts`). `reject` means the
-//! contract stands: the agent restores it and implements against it. Neither
-//! sends the stage to a human, except an amendment that hits the per-stage
-//! amendment cap, exactly as for a criterion dispute.
+//! The stage's whole frozen set (contract and harness files) is re-frozen at
+//! its current worktree content, deleted harness files dropped, and every
+//! accepted contract and every contract the record no longer describes get
+//! their files and run directories recorded (see `refrozen_contracts`).
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 use std::collections::BTreeSet;
 use std::path::Path;
 
-use crate::models::dispute::{DisputeKind, PlanPatch};
 use crate::models::stage::Stage;
-use crate::plan::amendment::{AmendmentField, AmendmentPatch, AmendmentRequest};
+use crate::plan::amendment::AmendmentPatch;
 use crate::plan::schema::ContractSpec;
 use crate::stage_service::contracts::Site;
 use crate::verify::contracts::changes::harness_files;
@@ -26,192 +20,46 @@ use crate::verify::contracts::run_dir::resolve_run;
 use crate::verify::contracts::store::{self as contract_store, FreezeRecord, RefrozenContract};
 use crate::verify::contracts::{normalize, resolve_adapter};
 
-use super::apply::amend_plan;
-use super::plan_patch;
-
 #[path = "apply_contract_replacement.rs"]
 mod replacement;
-pub(super) use replacement::Proposed;
+#[cfg(test)]
+pub(super) use replacement::FAIL_AFTER_WRITE;
+pub(super) use replacement::{check_writable, conflict, write};
 
-/// Apply an accepted contract dispute and return the feedback for the agent,
-/// or `None` when the amendment cap escalated the stage instead.
-///
-/// The re-freeze covers the stage's whole frozen set as the worktree holds it
-/// now (`frozen_set::read_frozen_set`): every contract file of the amended
-/// stage, every harness match listed afresh, and every path the record holds
-/// plus the disputed contract's file from before the amendment. A recorded or
-/// harness path deleted from the worktree leaves the freeze. The set derives
-/// from the stage, the record's paths and the worktree. The store publishes the
-/// new generation whole or not at all, so an interrupted re-freeze leaves the
-/// prior snapshot committed. A retry re-reads the worktree, so it freezes the
-/// bytes there at that time, not the bytes the interrupted attempt read.
-///
-/// A replacement the dispute carries is written first (see
-/// `apply_contract_replacement.rs`): the frozen file must still be the one the
-/// dispute was filed against, else nothing is applied and the stage goes to
-/// human review.
-pub(super) fn accept(
-    work_dir: &Path,
-    stage: &mut Stage,
-    dispute: u32,
-    kind: &DisputeKind,
-    plan_patch: &PlanPatch,
-) -> Result<Option<String>> {
-    let DisputeKind::Contract { contract_id, .. } = kind else {
-        bail!(
-            "dispute {dispute} of stage '{}' is not a contract dispute",
-            stage.id
-        );
-    };
-    let proposed = Proposed::of(kind);
-    if let Some(proposed) = &proposed {
-        if replacement::escalated_on_conflict(work_dir, stage, contract_id, dispute, proposed)? {
-            return Ok(None);
-        }
-    }
-    refreeze(
-        work_dir,
-        stage,
-        (dispute, contract_id),
-        plan_patch,
-        proposed.as_ref(),
-    )
+/// What a re-freeze froze: the paths and their bytes, and the paths dropped
+/// because the worktree no longer holds them.
+pub(super) struct Refrozen {
+    pub(super) files: Vec<(String, Vec<u8>)>,
+    pub(super) dropped: Vec<String>,
 }
 
-/// Amend, write the replacement and re-freeze the stage's whole frozen set.
-fn refreeze(
+/// Re-freeze the stage's whole frozen set as the worktree holds it now
+/// (`frozen_set::read_frozen_set`): every contract file of the (amended)
+/// stage, every harness match listed afresh, every path `record` holds, and
+/// `extra`, the accepted contracts' files from before the amendment. A
+/// recorded or harness path deleted from the worktree leaves the freeze. The
+/// store publishes the new generation whole or not at all, so an interrupted
+/// re-freeze leaves the prior snapshot committed; a retry re-reads the
+/// worktree. `accepted` are the contracts ruled accept, `amended` the ids the
+/// verdict's patches replaced or inserted.
+pub(super) fn refreeze(
     work_dir: &Path,
-    stage: &mut Stage,
-    (dispute, contract_id): (u32, &str),
-    plan_patch: &PlanPatch,
-    proposed: Option<&Proposed<'_>>,
-) -> Result<Option<String>> {
-    let mut recorded: Vec<String> = contract_file(stage, contract_id).into_iter().collect();
-    let request = contracts_amendment(&stage.id, plan_patch, dispute)?;
-    let amended = request
-        .as_ref()
-        .map(|request| amended_ids(&request.patch))
-        .unwrap_or_default();
-    if let Some(request) = request {
-        if !amend_plan(work_dir, stage, request)? {
-            return Ok(None);
-        }
-    }
-    let Some(record) = contract_store::load_freeze(work_dir, &stage.id)? else {
-        bail!("the contracts of stage '{}' were never frozen", stage.id);
-    };
-    recorded.extend(recorded_file(&record, contract_id));
-    recorded.extend(contract_file(stage, contract_id));
-    if recorded.is_empty() {
-        bail!(
-            "stage '{}' has no contract '{contract_id}' to re-freeze",
-            stage.id
-        );
-    }
+    stage: &Stage,
+    record: &FreezeRecord,
+    (accepted, amended): (&BTreeSet<String>, &BTreeSet<String>),
+    extra: &[String],
+    site: &Site,
+) -> Result<Refrozen> {
+    let mut recorded: Vec<String> = extra.to_vec();
     recorded.extend(record.files.iter().map(|file| file.path.clone()));
-    let site = super::locate_stage_site(work_dir, stage)?;
-    let written = replacement::write_proposed(proposed, &site, stage, contract_id)?;
-    let contracts = refrozen_contracts(stage, &record, contract_id, &amended, &site)?;
+    let contracts = refrozen_contracts(stage, record, accepted, amended, site)?;
     let harness = harness_files(&site.git, &site.working_dir, &stage.harness)?;
     let files = read_frozen_set(&site.working_dir, &stage.contracts, &harness, &recorded)?;
     let dropped = contract_store::refreeze_set(work_dir, &stage.id, &files, &contracts)?;
-    Ok(Some(accept_notice(
-        contract_id,
-        &files,
-        &dropped,
-        written.as_deref(),
-    )))
+    Ok(Refrozen { files, dropped })
 }
 
-/// The feedback for an accepted contract dispute: the paths re-frozen and
-/// the ones dropped from the freeze, and the file the daemon wrote from the
-/// dispute's replacement. That write is uncommitted: completion reads the
-/// worktree, but the branch keeps the old file until the agent commits it.
-fn accept_notice(
-    contract_id: &str,
-    files: &[(String, Vec<u8>)],
-    dropped: &[String],
-    written: Option<&str>,
-) -> String {
-    let paths: Vec<&str> = files.iter().map(|(path, _)| path.as_str()).collect();
-    let dropped = if dropped.is_empty() {
-        String::new()
-    } else {
-        format!(
-            " Dropped from the freeze, as the worktree no longer holds them: {}.",
-            dropped.join(", ")
-        )
-    };
-    let written = written.map_or_else(String::new, |file| {
-        format!(
-            "\n\nThe daemon wrote the accepted replacement to `{file}`. Stage it with \
-             `git add {file}` and commit it with your other files through `loom stage commit`."
-        )
-    });
-    format!(
-        "The adjudicator accepted your contract dispute on contract '{contract_id}': the \
-         stage's contract and harness files are re-frozen at their current content ({}).\
-         {dropped}{written}\n\nAction: implement until every contract passes.\n",
-        paths.join(", ")
-    )
-}
-
-/// The feedback for a rejected contract dispute. A disputed `replacement` was
-/// discarded and the worktree left alone, so there is nothing to restore.
-pub(super) fn reject_notice(
-    stage_id: &str,
-    contract_id: &str,
-    reasoning: &str,
-    replacement: bool,
-) -> String {
-    let action = if replacement {
-        "Your replacement was discarded; the worktree was not changed. Implement against the \
-         frozen contract."
-            .to_string()
-    } else {
-        format!(
-            "restore the frozen contract with `loom stage contracts restore {stage_id} \
-             --contract {contract_id}`, then implement against it."
-        )
-    };
-    format!(
-        "The adjudicator rejected your contract dispute: contract '{contract_id}' stands as \
-         frozen.\n\n### Reasoning\n\n{}\n\nAction: {action}\n",
-        reasoning.trim()
-    )
-}
-
-/// The frozen file of `contract_id`, as the freeze names it.
-fn contract_file(stage: &Stage, contract_id: &str) -> Option<String> {
-    stage
-        .contracts
-        .iter()
-        .find(|contract| contract.id == contract_id)
-        .map(|contract| normalize(&contract.file))
-}
-
-/// The `contracts` amendment an accept carries; an empty `plan_patch` object
-/// (see `verdict_kinds.rs`) carries none.
-fn contracts_amendment(
-    stage_id: &str,
-    plan_patch: &PlanPatch,
-    dispute: u32,
-) -> Result<Option<AmendmentRequest>> {
-    let inner = &plan_patch.inner;
-    if inner.is_null() || inner.as_object().is_some_and(|object| object.is_empty()) {
-        return Ok(None);
-    }
-    let (patch, reason) = plan_patch::decode_patch(inner).map_err(|msg| anyhow::anyhow!(msg))?;
-    Ok(Some(AmendmentRequest {
-        stage_id: stage_id.to_string(),
-        field: AmendmentField::Contracts,
-        patch,
-        reason,
-        dispute_id: Some(dispute.to_string()),
-    }))
-}
-
-/// The contracts the re-freeze records: the disputed one, and every one the
+/// The contracts the re-freeze records: the accepted ones, and every one the
 /// record does not describe as it now stands, because its id or file is not
 /// recorded together (an amendment inserted, renamed or re-pointed it) or its
 /// entry lacks a file or run directory. Each is resolved with the run
@@ -224,7 +72,7 @@ fn contracts_amendment(
 fn refrozen_contracts(
     stage: &Stage,
     record: &FreezeRecord,
-    contract_id: &str,
+    accepted: &BTreeSet<String>,
     amended: &BTreeSet<String>,
     site: &Site,
 ) -> Result<Vec<RefrozenContract>> {
@@ -232,7 +80,7 @@ fn refrozen_contracts(
     let mut refrozen = Vec::new();
     for contract in &stage.contracts {
         let file = normalize(&contract.file);
-        if contract.id != contract_id && is_recorded(record, &contract.id, &file) {
+        if !accepted.contains(&contract.id) && is_recorded(record, &contract.id, &file) {
             continue;
         }
         let effective = refrozen_spec(record, contract, amended);
@@ -286,17 +134,6 @@ fn is_recorded(record: &FreezeRecord, id: &str, file: &str) -> bool {
         .contracts
         .iter()
         .any(|entry| entry.id == id && entry.file.as_deref() == Some(file) && entry.cwd.is_some())
-}
-
-/// The file `record` holds for contract `id`. For the disputed contract it is
-/// the file from before the amendment, even when a retry finds the amendment
-/// already applied.
-fn recorded_file(record: &FreezeRecord, id: &str) -> Option<String> {
-    record
-        .contracts
-        .iter()
-        .find(|entry| entry.id == id)
-        .and_then(|entry| entry.file.clone())
 }
 
 #[cfg(test)]

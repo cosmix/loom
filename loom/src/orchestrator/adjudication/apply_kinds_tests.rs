@@ -8,11 +8,13 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
+use super::contract_verdict_fixtures::{contract_kind, rulings_verdict};
 use super::tests::{make_stage, reject_verdict, write_request, write_stage, write_verdict};
 use super::{feedback, AdjudicatorRegistry};
 use crate::fs::work_dir::WorkDir;
 use crate::models::dispute::{
-    Citation, DisputeKind, DisputeVerdict, FindingRuling, FindingSnapshot, PlanPatch,
+    Citation, ContractRulingKind, DisputeKind, DisputeVerdict, FileReplacement, FindingRuling,
+    FindingSnapshot, PlanPatch,
 };
 use crate::models::stage::{Stage, StageStatus, StageType};
 use crate::utils::sha256_hex;
@@ -218,18 +220,25 @@ fn frozen_contract_fixture() -> (TempDir, PathBuf, PathBuf) {
 #[test]
 fn contract_accept_refreezes_current_content() {
     let (_tmp, work, worktree) = frozen_contract_fixture();
-    let edited: &[u8] = b"#[test]\nfn rejects_x() { assert!(reject(\"x\")); }\n";
-    std::fs::write(worktree.join(CONTRACT_FILE), edited).unwrap();
-    let kind = DisputeKind::Contract {
-        contract_id: CONTRACT_ID.to_string(),
-        replacement: None,
-        replacement_base_sha256: None,
+    let edited = "#[test]\nfn rejects_x() { assert!(reject(\"x\")); }\n";
+    let replacement = FileReplacement {
+        file: CONTRACT_FILE.to_string(),
+        content: edited.to_string(),
+        base_sha256: Some(sha256_hex(CONTRACT_CONTENT)),
     };
-    write_request(&work, "s1", 1, kind);
-    write_verdict(&work, "s1", 1, accept_without_patch(), 1);
+    write_request(
+        &work,
+        "s1",
+        1,
+        contract_kind(&[CONTRACT_ID], vec![replacement]),
+    );
+    let accept = rulings_verdict(&[(CONTRACT_ID, ContractRulingKind::Accept)], json!({}));
+    write_verdict(&work, "s1", 1, accept, 1);
 
     apply(&work, "s1");
 
+    let edited = edited.as_bytes();
+    assert_eq!(std::fs::read(worktree.join(CONTRACT_FILE)).unwrap(), edited);
     let record = contract_store::load_freeze(&work, "s1").unwrap().unwrap();
     assert_eq!(record.files.len(), 1);
     assert_eq!(record.files[0].sha256, sha256_hex(edited));
@@ -244,13 +253,9 @@ fn contract_reject_requeues_with_restore_feedback() {
     let tmp = work_dir();
     let work = tmp.path();
     write_stage(work, &make_stage("s1"));
-    let kind = DisputeKind::Contract {
-        contract_id: "rejects-x".to_string(),
-        replacement: None,
-        replacement_base_sha256: None,
-    };
-    write_request(work, "s1", 1, kind);
-    write_verdict(work, "s1", 1, reject_verdict(), 1);
+    write_request(work, "s1", 1, contract_kind(&["rejects-x"], Vec::new()));
+    let reject = rulings_verdict(&[("rejects-x", ContractRulingKind::Reject)], json!({}));
+    write_verdict(work, "s1", 1, reject, 1);
 
     apply(work, "s1");
 
@@ -265,11 +270,7 @@ fn contract_reject_requeues_with_restore_feedback() {
 #[test]
 fn unreadable_request_never_changes_noncriterion_verdict_policy() {
     let kinds = [
-        DisputeKind::Contract {
-            contract_id: "c".into(),
-            replacement: None,
-            replacement_base_sha256: None,
-        },
+        contract_kind(&["c"], Vec::new()),
         DisputeKind::Integrity {
             event_ids: vec![],
             evidence: vec![],
@@ -296,10 +297,12 @@ fn assert_unreadable_request_preserves_policy(kind: DisputeKind) {
     let work = tmp.path();
     write_stage(work, &make_stage("s1"));
     write_request(work, "s1", 1, kind.clone());
-    let verdict = if matches!(kind, DisputeKind::Findings { .. }) {
-        DisputeVerdict::Rulings { rulings: vec![] }
-    } else {
-        reject_verdict()
+    let verdict = match kind {
+        DisputeKind::Findings { .. } => DisputeVerdict::Rulings { rulings: vec![] },
+        DisputeKind::Contract { .. } => {
+            rulings_verdict(&[("c", ContractRulingKind::Reject)], json!({}))
+        }
+        _ => reject_verdict(),
     };
     write_verdict(work, "s1", 1, verdict, 1);
     let request = work.join("disputes/s1/1/request.md");

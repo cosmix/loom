@@ -20,19 +20,37 @@ use crate::plan::{apply_amendment, AmendmentField, AmendmentPatch, AmendmentRequ
 
 const DEFAULT_REASON: &str = "operator amendment via loom stage amend";
 
+/// Refuse `loom stage amend` from a stage worktree session.
+///
+/// A pure function of the worktree path the caller observed, so the rule is
+/// testable without mutating the process environment: an absent (or blank)
+/// path is the only acceptable state. A stage that could amend its own plan
+/// could rewrite the checks it is judged by.
+pub fn refuse_stage_session(worktree_path: Option<&str>) -> Result<()> {
+    let Some(path) = worktree_path.map(str::trim).filter(|p| !p.is_empty()) else {
+        return Ok(());
+    };
+    bail!(
+        "This session runs inside the stage worktree at {path}, so it cannot amend the plan: a \
+         stage may not change its own checks. `loom stage amend` is an operator command; \
+         dispute a wrong check instead."
+    )
+}
+
 /// `loom stage amend` — repair one of a stage's `acceptance`, `wiring`,
 /// `wiring_tests`, `contracts`, `harness` or `reachable` arrays.
 ///
 /// `field`/`patch` are already-validated domain types built by the caller
 /// from the CLI's `--field`/`--op`/`--index`/`--value` flags; this function
-/// only resolves the plan path, fills in a default `reason`, and forwards
-/// to [`apply_amendment`].
+/// refuses a stage worktree session ([`refuse_stage_session`]), resolves the
+/// plan path, fills in a default `reason`, and forwards to [`apply_amendment`].
 pub fn amend(
     stage_id: String,
     field: AmendmentField,
     patch: AmendmentPatch,
     reason: Option<String>,
 ) -> Result<()> {
+    refuse_stage_session(std::env::var("LOOM_WORKTREE_PATH").ok().as_deref())?;
     let reason = reason.unwrap_or_else(|| DEFAULT_REASON.to_string());
 
     let work_dir = crate::commands::common::work_dir_path()?;

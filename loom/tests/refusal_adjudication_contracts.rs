@@ -93,9 +93,8 @@ fn refusal_dispute_filed_only_by_contract_writer() {
     );
 
     let contract = DisputeKind::Contract {
-        contract_id: "c".into(),
-        replacement: None,
-        replacement_base_sha256: None,
+        contract_ids: vec!["c".into()],
+        replacements: Vec::new(),
     };
     assert!(
         !contract.filed_by(SessionType::Contract),

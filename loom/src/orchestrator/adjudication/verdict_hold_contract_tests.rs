@@ -7,11 +7,13 @@ use serde_json::json;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
+use super::contract_verdict_fixtures::{contract_kind, rulings_verdict};
 use super::tests::{make_stage, write_request, write_stage, write_verdict};
 use super::{is_held_for_completion, AdjudicatorRegistry};
 use crate::fs::work_dir::WorkDir;
 use crate::models::dispute::{
-    Citation, DisputeKind, DisputeVerdict, FindingRuling, FindingSnapshot, PlanPatch,
+    Citation, ContractRulingKind, DisputeKind, DisputeVerdict, FileReplacement, FindingRuling,
+    FindingSnapshot, PlanPatch,
 };
 use crate::models::stage::{Stage, StageStatus};
 use crate::utils::sha256_hex;
@@ -155,18 +157,25 @@ fn frozen_contract_fixture() -> (TempDir, PathBuf, PathBuf) {
 #[test]
 fn accepted_contract_verdict_requeues() {
     let (_tmp, work, worktree) = frozen_contract_fixture();
-    let edited: &[u8] = b"#[test]\nfn rejects_x() { assert!(reject(\"x\")); }\n";
-    std::fs::write(worktree.join(CONTRACT_FILE), edited).unwrap();
-    let kind = DisputeKind::Contract {
-        contract_id: CONTRACT_ID.to_string(),
-        replacement: None,
-        replacement_base_sha256: None,
+    let edited = "#[test]\nfn rejects_x() { assert!(reject(\"x\")); }\n";
+    let replacement = FileReplacement {
+        file: CONTRACT_FILE.to_string(),
+        content: edited.to_string(),
+        base_sha256: Some(sha256_hex(CONTRACT_CONTENT)),
     };
-    write_request(&work, "s1", 1, kind);
-    write_verdict(&work, "s1", 1, accept_without_patch(), 1);
+    write_request(
+        &work,
+        "s1",
+        1,
+        contract_kind(&[CONTRACT_ID], vec![replacement]),
+    );
+    let accept = rulings_verdict(&[(CONTRACT_ID, ContractRulingKind::Accept)], json!({}));
+    write_verdict(&work, "s1", 1, accept, 1);
 
     apply(&work, "s1");
 
+    let written = std::fs::read(worktree.join(CONTRACT_FILE)).unwrap();
+    assert_eq!(written, edited.as_bytes());
     let stage = load_stage("s1", &work).unwrap();
     assert_eq!(stage.status, StageStatus::Queued);
     assert!(!is_held_for_completion(&work, &stage));

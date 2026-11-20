@@ -16,7 +16,7 @@ use crate::daemon::{
     current_session_id, try_send_request, user_credential, DaemonReach, Request, Response,
 };
 use crate::fs::stage_request::{append_to_spool, spool_path, spool_target_from_cwd, StageRequest};
-use crate::models::dispute::{CriterionField, CriterionTarget, DisputeKind};
+use crate::models::dispute::{CriterionField, CriterionTarget, DisputeKind, FileReplacement};
 use crate::relay::emit::{RelayContext, RelayMode, RelaySink};
 use crate::relay::RequestKind;
 
@@ -92,19 +92,22 @@ impl Dispute {
         }
     }
 
-    /// What the confirmation says about a contract dispute's replacement file.
+    /// What the confirmation says about a contract dispute's replacement files.
     fn replacement_note(&self) -> Option<String> {
-        let DisputeKind::Contract {
-            replacement: Some(replacement),
-            ..
-        } = &self.kind
-        else {
+        let DisputeKind::Contract { replacements, .. } = &self.kind else {
             return None;
         };
+        if replacements.is_empty() {
+            return None;
+        }
+        let files: Vec<String> = replacements
+            .iter()
+            .map(|r| format!("{} ({} bytes)", r.file, r.content.len()))
+            .collect();
         Some(format!(
-            "Replacement attached: {} bytes; the daemon writes it into the worktree if the \
-             adjudicator accepts.",
-            replacement.len()
+            "Replacements attached: {}; the daemon writes each into the worktree if the \
+             adjudicator accepts its contracts.",
+            files.join(", ")
         ))
     }
 
@@ -197,9 +200,12 @@ impl Dispute {
                 "The findings stand",
                 "stage dispute-findings",
             ),
-            DisputeKind::Contract { contract_id, .. } => (
-                format!("contract {contract_id}"),
-                "The contract stands",
+            DisputeKind::Contract {
+                contract_ids,
+                replacements,
+            } => (
+                contract_subject(contract_ids, replacements),
+                "The disputed contracts stand",
                 "stage dispute-contract",
             ),
             DisputeKind::Integrity { event_ids, .. } => (
@@ -221,6 +227,22 @@ impl Dispute {
             ),
         }
     }
+}
+
+/// `contract a`, `contracts a, b`, and `with replacements for <file>, ...`
+/// when the filing replaces frozen files.
+fn contract_subject(ids: &[String], replacements: &[FileReplacement]) -> String {
+    let noun = if ids.len() == 1 {
+        "contract"
+    } else {
+        "contracts"
+    };
+    let mut subject = format!("{noun} {}", ids.join(", "));
+    if !replacements.is_empty() {
+        let files: Vec<&str> = replacements.iter().map(|r| r.file.as_str()).collect();
+        subject.push_str(&format!(" with replacements for {}", files.join(", ")));
+    }
+    subject
 }
 
 /// `criterion 13`, `criteria 13, 14`, `wiring 1, 2`, or `stage 'a' wiring 3`

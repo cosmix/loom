@@ -237,9 +237,8 @@ fn an_id_that_does_not_exist_is_refused_before_anything_is_written() {
         evidence: Vec::new(),
     };
     let contract = DisputeKind::Contract {
-        contract_id: CONTRACT_ID.to_string(),
-        replacement: None,
-        replacement_base_sha256: None,
+        contract_ids: vec![CONTRACT_ID.to_string()],
+        replacements: Vec::new(),
     };
 
     let not_open = refusal(file(&work_dir, unknown));
@@ -255,8 +254,16 @@ fn an_id_that_does_not_exist_is_refused_before_anything_is_written() {
     assert_eq!(stage.status, StageStatus::Executing);
 }
 
-/// Freeze [`STAGE`]'s contract [`CONTRACT_ID`], and return a dispute of it.
+/// Freeze [`STAGE`]'s contract [`CONTRACT_ID`], holding no file, give the
+/// stage the contract and its worktree, and return a dispute of the contract.
 fn freeze_contract(work_dir: &Path) -> DisputeKind {
+    let repo_root = work_dir.parent().unwrap().parent().unwrap();
+    std::fs::create_dir_all(repo_root.join(".worktrees").join(STAGE)).unwrap();
+    crate::verify::transitions::update_stage(STAGE, work_dir, |stage| {
+        stage.contracts = vec![crate::verify::contracts::test_support::contract()];
+        Ok(())
+    })
+    .unwrap();
     let record = FreezeRecord {
         version: crate::verify::contracts::store::FREEZE_RECORD_VERSION,
         stage_id: STAGE.to_string(),
@@ -268,9 +275,8 @@ fn freeze_contract(work_dir: &Path) -> DisputeKind {
     };
     write_freeze(work_dir, &record, &[]).unwrap();
     DisputeKind::Contract {
-        contract_id: CONTRACT_ID.to_string(),
-        replacement: None,
-        replacement_base_sha256: None,
+        contract_ids: vec![CONTRACT_ID.to_string()],
+        replacements: Vec::new(),
     }
 }
 
@@ -282,7 +288,7 @@ fn a_frozen_contract_can_be_disputed() {
     let id = created(file(&work_dir, contract));
 
     assert_eq!(
-        frontmatter(&work_dir, id)["contract_id"],
+        frontmatter(&work_dir, id)["contract_ids"][0],
         serde_json::Value::from(CONTRACT_ID)
     );
     let stage = load_stage(STAGE, &work_dir).unwrap();

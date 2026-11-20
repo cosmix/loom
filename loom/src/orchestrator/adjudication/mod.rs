@@ -33,6 +33,7 @@
 mod apply;
 mod apply_accept;
 mod apply_contract;
+mod apply_contract_rulings;
 mod apply_freeze_refusal;
 mod apply_impact;
 mod apply_kinds;
@@ -48,6 +49,7 @@ mod requeue;
 mod scan;
 pub mod session;
 pub mod verdict;
+mod verdict_contract;
 mod verdict_freeze_refusal;
 mod verdict_kinds;
 
@@ -57,6 +59,10 @@ mod apply_contract_tests;
 mod apply_kinds_tests;
 #[cfg(test)]
 mod closed_disputes_tests;
+#[cfg(test)]
+mod contract_rulings_contract_tests;
+#[cfg(test)]
+mod contract_verdict_fixtures;
 #[cfg(test)]
 mod escalation_tests;
 #[cfg(test)]

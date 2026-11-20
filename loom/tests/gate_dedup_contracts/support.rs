@@ -12,8 +12,8 @@ use std::process::{Command, Stdio};
 use chrono::Utc;
 use loom::fs::work_dir::WorkDir;
 use loom::models::dispute::{
-    request_file, verdict_file, Citation, DisputeKind, DisputeRequest, DisputeVerdict,
-    DisputeVerdictRecord, PlanPatch,
+    request_file, verdict_file, Citation, ContractRuling, ContractRulingKind, DisputeKind,
+    DisputeRequest, DisputeVerdict, DisputeVerdictRecord, PlanPatch,
 };
 use loom::models::stage::{Stage, StageStatus};
 use loom::orchestrator::adjudication::AdjudicatorRegistry;
@@ -203,9 +203,8 @@ fn write_dispute(work: &Path) {
         id: 1,
         stage_id: STAGE.to_string(),
         kind: DisputeKind::Contract {
-            contract_id: CONTRACT.to_string(),
-            replacement: None,
-            replacement_base_sha256: None,
+            contract_ids: vec![CONTRACT.to_string()],
+            replacements: Vec::new(),
         },
         reason: "the contract is wrong".to_string(),
         evidence_commit: None,
@@ -216,17 +215,21 @@ fn write_dispute(work: &Path) {
     let yaml = loom::yaml::to_string(&request).unwrap();
     let body = format!("---\n{yaml}---\n\n# Dispute\n");
     fs::write(request_file(&root, STAGE, 1), body).unwrap();
-    let verdict = DisputeVerdict::Accept {
+    let verdict = DisputeVerdict::ContractRulings {
+        rulings: vec![ContractRuling {
+            contract: CONTRACT.to_string(),
+            ruling: ContractRulingKind::Accept,
+            reasoning: "the disputed contract is wrong".to_string(),
+            citations: vec![Citation {
+                file: CONTRACT_FILE.to_string(),
+                line: Some(1),
+                excerpt: "fn c1()".to_string(),
+                claim: "the contract's spec is wrong".to_string(),
+            }],
+        }],
         plan_patch: PlanPatch {
             inner: serde_json::json!({}),
         },
-        citations: vec![Citation {
-            file: CONTRACT_FILE.to_string(),
-            line: Some(1),
-            excerpt: "fn c1()".to_string(),
-            claim: "the contract's spec is wrong".to_string(),
-        }],
-        reasoning: "the disputed contract is wrong".to_string(),
     };
     let record = DisputeVerdictRecord {
         id: 1,

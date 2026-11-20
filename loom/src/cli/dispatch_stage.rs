@@ -11,6 +11,7 @@ use super::types_stage::{
     DisputeCriteriaArgs, ReviewCommands,
 };
 use crate::commands::stage;
+use crate::commands::stage::amend::amend;
 use crate::commands::stage::commit;
 
 /// `loom stage dispute-criteria` dispatch, by the filing's validated form.
@@ -28,7 +29,7 @@ fn dispatch_dispute_criteria(args: DisputeCriteriaArgs) -> Result<()> {
 }
 
 fn dispatch_amend(args: AmendArgs) -> Result<()> {
-    stage::amend(
+    amend(
         args.stage_id,
         args.field.to_field(),
         args.op.to_patch(args.index, args.value)?,
@@ -256,5 +257,23 @@ mod tests {
     #[test]
     fn message_is_required() {
         assert!(commit_parts(&[]).is_err());
+    }
+
+    #[test]
+    fn each_replacement_flag_takes_exactly_one_value() {
+        let argv = ["loom", "stage", "dispute-contract", "s1", "--reason", "r"];
+        let parse = |extra: &[&str]| Cli::try_parse_from(argv.iter().chain(extra));
+
+        assert!(parse(&["--contract", "a", "--replacement"]).is_err());
+        let flags = ["--replacement", "x=1", "--replacement", "y=2"];
+        let cli = parse(&[&["--contract", "a", "b"][..], &flags].concat()).unwrap();
+        let Commands::Stage {
+            command: StageCommands::DisputeContract(args),
+        } = cli.command
+        else {
+            panic!("dispute-contract parsed as another command");
+        };
+        assert_eq!(args.contract, ["a", "b"]);
+        assert_eq!(args.replacement, ["x=1", "y=2"]);
     }
 }

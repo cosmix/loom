@@ -35,7 +35,7 @@ use crate::fs::locking::{atomic_write_locked, locked_dir_update};
 use crate::fs::safe_read::{is_not_found, read_bounded};
 use crate::utils::sha256_hex;
 
-pub use super::record_view::{effective_contract, recorded_cwd};
+pub use super::record_view::{contract_file, contract_files, effective_contract, recorded_cwd};
 
 pub const FREEZE_RECORD_VERSION: u32 = 1;
 const GENERATION_RECORD_VERSION: u32 = 2;

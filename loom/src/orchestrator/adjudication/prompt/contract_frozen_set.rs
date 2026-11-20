@@ -1,5 +1,5 @@
 //! The frozen-set evidence of a contract dispute briefing: what an accept
-//! would re-freeze besides the disputed contract's own file (see
+//! would re-freeze besides the disputed contracts' own files (see
 //! `apply_contract::accept`), so the judge sees every file it vouches for.
 
 use anyhow::{Context, Result};
@@ -10,11 +10,9 @@ use super::KindPromptInput;
 use crate::fs::safe_read::{is_not_found, read_bounded};
 use crate::models::dispute::truncate_to_byte_limit;
 use crate::orchestrator::adjudication::prompt::diff::unified_diff;
-use crate::plan::schema::ContractSpec;
 use crate::stage_service::contracts::locate;
 use crate::utils::sha256_hex;
 use crate::verify::contracts::changes::harness_files;
-use crate::verify::contracts::normalize;
 use crate::verify::contracts::store::{self, FreezeRecord, FrozenFile};
 
 pub(super) const FROZEN_SET_HEADING: &str = "## Other frozen files changed since the freeze";
@@ -23,30 +21,27 @@ pub(super) const FROZEN_SET_HEADING: &str = "## Other frozen files changed since
 const MAX_FROZEN_SET_DIFF_BYTES: usize = 8 * 1024;
 const MAX_FROZEN_SET_SECTION_BYTES: usize = 32 * 1024;
 
-/// [`FROZEN_SET_HEADING`] and its body: every frozen file other than the
-/// disputed contract's whose worktree bytes differ from the freeze (a bounded
-/// diff of each, and a line naming each deleted one), then every harness match
-/// the freeze does not hold yet. An accept re-freezes the changed and new
-/// files and drops the deleted.
+/// [`FROZEN_SET_HEADING`] and its body: every frozen file outside `disputed`
+/// (the disputed contracts' normalized paths) whose worktree bytes differ from
+/// the freeze (a bounded diff of each, and a line naming each deleted one),
+/// then every harness match the freeze does not hold yet. An accept re-freezes
+/// the changed and new files and drops the deleted.
 pub(super) fn section(
     input: &KindPromptInput<'_>,
-    contract: Option<&ContractSpec>,
+    disputed: &[String],
     record: &Result<Option<FreezeRecord>, String>,
 ) -> String {
     let body = match (record, input.worktree) {
         (_, None) => "(stage worktree unavailable)\n\n".to_string(),
         (Ok(None), _) => "(the contracts are not frozen)\n\n".to_string(),
         (Err(error), _) => format!("(freeze record unreadable: {error:#})\n\n"),
-        (Ok(Some(record)), Some(_)) => {
-            let disputed = contract.map(|contract| normalize(&contract.file));
-            changes(input, record, disputed.as_deref())
-        }
+        (Ok(Some(record)), Some(_)) => changes(input, record, disputed),
     };
     format!("{FROZEN_SET_HEADING}\n\n{body}")
 }
 
 /// The entries of [`section`], within [`MAX_FROZEN_SET_SECTION_BYTES`].
-fn changes(input: &KindPromptInput<'_>, record: &FreezeRecord, disputed: Option<&str>) -> String {
+fn changes(input: &KindPromptInput<'_>, record: &FreezeRecord, disputed: &[String]) -> String {
     let mut out = String::new();
     let entries =
         changed_entries(input, record, disputed).chain(new_entries(input, record, disputed));
@@ -63,17 +58,17 @@ fn changes(input: &KindPromptInput<'_>, record: &FreezeRecord, disputed: Option<
     out
 }
 
-/// One entry per recorded file other than `disputed` that the worktree changed
+/// One entry per recorded file outside `disputed` that the worktree changed
 /// or deleted since the freeze.
 fn changed_entries<'a>(
     input: &'a KindPromptInput<'a>,
     record: &'a FreezeRecord,
-    disputed: Option<&'a str>,
+    disputed: &'a [String],
 ) -> impl Iterator<Item = String> + 'a {
     record
         .files
         .iter()
-        .filter(move |file| Some(file.path.as_str()) != disputed)
+        .filter(move |file| !disputed.contains(&file.path))
         .filter_map(move |file| drift(input, record, file))
 }
 
@@ -101,7 +96,7 @@ fn drift(input: &KindPromptInput<'_>, record: &FreezeRecord, file: &FrozenFile) 
 fn new_entries<'a>(
     input: &'a KindPromptInput<'a>,
     record: &FreezeRecord,
-    disputed: Option<&str>,
+    disputed: &[String],
 ) -> impl Iterator<Item = String> + 'a {
     let (paths, note) = match new_harness_paths(input, record, disputed) {
         Ok(paths) => (paths, None),
@@ -115,11 +110,11 @@ fn new_entries<'a>(
 }
 
 /// The harness matches of the stage's worktree that neither the record nor
-/// the disputed contract names, listed the way `accept` lists them.
+/// the disputed contracts name, listed the way `accept` lists them.
 fn new_harness_paths(
     input: &KindPromptInput<'_>,
     record: &FreezeRecord,
-    disputed: Option<&str>,
+    disputed: &[String],
 ) -> Result<Vec<String>> {
     if input.stage.harness.is_empty() {
         return Ok(Vec::new());
@@ -133,7 +128,7 @@ fn new_harness_paths(
     let recorded: BTreeSet<&str> = record.files.iter().map(|f| f.path.as_str()).collect();
     Ok(listed
         .into_iter()
-        .filter(|path| !recorded.contains(path.as_str()) && Some(path.as_str()) != disputed)
+        .filter(|path| !recorded.contains(path.as_str()) && !disputed.contains(path))
         .collect())
 }
 
