@@ -1,0 +1,386 @@
+<title>Plan Complete Overview</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alegreya+Sans:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: mock dashboard dimmed behind a locked dialog; dialog = summary strip, timeline, models; TUI tab renders the terminal equivalent. Tokens mirror web/src/aurora-ui (Ledger light, Aubergine dark). */
+:root {
+  --bg: oklch(0.925 0.009 102);
+  --card: oklch(0.955 0.008 102);
+  --pop: oklch(0.985 0.005 102);
+  --fg: oklch(0.21 0.012 262);
+  --muted: oklch(0.905 0.011 100);
+  --muted-fg: oklch(0.48 0.02 250);
+  --border: oklch(0.84 0.012 100);
+  --primary: oklch(0.84 0.155 80);
+  --ring: oklch(0.58 0.12 80);
+  --t-done: oklch(0.49 0.12 150);
+  --t-exec: oklch(0.5 0.15 252);
+  --t-skip: oklch(0.6 0.015 100);
+  --t-warn: oklch(0.55 0.15 50);
+  --t-contract: oklch(0.56 0.2 340);
+  --t-adj: oklch(0.52 0.17 258);
+  --c-input: oklch(0.55 0.20 255);
+  --c-write: oklch(0.58 0.20 15);
+  --c-output: oklch(0.60 0.18 165);
+  --c-read: oklch(0.80 0.03 100);
+  --scrim: oklch(0.21 0.012 262 / 0.42);
+  --shadow: 0 24px 64px oklch(0.21 0.012 262 / 0.22), 0 2px 6px oklch(0.21 0.012 262 / 0.12);
+  --well: #0a111f;
+  --font-sans: "Alegreya Sans", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: oklch(0.16 0.035 325); --card: oklch(0.195 0.04 325); --pop: oklch(0.235 0.045 325);
+  --fg: oklch(0.94 0.012 325); --muted: oklch(0.225 0.045 325); --muted-fg: oklch(0.73 0.03 325);
+  --border: oklch(0.31 0.045 325); --primary: oklch(0.83 0.165 82); --ring: oklch(0.83 0.165 82);
+  --t-done: oklch(0.77 0.13 152); --t-exec: oklch(0.77 0.12 245); --t-skip: oklch(0.55 0.025 325); --t-warn: oklch(0.77 0.15 80); --t-contract: oklch(0.76 0.17 340); --t-adj: oklch(0.74 0.15 255);
+  --c-input: oklch(0.72 0.18 255); --c-write: oklch(0.72 0.18 15); --c-output: oklch(0.72 0.18 165); --c-read: oklch(0.42 0.04 325);
+  --scrim: oklch(0.08 0.03 325 / 0.62); --shadow: 0 24px 64px oklch(0 0 0 / 0.6), 0 2px 6px oklch(0 0 0 / 0.4);
+  color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: oklch(0.16 0.035 325); --card: oklch(0.195 0.04 325); --pop: oklch(0.235 0.045 325);
+  --fg: oklch(0.94 0.012 325); --muted: oklch(0.225 0.045 325); --muted-fg: oklch(0.73 0.03 325);
+  --border: oklch(0.31 0.045 325); --primary: oklch(0.83 0.165 82); --ring: oklch(0.83 0.165 82);
+  --t-done: oklch(0.77 0.13 152); --t-exec: oklch(0.77 0.12 245); --t-skip: oklch(0.55 0.025 325); --t-warn: oklch(0.77 0.15 80); --t-contract: oklch(0.76 0.17 340); --t-adj: oklch(0.74 0.15 255);
+  --c-input: oklch(0.72 0.18 255); --c-write: oklch(0.72 0.18 15); --c-output: oklch(0.72 0.18 165); --c-read: oklch(0.42 0.04 325);
+  --scrim: oklch(0.08 0.03 325 / 0.62); --shadow: 0 24px 64px oklch(0 0 0 / 0.6), 0 2px 6px oklch(0 0 0 / 0.4);
+  color-scheme: dark; }
+
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-sans); font-size: 15px; line-height: 1.45;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 20px 40px; }
+.mono { font-family: var(--font-mono); font-size: 0.86em; }
+.num { font-variant-numeric: tabular-nums; }
+.wrap { max-width: 1120px; margin: 0 auto; display: grid; gap: 16px; }
+.intro { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: end; justify-content: space-between; }
+.intro h1 { margin: 0; font-size: 22px; font-weight: 700; text-wrap: balance; }
+.intro p { margin: 4px 0 0; color: var(--muted-fg); max-width: 62ch; }
+.controls { display: flex; flex-wrap: wrap; gap: 10px; }
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--card); }
+.seg button { font: 500 13px var(--font-sans); color: var(--muted-fg); background: transparent; border: 0; padding: 6px 12px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--primary); color: oklch(0.21 0.012 262); }
+.seg button:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
+
+/* stage: mock dashboard behind the dialog */
+.stage { position: relative; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--bg); min-height: 760px; }
+.dash { padding: 14px 16px; display: grid; grid-template-columns: 1fr 260px; gap: 14px; filter: saturate(0.7); }
+.dash .hdr { grid-column: 1 / -1; display: flex; gap: 16px; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 10px; color: var(--muted-fg); font-size: 13px; }
+.dash .hdr b { color: var(--fg); font-size: 15px; }
+.ghost { background: var(--card); border: 1px solid var(--border); border-radius: 8px; height: 46px; }
+.ghosts { display: grid; gap: 8px; }
+.side { background: var(--card); border: 1px solid var(--border); border-radius: 8px; min-height: 380px; }
+.scrim { position: absolute; inset: 0; background: var(--scrim); backdrop-filter: blur(2px); display: grid; place-items: start center; padding: 28px 14px; overflow: auto; }
+
+.dialog { width: min(980px, 100%); background: var(--pop); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow); display: grid; }
+.d-head { display: flex; flex-wrap: wrap; gap: 8px 16px; justify-content: space-between; align-items: start; padding: 18px 22px 14px; border-bottom: 1px solid var(--border); }
+.eyebrow { font-size: 11.5px; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-fg); }
+.d-head h2 { margin: 2px 0 0; font-size: 21px; font-weight: 700; text-wrap: balance; }
+.pill { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; padding: 3px 10px; border-radius: 999px; color: var(--t-done); border: 1px solid color-mix(in oklch, var(--t-done) 40%, transparent); background: color-mix(in oklch, var(--t-done) 10%, transparent); }
+.pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.lock { font-size: 12.5px; color: var(--muted-fg); display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+.lock svg { flex: none; }
+
+.d-body { display: grid; gap: 18px; padding: 18px 22px 22px; }
+.variant-b .sec-timeline { order: 3; }
+.variant-b .sec-models { order: 2; }
+
+.kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0; border: 1px solid var(--border); border-radius: 10px; background: var(--card); }
+.kpi { padding: 12px 14px; display: grid; gap: 2px; min-width: 0; }
+.kpi + .kpi { border-left: 1px solid var(--border); }
+.kpi .k { font-size: 12.5px; color: var(--muted-fg); font-weight: 500; }
+.kpi .v { font-size: 24px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.kpi .s { font-size: 12.5px; color: var(--muted-fg); font-variant-numeric: tabular-nums; }
+
+.mix { display: grid; gap: 6px; }
+.mixbar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; background: var(--muted); }
+.mixbar span { display: block; height: 100%; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 13px; color: var(--muted-fg); }
+.legend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; vertical-align: 0; }
+.legend b { color: var(--fg); font-weight: 500; font-variant-numeric: tabular-nums; }
+
+.sec { display: grid; gap: 10px; min-width: 0; }
+.sec-h { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; justify-content: space-between; }
+.sec-h h3 { margin: 0; font-size: 16px; font-weight: 700; }
+.sec-h .note { font-size: 13px; color: var(--muted-fg); }
+
+.tl { border: 1px solid var(--border); border-radius: 10px; background: var(--card); overflow-x: auto; }
+.tl svg { display: block; min-width: 760px; width: 100%; height: auto; }
+.tl text { font-family: var(--font-sans); }
+.tl .lbl { fill: var(--fg); font-size: 13px; font-weight: 500; }
+.tl .sub { fill: var(--muted-fg); font-size: 11.5px; }
+.tl .tick { fill: var(--muted-fg); font-size: 11.5px; }
+.tl .dur { fill: var(--fg); font-size: 12px; font-weight: 500; }
+.tl .mono { font-family: var(--font-mono); font-size: 12px; }
+.tl-key { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12.5px; color: var(--muted-fg); }
+.tl-key span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 18px; height: 9px; border-radius: 2px; display: inline-block; }
+
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+.tbl { border: 1px solid var(--border); border-radius: 10px; background: var(--card); overflow-x: auto; }
+th { text-align: left; font-size: 12.5px; font-weight: 500; color: var(--muted-fg); padding: 8px 12px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+td { padding: 8px 12px; border-bottom: 1px solid color-mix(in oklch, var(--border) 60%, transparent); white-space: nowrap; font-variant-numeric: tabular-nums; }
+tr:last-child td { border-bottom: 0; }
+td.r, th.r { text-align: right; }
+.share { display: flex; align-items: center; gap: 8px; min-width: 150px; }
+.share .bar { flex: 1; height: 7px; border-radius: 4px; background: var(--muted); overflow: hidden; display: flex; }
+.share .bar span { display: block; height: 100%; }
+.lane { display: inline-block; font-size: 11.5px; font-weight: 500; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted-fg); margin-left: 6px; }
+.d-foot { border-top: 1px solid var(--border); padding: 12px 22px; display: flex; flex-wrap: wrap; gap: 8px 16px; justify-content: space-between; align-items: center; font-size: 13px; color: var(--muted-fg); }
+.d-foot code { font-family: var(--font-mono); font-size: 12.5px; color: var(--fg); background: var(--muted); padding: 1px 6px; border-radius: 4px; }
+.btn { font: 500 13px var(--font-sans); border: 1px solid var(--border); background: var(--card); color: var(--fg); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+.btn:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+
+/* TUI */
+.tui { background: var(--well); color: #c9d4e5; border-radius: 12px; border: 1px solid var(--border); padding: 18px; overflow-x: auto; }
+.tui pre { margin: 0; font-family: var(--font-mono); font-size: 12.5px; line-height: 1.5; color: #c9d4e5; }
+.tui .g { color: #7fd6a4; } .tui .y { color: #fcbb20; } .tui .b { color: #8fb8ff; } .tui .d { color: #6c7a90; } .tui .r { color: #ff9a8a; } .tui .p { color: #f28ad2; } .tui .t { color: #7aa7ff; } .tui .w { color: #eef3fb; font-weight: 500; }
+
+.decide { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; display: grid; gap: 6px; align-content: start; }
+.card h4 { margin: 0; font-size: 15px; }
+.card p { margin: 0; color: var(--muted-fg); font-size: 14px; }
+
+@media (max-width: 760px) {
+  .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .kpi + .kpi { border-left: 0; }
+  .kpi { border-bottom: 1px solid var(--border); }
+  .dash { grid-template-columns: 1fr; }
+  .side { display: none; }
+  .d-head, .d-body, .d-foot { padding-left: 14px; padding-right: 14px; }
+}
+@media (prefers-reduced-motion: no-preference) { .bar-anim { transition: opacity .2s; } }
+</style>
+
+<div class="wrap">
+  <div class="intro">
+    <div>
+      <h1>Plan complete overview, issue #36</h1>
+      <p>Mockup of the locked dialog the dashboard opens once every stage is Completed or Skipped. Example data, not a real run. It stays up until <span class="mono">loom clean</span> or <span class="mono">loom init</span> replaces the plan.</p>
+    </div>
+    <div class="controls">
+      <div class="seg" role="group" aria-label="Surface">
+        <button id="v-web" aria-pressed="true">Web dialog</button>
+        <button id="v-tui" aria-pressed="false">TUI</button>
+      </div>
+      <div class="seg" role="group" aria-label="Layout" id="layout-seg">
+        <button id="l-a" aria-pressed="true">A · Timeline first</button>
+        <button id="l-b" aria-pressed="false">B · Models first</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="stage" id="web">
+    <div class="dash" aria-hidden="true">
+      <div class="hdr"><b>Loom</b><span>Plan: Open GitHub Issues</span><span>7/8 completed · 1 skipped</span></div>
+      <div class="ghosts"><div class="ghost"></div><div class="ghost"></div><div class="ghost"></div><div class="ghost"></div><div class="ghost"></div><div class="ghost"></div><div class="ghost"></div></div>
+      <div class="side"></div>
+    </div>
+    <div class="scrim">
+      <section class="dialog" role="dialog" aria-modal="true" aria-labelledby="dlg-title">
+        <header class="d-head">
+          <div>
+            <div class="eyebrow">Plan complete</div>
+            <h2 id="dlg-title">Open GitHub Issues</h2>
+            <div class="lock">
+              <svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+              This view stays open. Start the next plan with <span class="mono">loom init</span>, or clear this one with <span class="mono">loom clean</span>.
+            </div>
+          </div>
+          <span class="pill">7 completed · 1 skipped</span>
+        </header>
+
+        <div class="d-body" id="dbody">
+          <div class="kpis">
+            <div class="kpi"><span class="k">Wall time</span><span class="v">6h 35m</span><span class="s">09:12 to 15:47</span></div>
+            <div class="kpi"><span class="k">Stage execution</span><span class="v">9h 41m</span><span class="s">1.47× parallel</span></div>
+            <div class="kpi"><span class="k">Fresh tokens</span><span class="v">9.84M</span><span class="s">input + cache write + output</span></div>
+            <div class="kpi"><span class="k">Cache hit</span><span class="v">94.9%</span><span class="s">182.6M cache reads</span></div>
+            <div class="kpi"><span class="k">All tokens</span><span class="v">192.4M</span><span class="s">across 31 agents</span></div>
+          </div>
+
+          <div class="mix" aria-label="Token mix">
+            <div class="mixbar" id="mixbar"></div>
+            <div class="legend" id="mixlegend"></div>
+          </div>
+
+          <section class="sec sec-timeline">
+            <div class="sec-h"><h3>Timeline</h3><span class="note">Bars run from first start to completion: contract writing, execution, disputes under adjudication and retries; the hatched part is waiting and merge.</span></div>
+            <div class="tl"><svg id="tl" viewBox="0 0 960 360" role="img" aria-label="Stage timeline"></svg></div>
+            <div class="tl-key">
+              <span><i class="sw" style="background:var(--t-contract)"></i>Contract writing</span>
+              <span><i class="sw" style="background:var(--t-done)"></i>Executing</span>
+              <span><i class="sw" style="background:var(--t-adj)"></i>Dispute and adjudication</span>
+              <span><svg width="18" height="9" aria-hidden="true"><rect width="18" height="9" rx="2" fill="url(#hatch-key)"/><defs><pattern id="hatch-key" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="4" height="4" fill="var(--muted)"/><rect width="1.5" height="4" fill="var(--t-done)"/></pattern></defs></svg>Waiting or merging</span>
+              <span><i class="sw" style="background:var(--t-warn)"></i>Retry</span>
+              <span><i class="sw" style="background:var(--t-skip);height:2px"></i>Skipped</span>
+            </div>
+          </section>
+
+          <section class="sec sec-models">
+            <div class="sec-h"><h3>Models</h3><span class="legend" aria-label="Share bar colors"><span><i style="background:var(--c-input)"></i>Input</span><span><i style="background:var(--c-write)"></i>Cache write</span><span><i style="background:var(--c-output)"></i>Output</span><span>· grouped as model/effort, ordered by fresh tokens</span></span></div>
+            <div class="tbl"><table id="models">
+              <thead><tr><th>Model</th><th class="r">Agents</th><th class="r">Fresh</th><th class="r">Cache read</th><th class="r">Output</th><th>Share of fresh</th></tr></thead>
+              <tbody></tbody>
+            </table></div>
+          </section>
+        </div>
+
+        <footer class="d-foot">
+          <span>Saved to <code>~/.loom/stats/plans/2026-11-20T15-47Z-open-github-issues.json</code> for cross-plan statistics. Planner chat tokens are not counted.</span>
+          <button class="btn" id="copy">Copy summary</button>
+        </footer>
+      </section>
+    </div>
+  </div>
+
+  <div class="tui" id="tui" hidden><pre id="tuipre"></pre></div>
+
+  <div class="decide">
+    <div class="card"><h4>A · Timeline first</h4><p>The timeline answers "where did the time go" first. The model table comes after it.</p></div>
+    <div class="card"><h4>B · Models first</h4><p>Cost comes first: models and efforts under the totals, with the timeline below.</p></div>
+    <div class="card"><h4>TUI</h4><p>The same three blocks, opened in place of the ledger when the plan finishes. <span class="mono">q</span> still quits; there is no key that dismisses it.</p></div>
+  </div>
+</div>
+
+<script>
+const T0 = 9*60+12; // 09:12
+// phases: c = contract writing, e = executing, a = dispute under adjudication, r = retry; gaps are waiting or merge
+const stages = [
+  { id: "knowledge-bootstrap", skipped: true, start: 0, end: 0, model: "" },
+  { id: "codex-doctrine", start: 0, end: 39, model: "gpt-6.1-terra/high", phases: [["c",0,6],["e",6,35]] },
+  { id: "web-terminal-fixes", start: 0, end: 53, model: "gpt-6.1-terra/high", phases: [["c",0,9],["e",9,48]] },
+  { id: "plan-overview", start: 0, end: 106, model: "gpt-6.2-sol/high", phases: [["c",0,12],["e",12,88],["a",88,97],["e",97,103]] },
+  { id: "completion-sandbox", start: 0, end: 148, model: "claude-opus-5-5/medium", phases: [["c",0,14],["e",14,62],["r",62,74],["e",74,118],["a",118,131],["e",131,143]] },
+  { id: "impact-acceptance", start: 149, end: 230, model: "gpt-6.2-sol/high", deps: "completion-sandbox", phases: [["c",149,158],["e",158,221]] },
+  { id: "integration-verify", start: 232, end: 349, model: "claude-opus-5-5/xhigh", phases: [["e",232,330],["a",330,338],["e",338,345]] },
+  { id: "knowledge-distill", start: 350, end: 395, model: "claude-sonnet-5-5/high", phases: [["e",350,390]] },
+];
+const PHASE_FILL = { c: "var(--t-contract)", e: "var(--t-done)", a: "var(--t-adj)", r: "var(--t-warn)" };
+const PHASE_NAME = { c: "contract writing", e: "executing", a: "dispute and adjudication", r: "retry" };
+const fmtDur = m => m >= 60 ? `${Math.floor(m/60)}h ${String(m%60).padStart(2,"0")}m` : `${m}m`;
+const clock = m => { const t = T0 + m; return `${String(Math.floor(t/60)).padStart(2,"0")}:${String(t%60).padStart(2,"0")}`; };
+
+function drawTimeline() {
+  const svg = document.getElementById("tl");
+  const W = 960, left = 210, right = 70, top = 34, row = 38, total = 395;
+  const H = top + stages.length * row + 18;
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  const x = m => left + (m / total) * (W - left - right);
+  const ns = "http://www.w3.org/2000/svg";
+  const el = (n, a, txt) => { const e = document.createElementNS(ns, n); for (const k in a) e.setAttribute(k, a[k]); if (txt != null) e.textContent = txt; svg.appendChild(e); return e; };
+  svg.innerHTML = `<defs><pattern id="hatch" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="5" height="5" fill="var(--muted)"/><rect width="1.6" height="5" fill="var(--t-done)"/></pattern></defs>`;
+  for (let m = 0; m <= 360; m += 60) {
+    el("line", { x1: x(m), x2: x(m), y1: top - 8, y2: H - 10, stroke: "var(--border)", "stroke-width": 1 });
+    el("text", { x: x(m), y: top - 14, "text-anchor": "middle", class: "tick num" }, clock(m));
+  }
+  el("line", { x1: x(total), x2: x(total), y1: top - 8, y2: H - 10, stroke: "var(--t-done)", "stroke-width": 1.5, "stroke-dasharray": "3 3" });
+  el("text", { x: x(total), y: top - 14, "text-anchor": "middle", class: "tick num", fill: "var(--t-done)" }, clock(total));
+  stages.forEach((s, i) => {
+    const y = top + i * row;
+    el("text", { x: 14, y: y + 16, class: "lbl mono" }, s.id);
+    el("text", { x: 14, y: y + 30, class: "sub" }, s.skipped ? "skipped" : (s.model || ""));
+    if (s.skipped) {
+      el("line", { x1: x(0), x2: x(0) + 26, y1: y + 18, y2: y + 18, stroke: "var(--t-skip)", "stroke-width": 2, "stroke-dasharray": "2 3" });
+      el("text", { x: x(0) + 32, y: y + 22, class: "sub" }, "skipped, knowledge already current");
+      return;
+    }
+    const bx = x(s.start), bw = x(s.end) - x(s.start);
+    el("rect", { x: bx, y: y + 8, width: bw, height: 20, rx: 4, fill: "url(#hatch)" });
+    for (const [k, a, b] of s.phases) {
+      const r = el("rect", { x: x(a), y: y + 8, width: Math.max(1, x(b) - x(a)), height: 20, fill: PHASE_FILL[k] });
+      const t = document.createElementNS(ns, "title"); t.textContent = `${PHASE_NAME[k]} ${clock(a)}–${clock(b)} (${fmtDur(b - a)})`; r.appendChild(t);
+    }
+    el("text", { x: x(s.end) + 8, y: y + 22, class: "dur num" }, fmtDur(s.end - s.start));
+    if (s.deps) {
+      const pi = stages.findIndex(p => p.id === s.deps);
+      const py = top + pi * row + 28;
+      el("path", { d: `M ${x(stages[pi].end)} ${py} C ${x(stages[pi].end)+10} ${py+8}, ${bx-10} ${y+8}, ${bx} ${y+14}`, fill: "none", stroke: "var(--muted-fg)", "stroke-width": 1, "stroke-dasharray": "2 2" });
+    }
+  });
+}
+
+const mix = [
+  { k: "Input", v: 1.21, c: "var(--c-input)" },
+  { k: "Cache write", v: 6.47, c: "var(--c-write)" },
+  { k: "Output", v: 2.16, c: "var(--c-output)" },
+  { k: "Cache read", v: 182.6, c: "var(--c-read)" },
+];
+function drawMix() {
+  const sum = mix.reduce((a, b) => a + b.v, 0);
+  document.getElementById("mixbar").innerHTML = mix.map(m => `<span title="${m.k}" style="width:${(m.v/sum*100).toFixed(2)}%;background:${m.c}"></span>`).join("");
+  document.getElementById("mixlegend").innerHTML = mix.map(m => `<span><i style="background:${m.c}"></i>${m.k} <b>${m.v >= 100 ? m.v.toFixed(1) : m.v.toFixed(2)}M</b></span>`).join("");
+}
+
+const models = [
+  { m: "claude-opus-5-5/xhigh", lane: "Claude", agents: 6, fresh: 2.94, read: 61.2, out: 0.58, mix: [0.11, 0.66, 0.23] },
+  { m: "claude-opus-5-5/medium", lane: "Claude", agents: 3, fresh: 2.05, read: 44.9, out: 0.41, mix: [0.12, 0.68, 0.20] },
+  { m: "gpt-6.2-sol/high", lane: "Codex", agents: 7, fresh: 2.80, read: 38.7, out: 0.62, mix: [0.18, 0.60, 0.22] },
+  { m: "gpt-6.1-terra/high", lane: "Codex", agents: 9, fresh: 1.29, read: 21.3, out: 0.34, mix: [0.20, 0.54, 0.26] },
+  { m: "claude-sonnet-5-5/high", lane: "Claude", agents: 2, fresh: 0.52, read: 11.8, out: 0.13, mix: [0.10, 0.65, 0.25] },
+  { m: "claude-haiku-5-5/high", lane: "Claude", agents: 4, fresh: 0.24, read: 4.7, out: 0.08, mix: [0.12, 0.55, 0.33] },
+];
+function drawModels() {
+  const total = models.reduce((a, b) => a + b.fresh, 0);
+  document.querySelector("#models tbody").innerHTML = models.map(r => `
+    <tr><td><span class="mono">${r.m}</span><span class="lane">${r.lane}</span></td>
+    <td class="r">${r.agents}</td><td class="r">${r.fresh.toFixed(2)}M</td><td class="r">${r.read.toFixed(1)}M</td><td class="r">${r.out.toFixed(2)}M</td>
+    <td><div class="share"><div class="bar" style="max-width:${(r.fresh/models[0].fresh*100).toFixed(0)}%">
+      <span style="width:${r.mix[0]*100}%;background:var(--c-input)"></span><span style="width:${r.mix[1]*100}%;background:var(--c-write)"></span><span style="width:${r.mix[2]*100}%;background:var(--c-output)"></span>
+    </div><span class="num">${(r.fresh/total*100).toFixed(0)}%</span></div></td></tr>`).join("");
+}
+
+function drawTui() {
+  const w = 46, total = 395;
+  const bar = s => {
+    if (s.skipped) return `<span class="d">┄ skipped</span>`;
+    const col = m => Math.round(m / total * w);
+    const cells = Array(w).fill(" ");
+    for (let i = col(s.start); i < Math.max(col(s.start) + 1, col(s.end)); i++) cells[i] = `<span class="d">░</span>`;
+    const glyph = { c: `<span class="p">▓</span>`, e: `<span class="g">█</span>`, a: `<span class="t">▒</span>`, r: `<span class="y">█</span>` };
+    for (const [k, a, b] of s.phases) for (let i = col(a); i < Math.max(col(a) + 1, col(b)); i++) cells[i] = glyph[k];
+    return cells.join("");
+  };
+  const pad = (t, n) => (t + " ".repeat(n)).slice(0, n);
+  let out = `<span class="w">PLAN COMPLETE</span>  Open GitHub Issues                    <span class="g">● 7 completed · 1 skipped</span>
+<span class="d">─────────────────────────────────────────────────────────────────────────────────</span>
+ wall <span class="w">6h 35m</span> (09:12–15:47)   exec <span class="w">9h 41m</span>   fresh <span class="w">9.84M</span>   hit <span class="w">94.9%</span>   all <span class="w">192.4M</span>
+ <span class="b">in 1.21M</span>  <span class="r">write 6.47M</span>  <span class="g">out 2.16M</span>  <span class="d">read 182.6M</span>
+
+ <span class="y">TIMELINE</span>              09:12      10:12      11:12      12:12      13:12   15:47
+`;
+  for (const s of stages) out += ` ${pad(s.id, 21)} ${bar(s)} ${s.skipped ? "" : fmtDur(s.end - s.start)}\n`;
+  out += ` ${" ".repeat(21)} <span class="p">▓</span> contract  <span class="g">█</span> executing  <span class="t">▒</span> adjudication  <span class="y">█</span> retry  <span class="d">░</span> waiting\n`;
+  out += `
+ <span class="y">MODELS</span>                         agents     fresh   cache read   output   share
+`;
+  const t = models.reduce((a, b) => a + b.fresh, 0);
+  for (const r of models) {
+    const share = Math.round(r.fresh / t * 100);
+    out += ` ${pad(r.m, 30)} ${String(r.agents).padStart(6)} ${(r.fresh.toFixed(2)+"M").padStart(9)} ${(r.read.toFixed(1)+"M").padStart(12)} ${(r.out.toFixed(2)+"M").padStart(8)}   <span class="g">${"▇".repeat(Math.max(1, Math.round(share/3)))}</span> ${share}%\n`;
+  }
+  out += `
+<span class="d"> saved ~/.loom/stats/plans/2026-11-20T15-47Z-open-github-issues.json</span>
+<span class="d"> loom init starts the next plan · loom clean clears this one · q quits</span>`;
+  document.getElementById("tuipre").innerHTML = out;
+}
+
+function bindSeg(ids, fn) {
+  ids.forEach(id => document.getElementById(id).addEventListener("click", () => {
+    ids.forEach(o => document.getElementById(o).setAttribute("aria-pressed", String(o === id)));
+    fn(id);
+  }));
+}
+bindSeg(["v-web", "v-tui"], id => {
+  document.getElementById("web").hidden = id !== "v-web";
+  document.getElementById("tui").hidden = id !== "v-tui";
+  document.getElementById("layout-seg").hidden = id !== "v-web";
+});
+bindSeg(["l-a", "l-b"], id => document.getElementById("dbody").classList.toggle("variant-b", id === "l-b"));
+document.getElementById("copy").addEventListener("click", async e => {
+  const text = "Open GitHub Issues: 6h 35m wall, 9h 41m execution, 9.84M fresh tokens, 94.9% cache hit, 192.4M tokens total.";
+  try { await navigator.clipboard.writeText(text); e.target.textContent = "Copied"; } catch { e.target.textContent = "Copy failed"; }
+  setTimeout(() => { e.target.textContent = "Copy summary"; }, 1600);
+});
+drawTimeline(); drawMix(); drawModels(); drawTui();
+</script>
