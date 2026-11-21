@@ -3,6 +3,7 @@
 
 use std::path::Path;
 
+use serial_test::serial;
 use tempfile::TempDir;
 
 use crate::models::stage::{AcceptanceCriterion, Stage};
@@ -51,7 +52,10 @@ fn run_twice(journals: Option<MemoryJournals>) -> ([bool; 2], usize) {
     (cached, stored_files(cache.path()))
 }
 
+// Serial like the other pass-cache tests: the cache key holds the command's
+// environment, which the serial tests change while they run.
 #[test]
+#[serial]
 fn a_run_granted_the_journals_skips_the_pass_cache() {
     if skip_unless(
         confined_commands_runnable(),
