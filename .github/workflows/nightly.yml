@@ -253,6 +253,8 @@ jobs:
         include:
           - suite: lib
             cargo-args: --lib --bins
+            # The probes run once, with their output, in macos-probes.
+            test-args: "--skip stage_cache::toolchain_tests::"
           - suite: integration
             cargo-args: --test '*'
           - suite: host-lane
@@ -405,20 +407,9 @@ jobs:
       # toolchain probe whose seed variable is not yet in GITHUB_ENV.
       - name: Run tests
         working-directory: loom
-        run: cargo test ${{ matrix.cargo-args }} --no-fail-fast
+        run: cargo test ${{ matrix.cargo-args }} --no-fail-fast -- ${{ matrix.test-args }}
         env:
           LOOM_E2E_REQUIRE_TMUX: "1"
-          LOOM_TEST_REQUIRE_SANDBOX_FREE: "1"
-
-      # Runs every stage_cache:: test and the confine stage-cache tests, among
-      # them the confined toolchain probes in stage_cache::toolchain_tests::.
-      # LOOM_TEST_REQUIRE_SANDBOX_FREE turns every skip into a failure, so a
-      # missing toolchain or launcher on either runner is a red build.
-      - name: Run the confined toolchain probes
-        if: matrix.suite == 'lib'
-        working-directory: loom
-        run: "cargo test --lib -- stage_cache:: verify::criteria::confine::host::stage_cache_tests::"
-        env:
           LOOM_TEST_REQUIRE_SANDBOX_FREE: "1"
 
       # Runs the lib tests again inside the confinement a host job gives an
@@ -458,12 +449,12 @@ jobs:
         if: ${{ !cancelled() && matrix.suite == 'integration' && steps.build.outcome == 'success' && steps.tools.outcome == 'success' }}
         run: ./scripts/smoke-web-terminal.sh loom/target/debug/loom
 
-  # Manual only: the macOS toolchain probes alone, with every probe's output
-  # and, on failure, the sandbox's own denial log.
+  # The macOS toolchain probes, with every probe's output and, on failure,
+  # the sandbox's own denial log.
   macos-probes:
     name: Toolchain probes (macos)
     needs: changes
-    if: inputs.jobs == 'macos-probes' || inputs.jobs == 'probes'
+    if: needs.changes.outputs.run == 'true' && (inputs.jobs == '' || inputs.jobs == 'all' || inputs.jobs == 'macos' || inputs.jobs == 'macos-probes' || inputs.jobs == 'probes')
     runs-on: macos-latest
     timeout-minutes: 60
     steps:
