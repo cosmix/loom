@@ -19,6 +19,7 @@ fn lib_target(name: &str) -> TestTarget {
 
 fn request() -> DisputeRequest {
     let failure = ImpactFailure {
+        failed_tests: Vec::new(),
         id: "IT-cargo-test:loom".to_string(),
         command: "cargo test -- verify::x::passes".to_string(),
         tests: vec!["verify::x::passes".to_string()],
@@ -161,6 +162,7 @@ fn large_selection(count: usize) -> (ImpactFailure, Vec<TestTarget>) {
         .map(|n| lib_target(&format!("suite::case_{n:03}")))
         .collect();
     let failure = ImpactFailure {
+        failed_tests: Vec::new(),
         id: "IT-cargo-test:.".to_string(),
         command: format!("cargo test -- suite::case_000 … ({count} targets)"),
         tests: targets

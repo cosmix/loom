@@ -153,6 +153,10 @@ impl TestRunnerAdapter for Pytest {
     fn unfinished_tests(&self, out: &RunOutput<'_>) -> Option<Vec<String>> {
         crate::testrun::unfinished::read_either(out, crate::testrun::unfinished::pytest)
     }
+
+    fn failed_tests(&self, out: &RunOutput<'_>) -> Option<Vec<String>> {
+        crate::testrun::failed::read_both(out, crate::testrun::failed::pytest)
+    }
 }
 
 #[cfg(test)]

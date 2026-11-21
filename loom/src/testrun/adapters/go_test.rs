@@ -154,6 +154,10 @@ impl TestRunnerAdapter for GoTest {
     fn unfinished_tests(&self, out: &RunOutput<'_>) -> Option<Vec<String>> {
         crate::testrun::unfinished::read_either(out, crate::testrun::unfinished::go)
     }
+
+    fn failed_tests(&self, out: &RunOutput<'_>) -> Option<Vec<String>> {
+        crate::testrun::failed::read_both(out, crate::testrun::failed::go)
+    }
 }
 
 /// Go JSON carries both output lines and test events; count events once,

@@ -200,6 +200,10 @@ impl TestRunnerAdapter for CargoNextest {
     fn compile_rejected(&self, out: &RunOutput<'_>) -> bool {
         self.parse(out).build_failed && cargo_could_not_compile(&combined_output(out))
     }
+
+    fn failed_tests(&self, out: &RunOutput<'_>) -> Option<Vec<String>> {
+        crate::testrun::failed::read_both(out, crate::testrun::failed::nextest)
+    }
 }
 
 #[cfg(test)]

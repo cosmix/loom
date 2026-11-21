@@ -13,6 +13,7 @@ use std::path::Path;
 mod adapters;
 pub mod command;
 mod environment;
+mod failed;
 #[cfg(test)]
 mod fixture_support;
 pub mod languages;
@@ -215,6 +216,14 @@ pub trait TestRunnerAdapter: Sync {
     /// the output names none still running. A runner whose output names a
     /// test only once it finished keeps this default.
     fn unfinished_tests(&self, _out: &RunOutput<'_>) -> Option<Vec<String>> {
+        None
+    }
+
+    /// The tests a finished run's output names failed, or `None` when this
+    /// runner's output does not name them or names none. A runner whose
+    /// default output names no failed test on a line of its own keeps this
+    /// default; the gate then shows the end of the output instead.
+    fn failed_tests(&self, _out: &RunOutput<'_>) -> Option<Vec<String>> {
         None
     }
 }

@@ -155,6 +155,7 @@ fn an_accepted_failure_covers_only_an_identical_one() {
 #[test]
 fn a_forged_record_once_accepted_covers_nothing_but_its_claim() {
     let forged = ObservedImpact::of(&[ImpactFailure {
+        failed_tests: Vec::new(),
         id: ID.to_string(),
         command: "cargo test -- a b".to_string(),
         tests: vec!["a".to_string(), "b".to_string()],
@@ -263,6 +264,7 @@ fn an_unaccepted_failure_names_its_dispute_command() {
 #[test]
 fn failures_past_the_kept_ones_are_named_as_not_disputable() {
     let failure = |n: usize| ImpactFailure {
+        failed_tests: Vec::new(),
         id: format!("IT-pytest:p{n}"),
         command: "pytest a.py".to_string(),
         tests: vec!["a.py".to_string()],

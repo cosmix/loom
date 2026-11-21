@@ -293,6 +293,7 @@ fn stands(failed: Failed, base: String) -> ImpactFailure {
         id: failed.id,
         command: failed.failure.command,
         kind: failed.failure.kind,
+        failed_tests: failed.failure.failed_tests,
         base,
         accepted: failed.accepted,
         output: failed.failure.output,

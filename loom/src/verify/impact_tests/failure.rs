@@ -85,6 +85,10 @@ pub struct ImpactFailure {
     #[serde(default)]
     pub selection_digest: String,
     pub kind: FailureKind,
+    /// The tests the run's output names failed, at most `MAX_RECORDED_TESTS`;
+    /// empty when its runner's output does not name them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub failed_tests: Vec<String>,
     /// What the same selection did at the stage's base.
     pub base: String,
     /// How an earlier dispute accepted this selection's failure, when this
@@ -96,19 +100,30 @@ pub struct ImpactFailure {
 }
 
 impl ImpactFailure {
-    /// The failure as the gate lists it.
+    /// The failure as the gate lists it: the failed tests when the output
+    /// names them, else the selected ones followed by the end of the output,
+    /// so a failure never needs its recorded output opened to be read.
     pub fn line(&self) -> String {
         let accepted = self
             .accepted
             .as_deref()
             .map(|why| format!("; {why}"))
             .unwrap_or_default();
+        let tests = if self.failed_tests.is_empty() {
+            listed(&self.tests)
+        } else {
+            named_failed(&self.failed_tests)
+        };
+        let excerpt = if self.failed_tests.is_empty() {
+            output_excerpt(&self.output)
+        } else {
+            String::new()
+        };
         format!(
-            "{}: `{}` {} ({}); {}{accepted}",
+            "{}: `{}` {} ({tests}); {}{accepted}{excerpt}",
             self.id,
             self.command,
             self.kind.describe(),
-            listed(&self.tests),
             self.base
         )
     }
@@ -120,17 +135,20 @@ impl ImpactFailure {
     /// still identifies all of them.
     pub fn bounded(&self) -> Self {
         let text = |s: &str| truncate_to_byte_limit(&strip_control(s, &[]), MAX_TEXT_BYTES);
-        Self {
-            id: truncate_to_byte_limit(&self.id, MAX_ID_BYTES),
-            command: text(&self.command),
-            tests: self
-                .tests
+        let names = |tests: &[String]| -> Vec<String> {
+            tests
                 .iter()
                 .take(MAX_RECORDED_TESTS)
                 .map(|test| truncate_to_byte_limit(&strip_control(test, &[]), MAX_TEST_BYTES))
-                .collect(),
+                .collect()
+        };
+        Self {
+            id: truncate_to_byte_limit(&self.id, MAX_ID_BYTES),
+            command: text(&self.command),
+            tests: names(&self.tests),
             selection_digest: self.selection_digest.clone(),
             kind: self.kind.clone(),
+            failed_tests: names(&self.failed_tests),
             base: text(&self.base),
             accepted: self.accepted.as_deref().map(text),
             output: tail_to_byte_limit(
@@ -232,6 +250,36 @@ pub(super) fn listed(tests: &[String]) -> String {
     }
 }
 
+/// The failed tests, as a failure names them: the first `SELECTED_NAMES_SHOWN`.
+fn named_failed(tests: &[String]) -> String {
+    let shown = tests[..tests.len().min(SELECTED_NAMES_SHOWN)].join(", ");
+    match tests.len().checked_sub(SELECTED_NAMES_SHOWN) {
+        Some(more) if more > 0 => format!("failed: {shown}, and {more} more"),
+        _ => format!("failed: {shown}"),
+    }
+}
+
+/// The most trailing output lines a failure whose output names no failed
+/// test shows, and the most bytes of them.
+const EXCERPT_LINES: usize = 15;
+const EXCERPT_BYTES: usize = 1500;
+
+/// The last non-blank lines of `output`, each indented under the failure, or
+/// nothing when it printed none: the runner's own verdict and failures end
+/// its output.
+fn output_excerpt(output: &str) -> String {
+    let tail = tail_to_byte_limit(output, EXCERPT_BYTES);
+    let lines: Vec<&str> = tail
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .collect();
+    if lines.is_empty() {
+        return String::new();
+    }
+    let kept = &lines[lines.len().saturating_sub(EXCERPT_LINES)..];
+    format!("\n    output ends:\n      {}", kept.join("\n      "))
+}
+
 /// The end of what `run` printed, stdout first: a runner's verdict and its
 /// failures come last.
 pub(super) fn output_tail(run: &ProbeRun) -> String {
@@ -242,3 +290,7 @@ pub(super) fn output_tail(run: &ProbeRun) -> String {
     };
     tail_to_byte_limit(&combined, FAILURE_OUTPUT_MAX_BYTES)
 }
+
+#[cfg(test)]
+#[path = "failure_tests.rs"]
+mod tests;

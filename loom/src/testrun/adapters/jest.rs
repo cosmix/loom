@@ -127,6 +127,10 @@ impl TestRunnerAdapter for Jest {
             Some(last_match(&SKIPPED, line.as_str()).unwrap_or(0)),
         )
     }
+
+    fn failed_tests(&self, out: &RunOutput<'_>) -> Option<Vec<String>> {
+        crate::testrun::failed::read_both(out, crate::testrun::failed::jest)
+    }
 }
 
 #[cfg(test)]

@@ -25,6 +25,7 @@ fn selected(count: usize) -> Vec<TestTarget> {
 /// The failure of `package`'s selection of `targets`, as a run records it.
 fn failure(package: &str, targets: &[TestTarget]) -> ImpactFailure {
     ImpactFailure {
+        failed_tests: Vec::new(),
         id: failure_id(RUNNER, Path::new(package)),
         command: "cargo test -- suite::case_000 … (721 targets)".to_string(),
         tests: Vec::new(),

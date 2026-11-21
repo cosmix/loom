@@ -16,6 +16,7 @@ fn target(name: &str) -> TestTarget {
 
 fn failure(id: &str) -> ImpactFailure {
     ImpactFailure {
+        failed_tests: Vec::new(),
         id: id.to_string(),
         command: "cargo test -- a".to_string(),
         tests: vec!["a".to_string()],

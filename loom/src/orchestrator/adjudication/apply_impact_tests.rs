@@ -23,6 +23,7 @@ fn file_target(file: &str) -> TestTarget {
 
 fn failure() -> ImpactFailure {
     ImpactFailure {
+        failed_tests: Vec::new(),
         id: ID.to_string(),
         command: "uv run pytest tests/test_kit.py".to_string(),
         tests: vec!["tests/test_kit.py".to_string()],

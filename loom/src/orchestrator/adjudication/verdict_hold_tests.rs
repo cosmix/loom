@@ -62,6 +62,7 @@ fn integrity() -> DisputeKind {
 
 fn impact() -> DisputeKind {
     let failure = ImpactFailure {
+        failed_tests: Vec::new(),
         id: "IT-pytest:deps/kit".to_string(),
         command: "uv run pytest tests/test_kit.py".to_string(),
         tests: vec!["tests/test_kit.py".to_string()],

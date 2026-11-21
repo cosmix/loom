@@ -243,6 +243,23 @@ fn finished(stdout: &str, stderr: &str, exit_code: Option<i32>) -> ProbeRun {
     }
 }
 
+/// The failed tests are read from the whole output, so a name printed before
+/// the recorded tail still reaches the gate.
+#[test]
+fn a_failed_run_names_its_failed_tests_beyond_the_recorded_tail() {
+    let stdout = format!(
+        "running 2 tests\ntest a::early ... FAILED\n{}\ntest a::late ... ok\n\n\
+         test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured\n",
+        "noise\n".repeat(2_000)
+    );
+    let run = finished(&stdout, "", Some(101));
+    let Run::Failed(failure) = judge("cargo test a".to_string(), cargo(), &run) else {
+        panic!("a counted failure must fail");
+    };
+    assert!(!failure.output.contains("a::early"), "the tail is cut");
+    assert_eq!(failure.failed_tests, vec!["a::early".to_string()]);
+}
+
 #[test]
 fn a_failed_unparsed_run_with_a_denial_is_an_environment_inconclusive() {
     let denied = finished(

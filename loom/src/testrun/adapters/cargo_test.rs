@@ -197,6 +197,10 @@ impl TestRunnerAdapter for CargoTest {
     fn unfinished_tests(&self, out: &RunOutput<'_>) -> Option<Vec<String>> {
         crate::testrun::libtest::unfinished(out.stdout, out.stderr)
     }
+
+    fn failed_tests(&self, out: &RunOutput<'_>) -> Option<Vec<String>> {
+        crate::testrun::failed::read_both(out, crate::testrun::failed::libtest)
+    }
 }
 
 /// The libtest paths of the named `targets`; `None` when none is named.

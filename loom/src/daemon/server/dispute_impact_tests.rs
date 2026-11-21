@@ -40,6 +40,7 @@ fn setup(stage_type: StageType) -> (TempDir, PathBuf) {
 /// `id` failing with one test, with `output` as its output.
 fn failure(id: &str, output: String) -> ImpactFailure {
     ImpactFailure {
+        failed_tests: Vec::new(),
         id: id.to_string(),
         command: "cargo test -- tests::adds".to_string(),
         tests: vec!["tests::adds".to_string()],

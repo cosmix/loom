@@ -17,6 +17,7 @@ const STAGE: &str = "stage-a";
 
 fn failures() -> Vec<ImpactFailure> {
     vec![ImpactFailure {
+        failed_tests: Vec::new(),
         id: "IT-cargo-test:.".to_string(),
         command: "cargo test -- a".to_string(),
         tests: vec!["a".to_string()],

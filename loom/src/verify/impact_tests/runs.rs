@@ -93,6 +93,9 @@ pub(super) struct Failure {
     /// The command, as the gate shows it.
     pub(super) command: String,
     pub(super) kind: FailureKind,
+    /// The tests the run's output names failed ([`TestRunnerAdapter::failed_tests`]);
+    /// empty when the runner's output does not name them.
+    pub(super) failed_tests: Vec<String>,
     pub(super) output: String,
 }
 
@@ -142,7 +145,7 @@ fn judge(command: String, adapter: &dyn TestRunnerAdapter, run: &ProbeRun) -> Ru
         return Run::Inconclusive(format!("`{command}` could not start (exit 127)").into());
     }
     if !run.output_complete {
-        return judge_incomplete_capture(command, run);
+        return judge_incomplete_capture(command, adapter, run);
     }
     // A certified cache hit keeps only output tails; its recorded count decides.
     if let Some(verdict) = judge_cached(&command, adapter, run) {
@@ -194,6 +197,7 @@ fn judge_parsed(command: String, adapter: &dyn TestRunnerAdapter, run: &ProbeRun
     Run::Failed(Failure {
         command,
         kind,
+        failed_tests: failed_tests(adapter, run),
         output: output_tail(run),
     })
 }
@@ -201,8 +205,13 @@ fn judge_parsed(command: String, adapter: &dyn TestRunnerAdapter, run: &ProbeRun
 /// A run whose capture lost output. Only a passing exit needs the output its
 /// count would come from. A failing exit fails whatever the capture lost, even
 /// when the kept tail prints a denial marker: a truncated tail cannot tell a
-/// refused sandbox from a test's own assertion text.
-fn judge_incomplete_capture(command: String, run: &ProbeRun) -> Run {
+/// refused sandbox from a test's own assertion text. The kept output still
+/// names the failed tests it shows.
+fn judge_incomplete_capture(
+    command: String,
+    adapter: &dyn TestRunnerAdapter,
+    run: &ProbeRun,
+) -> Run {
     if run.exit_code == Some(0) {
         return Run::Inconclusive(format!("`{command}` output capture was incomplete").into());
     }
@@ -211,8 +220,20 @@ fn judge_incomplete_capture(command: String, run: &ProbeRun) -> Run {
         kind: FailureKind::Unparsed {
             exit_code: run.exit_code,
         },
+        failed_tests: failed_tests(adapter, run),
         output: output_tail(run),
     })
+}
+
+/// The tests `run`'s whole output names failed, read before the output is cut
+/// to its recorded tail.
+fn failed_tests(adapter: &dyn TestRunnerAdapter, run: &ProbeRun) -> Vec<String> {
+    let output = RunOutput {
+        stdout: &run.stdout,
+        stderr: &run.stderr,
+        exit_code: run.exit_code,
+    };
+    adapter.failed_tests(&output).unwrap_or_default()
 }
 
 /// The verdict a certified cache hit's recorded count gives; `None` leaves the

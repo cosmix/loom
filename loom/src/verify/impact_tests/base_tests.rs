@@ -109,6 +109,7 @@ fn failed(failed: u64) -> Failed {
             name: Some("tests::adds".to_string()),
         }],
         failure: Failure {
+            failed_tests: Vec::new(),
             command: "cargo test -- tests::adds".to_string(),
             kind: FailureKind::Fails {
                 failed: Some(failed),

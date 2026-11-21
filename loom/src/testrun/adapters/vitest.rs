@@ -128,6 +128,10 @@ impl TestRunnerAdapter for Vitest {
         }
         summary
     }
+
+    fn failed_tests(&self, out: &RunOutput<'_>) -> Option<Vec<String>> {
+        crate::testrun::failed::read_both(out, crate::testrun::failed::vitest)
+    }
 }
 
 #[cfg(test)]
