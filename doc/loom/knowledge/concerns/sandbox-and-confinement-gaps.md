@@ -388,7 +388,7 @@ Open items from the confined-test-guards work ([Tests in a Host Job](../conventi
 - **Credential and policy test strictness** (`stage_cache/contract_tests.rs`): the credential check counts a granted ancestor only inside `HOME`; the Linux read-only check matches exact source paths, not a later writable bind of an ancestor; the policy test checks the cache root is writable, not that it persists, and does not assert `policy.env` `PATH` keeps the pinned toolchain entries. `confine_provision_tests.rs:68` keys on `GOPROXY` ending in `,off`.
 - **`bun` older than 1.2.0 does not anchor `-t` patterns**, so the adapter fails closed with "did not select"; the minimum version is recorded only in a code comment.
 - **`Fixture::new` pins process-wide `HOME`** and only `test_cache_env.rs` documents that users must be `#[serial]`; a process-wide mutex in `CacheEnv::pin` would enforce it. The `tests_permission.rs` expiry bound (3 s) still races a host that stalls longer; a per-request deny-after would be deterministic.
-- **File size.** `plan_session/bridge/tests_end.rs` (397 lines) and `host_verify/verdict_complete_tests.rs` (398) are one test from the 400-line limit.
+- **File size.** `plan_session/bridge/tests_end.rs` (397 lines) and `host_verify/verdict_complete_tests.rs` (399) are one test from the 400-line limit.
 - **Linker warning.** macOS `ld` prints `__eh_frame section too large (max 16MB) to encode dwarf unwind offsets in compact unwind table` as `warning: linker stderr` for the lib test binary, in every stage's acceptance log.
 
 ## A macOS Host Job Hides the Process Table From Criteria

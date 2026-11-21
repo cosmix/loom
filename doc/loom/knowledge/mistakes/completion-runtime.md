@@ -59,7 +59,7 @@ Three things hid the cause:
 
 **What happened:** integration-verify criterion 1 (`cargo test --all-targets --no-fail-fast`) was killed at the 300 s default criterion timeout while `tests/host_verification_e2e.rs` ran; every test before it passed (lib: 8376 passed, 125 s). The second host job passed with the lib at 8380, but test time alone was about 225 s, so the first run's timeout was the cold test-profile compile on top.
 
-**Why:** the plan wrote the criterion as a plain string; DONE-PLAN-03 gave the same criterion `timeout_secs: 1200` (`doc/plans/optim-token/archive/DONE-PLAN-03-usage-evidence.md:731-732`).
+**Why:** the plan wrote the criterion as a plain string; the earlier usage-evidence plan (DONE-PLAN-03, since removed from the tree) gave the same criterion `timeout_secs: 1200`.
 
 **Prevention:** an integration-verify full-suite criterion is an extended criterion with `timeout_secs` of at least 1200 (`verify/criteria/config.rs`).
 
@@ -122,3 +122,13 @@ Three things hid the cause:
 **Prevention:** after a fix, rerun `loom stage complete` directly. Use `loom check <stage> --criterion <n>` only to reproduce a single known failure while fixing it.
 
 **Fix:** none in the tree; this records the advice to avoid.
+
+## A Completion Spent 31 Minutes Finding Failures Its Checks Could Have Named (2026-11-21)
+
+**What happened:** stage completion-sandbox-and-impact took 31 minutes and five `loom stage complete` runs to finish, each run about 4 minutes. The first run was refused by the test-integrity gate, which `loom check` had not run. That cost a dispute, an adjudication and a new session. Two runs failed on impact-selected tests whose gate message read `fails (2 failed)` and then listed the first 10 *selected* tests of 323. The agent then dug through the verification directory and bisected test modules to find the failures. One run repeated the previous run on the same commit.
+
+**Why:** the impact gate kept only failure counts from the runner (`RunSummary`) and showed selection names, never the failed ones. The output tail that named them was recorded but never shown. The integrity gate ran only in the daemon's completion path. The failing tests depended on test order: a fixture collection pinned `HOME` twice through `CacheEnv` and dropped first to last, leaving `HOME` at a deleted temp dir for every later test, so each test passed alone.
+
+**Prevention:** a gate that fails on a run names what failed, read from the run's whole output, or shows that output's end. A check that a completion will refuse runs at `loom check` too. An environment guard that can nest restores correctly in any drop order.
+
+**Fix:** `TestRunnerAdapter::failed_tests` (`testrun/failed.rs`) and `ImpactFailure.failed_tests`, with an output excerpt fallback (`impact_tests/failure.rs::line`). A full check runs `daemon::check_integrity_gate` as the `test-integrity` outcome. `test_cache_env.rs::Pins` keeps a stack of alive pins.

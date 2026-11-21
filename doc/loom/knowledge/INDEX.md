@@ -84,7 +84,7 @@
 | [token-accounting-and-receipts](architecture/token-accounting-and-receipts.md) | Ledger | 355 |
 | [token-flow-sources](architecture/token-flow-sources.md) |  | 84 |
 | [usage-evidence](architecture/usage-evidence.md) |  | 136 |
-| [verification-v2-gates](architecture/verification-v2-gates.md) | Gates | 261 |
+| [verification-v2-gates](architecture/verification-v2-gates.md) | Gates | 265 |
 | [web-dashboard](architecture/web-dashboard.md) | Web | 133 |
 | [web-terminal](architecture/web-terminal.md) |  | 181 |
 
@@ -146,7 +146,7 @@
 | [codex-worker-briefing](mistakes/codex-worker-briefing.md) |  | 258 |
 | [completion-broker-credential](mistakes/completion-broker-credential.md) |  | 225 |
 | [completion-runner-blocks](mistakes/completion-runner-blocks.md) |  | 221 |
-| [completion-runtime](mistakes/completion-runtime.md) | Churn | 124 |
+| [completion-runtime](mistakes/completion-runtime.md) | Churn | 134 |
 | [computed-values-and-hidden-couplings](mistakes/computed-values-and-hidden-couplings.md) | Values | 284 |
 | [concurrency-and-locking](mistakes/concurrency-and-locking.md) |  | 207 |
 | [consolidation-drift](mistakes/consolidation-drift.md) |  | 139 |

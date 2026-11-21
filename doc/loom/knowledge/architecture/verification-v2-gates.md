@@ -170,7 +170,10 @@ or whose output or count the adapter could not read, stays a failure with the ba
 the base ended the same way: the base checkout holds tracked files only and often cannot build, which would hide a
 compile error the stage made. Each remaining failure fails the gate with `ImpactTestsFailed`, naming
 `loom stage dispute-criteria <stage> --field impact-tests --test <id>` for the first 32; the message names the ids past
-that as not disputable after this run.
+that as not disputable after this run. Each failure's line (`ImpactFailure::line`) names the failed tests when the
+runner's output names them (`TestRunnerAdapter::failed_tests`, read from the whole output before it is cut to its
+tail; readers in `testrun/failed.rs` for libtest, nextest, go, pytest, vitest and jest), else the first 10 selected
+tests followed by the last 15 non-blank lines of the recorded output, so a failure never needs the job's files opened.
 
 **The observed record** (`verify/impact_tests/observed.rs`, `reviews/<stage>/impact-observed.json`) holds the failures the
 stage's latest failing completion run reported, each bounded and stripped of control characters
@@ -217,7 +220,8 @@ A covered check joins the live job whatever its session (`submit.rs::covers`); a
 - Paths come from the state root (`JobTree::resolve`). A stage's checkout is its worktree. A knowledge stage runs in the repository root with no worktree root, so a `working_dir` below the root does not grant the whole repository. The child reads the repository through `WorkDir::main_project_root` and `resolve_acceptance_dir`; it does not call `acceptance_runner::resolve_knowledge_execution_paths`.
 - Caching follows the record. Unless the record says `no_cache`, the child sets `CachePolicy::Use` and the cache directory under the state root, so the daemon's environment never decides caching.
 - A knowledge stage's child creates the completion attestation key first (`handoff::attestation_key`), because its confinement binds over the state root's secret files.
-- Acceptance runs first. The completion checks (`complete_verification`) then each run, even after an earlier failure, so one run names every failing check. Test integrity and the review gate are not run by the child; the daemon runs them before it queues the job and again at apply.
+- Acceptance runs first. The completion checks (`complete_verification`) then each run, even after an earlier failure, so one run names every failing check. Test integrity and the review gate are not run by a completion child; the daemon runs them before it queues the job and again at apply.
+- A full check (no `--criterion`) of a stage the gates cover runs the test-integrity gate last, as the `test-integrity` outcome (`daemon::check_integrity_gate`, the integrity half of `check_completion_gates`), so an unaccepted event fails `loom check` while the stage can still revert or dispute it. The review gate stays with completion, since review rounds follow the checks.
 
 ## Cancellation and Restart
 
