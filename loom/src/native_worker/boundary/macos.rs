@@ -227,9 +227,8 @@ fn started(
     let pipes = (child.stdin.take(), child.stdout.take(), child.stderr.take());
     let mut process = OwnedProcess::new(child);
     let pid = process.child().id();
-    let identity = identify(pid, spec, boot_id, private.root).map_err(|error| {
+    let identity = identify(pid, spec, boot_id, private.root).inspect_err(|_| {
         process.retire();
-        error
     })?;
     let mut mac = MacLaunch {
         identity,
