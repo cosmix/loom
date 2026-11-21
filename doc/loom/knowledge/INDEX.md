@@ -172,7 +172,7 @@
 | [memory-relay-drain-gap](mistakes/memory-relay-drain-gap.md) |  | 51 |
 | [merge-cleanup-boundary](mistakes/merge-cleanup-boundary.md) |  | 237 |
 | [merge-in-operator-checkout](mistakes/merge-in-operator-checkout.md) |  | 70 |
-| [native-macos-delivery](mistakes/native-macos-delivery.md) | macOS boundary delivery slips: lint scope, pinned fields, shared TMPDIR | 24 |
+| [native-macos-delivery](mistakes/native-macos-delivery.md) | macOS boundary delivery slips: lint scope, pinned fields, shared TMPDIR | 25 |
 | [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Shared | 351 |
 | [phantom-merges](mistakes/phantom-merges.md) | Merges | 347 |
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Pins | 332 |
