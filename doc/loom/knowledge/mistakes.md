@@ -260,3 +260,15 @@ Extending check 5's list of refused programs cannot cover what an unsandboxed ho
 ## Dispute Guards Delivery
 
 Host-job test guards added only where a failure was seen (two full runs hung), parallel fix workers colliding through `rustfmt`, shared and oversized `CARGO_TARGET_DIR`s and unproven size limits, the contract signal's "No scaffold edits" wording for writer-chosen tests, a hook that blocks a Bash call quoting the completion command, and a `git checkout` that discarded edits. → [mistakes/dispute-guards-delivery.md](mistakes/dispute-guards-delivery.md)
+
+## CI Gate Rollout
+
+Strict CI gates pushed in bulk and untested, a commit that took another session's staged files, a CI run started on known failures, and a tool behaviour taken from memory.
+
+→ [CI Gate Rollout](mistakes/ci-gate-rollout.md)
+
+## macOS Boundary Delivery
+
+Whole-crate lint run by a subagent, a pinned struct field whose construction sites no worker owned, and concurrent workers sharing one `$TMPDIR`; the cfg and merge slips are in [Review Integration Verification](mistakes/review-integration-verification.md).
+
+→ [macOS Boundary Delivery](mistakes/native-macos-delivery.md)

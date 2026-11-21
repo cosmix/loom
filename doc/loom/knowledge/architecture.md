@@ -82,7 +82,7 @@ The `loom-hooks/` scripts, how they are embedded and installed, the SessionStart
 
 Where every `loom status` field comes from, the 13 `StageStatus` variants, and what is not yet surfaced.
 
-→ [Status Data Model](architecture/status-data-model.md)
+→ [Status Data Model](architecture/status-data-model.md); the finished-plan record, archive and overview screens: [Plan Stats Overview](architecture/plan-stats-overview.md)
 
 ## Status Command Architecture (commands/status/)
 
@@ -185,7 +185,7 @@ Topics: [source-graph](architecture/source-graph.md) (contract, extractors, cach
 
 ## Execution Containment (`loom/src/verify/criteria/confine.rs`)
 
-Plan-authored commands run through `spawn_confined`, which scrubs the environment and enforces OS isolation through Seatbelt or bubblewrap (`verify/criteria/confine_host.rs::wrap`). They run only in a host job child (`loom stage verify-host`, see [Host Verification Jobs](architecture/verification-v2-gates.md)), never inside a session. → [Execution Containment](architecture/execution-containment.md)
+Plan-authored commands run through `spawn_confined`, which scrubs the environment and enforces OS isolation through Seatbelt or bubblewrap (`verify/criteria/confine_host.rs::wrap`). They run only in a host job child (`loom stage verify-host`, see [Host Verification Jobs](architecture/verification-v2-gates.md)), never inside a session. → [Execution Containment](architecture/execution-containment.md), [Seatbelt Completion Profile](architecture/seatbelt-completion-profile.md)
 
 ## Stage Build Cache (`loom/src/stage_cache/`)
 
@@ -247,4 +247,4 @@ Planning sessions run under `plan_session::sandbox::write_session_sandbox`'s `se
 
 ## Native Codex Workers
 
-`codex.backend = native` runs a stage's Codex workers as host-owned records (`native_worker/`): a lead-only `loom subagents start` relay, daemon admission under the stage admission lock, one supervisor per worker running `codex app-server` in a bubblewrap pid-namespace boundary behind an allowlist CONNECT proxy, and one `index::stage_disposition` that every reset, retry, skip, commit, verification and completion gate calls. Linux only; native is the default, `codex.backend = legacy` selects the forwarder lane. Detail: [native-codex-workers](architecture/native-codex-workers.md); open gaps: [native-codex-qualification](concerns/native-codex-qualification.md).
+`codex.backend = native` runs a stage's Codex workers as host-owned records (`native_worker/`): a lead-only `loom subagents start` relay, daemon admission under the stage admission lock, one supervisor per worker running `codex app-server` behind an allowlist CONNECT proxy in a bubblewrap pid-namespace boundary on Linux or a Seatbelt profile on macOS (qualified by live probes), and one `index::stage_disposition` that every reset, retry, skip, commit, verification and completion gate calls. Native is the default, `codex.backend = legacy` selects the forwarder lane. Detail: [native-codex-workers](architecture/native-codex-workers.md); open gaps: [native-codex-qualification](concerns/native-codex-qualification.md).

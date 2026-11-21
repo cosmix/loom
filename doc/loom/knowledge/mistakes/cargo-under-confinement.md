@@ -81,3 +81,13 @@ it from the directory that holds `Cargo.lock`: the command has no `--manifest-pa
 **Prevention:** a confined Cargo command must see the session's Cargo home path, not only a stable one. A test of the Cargo home asserts equality with the host path on every platform (`confine_cargo_home_tests.rs::every_confined_command_for_one_tree_shares_one_cargo_home`). When builds look cold, run the same command with `-v` and read the `Dirty <crate>: <reason>` lines before forming a hypothesis.
 
 **Fix:** `CargoHome::Host` (`verify/criteria/confine_scratch.rs`): under Seatbelt the command reads the host Cargo home in place. Nothing in the home is writable, and Cargo only warns `failed to save last-use data`. Cargo's state files are readable, and its config and credentials files are hidden by name (`confine_seatbelt.rs::host_cargo_home_rules`). The linked home remains only for a Cargo home that overlaps the tree. Two confined `cargo test --lib --no-run -v` runs against the session-warmed `loom/target` then reported `Fresh=264 Compiling=0 Dirty=0` in 0.2 s each.
+
+## A Stale Build-Script Output Directory Embeds Another Session's Scratch Paths
+
+**What happened:** in two stages of one plan (`codex-lane-lifetime`, `completion-sandbox-and-impact`) the confined gate failed to compile with `Operation not permitted` on every criterion. A leftover `loom/target/debug/build/loom/<hash>/out/web_assets.rs` (and once the sibling generated assets file) held `include_bytes!` paths into an earlier session's scratchpad stub copy, which the confined check cannot read.
+
+**Why:** `build.rs` rerun keys did not invalidate after the scratch repository vanished, so cargo reused the generated file.
+
+**Prevention:** when the gate shows `include_bytes!` errors under a scratchpad path, delete that one stale `loom/target/debug/build/loom/<hash>` output directory and rerun; touch nothing else in `target/`. A `build.rs` that embeds files by absolute path should key its rerun on those paths existing.
+
+**Fix:** removing the one stale output directory fixed the build both times.

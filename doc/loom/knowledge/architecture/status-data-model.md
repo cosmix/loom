@@ -208,6 +208,8 @@ Nine columns (`ColumnKind` in `ledger/mod.rs`), in `DESIGNED_COLUMNS` order with
 
 Two keys toggle overlays (`ui/tui/event_handler.rs`): `?` (`ToggleLegend`) opens the legend overlay listing every state (`ledger/legend.rs`), and `t` (`ToggleTokens`) flips `TuiApp.show_tokens`, which shows the per-agent token pane (`ledger/tokens_pane.rs`, at most `PANE_MAX_ROWS` = 27 rows: 16 live agent rows, a blank line and the 10-row by-model block of `ledger/tokens_models.rs`) between the table and the attention panel when `data.tokens` is present. When the whole pane does not fit, `render` tries the live rows alone before dropping the pane. Neither overlay is shown by default.
 
+When `StatusData.plan_stats` is set, the TUI shows the finished-plan screen in place of the ledger (`plan_overview.rs`, [Plan Stats Overview](plan-stats-overview.md)); `loom status --live` with no daemon opens the same screen from the on-disk report (`ui::run_finished_report`).
+
 The footer error line is wired end to end: `TuiApp.last_error` is set on daemon exit and on `Response::Error`, cleared on every successful `StatusUpdate`, passed through `LedgerView.last_error` and rendered by `panels::render_footer`.
 
 The header's liveness indicator ("daemon running, tick Ns ago") is computed CLIENT-side from `.loom/work/orchestrator.tick`, not from the daemon broadcast (`app.rs` `refresh_alerts`) — it can keep asserting health while the daemon is failing to push status at all. The daemon-side oversized-payload guard sends `Response::Error` instead of silently skipping a frame, specifically so the footer can show the fault; see mistakes.md for why a silent skip is the wrong shape here.
@@ -228,7 +230,7 @@ Stated explicitly because these are natural things to expect and go looking for:
 - **Per-criterion acceptance results.** `CriterionResult`/`AcceptanceResult` are never serialized to disk; only `failure_info.evidence` survives a run. The pass cache is keyed by command digest and is not read by status.
 - **Historical handoff counts.** Status only checks that the handoffs directory exists; compact mode counts stages currently in `NeedsHandoff`, not historical handoff events.
 - **An orchestrator event log on the status path.** `.loom/work/stage-events.jsonl` (`fs/stage_events.rs`) records each persisted status or session change, appended from `verify/transitions/persistence.rs::record_status_change`; it is a 1 MiB spool that drops appends once full, and status reads none of it.
-- **`plan_id`, the plan's source path, the IN_PROGRESS/DONE filename prefix, or a run start time** on `StatusData`.
+- **The plan's source path or the IN_PROGRESS/DONE filename prefix** on `StatusData`. A finished run's identity (`plan_id`) and start time reach it only inside `StatusData.plan_stats`, the finished-plan record, which exists once the last stage is done ([Plan Stats Overview](plan-stats-overview.md)); a live plan has none.
 - **A `RemoteControl` struct on the status path.** Only `[remote_control]` and `[terminal]` config sections exist in `.loom/work/config.toml`.
 
 ## Execution-Model Ledgers
@@ -265,6 +267,6 @@ commands/status/
 
 `session_for_stage` (`status/data/collector.rs`) picks the session whose `pid`, `session_alive`, `session_backend` and activity a `StageSummary` reports. The web modal's choice between a live Terminal and Terminal history reads those fields (`web/src/components/terminal/terminal-glyph.tsx::terminalGate`), so they must describe the session the web terminal resolver attaches to. `stage.session` names the worker and wins while it is live. Once it has ended, `speaking_for` (`status/data/resolver.rs`) substitutes the newest live stand-in the daemon runs for the stage: the `Merge` resolver in `MergeConflict` or `MergeBlocked`, the `Adjudication` judge in `NeedsAdjudication`. `session_type` reports the stand-in's kind. Any other session kind the daemon runs for a stage whose worker has ended needs a branch here, or the modal offers the worker's history while that session works.
 
-`terminal_history_session` (`status/data/stopped.rs`) names the newest ended tmux session of the stage that left a history file, a judge included. A stage the daemon completes after a verdict (`JobKind::VerdictComplete`) has no session during that run, so the modal has only history to offer then.
+`terminal_history_session` (`status/data/stopped.rs`) names the newest ended tmux session of the stage that left a history file, a judge included, and `terminal_history_kind` (`HistoryKind`: `History` for scrollback, `LastScreen` for the last alternate-screen frame of a session whose `fullscreen_seen` is set; `terminal_history`) says which; the web labels follow it ([Terminal History](terminal-backends.md#terminal-history)). A stage the daemon completes after a verdict (`JobKind::VerdictComplete`) has no session during that run, so the modal has only history to offer then.
 
 History: [mistakes/web-terminal](../mistakes/web-terminal.md#the-stage-modal-offered-the-workers-history-while-a-judge-was-live).

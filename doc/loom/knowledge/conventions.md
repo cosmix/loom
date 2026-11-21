@@ -18,30 +18,6 @@ bump rule, and version/release identity → [Code Style and Structure](conventio
 Application code returns `anyhow::Result<T>` with actionable context at layer crossings; typed errors only where callers match on variants; native adapter errors stay native at their boundary; git errors carry command, directory, exit code, stdout and stderr.
 Full rules: [Code Style and Structure](conventions/code-style-and-structure.md#error-handling).
 
-## Serialization
-
-See [Code Style and Structure](conventions/code-style-and-structure.md).
-
-## Module Organization & Re-exports
-
-See [Code Style and Structure](conventions/code-style-and-structure.md).
-
-## Testing
-
-See [Code Style and Structure](conventions/code-style-and-structure.md).
-
-## ID and Input Validation
-
-See [Code Style and Structure](conventions/code-style-and-structure.md).
-
-## Constants
-
-See [Code Style and Structure](conventions/code-style-and-structure.md).
-
-## Display Conventions
-
-See [Code Style and Structure](conventions/code-style-and-structure.md).
-
 ## Git Operations
 
 Git/worktree/build workflow conventions: git worktree and merge command shapes, the
