@@ -194,6 +194,31 @@ fn sccache_socket_rule(root: &Path) -> Result<String> {
     Ok(rules)
 }
 
+/// IP networking every confined command gets: binding and receiving on any
+/// local address, and connecting or sending only to this host. Gradle needs
+/// it in-process: each cache lock binds a UDP socket on the wildcard address
+/// (`FileLockCommunicator`) and pings lock owners over loopback UDP, and its
+/// test and compiler workers connect back to the build over loopback TCP.
+///
+/// Seatbelt, as measured on macOS 27, matches a `local` filter against every
+/// local address alike (`"localhost:*"` and `"*:*"` admit wildcard and LAN
+/// binds the same way), and `network-inbound` sees no peer address, so bind,
+/// listen and receive cannot be held to loopback; `"*:*"` says what they
+/// allow. `network-outbound` with `(remote ip "localhost:*")` admits only the
+/// host's own configured addresses (loopback, its aliases and the host's LAN
+/// addresses, never an unconfigured `127.0.0.2`), checked on every `connect`
+/// and `sendto`. So nothing leaves for another host, while a peer on the
+/// network can reach a socket a command binds on the wildcard, and every
+/// host service listening on loopback is reachable (residual:
+/// `concerns/stage-build-cache-gaps.md`). The exception is sccache's default
+/// TCP port: a host sccache server there runs compilers outside this
+/// boundary, and a confined client falls back to it whenever
+/// `SCCACHE_SERVER_UDS` is omitted. Pinned by
+/// `confine_seatbelt_network_tests.rs`.
+const NETWORK_RULES: &str = "(allow network-bind network-inbound (local ip \"*:*\"))\
+     (allow network-outbound (remote ip \"localhost:*\"))\
+     (deny network-outbound (remote tcp \"localhost:4226\"))";
+
 /// Provisioning reaches the network, DNS included (the resolver's
 /// `mDNSResponder` socket), but no stage's cache root and no session's scratch
 /// directory, where the stage cache's and the sessions' sccache servers
@@ -303,6 +328,7 @@ pub(super) fn platform_command(
     // `process*` grants no signals: `same-sandbox` lets the command stop its own
     // children and groups, and nothing started outside this sandbox instance.
     let mut profile = String::from("(version 1)(deny default)(allow process*)(allow signal (target same-sandbox))(allow sysctl-read)(allow mach-lookup)(allow file-read-metadata)(allow file-read* (literal \"/\"))");
+    profile.push_str(NETWORK_RULES);
     if network == NetworkAccess::Provision {
         profile.push_str(&provision_network_rules(grants)?);
     }
@@ -319,6 +345,10 @@ pub(super) fn platform_command(
 #[cfg(test)]
 #[path = "confine_seatbelt_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "confine_seatbelt_network_tests.rs"]
+mod network_tests;
 
 #[cfg(test)]
 #[path = "confine_provision_tests.rs"]
