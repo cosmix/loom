@@ -87,7 +87,7 @@ fn a_seed_that_breaks_list_syntax_is_left_out() {
         assert_eq!(var(&env, "CCACHE_REMOTE_STORAGE"), None, "{name}");
         let maven = var(&env, "MAVEN_OPTS").unwrap();
         assert!(!maven.contains("maven.repo.local.tail"), "{maven}");
-        assert!(seed_read_roots(&env_in).is_empty(), "{name}");
+        assert!(seed_read_roots(&env_in, &[]).is_empty(), "{name}");
     }
 }
 
@@ -142,7 +142,7 @@ fn absent_seeds_are_not_named() {
     let job = cache.environment(Consumer::HostJob, &tree, &host(&home, &[]), None);
     assert_eq!(var(&job, "GOPROXY").as_deref(), Some("off"));
     assert!(env.values().all(|value| !value.is_empty()));
-    assert!(seed_read_roots(&host(&home, &[])).is_empty());
+    assert!(seed_read_roots(&host(&home, &[]), &[]).is_empty());
 }
 
 #[test]
@@ -159,14 +159,43 @@ fn ccache_seed_is_read_only_secondary_storage() {
         var(&env, "CCACHE_BASEDIR"),
         Some(tree.display().to_string())
     );
-    assert_eq!(seed_read_roots(&env_in), vec![seed]);
+    assert_eq!(seed_read_roots(&env_in, &[]), vec![seed]);
+}
+
+/// A session names seeds inside its own writable cache root; a confined
+/// command there can swap the directory for a symlink to any host directory.
+/// Such a seed grants nothing and is named in no variable.
+#[test]
+fn seed_inside_a_writable_root_linked_outside_grants_nothing() {
+    let ((_r, repo), (_h, home), (_w, tree), (_o, outside)) = (temp(), temp(), temp(), temp());
+    std::fs::create_dir_all(outside.join("cache/download")).unwrap();
+    std::os::unix::fs::symlink(&outside, tree.join("ccache")).unwrap();
+    std::os::unix::fs::symlink(&outside, tree.join("go-mod")).unwrap();
+    let (ccache, go_mod) = (tree.join("ccache"), tree.join("go-mod"));
+    let env_in = host(
+        &home,
+        &[
+            ("CCACHE_DIR", ccache.to_str().unwrap()),
+            ("GOMODCACHE", go_mod.to_str().unwrap()),
+        ],
+    );
+    let unconfined = seed_read_roots(&env_in, &[]);
+    assert_eq!(unconfined, vec![outside.join("cache/download"), outside]);
+    assert_eq!(
+        seed_read_roots(&env_in, &[tree.as_path()]),
+        Vec::<PathBuf>::new()
+    );
+    let cache = StageCache::resolve(&repo, "alpha", &home, None).unwrap();
+    let env = cache.environment(Consumer::HostJob, &tree, &env_in, None);
+    assert_eq!(var(&env, "CCACHE_REMOTE_STORAGE"), None);
+    assert_eq!(var(&env, "GOPROXY").as_deref(), Some("off"));
 }
 
 #[test]
 fn seed_that_exposes_home_is_dropped() {
     let (_h, home) = temp();
     let home_text = home.display().to_string();
-    let roots = seed_read_roots(&host(&home, &[("CCACHE_DIR", home_text.as_str())]));
+    let roots = seed_read_roots(&host(&home, &[("CCACHE_DIR", home_text.as_str())]), &[]);
     assert!(roots.is_empty(), "{roots:?}");
 }
 
@@ -183,9 +212,9 @@ fn system_roots_holding_home_or_a_credential_are_left_out() {
     std::fs::create_dir_all(&other_home).unwrap();
     std::os::unix::fs::symlink(holds_key.join("keys"), other_home.join(".ssh")).unwrap();
     let systems = [holds_home.as_path(), holds_key.as_path(), plain.as_path()];
-    let roots = super::roots::toolchain_read_roots_in(&host(&home, &[]), &systems);
+    let roots = super::roots::toolchain_read_roots_in(&host(&home, &[]), &systems, &[]);
     assert_eq!(roots, vec![holds_key.clone(), plain.clone()], "HOME inside");
-    let roots = super::roots::toolchain_read_roots_in(&host(&other_home, &[]), &systems);
+    let roots = super::roots::toolchain_read_roots_in(&host(&other_home, &[]), &systems, &[]);
     assert_eq!(roots, vec![holds_home, plain], "a credential inside");
 }
 
@@ -193,7 +222,7 @@ fn system_roots_holding_home_or_a_credential_are_left_out() {
 fn toolchain_roots_skip_home_and_paths_outside_it() {
     let ((_h, home), (_o, outside)) = (temp(), temp());
     let path = std::env::join_paths([home.clone(), outside.clone()]).unwrap();
-    let roots = toolchain_read_roots(&host(&home, &[("PATH", path.to_str().unwrap())]));
+    let roots = toolchain_read_roots(&host(&home, &[("PATH", path.to_str().unwrap())]), &[]);
     assert!(
         roots.iter().all(|root| root != &home && root != &outside),
         "{roots:?}"

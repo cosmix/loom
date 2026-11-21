@@ -188,7 +188,7 @@ fn stage_cache_persists_across_confined_commands() {
 fn host_caches_stay_read_only() {
     let ((_r, repo), (_h, home), (_t, tree)) = (temp(), temp(), temp());
     let (seeds, _dirs) = seed_fixture(&home);
-    let granted = seed_read_roots(&host_env(&home, &[]));
+    let granted = seed_read_roots(&host_env(&home, &[]), &[]);
     for seed in &seeds {
         assert!(granted.contains(seed), "{seed:?} missing from {granted:?}");
     }
@@ -272,7 +272,7 @@ fn path_toolchains_are_readable() {
     let ((_r, repo), (_h, home), (_t, tree)) = (temp(), temp(), temp());
     let (targets, entries) = toolchain_fixture(&home);
     let path = std::env::join_paths(&entries).unwrap();
-    let roots = toolchain_read_roots(&host_env(&home, &[("PATH", path.to_str().unwrap())]));
+    let roots = toolchain_read_roots(&host_env(&home, &[("PATH", path.to_str().unwrap())]), &[]);
     for target in &targets {
         let covered = roots
             .iter()
@@ -299,7 +299,7 @@ fn credential_dirs_on_path_stay_hidden() {
     let ((_r, repo), (_h, home), (_t, tree)) = (temp(), temp(), temp());
     let entries = credential_fixture(&home);
     let path = std::env::join_paths(&entries).unwrap();
-    let roots = toolchain_read_roots(&host_env(&home, &[("PATH", path.to_str().unwrap())]));
+    let roots = toolchain_read_roots(&host_env(&home, &[("PATH", path.to_str().unwrap())]), &[]);
     assert!(roots.contains(&entries[2]), "control missing: {roots:?}");
     for credential in [home.join(".ssh"), home.join(".aws")] {
         for root in &roots {

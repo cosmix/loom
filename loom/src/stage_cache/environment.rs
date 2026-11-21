@@ -2,6 +2,7 @@
 //! cache root, layered over read-only host seeds where the tool supports it.
 
 use super::roots::Seeds;
+use super::writable::Writable;
 use super::{Consumer, DeveloperTools, StageCache};
 use std::collections::BTreeMap;
 use std::ffi::{OsStr, OsString};
@@ -75,9 +76,14 @@ pub fn host_env_from_process() -> BTreeMap<String, OsString> {
 /// `GOPROXY` for `consumer`: the host module seed, when there is one, ahead of
 /// the host's `GOPROXY` (else `DEFAULT_GOPROXY`) for a session or worker, or
 /// ahead of `off` for a host job. Provisioning fetches, so it takes the
-/// `Session` chain.
-pub fn go_proxy(consumer: Consumer, host_env: &BTreeMap<String, OsString>) -> OsString {
-    let seed = Seeds::resolve(host_env).go;
+/// `Session` chain. A seed reaching one of the `writable` roots is left out,
+/// as [`super::seed_read_roots`] leaves it out of the read roots.
+pub fn go_proxy(
+    consumer: Consumer,
+    host_env: &BTreeMap<String, OsString>,
+    writable: &[&Path],
+) -> OsString {
+    let seed = Seeds::resolve(host_env, &Writable::new(writable)).go;
     proxy_chain(consumer, seed.as_deref(), host_env)
 }
 
@@ -151,8 +157,10 @@ impl Vars {
 
 impl StageCache {
     /// The variables `consumer` runs with: every cache directory below
-    /// [`StageCache::root`], host seeds from `host_env` where they exist, and,
-    /// with `developer`, the real macOS developer tools ahead of the host `PATH`.
+    /// [`StageCache::root`], host seeds from `host_env` where they exist and
+    /// reach neither the root nor `worktree_root` ([`super::seed_read_roots`]),
+    /// and, with `developer`, the real macOS developer tools ahead of the host
+    /// `PATH`.
     pub fn environment(
         &self,
         consumer: Consumer,
@@ -161,7 +169,7 @@ impl StageCache {
         developer: Option<&DeveloperTools>,
     ) -> BTreeMap<String, OsString> {
         let mut vars = Vars(BTreeMap::new());
-        let seeds = Seeds::resolve(host_env);
+        let seeds = Seeds::resolve(host_env, &Writable::new(&[&self.root, worktree_root]));
         for (name, child) in ROOT_DIRS {
             vars.set(name, self.root.join(child));
         }

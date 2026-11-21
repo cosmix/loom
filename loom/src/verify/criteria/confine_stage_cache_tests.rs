@@ -92,6 +92,28 @@ fn host_roots_overlapping_a_writable_root_are_left_out() {
     assert!(!installation.contains(&beside), "{installation:?}");
 }
 
+/// A symlink a command planted in a tree `PATH` entry grants the next command
+/// nothing: the entry is never expanded into its links' target directories.
+#[test]
+fn a_planted_tree_symlink_grants_no_read_root() {
+    let (_h, home) = temp();
+    let tree = home.join("src/tree");
+    let inside = tree.join("node_modules/.bin");
+    let private = home.join("Documents/tax/bin");
+    for dir in [&inside, &private] {
+        std::fs::create_dir_all(dir).unwrap();
+    }
+    std::fs::write(private.join("2025.pdf"), "PRIVATE\n").unwrap();
+    std::os::unix::fs::symlink(private.join("2025.pdf"), inside.join("x")).unwrap();
+    let mut command = Command::new("/bin/sh");
+    command.env("HOME", &home).env("PATH", &inside);
+    let roots = super::read_roots_beside(&command, &[tree.as_path()], None);
+    assert!(
+        roots.iter().all(|root| !private.starts_with(root)),
+        "{private:?} readable through {roots:?}"
+    );
+}
+
 /// The running loom's directory, first on a confined `PATH`, does not become a
 /// toolchain root below HOME: only the `LOOM_BIN` binary stays readable.
 #[test]

@@ -181,3 +181,72 @@ fn cargo_inside_the_boundary_ignores_the_workspace_and_config_above_it() {
         probe::report(&spec, &tree)
     );
 }
+
+/// A confined command binds and connects a Unix socket below its own
+/// `TMPDIR` (sccache's client waits for its server's startup notification on
+/// one), and still cannot bind one anywhere else, its writable tree included.
+#[test]
+fn unix_sockets_are_allowed_below_the_command_tmpdir_only() {
+    if launcher_absent("unix_sockets_are_allowed_below_the_command_tmpdir_only") {
+        return;
+    }
+    let (_root, tree) = tree_below_cargo_files("[package]\n", "");
+    let perl = "/usr/bin/perl -MIO::Socket::UNIX -e '$p = shift; \
+        $s = IO::Socket::UNIX->new(Type => SOCK_STREAM(), Local => $p, Listen => 1) or die \"bind: $!\\n\"; \
+        IO::Socket::UNIX->new(Type => SOCK_STREAM(), Peer => $p) or die \"connect: $!\\n\"; \
+        print \"SOCKET_OK\\n\"'";
+    let spec = CommandSpec::shell(format!(
+        "mkdir \"$TMPDIR/helper\" && {perl} \"$TMPDIR/helper/sock\"; {perl} \"$PWD/tree.sock\""
+    ));
+    let timeout = Duration::from_secs(15);
+    let result =
+        run_spec_with_timeout(&spec, Some(&tree), timeout, CommandConfinement::Confined).unwrap();
+    assert_eq!(
+        result.stdout.matches("SOCKET_OK").count(),
+        1,
+        "the TMPDIR socket must work and the tree socket must not: {result:?}"
+    );
+    assert!(
+        result.stderr.contains("bind: Operation not permitted"),
+        "{result:?}"
+    );
+}
+
+/// A Unix socket listening outside the command's own `TMPDIR` stays
+/// unreachable through a symlink the command plants there: Seatbelt matches
+/// the socket's resolved path, not the path `connect` names. The listener sits
+/// in the tree, which the command can read, so only the socket rule refuses it.
+/// A hard link into `TMPDIR`, whose path the rule would match, must not
+/// connect either (the profile refuses the link itself).
+#[test]
+fn a_tmpdir_symlink_does_not_reach_a_host_socket() {
+    if launcher_absent("a_tmpdir_symlink_does_not_reach_a_host_socket") {
+        return;
+    }
+    let (_root, tree) = tree_below_cargo_files("[package]\n", "");
+    let socket = tree.join("l.sock");
+    let _listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
+    let perl = "/usr/bin/perl -MIO::Socket::UNIX -e '$p = shift; \
+        IO::Socket::UNIX->new(Type => SOCK_STREAM(), Peer => $p) or die \"connect: $!\\n\"; \
+        print \"CONNECT_OK\\n\"'";
+    let spec = CommandSpec::shell(format!(
+        "test -r \"$PWD/l.sock\" && ln -s \"$PWD/l.sock\" \"$TMPDIR/d\" && echo LINKED && {perl} \"$TMPDIR/d\"; ln \"$PWD/l.sock\" \"$TMPDIR/h\" && echo HARD && {perl} \"$TMPDIR/h\""
+    ));
+    let timeout = Duration::from_secs(15);
+    let result =
+        run_spec_with_timeout(&spec, Some(&tree), timeout, CommandConfinement::Confined).unwrap();
+    assert!(result.stdout.contains("LINKED"), "{result:?}");
+    assert!(!result.stdout.contains("CONNECT_OK"), "{result:?}");
+    assert!(
+        result.stderr.contains("connect: Operation not permitted"),
+        "{result:?}"
+    );
+    // The hard link itself is refused, so `HARD` never prints and `ln`
+    // reports the denial; any other `ln` failure fails here.
+    assert!(!result.stdout.contains("HARD"), "{result:?}");
+    let ln_refused = result
+        .stderr
+        .lines()
+        .any(|line| line.starts_with("ln: ") && line.ends_with(": Operation not permitted"));
+    assert!(ln_refused, "{result:?}");
+}

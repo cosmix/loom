@@ -14,13 +14,17 @@ pub mod base_checkout;
 pub mod cleanup;
 mod developer;
 mod environment;
+mod install_roots;
 mod roots;
 pub mod session;
+mod writable;
 
 #[cfg(test)]
 mod contract_tests;
 #[cfg(test)]
 mod host_env_tests;
+#[cfg(test)]
+mod install_roots_tests;
 #[cfg(test)]
 mod kernel_tests;
 #[cfg(test)]
@@ -31,6 +35,8 @@ mod session_contract_tests;
 mod tests;
 #[cfg(test)]
 mod toolchain_tests;
+#[cfg(test)]
+mod writable_tests;
 
 pub use developer::DeveloperTools;
 pub use environment::{go_proxy, goproxy_has_userinfo, host_env_from, host_env_from_process};

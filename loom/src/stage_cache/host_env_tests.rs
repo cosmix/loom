@@ -132,5 +132,5 @@ fn a_symlinked_seed_is_named_by_its_canonical_path() {
     let seed = real.join("cache/download");
     let expected = format!("file://{},off", seed.display());
     assert_eq!(var(&env, "GOPROXY"), Some(expected));
-    assert_eq!(super::seed_read_roots(&host), vec![seed]);
+    assert_eq!(super::seed_read_roots(&host, &[]), vec![seed]);
 }

@@ -14,7 +14,9 @@
 use anyhow::{Context, Result};
 use std::collections::BTreeMap;
 use std::ffi::OsString;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(any(test, target_os = "linux"))]
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
 use crate::stage_cache::{go_proxy, host_env_from_process, Consumer, StageCache};
@@ -48,6 +50,10 @@ mod ancestors;
 #[cfg(target_os = "macos")]
 #[path = "confine_seatbelt.rs"]
 mod seatbelt;
+
+#[path = "confine_paths.rs"]
+mod paths;
+use paths::{confined_tree, resolve_program};
 #[cfg(target_os = "macos")]
 use seatbelt::platform_command;
 
@@ -124,14 +130,23 @@ pub(super) fn wrap(
         &grants,
     )?;
     apply_environment(&mut command, original, &scratch, cache.as_ref(), &tree);
-    if cache.is_some() && network == NetworkAccess::Provision {
-        // Provisioning fetches, so Go takes the session's proxy chain
-        // after the seed instead of a host job's `off`.
-        let proxy = go_proxy(Consumer::Session, &host_env_from_process());
-        command.env("GOPROXY", proxy);
+    if let (Some(root), NetworkAccess::Provision) = (cache_root.as_deref(), network) {
+        provision_go_proxy(&mut command, root, &tree);
     }
     prepare_spawn(&mut command, &cwd);
     Ok((command, scratch, git))
+}
+
+/// Provisioning fetches, so Go takes the session's proxy chain after the seed
+/// instead of a host job's `off`; the seed is refused on the writable roots
+/// the cache's environment refuses it on.
+fn provision_go_proxy(command: &mut Command, cache_root: &Path, tree: &Path) {
+    let proxy = go_proxy(
+        Consumer::Session,
+        &host_env_from_process(),
+        &[cache_root, tree],
+    );
+    command.env("GOPROXY", proxy);
 }
 
 /// Start in `cwd` with no input and piped output. The spawn chooses the
@@ -175,48 +190,6 @@ fn apply_environment(
             command.env(key, "/tmp");
         }
     }
-}
-
-fn resolve_program(original: &Command, cwd: &Path) -> Result<PathBuf> {
-    let program = original.get_program();
-    let path = original
-        .get_envs()
-        .find_map(|(k, v)| (k == "PATH").then_some(v).flatten());
-    which::which_in(program, path, cwd)
-        .with_context(|| format!("Failed to resolve confined command: {:?}", program))
-}
-
-/// The tree a command starting in the canonical `cwd` may use: `tree`, which
-/// must contain `cwd`, else `cwd` itself. The tree is writable to the code it
-/// holds, which could swap it for a symlink after a full resolve; only its
-/// parent is resolved, and the tree itself must be a directory, so the
-/// boundary grants that path and never a link's target.
-fn confined_tree(tree: Option<&Path>, cwd: &Path) -> Result<PathBuf> {
-    let Some(tree) = tree else {
-        return Ok(cwd.to_path_buf());
-    };
-    let tree = match (tree.parent(), tree.file_name()) {
-        (Some(parent), Some(name)) if !parent.as_os_str().is_empty() => {
-            parent.canonicalize().map(|parent| parent.join(name))
-        }
-        _ => tree.canonicalize(),
-    }
-    .context("resolve confined working tree")?;
-    let metadata = tree
-        .symlink_metadata()
-        .context("resolve confined working tree")?;
-    anyhow::ensure!(
-        metadata.is_dir(),
-        "confined working tree {} must be a directory, not a symlink",
-        tree.display()
-    );
-    anyhow::ensure!(
-        cwd.starts_with(&tree),
-        "confined working directory {} is outside its working tree {}",
-        cwd.display(),
-        tree.display()
-    );
-    Ok(tree)
 }
 
 /// The working tree, the command's scratch, and its Cargo home when that is a

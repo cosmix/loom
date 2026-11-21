@@ -113,7 +113,35 @@ fn named_rules(
     if let Some(root) = grants.cache_root {
         profile.push_str(&sccache_socket_rule(root)?);
     }
+    profile.push_str(&scratch_socket_rule(scratch.path())?);
     Ok(profile)
+}
+
+/// Unix sockets below the command's own scratch directory (its `TMPDIR`),
+/// bindable and connectable. loom creates that directory for this command
+/// alone, so only processes of this boundary listen there. A tool that
+/// starts a helper and waits on a socket it binds in `TMPDIR` needs it:
+/// sccache's client binds `$TMPDIR/sccache*/sock` for its server's startup
+/// notification and failed with `Operation not permitted` without it.
+/// Seatbelt matches a socket's resolved path, so a symlink planted in
+/// `TMPDIR` does not reach a host socket, and the profile refuses hard links
+/// (`a_tmpdir_symlink_does_not_reach_a_host_socket`). Of the
+/// [`ancestors::seatbelt_spellings`], only those holding the scratch path
+/// as written are named, so `containment_policy_revision` can replace it.
+fn scratch_socket_rule(scratch: &Path) -> Result<String> {
+    let written = scratch.to_string_lossy();
+    let mut rules = String::new();
+    for spelling in ancestors::seatbelt_spellings(scratch) {
+        if !spelling.to_string_lossy().contains(written.as_ref()) {
+            continue;
+        }
+        let spelling = quote(&spelling)?;
+        rules.push_str(&format!(
+            "(allow network-bind network-outbound (local unix-socket (subpath {spelling})))\
+             (allow network-outbound (remote unix-socket (subpath {spelling})))"
+        ));
+    }
+    Ok(rules)
 }
 
 /// Maven files that never reach a confined command: the user's settings, which

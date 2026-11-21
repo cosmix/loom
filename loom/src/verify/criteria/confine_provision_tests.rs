@@ -94,7 +94,9 @@ fn provisioning_takes_the_session_goproxy_chain() {
         .expect("provisioning sets GOPROXY")
         .to_os_string();
     let host = host_env_from_process();
-    assert_eq!(proxy, go_proxy(Consumer::Session, &host));
-    assert_ne!(proxy, go_proxy(Consumer::HostJob, &host));
+    let root = cache.ensure().unwrap();
+    let writable = [root.as_path(), tree.as_path()];
+    assert_eq!(proxy, go_proxy(Consumer::Session, &host, &writable));
+    assert_ne!(proxy, go_proxy(Consumer::HostJob, &host, &writable));
     assert!(!proxy.to_string_lossy().ends_with(",off"), "{proxy:?}");
 }

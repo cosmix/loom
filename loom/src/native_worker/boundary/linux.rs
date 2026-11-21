@@ -202,7 +202,7 @@ pub(super) fn command(
         command.arg("--bind").arg(home).arg(home);
         command.env("CARGO_HOME", home);
     }
-    bind_stage_cache(&mut command, plan, &probe, &env, host)?;
+    bind_stage_cache(&mut command, plan, &probe, &env, host, &scratch)?;
     mounts::worktree(&mut command, &plan.worktree, plan.codex_home.is_some())?;
     if let Some(codex_home) = &plan.codex_home {
         bind_codex_home(&mut command, plan, codex_home, &probe)?;
@@ -238,21 +238,29 @@ fn bind_codex_home(
 /// toolchain roots of the boundary's `env`, read-only. A seed or toolchain
 /// root already under a read root, or overlapping the root or the worktree (a
 /// read-only bind would make part of either read-only), is not bound again.
+/// The toolchain roots never follow a `PATH` entry or symlink that reaches a
+/// root the boundary binds writable: the worker could plant a link there.
 fn bind_stage_cache(
     command: &mut Command,
     plan: &Plan,
     probe: &Command,
     env: &[(OsString, OsString)],
     host: &[(OsString, OsString)],
+    scratch: &CargoScratch,
 ) -> Result<()> {
     let Some(cache) = &plan.stage_cache else {
         return Ok(());
     };
     let canonical_root = cache.ensure()?;
     let installed = read_roots(probe);
-    let host_roots = seed_read_roots(&host_env_from(host.iter().cloned()))
+    let writable: Vec<&Path> = [canonical_root.as_path(), plan.worktree.as_path()]
         .into_iter()
-        .chain(toolchain_read_roots(&host_map(env)));
+        .chain(plan.codex_home.as_deref())
+        .chain(scratch.linked_cargo_home())
+        .collect();
+    let host_roots = seed_read_roots(&host_env_from(host.iter().cloned()), &writable)
+        .into_iter()
+        .chain(toolchain_read_roots(&host_map(env), &writable));
     command.args(stage_cache_args(
         cache.root(),
         &canonical_root,

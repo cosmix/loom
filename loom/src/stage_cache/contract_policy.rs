@@ -11,7 +11,11 @@ use std::path::{Path, PathBuf};
 /// launcher is absent (`skip_unless` panics instead under
 /// `LOOM_TEST_REQUIRE_SANDBOX_FREE=1`). Any other failure to generate the policy
 /// panics: it is a regression in policy generation, not an environment gap.
-pub(super) fn policy_for(test: &str, tree: &Path, cache: &StageCache) -> Option<ConfinedPolicy> {
+pub(in crate::stage_cache) fn policy_for(
+    test: &str,
+    tree: &Path,
+    cache: &StageCache,
+) -> Option<ConfinedPolicy> {
     if host_launcher().is_none() {
         skip_unless(false, test, "the OS launcher is absent");
         return None;
@@ -51,7 +55,7 @@ pub(super) fn binds(policy: &ConfinedPolicy, flag: &str) -> Vec<(usize, PathBuf)
 }
 
 /// Every root the policy lets the command read or write.
-pub(super) fn granted(policy: &ConfinedPolicy) -> Vec<PathBuf> {
+pub(in crate::stage_cache) fn granted(policy: &ConfinedPolicy) -> Vec<PathBuf> {
     let paths: Vec<(usize, PathBuf)> = if cfg!(target_os = "macos") {
         let read = profile_rules(profile(policy), "(allow file-read* ");
         read.into_iter()
