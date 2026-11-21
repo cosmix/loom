@@ -171,6 +171,7 @@ jobs:
       # Confined verification runs criteria under bubblewrap on Linux, and
       # Ubuntu's AppArmor denies the unprivileged user namespace it needs.
       - name: Install tmux, ripgrep and bubblewrap
+        id: tools
         run: |
           sudo apt-get update && sudo apt-get install -y tmux ripgrep bubblewrap
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
@@ -271,16 +272,19 @@ jobs:
           LOOM_TEST_REQUIRE_SANDBOX_FREE: "1"
 
       - name: Build the loom binary
+        id: build
         if: ${{ !cancelled() }}
         working-directory: loom
         run: cargo build --bin loom
 
+      # The smoke scripts need the binary and the rg the tools step installs;
+      # without them they only repeat an earlier step's failure.
       - name: Run the web dashboard smoke test
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.tools.outcome == 'success' }}
         run: ./scripts/smoke-web-dashboard.sh loom/target/debug/loom
 
       - name: Run the web terminal smoke test
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.tools.outcome == 'success' }}
         run: ./scripts/smoke-web-terminal.sh loom/target/debug/loom
 
   # The Linux jobs never see Darwin's sockets, sandbox, BSD userland or path
@@ -353,6 +357,7 @@ jobs:
 
       # The smoke scripts call rg and jq.
       - name: Install tmux, ripgrep and jq
+        id: tools
         run: brew install tmux ripgrep jq
 
       - name: Run tests
@@ -445,16 +450,19 @@ jobs:
           LOOM_TEST_REQUIRE_SANDBOX_FREE: "1"
 
       - name: Build the loom binary
+        id: build
         if: ${{ !cancelled() }}
         working-directory: loom
         run: cargo build --bin loom
 
+      # The smoke scripts need the binary and the rg the tools step installs;
+      # without them they only repeat an earlier step's failure.
       - name: Run the web dashboard smoke test
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.tools.outcome == 'success' }}
         run: ./scripts/smoke-web-dashboard.sh loom/target/debug/loom
 
       - name: Run the web terminal smoke test
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.tools.outcome == 'success' }}
         run: ./scripts/smoke-web-terminal.sh loom/target/debug/loom
 
   flake-check:
