@@ -230,3 +230,6 @@ fn a_regular_file_in_place_of_an_ancestor_directory_is_refused() {
     let error = remove(&root, INVOCATION).expect_err("a file ancestor");
     assert!(error.to_string().contains("is not a directory"), "{error}");
 }
+
+#[path = "private_root_rollouts_tests.rs"]
+mod rollouts;

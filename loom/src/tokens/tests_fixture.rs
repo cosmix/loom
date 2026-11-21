@@ -5,6 +5,10 @@ use super::accumulate::MESSAGE_TABLE_CAP;
 use super::model::{AgentFlow, AgentKind, StageFlow, TokenFlow, TokenUsage};
 use super::tracker::scan_pass;
 use crate::fs::session_files::save_session;
+use crate::models::forward_receipt::{
+    receipts_path, ForwardBackend, ForwardIdentity, ForwardObservation, ForwardState,
+    FORWARD_RECEIPT_SCHEMA,
+};
 use crate::models::session::Session;
 use chrono::{DateTime, SecondsFormat, Utc};
 use serde_json::json;
@@ -155,6 +159,44 @@ impl Fixture {
         fs::create_dir_all(&dir).expect("subagents dir");
         let path = dir.join(file_name);
         fs::write(&path, text).expect("subagent file");
+        path
+    }
+
+    /// Writes a forward receipt of `stage_id` naming the Codex thread
+    /// `thread`, so a pass attributes its rollout to that stage.
+    pub(super) fn add_codex_thread(&self, stage_id: &str, thread: &str) {
+        let identity = ForwardIdentity::new("parent", "agent", "tool", stage_id, "session-1")
+            .expect("a forward identity");
+        let receipt = ForwardObservation {
+            schema: FORWARD_RECEIPT_SCHEMA,
+            receipt_id: identity.receipt_id(),
+            parent_session_id: identity.parent_session_id,
+            agent_id: identity.agent_id,
+            tool_use_id: identity.tool_use_id,
+            stage_id: identity.stage_id,
+            loom_session_id: identity.loom_session_id,
+            backend: ForwardBackend::Direct,
+            backend_id: thread.into(),
+            state: ForwardState::Succeeded,
+            observed_at: Utc::now(),
+            exit_code: Some(0),
+            codex_thread_id: Some(thread.into()),
+            locator: None,
+            model: None,
+            effort: None,
+        };
+        let path = receipts_path(&self.work_root, stage_id).expect("a receipts path");
+        fs::create_dir_all(path.parent().expect("a parent")).expect("receipts dir");
+        let line = receipt.encode_line().expect("an encoded receipt");
+        fs::write(path, format!("{line}\n")).expect("write the receipt");
+    }
+
+    /// Writes the rollout of `thread` below the Codex sessions root.
+    pub(super) fn add_rollout(&self, thread: &str, text: &str) -> PathBuf {
+        let day = self.codex_sessions().join("2026/09/04");
+        fs::create_dir_all(&day).expect("rollout day");
+        let path = day.join(format!("rollout-2026-09-04T12-00-00-{thread}.jsonl"));
+        fs::write(&path, text).expect("write rollout");
         path
     }
 

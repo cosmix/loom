@@ -246,3 +246,6 @@ fn the_final_scan_keeps_totals_a_checkpoint_too_big_to_write_would_lose() {
     assert_eq!(plan.totals.cache_write, 2 * MESSAGE_TABLE_CAP as u64);
     assert_eq!(plan.models[0].agents, 2, "main and subagent");
 }
+
+#[path = "plan_totals_lanes_tests.rs"]
+mod lanes;
