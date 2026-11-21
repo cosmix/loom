@@ -44,7 +44,7 @@ fn maven_resolves_from_the_host_seed_offline() {
     rig.write("src/main/java/App.java", APP);
     let host = home().join(".m2");
     let before = listing(&host);
-    let result = rig.run("mvn -o -B compile");
+    let result = rig.run("mvn -o -B -e compile");
     assert!(
         result.success,
         "maven did not resolve offline: {result:?}{}",
@@ -75,7 +75,7 @@ fn gradle_resolves_from_the_read_only_cache_offline() {
         ),
     );
     rig.write("src/main/java/App.java", APP);
-    let result = rig.run("gradle --offline --no-daemon compileJava");
+    let result = rig.run("gradle --offline --no-daemon --stacktrace compileJava");
     assert!(
         result.success,
         "gradle did not resolve offline: {result:?}{}",
