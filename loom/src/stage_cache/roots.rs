@@ -48,7 +48,7 @@ pub(super) struct Seeds {
 impl Seeds {
     /// Resolve the seeds from `host_env`; each is kept only when its directory
     /// exists, it does not expose a credential path and its path as named
-    /// reaches none of the `writable` roots ([`Writable::reached_by`]): a stage
+    /// reaches none of the `writable` roots (`Writable::reached_by`): a stage
     /// session names seeds inside its own cache root, where a confined
     /// command could replace the directory with a symlink to any host
     /// directory. The Go, ccache and Maven seeds go into list syntax
@@ -108,7 +108,7 @@ fn fits_a_list(path: &Path) -> bool {
 /// The existing seed directories [`super::StageCache::environment`] names,
 /// canonical and deduplicated, for a confined command's read-only roots. A
 /// seed whose path reaches one of the command's `writable` roots, as named or
-/// at any symlink hop, is left out ([`Seeds::resolve`]).
+/// at any symlink hop, is left out (`Seeds::resolve`).
 pub fn seed_read_roots(host_env: &BTreeMap<String, OsString>, writable: &[&Path]) -> Vec<PathBuf> {
     let seeds = Seeds::resolve(host_env, &Writable::new(writable));
     let mut roots = Vec::new();
@@ -123,11 +123,11 @@ pub fn seed_read_roots(host_env: &BTreeMap<String, OsString>, writable: &[&Path]
 
 /// The existing toolchain install roots and `PATH` entries strictly below
 /// HOME, with each entry's own install root and symlink target directories
-/// ([`install_roots`]), plus `/opt` and `/nix/store`, canonical, deduplicated
+/// (`install_roots`), plus `/opt` and `/nix/store`, canonical, deduplicated
 /// and without a root nested in another. HOME itself, every root containing
 /// HOME, and every entry that is, lies inside or contains a credential
 /// directory are left out. So is every root and `PATH` entry that reaches
-/// one of the `writable` roots ([`Writable::reached_by`]): such an entry is
+/// one of the `writable` roots (`Writable::reached_by`): such an entry is
 /// not expanded either, since a command writing there chooses its symlinks.
 pub fn toolchain_read_roots(
     host_env: &BTreeMap<String, OsString>,
@@ -189,7 +189,7 @@ struct HomeBounds<'a> {
 
 impl HomeBounds<'_> {
     /// The [`TOOLCHAIN_ROOTS`] and `PATH` entries strictly below HOME, each
-    /// `PATH` entry followed by its [`install_roots`], canonical and
+    /// `PATH` entry followed by its `install_roots`, canonical and
     /// deduplicated, every one [`Self::accepts`].
     fn roots(&self, host_env: &BTreeMap<String, OsString>) -> Vec<PathBuf> {
         let path_entries = host_env
