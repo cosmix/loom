@@ -100,6 +100,17 @@ fn retire_parts(mac: MacLaunch, mut process: OwnedProcess) -> Quiescence {
 /// one whose release is not proven is a [`MacStartedThenFailed`], keeping
 /// the private root.
 pub(crate) fn spawn_with_args(spec: &BoundarySpec, args: &[OsString]) -> Result<SpawnedBoundary> {
+    let host: Vec<(OsString, OsString)> = std::env::vars_os().collect();
+    spawn_with_host(spec, args, &host)
+}
+
+/// [`spawn_with_args`] with `host` as the supervisor's environment, which
+/// names the boundary's `HOME`, Cargo and rustup homes.
+pub(crate) fn spawn_with_host(
+    spec: &BoundarySpec,
+    args: &[OsString],
+    host: &[(OsString, OsString)],
+) -> Result<SpawnedBoundary> {
     crate::native_worker::ids::validate_invocation_id(&spec.invocation)
         .map_err(|error| anyhow!("invalid invocation id {:?}: {error}", spec.invocation))?;
     anyhow::ensure!(
@@ -113,7 +124,7 @@ pub(crate) fn spawn_with_args(spec: &BoundarySpec, args: &[OsString]) -> Result<
         .context("the macOS boundary needs the stage cache for its private root")?;
     let cache_root = cache.ensure()?;
     let private = private_root::create(&cache_root, &spec.invocation, &spec.codex_home)?;
-    let prepared = prepare(spec, &private).and_then(|prepared| {
+    let prepared = prepare(spec, &private, host).and_then(|prepared| {
         let child = spawn_bridge(&prepared, spec, args)?;
         Ok((prepared, child))
     });
@@ -139,16 +150,19 @@ struct Prepared {
     bridge_end: UnixStream,
 }
 
-fn prepare(spec: &BoundarySpec, private: &PrivateRoot) -> Result<Prepared> {
+fn prepare(
+    spec: &BoundarySpec,
+    private: &PrivateRoot,
+    host: &[(OsString, OsString)],
+) -> Result<Prepared> {
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
         .context("bind the bridge's loopback listener")?;
     let port = listener
         .local_addr()
         .context("read the bridge port")?
         .port();
-    let host: Vec<(OsString, OsString)> = std::env::vars_os().collect();
-    let plan = plan(spec, private, port, &host)?;
-    let profile = seatbelt_profile::profile(&plan.seatbelt)?;
+    let plan = plan(spec, private, port, host)?;
+    let profile = seatbelt_profile::profile_with(&plan.seatbelt, &plan.host_files)?;
     let (supervisor_end, bridge_end) =
         UnixStream::pair().context("create the bridge control channel")?;
     Ok(Prepared {

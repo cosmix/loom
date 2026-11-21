@@ -44,9 +44,12 @@ mod protected;
 #[path = "confine_developer_tools.rs"]
 mod developer_tools;
 
-#[cfg(any(target_os = "macos", test))]
+// Not cfg-gated: the native boundary's Seatbelt profile renders on every host
+// and shares these rules and the single-file rules below.
 #[path = "confine_ancestors.rs"]
-mod ancestors;
+pub(crate) mod ancestors;
+#[path = "confine_seatbelt_files.rs"]
+pub(crate) mod seatbelt_files;
 
 // Linux test builds render the profile for its policy contracts.
 #[cfg(any(target_os = "macos", all(test, target_os = "linux")))]

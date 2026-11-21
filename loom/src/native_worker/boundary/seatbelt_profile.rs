@@ -5,13 +5,20 @@
 //! Rule order is the policy: Seatbelt applies the last matching rule. The
 //! profile denies by default, then allows runtime access, the two network
 //! endpoints, reads below the read roots and writes below the writable roots;
-//! after those come the protected-path write denies, the hidden-path denies
-//! and, last, the read-only re-allows of the map stores below a hidden path.
+//! then the toolchain files outside them (the completion profile's: the
+//! directories above the worktree listable, the Cargo files there hidden and
+//! each `package.json` there readable, the host Cargo home's state files
+//! readable and its config hidden, the per-user Git files readable); after
+//! those come the protected-path write denies, the hidden-path denies and,
+//! last, the read-only re-allows of the map stores below a hidden path.
 //! Every path rule names each spelling a process may use (`spellings`).
 //! The profile renders on every host, so its contracts run on Linux too.
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
+
+use super::seatbelt_host_files::toolchain_file_rules;
+pub use super::seatbelt_host_files::HostFiles;
 
 /// What one macOS boundary may reach. Every root is an absolute path.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -72,11 +79,18 @@ const MACH_SERVICES: [&str; 8] = [
 /// The writable Codex home part: rollouts and session state.
 const SESSIONS: &str = "sessions";
 
-/// The profile confining one macOS native boundary to `spec`. Refuses a
-/// non-canonical or symlinked writable root, overlapping writable roots, a
-/// protected or hidden path that contains a writable root, a proxy socket
-/// below a writable root and any path holding a control character.
+/// [`profile_with`] for a boundary with no host Cargo home or `HOME`.
+#[cfg(test)]
 pub fn profile(spec: &SeatbeltBoundarySpec) -> Result<String> {
+    profile_with(spec, &HostFiles::default())
+}
+
+/// The profile confining one macOS native boundary to `spec`, with the
+/// toolchain files of `host` reachable. Refuses a non-canonical or symlinked
+/// writable root, overlapping writable roots, a protected or hidden path that
+/// contains a writable root, a proxy socket below a writable root and any
+/// path holding a control character.
+pub fn profile_with(spec: &SeatbeltBoundarySpec, host: &HostFiles) -> Result<String> {
     let sessions = validate(spec)?;
     let mut rules = String::from(BASE_RULES);
     rules.push_str(PROCESS_RULES);
@@ -86,19 +100,21 @@ pub fn profile(spec: &SeatbeltBoundarySpec) -> Result<String> {
         .collect();
     rules.push_str(&format!("(allow mach-lookup {})", services.concat()));
     rules.push_str(&network_rules(spec)?);
-    let readable = [&spec.worktree, &spec.tmp, &spec.codex_home]
+    let readable: Vec<&PathBuf> = [&spec.worktree, &spec.tmp, &spec.codex_home]
         .into_iter()
-        .chain(&spec.read_roots);
-    for root in readable {
+        .chain(&spec.read_roots)
+        .collect();
+    for root in &readable {
         rules.push_str(&rule(
             "allow file-read*",
             "subpath",
-            std::slice::from_ref(root),
+            std::slice::from_ref(*root),
         )?);
     }
     let writable = [spec.worktree.clone(), spec.tmp.clone(), sessions];
     rules.push_str(&rule("allow file-write*", "subpath", &writable)?);
     rules.push_str("(allow file-write-data (literal \"/dev/null\"))");
+    rules.push_str(&toolchain_file_rules(&spec.worktree, &readable, host)?);
     rules.push_str(&rule(
         "deny file-write*",
         "subpath",
@@ -178,7 +194,7 @@ fn with_targets(paths: &[PathBuf]) -> Vec<PathBuf> {
 
 /// Every spelling a process may use for `path`: the `/private` and public
 /// forms of `/var`, `/tmp` and `/etc`, and the Data-volume firmlink of each.
-/// `verify::criteria::confine_ancestors::seatbelt_spellings` maps only from
+/// `crate::verify::criteria::ancestors::seatbelt_spellings` maps only from
 /// `/private`; a spec may name either form, so both directions are needed.
 pub(crate) fn spellings(path: &Path) -> Vec<PathBuf> {
     let mut forms = vec![path.to_path_buf()];
@@ -226,7 +242,16 @@ pub(crate) fn quote(path: &Path) -> Result<String> {
     Ok(serde_json::to_string(&text)?)
 }
 
-/// The refusals [`profile`] documents; returns the writable sessions path.
+/// [`quote`] for a rule builder that takes an infallible quoter, once every
+/// path it will name has passed [`quote`].
+pub(crate) fn quote_checked(paths: &[PathBuf]) -> Result<impl Fn(&Path) -> String> {
+    for path in paths {
+        quote(path)?;
+    }
+    Ok(|path: &Path| serde_json::to_string(&path.to_string_lossy()).unwrap())
+}
+
+/// The refusals [`profile_with`] documents; returns the writable sessions path.
 fn validate(spec: &SeatbeltBoundarySpec) -> Result<PathBuf> {
     let named = [
         ("worktree", &spec.worktree),

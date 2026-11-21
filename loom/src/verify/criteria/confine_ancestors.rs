@@ -38,8 +38,14 @@
 //! `subpath` would expose every file below those ancestors, the main
 //! checkout and the home included. `/` is in the base profile already. The
 //! listings precede the file denies, which keep winning for those files.
+//!
+//! The native worker's Seatbelt profile
+//! (`native_worker::boundary::seatbelt_profile`) lists the same ancestors; it
+//! reaches this module as `crate::verify::criteria::ancestors`.
 
 use std::path::{Path, PathBuf};
+
+use crate::native_worker::boundary::seatbelt_profile::quote_checked;
 
 /// Files Cargo looks for in every directory above its package; they are hidden.
 const HIDDEN_ABOVE: [&str; 2] = ["Cargo.toml", ".cargo/config.toml"];
@@ -51,14 +57,13 @@ const READABLE_ABOVE: [&str; 1] = ["package.json"];
 /// The existing [`HIDDEN_ABOVE`] files in the directories above the canonical
 /// `tree` whose canonical path no root in `readable` (canonical) covers: each
 /// path, then its canonical form when that differs (a symlink).
-pub(super) fn hidden_above(tree: &Path, readable: &[PathBuf]) -> Vec<PathBuf> {
+pub(crate) fn hidden_above(tree: &Path, readable: &[PathBuf]) -> Vec<PathBuf> {
     existing_above(tree, readable, &HIDDEN_ABOVE)
 }
 
 /// The existing [`READABLE_ABOVE`] files above `tree`, selected as
 /// [`hidden_above`] selects its files.
-#[cfg(any(target_os = "macos", test))]
-pub(super) fn readable_above(tree: &Path, readable: &[PathBuf]) -> Vec<PathBuf> {
+pub(crate) fn readable_above(tree: &Path, readable: &[PathBuf]) -> Vec<PathBuf> {
     existing_above(tree, readable, &READABLE_ABOVE)
 }
 
@@ -83,11 +88,26 @@ fn existing_above(tree: &Path, readable: &[PathBuf], names: &[&str]) -> Vec<Path
     hidden
 }
 
+/// Every Seatbelt rule for the directories and files above the canonical
+/// `tree`, in the order that is the policy: the directories listed, then the
+/// [`HIDDEN_ABOVE`] files hidden (after the listings, so a deny wins whatever
+/// spelling names the file), then each [`READABLE_ABOVE`] file readable.
+/// `readable` holds the canonical read roots, whose files need no rule. The
+/// completion profile and the native worker's profile both render these.
+pub(crate) fn rules_above(tree: &Path, readable: &[PathBuf]) -> anyhow::Result<String> {
+    let listed = listed_above(tree);
+    let mut rules = listing_rules(&listed, quote_checked(&listed)?);
+    let hidden = hidden_above(tree, readable);
+    rules.push_str(&seatbelt_rules(&hidden, quote_checked(&hidden)?));
+    let package_scope = readable_above(tree, readable);
+    rules.push_str(&read_rules(&package_scope, quote_checked(&package_scope)?));
+    Ok(rules)
+}
+
 /// Seatbelt rules denying every operation that reads `hidden`, metadata and
 /// existence included, under each of [`seatbelt_spellings`]; they must follow
 /// the global metadata allowance.
-#[cfg(any(target_os = "macos", test))]
-pub(super) fn seatbelt_rules(hidden: &[PathBuf], quote: impl Fn(&Path) -> String) -> String {
+pub(crate) fn seatbelt_rules(hidden: &[PathBuf], quote: impl Fn(&Path) -> String) -> String {
     let mut rules = String::new();
     for path in hidden.iter().flat_map(|path| seatbelt_spellings(path)) {
         let path = quote(&path);
@@ -101,8 +121,7 @@ pub(super) fn seatbelt_rules(hidden: &[PathBuf], quote: impl Fn(&Path) -> String
 
 /// Seatbelt rules letting a command read each of `files` by `literal` path,
 /// under each of [`seatbelt_spellings`].
-#[cfg(any(target_os = "macos", test))]
-pub(super) fn read_rules(files: &[PathBuf], quote: impl Fn(&Path) -> String) -> String {
+pub(crate) fn read_rules(files: &[PathBuf], quote: impl Fn(&Path) -> String) -> String {
     let mut rules = String::new();
     for path in files.iter().flat_map(|path| seatbelt_spellings(path)) {
         rules.push_str(&format!("(allow file-read* (literal {}))", quote(&path)));
@@ -111,8 +130,7 @@ pub(super) fn read_rules(files: &[PathBuf], quote: impl Fn(&Path) -> String) -> 
 }
 
 /// The directories above the canonical `tree`, nearest first, without `/`.
-#[cfg(any(target_os = "macos", test))]
-pub(super) fn listed_above(tree: &Path) -> Vec<PathBuf> {
+pub(crate) fn listed_above(tree: &Path) -> Vec<PathBuf> {
     tree.ancestors()
         .skip(1)
         .filter(|dir| dir.parent().is_some())
@@ -122,8 +140,7 @@ pub(super) fn listed_above(tree: &Path) -> Vec<PathBuf> {
 
 /// Seatbelt rules letting a command list each of `dirs`, under each of
 /// [`seatbelt_spellings`], and read none of the files in them.
-#[cfg(any(target_os = "macos", test))]
-pub(super) fn listing_rules(dirs: &[PathBuf], quote: impl Fn(&Path) -> String) -> String {
+pub(crate) fn listing_rules(dirs: &[PathBuf], quote: impl Fn(&Path) -> String) -> String {
     let mut rules = String::new();
     for dir in dirs.iter().flat_map(|dir| seatbelt_spellings(dir)) {
         rules.push_str(&format!("(allow file-read* (literal {}))", quote(&dir)));
@@ -138,8 +155,7 @@ pub(super) fn listing_rules(dirs: &[PathBuf], quote: impl Fn(&Path) -> String) -
 /// form, which is `path` itself; the others cost one rule each and cover a
 /// release that reports another. Revisit when the macOS probe in
 /// `confine_seatbelt_tests.rs` shows which form the kernel matches.
-#[cfg(any(target_os = "macos", test))]
-pub(super) fn seatbelt_spellings(path: &Path) -> Vec<PathBuf> {
+pub(crate) fn seatbelt_spellings(path: &Path) -> Vec<PathBuf> {
     let mut spellings = vec![path.to_path_buf()];
     if let Ok(rest) = path.strip_prefix("/private") {
         if ["var", "tmp", "etc"]

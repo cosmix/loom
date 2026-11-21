@@ -17,7 +17,7 @@ use std::time::Duration;
 
 use serial_test::serial;
 
-use crate::native_worker::boundary::{spawn_with_args, BoundarySpec, Quiescence};
+use crate::native_worker::boundary::{spawn_with_args, spawn_with_host, BoundarySpec, Quiescence};
 use crate::native_worker::protocol::wire::SandboxMode;
 use crate::process::sandbox_probe::{confined_commands_runnable, skip_unless};
 use crate::stage_cache::StageCache;
@@ -149,8 +149,7 @@ fn echo_once(proxy: UnixListener) -> mpsc::Receiver<Vec<u8>> {
     receiver
 }
 
-/// Runs the payload through the production launch and returns its output,
-/// after checking the boundary retired released with its private root gone.
+/// Runs the payload through the production launch ([`run_released`]).
 fn run_payload(host: Host) -> (String, Option<Vec<u8>>, Host) {
     let proxy = host.proxy.try_clone().expect("clone the proxy stand-in");
     let tunnelled = echo_once(proxy);
@@ -164,7 +163,21 @@ fn run_payload(host: Host) -> (String, Option<Vec<u8>>, Host) {
         host.root.join("other.sock").into(),
         decoy_port.to_string().into(),
     ];
-    let mut boundary = spawn_with_args(&host.spec, &args).expect("the boundary starts");
+    let host_env: Vec<(OsString, OsString)> = std::env::vars_os().collect();
+    let output = run_released(&host.spec, &args, &host_env);
+    let echoed = tunnelled.recv_timeout(Duration::from_secs(1)).ok();
+    (output, echoed, host)
+}
+
+/// Runs `args` through the production launch with `host_env` as the
+/// supervisor's environment and returns the output, after checking the
+/// boundary retired released with its private root gone.
+fn run_released(
+    spec: &BoundarySpec,
+    args: &[OsString],
+    host_env: &[(OsString, OsString)],
+) -> String {
+    let mut boundary = spawn_with_host(spec, args, host_env).expect("the boundary starts");
     let scratch = boundary
         .mac_identity()
         .expect("a mac identity")
@@ -187,8 +200,7 @@ fn run_payload(host: Host) -> (String, Option<Vec<u8>>, Host) {
         .expect("the payload finished");
     assert_eq!(boundary.retire(), Quiescence::Released);
     assert!(!scratch.exists(), "the private root is removed");
-    let echoed = tunnelled.recv_timeout(Duration::from_secs(1)).ok();
-    (output, echoed, host)
+    output
 }
 
 fn verdict<'a>(output: &'a str, name: &str) -> &'a str {
@@ -314,3 +326,6 @@ fn native_macos_the_private_root_lives_under_the_stage_cache() {
     assert_eq!(boundary.retire(), Quiescence::Released);
     assert!(!expected.exists());
 }
+
+#[path = "seatbelt_profile_kernel_cargo_tests.rs"]
+mod cargo;

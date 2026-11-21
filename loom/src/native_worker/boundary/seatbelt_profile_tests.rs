@@ -257,3 +257,6 @@ fn native_macos_worker_lifecycle() {
 #[cfg(target_os = "macos")]
 #[path = "seatbelt_profile_kernel_tests.rs"]
 mod kernel;
+
+#[path = "seatbelt_profile_host_files_tests.rs"]
+mod host_files;

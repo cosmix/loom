@@ -12,23 +12,18 @@ use crate::stage_cache::StageCache;
 use super::{ancestors, protected, read_roots_beside, writable_roots, CargoScratch};
 use super::{environment_path, Grants, NetworkAccess};
 
-#[path = "confine_seatbelt_files.rs"]
-mod files;
-use files::{hidden_rules, host_cargo_home_rules, readable_file_rules};
-use files::{HIDDEN_IN_M2, READABLE_IN_GIT_CONFIG};
-
+use super::seatbelt_files::{git_config_rules, hidden_rules, host_cargo_home_rules};
 // SBPL quoting is shared with the native worker's macOS boundary; it
 // refuses a control character (see its docs for why).
 use crate::native_worker::boundary::seatbelt_profile::quote;
+#[cfg(target_os = "macos")]
+use crate::native_worker::boundary::seatbelt_profile::quote_checked;
 
-/// [`quote`] for a rule builder that takes an infallible quoter, once every
-/// path it will name has passed [`quote`].
-fn quote_checked(paths: &[PathBuf]) -> Result<impl Fn(&Path) -> String> {
-    for path in paths {
-        quote(path)?;
-    }
-    Ok(|path: &Path| serde_json::to_string(&path.to_string_lossy()).unwrap())
-}
+/// Maven files that never reach a confined command: the user's settings, which
+/// can hold repository credentials, and the JDK toolchains file that
+/// `actions/setup-java` writes. Maven fails on a file it can see but not read
+/// (`Non-readable toolchains`), so they are hidden like the Cargo config files.
+const HIDDEN_IN_M2: [&str; 3] = ["settings.xml", "settings-security.xml", "toolchains.xml"];
 
 /// Seatbelt read, write and deny rules for the tree, scratch, Cargo home, git
 /// roots, stage cache and the command's own read-only roots.
@@ -86,17 +81,7 @@ fn named_rules(
     readable: &[PathBuf],
 ) -> Result<String> {
     let mut profile = protected_rules(tree, grants)?;
-    // The listings precede the Cargo file denies, so a deny still wins for a
-    // hidden file whatever spelling names it.
-    let listed = ancestors::listed_above(tree);
-    profile.push_str(&ancestors::listing_rules(&listed, quote_checked(&listed)?));
-    let hidden = ancestors::hidden_above(tree, readable);
-    profile.push_str(&ancestors::seatbelt_rules(&hidden, quote_checked(&hidden)?));
-    let package_scope = ancestors::readable_above(tree, readable);
-    profile.push_str(&ancestors::read_rules(
-        &package_scope,
-        quote_checked(&package_scope)?,
-    ));
+    profile.push_str(&ancestors::rules_above(tree, readable)?);
     if let Some(home) = host_cargo_home(scratch) {
         profile.push_str(&host_cargo_home_rules(home)?);
     }
@@ -104,10 +89,7 @@ fn named_rules(
         profile.push_str(&hidden_rules(
             &HIDDEN_IN_M2.map(|name| home.join(".m2").join(name)),
         )?);
-        let git = home.join(".config/git");
-        profile.push_str(&readable_file_rules(
-            &READABLE_IN_GIT_CONFIG.map(|name| git.join(name)),
-        )?);
+        profile.push_str(&git_config_rules(&home)?);
     }
     if let Some(root) = grants.cache_root {
         profile.push_str(&sccache_socket_rule(root)?);

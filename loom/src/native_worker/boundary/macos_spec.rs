@@ -7,10 +7,10 @@ use std::process::Command;
 
 use anyhow::{Context, Result};
 
-use super::environment::{lookup, seatbelt_environment};
+use super::environment::{host_cargo_home, lookup, seatbelt_environment};
 use super::mounts::{self, codex_package, SYSTEM_CODEX_CONFIG};
 use super::private_root::PrivateRoot;
-use super::seatbelt_profile::SeatbeltBoundarySpec;
+use super::seatbelt_profile::{HostFiles, SeatbeltBoundarySpec};
 use super::BoundarySpec;
 use crate::verify::criteria::{git_dirs, read_roots, NetworkAccess};
 
@@ -18,10 +18,12 @@ use crate::verify::criteria::{git_dirs, read_roots, NetworkAccess};
 /// agent configuration, which later trusted readers follow.
 const PROTECTED: [&str; 4] = [".git", ".loom", ".claude", ".codex"];
 
-/// One macOS launch: the profile's spec, the canonical loom and codex
-/// executables, and the whole environment.
+/// One macOS launch: the profile's spec and the host toolchain files it
+/// reaches, the canonical loom and codex executables, and the whole
+/// environment.
 pub(super) struct MacPlan {
     pub(super) seatbelt: SeatbeltBoundarySpec,
+    pub(super) host_files: HostFiles,
     pub(super) loom: PathBuf,
     pub(super) codex: PathBuf,
     pub(super) env: Vec<(OsString, OsString)>,
@@ -58,13 +60,7 @@ pub(super) fn plan(
         &spec.invocation,
         package.helper_dir.as_deref(),
     );
-    let mut probe = Command::new(&package.program);
-    probe.env_clear().envs(env.iter().map(|(k, v)| (k, v)));
-    let mut roots = read_roots(&probe);
-    roots.push(package.root.clone());
-    let git = git_dirs(&worktree, NetworkAccess::Denied).map(|dirs| dirs.roots);
-    roots.extend(git.unwrap_or_default());
-    roots.dedup();
+    let roots = boundary_read_roots(&package.program, &env, &package.root, &worktree);
     let seatbelt = SeatbeltBoundarySpec {
         protected: PROTECTED.iter().map(|name| worktree.join(name)).collect(),
         hidden: hidden(&worktree, &spec.codex_home, home.as_deref()),
@@ -77,10 +73,33 @@ pub(super) fn plan(
     };
     Ok(MacPlan {
         seatbelt,
+        host_files: HostFiles {
+            cargo_home: host_cargo_home(host),
+            home,
+        },
         loom,
         codex: package.program,
         env,
     })
+}
+
+/// The installation and toolchain roots of the boundary environment `env`
+/// (probed with `program`), the codex release `package_root` and the Git
+/// metadata of `worktree`.
+fn boundary_read_roots(
+    program: &Path,
+    env: &[(OsString, OsString)],
+    package_root: &Path,
+    worktree: &Path,
+) -> Vec<PathBuf> {
+    let mut probe = Command::new(program);
+    probe.env_clear().envs(env.iter().map(|(k, v)| (k, v)));
+    let mut roots = read_roots(&probe);
+    roots.push(package_root.to_path_buf());
+    let git = git_dirs(worktree, NetworkAccess::Denied).map(|dirs| dirs.roots);
+    roots.extend(git.unwrap_or_default());
+    roots.dedup();
+    roots
 }
 
 /// The state root of `worktree`, the real Codex home `codex_home` (and

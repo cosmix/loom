@@ -35,12 +35,15 @@ pub(crate) mod private_root;
 mod probe;
 mod quiescence;
 pub mod quiescence_scan;
+mod seatbelt_host_files;
 pub mod seatbelt_profile;
 #[cfg(target_os = "linux")]
 mod tmpdir;
 
 #[cfg(target_os = "macos")]
 pub(crate) use macos::spawn_with_args;
+#[cfg(all(test, target_os = "macos"))]
+pub(crate) use macos::spawn_with_host;
 pub use probe::native_backend_qualified;
 pub(crate) use quiescence::identity_for;
 #[cfg(target_os = "macos")]
