@@ -266,7 +266,7 @@ jobs:
       # toolchain probe whose seed variable is not yet in GITHUB_ENV.
       - name: Run tests
         working-directory: loom
-        run: cargo test --all-targets
+        run: cargo test --all-targets --no-fail-fast
         env:
           LOOM_E2E_REQUIRE_TMUX: "1"
           LOOM_TEST_REQUIRE_SANDBOX_FREE: "1"
