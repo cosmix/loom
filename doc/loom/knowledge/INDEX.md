@@ -139,7 +139,7 @@
 | [ambient-filesystem-trust](mistakes/ambient-filesystem-trust.md) |  | 186 |
 | [briefs-and-bug-reports](mistakes/briefs-and-bug-reports.md) |  | 386 |
 | [cargo-under-confinement](mistakes/cargo-under-confinement.md) | Cargo in sandboxes and confined runs: audit fetches, cold builds, Seatbelt | 83 |
-| [ci-toolchain-and-cargo](mistakes/ci-toolchain-and-cargo.md) |  | 380 |
+| [ci-toolchain-and-cargo](mistakes/ci-toolchain-and-cargo.md) |  | 400 |
 | [codex-direct-mode-invisible](mistakes/codex-direct-mode-invisible.md) |  | 23 |
 | [codex-lane-rogue-wrapper](mistakes/codex-lane-rogue-wrapper.md) |  | 187 |
 | [codex-navigation](mistakes/codex-navigation.md) | Reader | 202 |
@@ -227,6 +227,7 @@
 | --- | --- | --- |
 | [agent-rule-bending-hardening](concerns/agent-rule-bending-hardening.md) |  | 375 |
 | [automatic-knowledge-source-graph-followups](concerns/automatic-knowledge-source-graph-followups.md) | Gap | 69 |
+| [ci-macos-test-build-time](concerns/ci-macos-test-build-time.md) | macOS lib test build swaps on the 7 GB runner; nightly split and open options | 16 |
 | [code-quality-and-hook-debt](concerns/code-quality-and-hook-debt.md) | Debt | 315 |
 | [codex-heartbeat-starvation](concerns/codex-heartbeat-starvation.md) |  | 22 |
 | [consolidation-followups](concerns/consolidation-followups.md) |  | 148 |
@@ -244,7 +245,7 @@
 | [planning-document-model-followups](concerns/planning-document-model-followups.md) |  | 170 |
 | [planning-guidance-followups](concerns/planning-guidance-followups.md) |  | 43 |
 | [planning-session-sandbox-limits](concerns/planning-session-sandbox-limits.md) |  | 238 |
-| [platform-and-commit-gaps](concerns/platform-and-commit-gaps.md) |  | 247 |
+| [platform-and-commit-gaps](concerns/platform-and-commit-gaps.md) |  | 249 |
 | [runtime-and-session-safety](concerns/runtime-and-session-safety.md) |  | 137 |
 | [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) |  | 400 |
 | [source-graph-known-gaps](concerns/source-graph-known-gaps.md) | Limits | 94 |
