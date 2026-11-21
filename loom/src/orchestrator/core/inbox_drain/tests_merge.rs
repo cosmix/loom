@@ -143,7 +143,10 @@ pub(super) fn assert_refused(fx: &Fixture, orchestrator: &mut Orchestrator) {
     assert!(worktree_of(fx).is_dir());
 }
 
+// Serial: the confined acceptance run reads HOME and PATH, which serial
+// tests replace while they run.
 #[test]
+#[serial_test::serial]
 fn merge_resolved_lands_the_merge_and_leaves_the_worktree_for_the_resolver_exit() {
     if !confined_commands_runnable() {
         return;
@@ -174,7 +177,10 @@ fn merge_resolved_lands_the_merge_and_leaves_the_worktree_for_the_resolver_exit(
     );
 }
 
+// Serial: the confined acceptance run reads HOME and PATH, which serial
+// tests replace while they run.
 #[test]
+#[serial_test::serial]
 fn merge_resolved_lands_when_the_target_moved_after_the_resolution() {
     if !confined_commands_runnable() {
         return;
@@ -271,7 +277,10 @@ fn merge_resolved_is_refused_for_another_session_kind_or_stage() {
     );
 }
 
+// Serial: the confined acceptance run reads HOME and PATH, which serial
+// tests replace while they run.
 #[test]
+#[serial_test::serial]
 fn merge_resolved_refuses_a_branch_that_touches_a_control_path() {
     if !confined_commands_runnable() {
         return;
