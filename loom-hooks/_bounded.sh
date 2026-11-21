@@ -3,61 +3,76 @@
 if [[ "${_LOOM_BOUNDED_LOADED:-}" == 1 ]]; then return 0; fi
 _LOOM_BOUNDED_LOADED=1
 
-# _loom_watchdog <pid> <seconds> - the timer behind loom_run_bounded's bash
-# fallback. Its stdin is a pipe on which the caller writes one line once the
-# command has ended. With no line after <seconds> it sends TERM to <pid>, and
-# KILL a second later. `read -t` keeps time, so no sleep process exists to
-# outlive the call. Every path returns only after that line (or EOF, if the
-# caller died) has arrived: a watchdog gone before the caller's write would
-# turn the write into a SIGPIPE that ends the caller. The `|| true` guards
-# keep errexit, which a `set -e` caller passes down, from ending the watchdog
-# when <pid> has already exited.
+# _loom_watchdog <seconds> - the timer behind loom_run_bounded's bash
+# fallback. Its stdin is the pipe on which the starter writes the command's
+# pid, then, once the command has ended, its exit status. With no status after
+# <seconds> it sends TERM to the pid, and KILL a second later, then returns the
+# status the starter reports for the stopped command. `read -t` keeps time, so
+# no sleep process exists to outlive the call. Every path returns only after
+# the status line (or EOF, if the starter died) has arrived: a watchdog gone
+# before the starter's write would turn the write into a SIGPIPE. The
+# `|| true` guards keep errexit, which a `set -e` caller passes down, from
+# ending the watchdog when the pid has already exited.
 _loom_watchdog() {
-	local line
-	read -r -t "$2" line && return 0
-	kill -TERM "$1" 2>/dev/null || true
-	read -r -t 1 line && return 0
-	kill -KILL "$1" 2>/dev/null || true
+	local pid="" line=""
+	read -r pid || return 1
+	read -r -t "$1" line && return "${line:-1}"
+	kill -TERM "$pid" 2>/dev/null || true
+	read -r -t 1 line && return "${line:-1}"
+	kill -KILL "$pid" 2>/dev/null || true
 	read -r line || true
+	return "${line:-137}"
 }
 
 # loom_run_bounded <seconds> <command...>
 # Prefer GNU coreutils on macOS, then Linux timeout. Stock macOS has neither,
 # so the fallback is a pure-bash watchdog and the call is never left
-# unbounded: the command runs in the background, _loom_watchdog runs as a
-# process substitution reading a pipe the caller holds on fd 9, and the caller
-# waits for the command, then writes one line to that pipe to retire the
-# watchdog. Returns the command's exit status, 143 (TERM) or 137 (KILL) when
-# the watchdog had to stop it, where timeout returns 124. The fallback signals
-# only the direct child pid (GNU timeout signals the process group), so the
-# command should not fork children that hold the caller's pipe. stdin reaches
-# the command (`<&0`: a bare background command would get /dev/null), and the
-# watchdog's output goes to /dev/null: holding the caller's stdout pipe open,
-# it would make a surrounding $(...) block until it exited. The command starts
-# before the pipe opens, so it never holds the watchdog's pipe.
-# The caller never signals the watchdog. A forked bash keeps the caller's EXIT
-# trap and signal handlers until it resets them, and a signal that lands in
-# that window runs the caller's EXIT trap in the child; a command that ends at
-# once would make a retiring signal land there often. A line on a pipe has no
-# such window. The caller writes a line rather than closing the pipe because
-# bash 3.2's `read -t` returns 1 on a timeout and on EOF alike.
+# unbounded. A starter (the left side of a pipe) runs the command in the
+# background, writes its pid to the pipe, waits for it and writes its exit
+# status; _loom_watchdog reads both from the other end. The pipeline's status
+# is the watchdog's: the command's exit status, or 143 (TERM) or 137 (KILL)
+# when the watchdog had to stop it, where timeout returns 124. The fallback
+# signals only the direct child pid (GNU timeout signals the process group),
+# so the command should not fork children that hold the caller's pipes.
+# The fallback opens no /dev/fd path: a process substitution would open /dev/fd/<n>,
+# which a confined host (a macOS host job's Seatbelt profile) denies, leaving
+# the command unrun and its output empty. A plain pipe needs no path.
+# fd 8 carries the caller's stdout past the pipe to the command, so the command
+# never holds the watchdog's pipe and the command's output never enters it;
+# stdin reaches the command (`<&0`: a bare background command would get
+# /dev/null). The watchdog writes to /dev/null and closes fd 8: holding the
+# caller's stdout, it would make a surrounding $(...) wait for it.
+# The caller never signals the watchdog or the starter. A forked bash keeps the
+# caller's EXIT trap and signal handlers until it resets them, and a signal
+# that lands in that window runs the caller's EXIT trap in the child; a
+# command that ends at once would make a retiring signal land there often. A
+# line on a pipe has no such window. Lines rather than EOF mark each step
+# because bash 3.2's `read -t` returns 1 on a timeout and on EOF alike.
 # Shared here so every hook delegate gets the same bound.
 loom_run_bounded() {
-	local seconds="$1" pid="" status=0
+	local seconds="$1"
 	shift
 	if command -v gtimeout &>/dev/null; then
 		gtimeout -k 1 "$seconds" "$@"
 	elif command -v timeout &>/dev/null; then
 		timeout -k 1 "$seconds" "$@"
 	else
-		"$@" <&0 &
-		pid=$!
 		{
-			wait "$pid" 2>/dev/null || status=$?
-			printf '\n' >&9
-		} 9> >(_loom_watchdog "$pid" "$seconds" >/dev/null 2>&1)
-		return "$status"
+			_loom_bounded_start "$@" | _loom_watchdog "$seconds" >/dev/null 2>&1 8>&-
+		} 8>&1
 	fi
+}
+
+# _loom_bounded_start <command...> - loom_run_bounded's starter: runs the
+# command on the caller's stdin and fd 8, and writes its pid and then its exit
+# status, one line each, to stdout (the watchdog's pipe).
+_loom_bounded_start() {
+	local pid="" status=0
+	"$@" <&0 >&8 8>&- &
+	pid=$!
+	printf '%s\n' "$pid"
+	wait "$pid" 2>/dev/null || status=$?
+	printf '%s\n' "$status"
 }
 
 loom_read_input() {

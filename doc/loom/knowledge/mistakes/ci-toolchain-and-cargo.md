@@ -398,3 +398,13 @@ A host `cargo check --target x86_64-unknown-linux-gnu` does not replace this: aw
 **Prevention:** before committing in a shared checkout, run `git diff --cached --name-only`; when other paths are staged, commit from a temporary index (`GIT_INDEX_FILE=<tmp> git read-tree HEAD`, `git add <own paths>`, `git write-tree`, `git commit-tree`, `git update-ref`), then `git reset -q HEAD -- <own paths>` so the shared index matches the new HEAD for those paths.
 
 **Fix:** the commit was undone with `git reset --soft HEAD~1` and rebuilt from a temporary index; the other session's staging stayed untouched.
+
+## A CI Run Was Started on Gates Known to Fail (2026-11-21)
+
+**What happened:** with two failure classes still open (confined toolchain probes under `$HOME`, hook policy tests under the host-job lane), `nightly.yml` was dispatched anyway, committing about an hour of macOS runner time to failures already known.
+
+**Why:** the goal of one full green run was treated as a reason to start the run, ahead of fixing what was known to fail.
+
+**Prevention:** start a CI run only when every failure it can show is unknown. Reproduce and fix known failures locally first; the macOS host-job lane and the confined probes both run on a Mac (`cargo test --lib -- --ignored --exact process::sandbox_probe::host_job_lane::the_lib_tests_pass_under_host_job_confinement`).
+
+**Fix:** the dispatch was cancelled; the known failures are fixed locally before the next nightly dispatch.

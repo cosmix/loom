@@ -39,7 +39,8 @@ loom_subagent_stop_review_harvest() {
 	if ((status != 0)); then
 		loom_debug "$HOOK_NAME: review harvest failed (exit $status): $output"
 		local cause_line=$'(^|\n)loom-review-harvest-cause=([a-z_]+)' cause=""
-		if ((status == 124)); then
+		# 124: timeout(1); 143/137: loom_run_bounded's bash fallback (TERM, then KILL).
+		if ((status == 124 || status == 143 || status == 137)); then
 			cause=".timed_out"
 		elif [[ "$output" =~ $cause_line ]]; then
 			cause=".${BASH_REMATCH[2]}"

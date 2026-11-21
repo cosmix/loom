@@ -400,3 +400,13 @@ reaches 3.
 **Prevention:** a hook test fixture that reaches a symlink-refusing helper resolves its temp root with `pwd -P`. A stub run under `loom_run_bounded` never leaves a child holding stdout (redirect it, or use a builtin). Reproduce the first trap on Linux with `TMPDIR=<symlink-to-/tmp>`.
 
 **Fix:** `TMP=$(cd "$(mktemp -d ...)" && pwd -P)` in `stage-terminal-guard.sh`; `sleep ... >/dev/null 2>&1` in the reviewer-brief stub.
+
+## The Bash Timeout Fallback Emptied Hook Input Under a macOS Host Job (2026-11-21)
+
+**What happened:** under the macOS host-job lane in CI, three `worktree-file-guard` policy tests got exit 0 (allow) where they expected 2, and the codex forward guard blocked with "tool_name metadata is missing". The runner has neither `gtimeout` nor `timeout`, so `loom_run_bounded` used its bash fallback, which started the watchdog as a process substitution on fd 9. Opening `/dev/fd/<n>` for writing is denied by the host-job Seatbelt profile (writes only to `/dev/null`), so `loom_read_input` returned nothing and each guard saw an empty payload; `worktree-file-guard.sh` deliberately allows empty input.
+
+**Why:** a dev Mac with `/usr/bin/timeout` never takes the fallback, so only the CI lane runs it confined.
+
+**Prevention:** a hook helper opens no `/dev/fd` path (no process substitution, no `<(...)`/`>(...)`); reproduce fallback-only behaviour by forcing both timeout checks false and running the lane with `LOOM_HOST_JOB_LANE_ARGS="fs::permissions::hooks::"`.
+
+**Fix:** the fallback pipes `_loom_bounded_start` into `_loom_watchdog` (`loom-hooks/_bounded.sh`); current behaviour: [Portable Shell Helpers](../architecture/hook-system.md#portable-shell-helpers-and-the-subagentstop-ledgers). An empty payload still allows in `worktree-file-guard.sh` and `credential-guard.sh`, so a silently failing reader fails open: an open policy question.

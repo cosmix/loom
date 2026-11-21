@@ -147,13 +147,16 @@ differ where it matters. The rules, in `loom-hooks/_lifecycle.sh` unless noted:
   `date -u -d` is the set-kernel-DST option and can change the DST flag when run as root, while GNU
   date rejects `-j`, so the BSD attempt fails harmlessly there.
 - **`loom_run_bounded <secs> <cmd...>`** (`_bounded.sh`, sourced by `_read_ledger.sh`) bounds a command with `gtimeout`, else
-  `timeout`, else a pure-bash watchdog for stock macOS: the command runs in the background with `<&0`,
-  `_loom_watchdog` runs as a process substitution reading a pipe on fd 9, TERMs the command after
-  `<secs>` (`read -t`) and KILLs it a second later, and the caller writes one line to that pipe to
-  retire it and never signals it, because a signal reaching a freshly forked bash runs the caller's
-  EXIT trap there (see [Hooks Shell Portability](../mistakes/hooks-shell-portability.md)). The fallback signals only the direct child (not its process group) and
-  returns 143/137 where `timeout` returns 124. `_read_discipline.sh` bounds `loom map --outline` with
-  it; hooks that only read stdin keep the `gtimeout` → `timeout` → `cat` cascade.
+  `timeout`, else a pure-bash watchdog for stock macOS: a plain pipe from `_loom_bounded_start` (runs
+  the command in the background on the caller's stdin and on fd 8, the caller's stdout, then writes the
+  pid and, after `wait`, the exit status) into `_loom_watchdog` (keeps time with `read -t`, TERMs the
+  pid after `<secs>` and KILLs it a second later, returns the reported status). Nothing signals the
+  starter, the watchdog or the caller, because a signal reaching a freshly forked bash runs the
+  caller's EXIT trap there (see [Hooks Shell Portability](../mistakes/hooks-shell-portability.md)).
+  No process substitution: a macOS host job's Seatbelt profile denies opening `/dev/fd/<n>`. The
+  fallback signals only the direct child (not its process group) and returns 143/137 where `timeout`
+  returns 124; `subagent-stop.sh` counts all three as a harvest timeout. Every hook reads stdin
+  through `loom_read_input`, which uses it, and `_read_discipline.sh` bounds `loom map --outline` with it.
 - **Bash 3.2.** Guard every value expansion of a possibly empty array with `${arr[@]+"${arr[@]}"}`
   (`${#arr[@]}` is safe). Use `$$`, never `$BASHPID`. Here-strings and here-documents need a temp file
   (`$TMPDIR`, `/tmp`, `/var/tmp`, `/usr/tmp`, then the current directory; `set -e` does not stop the

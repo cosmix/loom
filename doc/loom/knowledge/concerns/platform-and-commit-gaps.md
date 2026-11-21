@@ -40,7 +40,7 @@ Open gaps:
   extensionless shims too.
 - `knowledge-orient-emits.sh` asserts `3 entries` but not the byte count, so dropping the padded-`wc`
   strip in `knowledge-orient.sh` survives under the shim (cosmetic).
-- Hook stdin reads use `loom_read_input` from `loom-hooks/_bounded.sh:63-65`; its portable
+- Hook stdin reads use `loom_read_input` from `loom-hooks/_bounded.sh::loom_read_input`; its portable
   `loom_run_bounded` fallback provides a deadline when GNU timeout is absent. Separate direct
   command-execution fallbacks remain in `user-prompt-context.sh:77-86`,
   `codex-apply-patch.sh:97-103` and `loom-relay.sh:196-204`; audit those independently.

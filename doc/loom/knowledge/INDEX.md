@@ -41,7 +41,7 @@
 | [daemon-owned-commits](architecture/daemon-owned-commits.md) |  | 151 |
 | [directory-structure](architecture/directory-structure.md) | Tree | 50 |
 | [execution-containment](architecture/execution-containment.md) |  | 398 |
-| [hook-system](architecture/hook-system.md) |  | 339 |
+| [hook-system](architecture/hook-system.md) |  | 342 |
 | [knowledge-bootstrap](architecture/knowledge-bootstrap.md) | KB | 83 |
 | [knowledge-hierarchy](architecture/knowledge-hierarchy.md) | KB fs | 264 |
 | [live-preview-editor](architecture/live-preview-editor.md) | Editor | 32 |
@@ -139,7 +139,7 @@
 | [ambient-filesystem-trust](mistakes/ambient-filesystem-trust.md) |  | 186 |
 | [briefs-and-bug-reports](mistakes/briefs-and-bug-reports.md) |  | 386 |
 | [cargo-under-confinement](mistakes/cargo-under-confinement.md) | Cargo in sandboxes and confined runs: audit fetches, cold builds, Seatbelt | 83 |
-| [ci-toolchain-and-cargo](mistakes/ci-toolchain-and-cargo.md) |  | 400 |
+| [ci-toolchain-and-cargo](mistakes/ci-toolchain-and-cargo.md) |  | 410 |
 | [codex-direct-mode-invisible](mistakes/codex-direct-mode-invisible.md) |  | 23 |
 | [codex-lane-rogue-wrapper](mistakes/codex-lane-rogue-wrapper.md) |  | 187 |
 | [codex-navigation](mistakes/codex-navigation.md) | Reader | 202 |
@@ -157,7 +157,7 @@
 | [dev-install](mistakes/dev-install.md) | Daemon | 58 |
 | [dispute-guards-delivery](mistakes/dispute-guards-delivery.md) | host-job hangs, parallel worker collisions, scaffold wording, hook quirks | 121 |
 | [doctrine-and-acceptance](mistakes/doctrine-and-acceptance.md) |  | 392 |
-| [hooks-shell-portability](mistakes/hooks-shell-portability.md) |  | 402 |
+| [hooks-shell-portability](mistakes/hooks-shell-portability.md) |  | 412 |
 | [host-verify-group-containment](mistakes/host-verify-group-containment.md) |  | 47 |
 | [knowledge-base-drift](mistakes/knowledge-base-drift.md) |  | 276 |
 | [knowledge-cli-invariants](mistakes/knowledge-cli-invariants.md) | Rules | 241 |
