@@ -2,6 +2,7 @@
 //! saves before it ends the server, against a real tmux server where one is
 //! needed.
 
+use super::capture::PaneReads;
 use super::socket::tests::{server_socket_dir, TmuxServerGuard, TmuxTmpDirGuard};
 use super::*;
 use crate::process::sandbox_probe::{skip_unless, unix_socket_bindable};
@@ -201,6 +202,138 @@ fn a_second_kill_leaves_the_first_history_alone() {
     assert_eq!(
         read_history(work.path(), &session.id).unwrap().as_deref(),
         Some(&b"saved by the first kill\n"[..])
+    );
+}
+
+/// A pane that switches to the alternate screen, paints `LAST-FRAME`, and
+/// keeps running until `release` exists, then (when `restore` is set) leaves the
+/// alternate screen again and prints `BACK-ON-MAIN`.
+fn write_fullscreen_agent(dir: &Path, release: &Path, restore: bool) -> std::path::PathBuf {
+    let after = if restore {
+        "printf '\\033[?1049lBACK-ON-MAIN\\n'; sleep 300"
+    } else {
+        "sleep 300"
+    };
+    let body = format!(
+        "#!/bin/sh\nprintf 'MAIN-BEFORE\\n'\nprintf '\\033[?1049hLAST-FRAME'\nwhile [ ! -e '{}' ]; do sleep 0.05; done\n{after}\n",
+        release.display()
+    );
+    write_script(dir, "fullscreen.sh", &body)
+}
+
+/// A tmux session of `session` persisted as running, so the monitor samples it.
+fn persist_running(work: &Path, session: &mut Session) {
+    session.backend = crate::models::session::SessionBackendKind::Tmux;
+    session.status = crate::models::session::SessionStatus::Running;
+    session.pid = Some(std::process::id());
+    crate::orchestrator::terminal::native::write_test_pid_identity(
+        work,
+        session,
+        std::process::id(),
+    )
+    .unwrap();
+    crate::fs::session_files::save_session(session, work).unwrap();
+}
+
+fn persisted_fullscreen(work: &Path, session: &Session) -> bool {
+    crate::fs::session_files::load_session_exact(work, &session.id)
+        .unwrap()
+        .unwrap()
+        .fullscreen_seen
+}
+
+#[test]
+#[serial]
+fn a_pane_that_returns_to_its_main_screen_keeps_its_last_alternate_frame() {
+    let socket_dir = server_socket_dir();
+    let _tmux_tmpdir = TmuxTmpDirGuard::set(socket_dir.path());
+    if skip_without_tmux(
+        "a_pane_that_returns_to_its_main_screen_keeps_its_last_alternate_frame",
+        socket_dir.path(),
+    ) {
+        return;
+    }
+    let work = tempfile::TempDir::new().unwrap();
+    let mut session = staged_session();
+    persist_running(work.path(), &mut session);
+    let socket = socket_name(&session);
+    let _server = TmuxServerGuard::new(&socket);
+    let name = viewer::tmux_session_name(&session).unwrap();
+    let release = work.path().join("release");
+    let agent = write_fullscreen_agent(work.path(), &release, true);
+    spawn_in_tmux(&socket, &name, work.path(), &agent).unwrap();
+
+    wait_until("the pane's alternate screen", || {
+        matches!(
+            capture::TmuxPane.alternate_screen(&session),
+            Some(capture::PaneScreen::Alternate(visible))
+                if String::from_utf8_lossy(&visible).contains("LAST-FRAME")
+        )
+    });
+    fullscreen::sample_fullscreen(work.path(), std::slice::from_ref(&session));
+    assert!(persisted_fullscreen(work.path(), &session));
+    let saved = read_history(work.path(), &session.id).unwrap().unwrap();
+    assert!(String::from_utf8_lossy(&saved).contains("LAST-FRAME"));
+
+    // The program leaves the alternate screen: the pane is back on its main
+    // screen, which a sample and the teardown must not save over the frame.
+    std::fs::write(&release, b"").unwrap();
+    wait_until("the pane's main screen", || {
+        matches!(
+            capture::TmuxPane.alternate_screen(&session),
+            Some(capture::PaneScreen::Main)
+        )
+    });
+    fullscreen::sample_fullscreen(work.path(), std::slice::from_ref(&session));
+    TmuxBackend::new(work.path().to_path_buf())
+        .kill_session(&session)
+        .unwrap();
+
+    let saved = String::from_utf8_lossy(&read_history(work.path(), &session.id).unwrap().unwrap())
+        .into_owned();
+    assert!(saved.contains("LAST-FRAME"), "{saved}");
+    assert!(!saved.contains("BACK-ON-MAIN") && !saved.contains("MAIN-BEFORE"));
+}
+
+#[test]
+#[serial]
+fn a_pane_first_seen_fullscreen_at_teardown_saves_its_screen() {
+    let socket_dir = server_socket_dir();
+    let _tmux_tmpdir = TmuxTmpDirGuard::set(socket_dir.path());
+    if skip_without_tmux(
+        "a_pane_first_seen_fullscreen_at_teardown_saves_its_screen",
+        socket_dir.path(),
+    ) {
+        return;
+    }
+    let work = tempfile::TempDir::new().unwrap();
+    let mut session = staged_session();
+    persist_running(work.path(), &mut session);
+    let socket = socket_name(&session);
+    let _server = TmuxServerGuard::new(&socket);
+    let name = viewer::tmux_session_name(&session).unwrap();
+    let release = work.path().join("release");
+    let agent = write_fullscreen_agent(work.path(), &release, false);
+    spawn_in_tmux(&socket, &name, work.path(), &agent).unwrap();
+    wait_until("the pane's alternate screen", || {
+        matches!(
+            capture::TmuxPane.alternate_screen(&session),
+            Some(capture::PaneScreen::Alternate(visible))
+                if String::from_utf8_lossy(&visible).contains("LAST-FRAME")
+        )
+    });
+    assert!(!persisted_fullscreen(work.path(), &session));
+
+    TmuxBackend::new(work.path().to_path_buf())
+        .kill_session(&session)
+        .unwrap();
+
+    assert!(persisted_fullscreen(work.path(), &session));
+    let saved = String::from_utf8_lossy(&read_history(work.path(), &session.id).unwrap().unwrap())
+        .into_owned();
+    assert!(
+        saved.contains("LAST-FRAME") && !saved.contains("MAIN-BEFORE"),
+        "{saved}"
     );
 }
 

@@ -10,7 +10,7 @@ use crate::models::session::{SessionExitReason, SessionType};
 use crate::models::stage::{StageStatus, StageType};
 use crate::orchestrator::terminal::tmux::history_relpath;
 use crate::status::data::{
-    CompletionBlockerState, CompletionBlockerSummary, FailingCriterion, StageSummary,
+    CompletionBlockerState, CompletionBlockerSummary, FailingCriterion, HistoryKind, StageSummary,
 };
 
 mod merge;
@@ -52,6 +52,8 @@ pub struct AttentionEntry {
     pub failing_criteria: Vec<FailingCriterion>,
     /// The session whose terminal history the stage left, when it left one.
     pub terminal_history: Option<String>,
+    /// What that session's file holds; `Some` exactly when `terminal_history` is.
+    pub terminal_history_kind: Option<HistoryKind>,
     pub cleanup_warning: Option<String>,
     pub has_human_review_choices: bool,
     pub dispute_count: Option<u32>,
@@ -139,6 +141,7 @@ impl AttentionEntry {
             reason: None,
             failing_criteria: Vec::new(),
             terminal_history: None,
+            terminal_history_kind: None,
             cleanup_warning: None,
             has_human_review_choices: false,
             dispute_count: None,
@@ -155,8 +158,12 @@ impl AttentionEntry {
     /// instead, so the web wire carries `note` alone.
     pub fn text_note(&self) -> Option<String> {
         let history = self.terminal_history.as_deref().map(|session| {
+            let what = match self.terminal_history_kind {
+                Some(HistoryKind::LastScreen) => "last screen",
+                _ => "terminal history",
+            };
             format!(
-                "terminal history of its last session: less -R .loom/work/{}",
+                "{what} of its last session: less -R .loom/work/{}",
                 history_relpath(session).display()
             )
         });
@@ -287,10 +294,14 @@ fn status_entry(stage: &StageSummary) -> Option<AttentionEntry> {
         });
 
     let in_review = stage.status == StageStatus::NeedsHumanReview;
+    let shows_history = stage.status == StageStatus::Blocked && !guidance_automatic;
     let terminal_history = stage
         .terminal_history_session
         .clone()
-        .filter(|_| stage.status == StageStatus::Blocked && !guidance_automatic);
+        .filter(|_| shows_history);
+    let terminal_history_kind = stage
+        .terminal_history_kind
+        .filter(|_| terminal_history.is_some());
     let review_reason = stage.review_reason.clone().filter(|_| in_review);
     let reason = match stage.status {
         StageStatus::Blocked => stage.close_reason.clone(),
@@ -305,6 +316,7 @@ fn status_entry(stage: &StageSummary) -> Option<AttentionEntry> {
         reason,
         failing_criteria: stage.block_detail.failing_criteria.clone(),
         terminal_history,
+        terminal_history_kind,
         has_human_review_choices: in_review,
         dispute_count,
         judge_heartbeat_secs,

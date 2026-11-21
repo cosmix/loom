@@ -35,6 +35,7 @@ fn entry(label: &'static str, command: Option<&str>, note: Option<&str>) -> Atte
         reason: None,
         failing_criteria: Vec::new(),
         terminal_history: None,
+        terminal_history_kind: None,
         cleanup_warning: None,
         has_human_review_choices: false,
         dispute_count: None,
@@ -195,6 +196,22 @@ fn the_terminal_history_command_follows_the_note() {
         lines
             .iter()
             .any(|line| line.contains("terminal history of its last session")),
+        "{lines:#?}"
+    );
+}
+
+#[test]
+fn a_fullscreen_sessions_capture_is_called_its_last_screen() {
+    let lines = rendered(AttentionEntry {
+        terminal_history: Some("session-ab12cd34-1700000000".into()),
+        terminal_history_kind: Some(crate::status::data::HistoryKind::LastScreen),
+        ..entry("BLOCKED", None, Some("blocked by the agent: run it"))
+    });
+
+    assert!(
+        lines
+            .iter()
+            .any(|line| line.contains("last screen of its last session")),
         "{lines:#?}"
     );
 }

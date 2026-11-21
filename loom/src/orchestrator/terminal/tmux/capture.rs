@@ -105,15 +105,95 @@ pub(crate) fn capture_pane_tail(session: &Session, lines: usize) -> Option<Strin
     .map(|stdout| String::from_utf8_lossy(&stdout).into_owned())
 }
 
+fn run_tail(args: &[&str], timeout: Duration, operation: String) -> Result<Output> {
+    let mut command = tmux_control_command(args);
+    run_bounded_tail_output(&mut command, timeout, operation)
+}
+
 /// `session`'s whole scrollback and screen, colors included, or `None` when
 /// the pane cannot be read. A scrollback past the capture limit keeps its end:
 /// `history::bound_history` keeps the end anyway, so its start cannot cost the
 /// session its whole history.
 pub(super) fn capture_history(session: &Session) -> Option<Vec<u8>> {
-    capture_stdout(session, capture_history_argv, |args, timeout, operation| {
-        let mut command = tmux_control_command(args);
-        run_bounded_tail_output(&mut command, timeout, operation)
-    })
+    capture_stdout(session, capture_history_argv, run_tail)
+}
+
+/// What a pane shows, read in one tmux server operation.
+pub(super) enum PaneScreen {
+    /// The pane is on its alternate screen (a fullscreen program); the bytes
+    /// are the visible screen with colors.
+    Alternate(Vec<u8>),
+    /// The pane shows its main screen; no visible bytes are kept.
+    Main,
+}
+
+/// The tmux reads the history writers need, injectable so their decisions can
+/// be exercised without a tmux server.
+pub(super) trait PaneReads {
+    /// In one tmux server operation on the session's exact pane target:
+    /// `Some(Alternate(visible bytes))` while the pane is still on its
+    /// alternate screen, `Some(Main)` once it shows its main screen, `None`
+    /// when the pane cannot be read.
+    fn alternate_screen(&self, session: &Session) -> Option<PaneScreen>;
+    /// The whole scrollback with colors, `None` when it cannot be read.
+    fn scrollback(&self, session: &Session) -> Option<Vec<u8>>;
+}
+
+/// The real tmux reads.
+pub(super) struct TmuxPane;
+
+impl PaneReads for TmuxPane {
+    fn alternate_screen(&self, session: &Session) -> Option<PaneScreen> {
+        // The target is embedded in a tmux command string below; a name that
+        // could end its quoting is refused rather than escaped.
+        let name = tmux_session_name(session)?;
+        if name.contains(['\'', '\\', '\n']) {
+            return None;
+        }
+        capture_stdout(session, alternate_screen_argv, run_tail)
+            .and_then(|stdout| parse_alternate_screen(&stdout))
+    }
+
+    fn scrollback(&self, session: &Session) -> Option<Vec<u8>> {
+        capture_history(session)
+    }
+}
+
+/// Pure builder for the argv that answers, in one tmux operation, whether the
+/// pane is on its alternate screen and, only then, what it shows. `if-shell -F`
+/// tests `#{alternate_on}` and runs the matching branch inside the same server
+/// command queue, so a pane that restores its main screen between a separate
+/// check and a separate capture cannot slip through. The branches print a
+/// leading `1` (alternate, then the visible screen with colors, wrapped lines
+/// joined) or `0` (main, nothing more). `target` must hold no `'`.
+pub(super) fn alternate_screen_argv(socket: &str, target: &str) -> Vec<String> {
+    let alternate = format!("display-message -p 1 ; capture-pane -p -e -J -t '{target}'");
+    [
+        "-L",
+        socket,
+        "if-shell",
+        "-F",
+        "-t",
+        target,
+        "#{alternate_on}",
+        alternate.as_str(),
+        "display-message -p 0",
+    ]
+    .iter()
+    .map(|part| (*part).to_string())
+    .collect()
+}
+
+/// Read the output of [`alternate_screen_argv`]: anything that does not lead
+/// with its `1` or `0` line is no answer.
+fn parse_alternate_screen(stdout: &[u8]) -> Option<PaneScreen> {
+    if let Some(visible) = stdout.strip_prefix(b"1\n") {
+        Some(PaneScreen::Alternate(visible.to_vec()))
+    } else if stdout.starts_with(b"0\n") {
+        Some(PaneScreen::Main)
+    } else {
+        None
+    }
 }
 
 #[cfg(test)]
@@ -145,6 +225,39 @@ mod tests {
                 "-"
             ]
         );
+    }
+
+    #[test]
+    fn the_alternate_screen_read_is_one_conditional_operation_on_the_exact_target() {
+        let argv = alternate_screen_argv("loom-socket", &exact_pane_target("loom-stage"));
+        assert_eq!(
+            argv,
+            [
+                "-L",
+                "loom-socket",
+                "if-shell",
+                "-F",
+                "-t",
+                "=loom-stage:",
+                "#{alternate_on}",
+                "display-message -p 1 ; capture-pane -p -e -J -t '=loom-stage:'",
+                "display-message -p 0",
+            ]
+        );
+    }
+
+    #[test]
+    fn the_alternate_screen_answer_is_its_leading_line() {
+        assert!(matches!(
+            parse_alternate_screen(b"1\nvisible\n"),
+            Some(PaneScreen::Alternate(visible)) if visible == b"visible\n"
+        ));
+        assert!(matches!(
+            parse_alternate_screen(b"0\n"),
+            Some(PaneScreen::Main)
+        ));
+        assert!(parse_alternate_screen(b"").is_none());
+        assert!(parse_alternate_screen(b"no server running\n").is_none());
     }
 
     #[test]

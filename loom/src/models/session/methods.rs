@@ -26,6 +26,7 @@ impl Session {
             tracking_key: String::new(),
             native_window_title: None,
             backend: SessionBackendKind::default(),
+            fullscreen_seen: false,
         }
     }
 

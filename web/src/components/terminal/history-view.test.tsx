@@ -3,13 +3,14 @@ import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { HistoryLoader } from "@/api/terminal-history";
+import type { HistoryKind } from "@/components/terminal/history-labels";
 import { HistoryView } from "@/components/terminal/history-view";
 import { fakeFactory, terminalStage } from "@/components/terminal/terminal-view-test-helpers";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 const SESSION = "session-ab12cd34-1700000000";
 
-function renderHistory(load: HistoryLoader, onBack?: () => void) {
+function renderHistory(load: HistoryLoader, onBack?: () => void, kind: HistoryKind = "history") {
   const emulators = fakeFactory();
   const stage = terminalStage({ session_alive: false, terminal_history_session: SESSION });
   const router = createMemoryRouter([
@@ -20,6 +21,7 @@ function renderHistory(load: HistoryLoader, onBack?: () => void) {
           <HistoryView
             stage={stage}
             session={SESSION}
+            kind={kind}
             frame="page"
             factory={emulators.factory}
             load={load}
@@ -47,6 +49,35 @@ describe("HistoryView", () => {
     expect(doubles[0].calls.opened).toEqual([screen.getByLabelText("Saved terminal history")]);
     expect(screen.getByText("Terminal history")).toBeTruthy();
     expect(screen.getByText(/read-only/)).toBeTruthy();
+  });
+
+  it("words a last screen without the word history", async () => {
+    const { doubles } = renderHistory(async () => new Uint8Array([104]), undefined, "last_screen");
+    await waitFor(() => expect(doubles[0]?.calls.written).toHaveLength(1));
+
+    expect(screen.getByLabelText("Saved last screen")).toBeTruthy();
+    expect(document.querySelector(".eyebrow")?.textContent).toBe("Last screen");
+    expect(screen.getByText(/this is its last screen/)).toBeTruthy();
+    expect(document.querySelector(".terminal-hint")?.textContent).not.toMatch(/history/i);
+  });
+
+  it("words a missing and a failed last screen without the word history", async () => {
+    renderHistory(async () => null, undefined, "last_screen");
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      "This session left no saved screen.",
+    );
+    cleanup();
+
+    renderHistory(
+      async () => {
+        throw new Error("HTTP 500");
+      },
+      undefined,
+      "last_screen",
+    );
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      "The saved screen could not be loaded.",
+    );
   });
 
   it("asks for the history of the session it was given", async () => {

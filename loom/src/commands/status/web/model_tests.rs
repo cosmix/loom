@@ -204,6 +204,7 @@ fn attention_conversion_keeps_failure_label() {
         reason: None,
         failing_criteria: Vec::new(),
         terminal_history: None,
+        terminal_history_kind: None,
         cleanup_warning: None,
         has_human_review_choices: false,
         dispute_count: None,

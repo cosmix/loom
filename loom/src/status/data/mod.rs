@@ -13,6 +13,8 @@ mod resolver;
 mod rounds;
 mod sanitize;
 mod stopped;
+#[cfg(test)]
+mod stopped_contract_tests;
 mod timing;
 mod verdict_completion;
 
@@ -34,6 +36,17 @@ pub use crate::models::failure::FailureInfo;
 pub use crate::models::session::SessionExitReason;
 pub use crate::models::session::{SessionBackendKind, SessionType};
 pub use crate::models::stage::{IssueKind, StageIssue, StageStatus, StageType};
+
+/// What a saved terminal history file holds.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum HistoryKind {
+    /// The session's whole scrollback.
+    History,
+    /// The last alternate-screen frame of a session that ran a fullscreen
+    /// program, which has no scrollback to save.
+    LastScreen,
+}
 
 /// Activity status derived from heartbeat and session state
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
@@ -255,6 +268,9 @@ pub struct StageSummary {
     /// once the stage has no live terminal.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub terminal_history_session: Option<String>,
+    /// What `terminal_history_session`'s file holds. Set together with it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terminal_history_kind: Option<HistoryKind>,
     /// What the attention card for a blocked stage shows beyond the reason.
     #[serde(default, skip_serializing_if = "BlockDetail::is_empty")]
     pub block_detail: BlockDetail,

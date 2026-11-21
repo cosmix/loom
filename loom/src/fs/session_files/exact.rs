@@ -10,7 +10,7 @@ use crate::parser::frontmatter::parse_from_markdown;
 
 use super::session_to_markdown;
 
-fn exact_session_path(work_dir: &Path, session_id: &str) -> PathBuf {
+pub(super) fn exact_session_path(work_dir: &Path, session_id: &str) -> PathBuf {
     work_dir.join("sessions").join(format!("{session_id}.md"))
 }
 

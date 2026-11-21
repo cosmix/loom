@@ -165,4 +165,10 @@ pub struct Session {
     /// liveness dispatch correctly after a daemon restart.
     #[serde(default)]
     pub backend: SessionBackendKind,
+    /// Whether the session's pane was ever seen on tmux's alternate screen (a
+    /// fullscreen program). Sticky: set once by the monitor or at teardown,
+    /// never cleared. A flagged session's saved history is its last
+    /// alternate-screen frame rather than its scrollback.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub fullscreen_seen: bool,
 }

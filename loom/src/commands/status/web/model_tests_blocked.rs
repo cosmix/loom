@@ -55,6 +55,7 @@ pub(super) fn stage_local_runtime() -> StageSummary {
     .map(str::to_owned)
     .to_vec();
     stage.terminal_history_session = Some("session-9c1d4e7a-1788700000".to_owned());
+    stage.terminal_history_kind = Some(HistoryKind::LastScreen);
     stage.block_detail = local_runtime_detail(&stage.acceptance[4]);
     stage
 }

@@ -5,6 +5,7 @@ use anyhow::{Context, Result};
 use crate::models::session::Session;
 use crate::models::stage::Stage;
 use crate::orchestrator::liveness::LivenessService;
+use crate::orchestrator::terminal::tmux::sample_fullscreen;
 use crate::parser::frontmatter::parse_from_markdown;
 
 use super::completion_blockers::{filter_owned_hung_events, BlockerScan, CompletionBlockerWatch};
@@ -148,6 +149,7 @@ impl Monitor {
         let stages = self.load_stages()?;
         let mut sessions = self.load_sessions()?;
         reconcile_codex_evidence(&self.config.work_dir, &sessions);
+        sample_fullscreen(&self.config.work_dir, &sessions);
         let blocker_scan = self.scan_completion_blockers(&stages);
 
         // Poll heartbeat files before judging context. A persisted high-water

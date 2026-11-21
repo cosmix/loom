@@ -60,6 +60,7 @@ macro_rules! stage {
             close_reason: None,
             acceptance: vec![],
             terminal_history_session: None,
+            terminal_history_kind: None,
             block_detail: Default::default(),
             history: Vec::new(),
             contract_testing: None,

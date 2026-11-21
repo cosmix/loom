@@ -10,6 +10,7 @@ import { StageHeading } from "@/components/stage-heading";
 import { ThreadChips } from "@/components/stage-thread";
 import { stageHref } from "@/components/stage-href";
 import { StageReport } from "@/components/stage-report";
+import { historyLabels } from "@/components/terminal/history-labels";
 import { TerminalMark, terminalGate, terminalHistory } from "@/components/terminal/terminal-glyph";
 import { terminalHref } from "@/components/terminal/terminal-view";
 import { Button } from "@/components/ui/button";
@@ -49,17 +50,15 @@ export function StagePage() {
 /// ended; disabled, with the reason on hover, when neither is open to it.
 function StageActions({ stage, terminals }: { stage: StageSummary; terminals: boolean }) {
   const gate = terminalGate(terminals, stage);
-  const history = terminalHistory(terminals, stage) !== null;
+  const history = terminalHistory(terminals, stage);
+  const labels = history && historyLabels(history.kind);
   return (
     <div className="flex shrink-0 items-center gap-2">
-      {gate === null || history ? (
+      {gate === null || labels ? (
         <Button variant="outline" size="sm" asChild>
-          <Link
-            to={terminalHref(stage.id)}
-            aria-label={history ? "open terminal history" : "open terminal"}
-          >
+          <Link to={terminalHref(stage.id)} aria-label={labels ? labels.aria : "open terminal"}>
             <TerminalMark className="size-3.5" />
-            {history ? "Terminal history" : "Terminal"}
+            {labels ? labels.button : "Terminal"}
           </Link>
         </Button>
       ) : (

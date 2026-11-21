@@ -17,6 +17,7 @@ import { StageReport } from "@/components/stage-report";
 import { toneClass } from "@/components/state-badge";
 import { useScrollGutter } from "@/components/use-scroll-gutter";
 import { HistoryView } from "@/components/terminal/history-view";
+import { historyLabels, type HistoryKind } from "@/components/terminal/history-labels";
 import { TerminalMark, terminalGate, terminalHistory } from "@/components/terminal/terminal-glyph";
 import {
   IDLE_FRAME,
@@ -88,7 +89,7 @@ export interface StageModalProps {
 interface StageView {
   stage: StageSummary | undefined;
   gate: string | null;
-  history: string | null;
+  history: { session: string; kind: HistoryKind } | null;
   nativeBackend: boolean;
 }
 
@@ -212,7 +213,8 @@ function Panes({
     return (
       <HistoryView
         stage={stage}
-        session={history}
+        session={history.session}
+        kind={history.kind}
         frame="dialog"
         factory={props.historyFactory}
         load={props.historyLoader}
@@ -241,7 +243,7 @@ function Body({
 }: {
   stage: StageSummary;
   gate: string | null;
-  history: string | null;
+  history: StageView["history"];
   nativeBackend: boolean;
 }) {
   const openTerminal = useOpenTerminal();
@@ -258,7 +260,7 @@ function Body({
         terminalButton={
           <TerminalButton
             reason={history === null ? gate : null}
-            history={history !== null}
+            kind={history?.kind ?? null}
             nativeBackend={nativeBackend}
             onOpen={() => openTerminal(stage.id)}
           />
@@ -338,15 +340,16 @@ function BodyFoot({ id }: { id: string }) {
 /// The primary way into the terminal.
 function TerminalButton({
   reason,
-  history,
+  kind,
   nativeBackend,
   onOpen,
 }: {
   reason: string | null;
-  history: boolean;
+  kind: HistoryKind | null;
   nativeBackend: boolean;
   onOpen: () => void;
 }) {
+  const labels = kind === null ? null : historyLabels(kind);
   return (
     <div className="ml-auto flex shrink-0 items-center gap-2">
       <Button
@@ -355,13 +358,11 @@ function TerminalButton({
         size="sm"
         disabled={reason !== null}
         onClick={onOpen}
-        aria-label={history ? "open terminal history" : "open terminal"}
-        title={
-          history ? "The session ended; its saved screen opens read-only" : (reason ?? undefined)
-        }
+        aria-label={labels ? labels.aria : "open terminal"}
+        title={labels ? labels.title : (reason ?? undefined)}
       >
         <TerminalMark className="size-3.5" />
-        {history ? "Terminal history" : "Terminal"}
+        {labels ? labels.button : "Terminal"}
         <Kbd className="h-4 min-w-4 px-1 text-[10px]">t</Kbd>
       </Button>
       {nativeBackend && <CopyCommand command="loom run --backend tmux" />}

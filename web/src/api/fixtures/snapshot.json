@@ -416,6 +416,7 @@
           "TROOFOO_STACK=ephemeral bun run stack:ephemeral --with objectstore -- bun test packages/db/src/ephemeral-services"
         ],
         "terminal_history_session": "session-9c1d4e7a-1788700000",
+        "terminal_history_kind": "last_screen",
         "block_detail": {
           "failing_criteria": [
             {
@@ -847,7 +848,8 @@
           "diagnostic": "FAILED [criterion 4]: stack:ephemeral cannot create AF_UNIX sockets"
         }
       ],
-      "terminal_history": true
+      "terminal_history": true,
+      "terminal_history_kind": "last_screen"
     }
   ],
   "alerts": [

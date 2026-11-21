@@ -11,7 +11,7 @@ use crate::orchestrator::scheduling_report::{self, Alert, Severity};
 use crate::orchestrator::tick;
 use crate::status::attention_model::failure_label;
 use crate::status::attention_model::{Alternative, AttentionEntry};
-use crate::status::data::{FailingCriterion, StatusData};
+use crate::status::data::{FailingCriterion, HistoryKind, StatusData};
 
 /// One frame of the web dashboard: everything the page renders, as one JSON object.
 /// Served by `/api/status` and carried by every `full` message on `/ws`.
@@ -140,6 +140,9 @@ pub struct WebAttention {
     pub failing_criteria: Vec<FailingCriterion>,
     /// Whether the stage left a terminal history the dashboard can open.
     pub terminal_history: bool,
+    /// What that history holds; present exactly when `terminal_history` is true.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terminal_history_kind: Option<HistoryKind>,
     /// Post-merge cleanup warning, when present.
     pub cleanup_warning: Option<String>,
     /// Whether the attention item has human review choices.
@@ -195,6 +198,7 @@ impl From<&AttentionEntry> for WebAttention {
             acceptance: entry.acceptance.clone(),
             failing_criteria: entry.failing_criteria.clone(),
             terminal_history: entry.terminal_history.is_some(),
+            terminal_history_kind: entry.terminal_history_kind,
             cleanup_warning: entry.cleanup_warning.clone(),
             has_human_review_choices: entry.has_human_review_choices,
             dispute_count: entry.dispute_count,

@@ -262,11 +262,19 @@ describe("a deliberate block", () => {
   });
 
   it("links the terminal history instead of printing a shell command", () => {
-    renderBody(entry());
+    renderBody({ ...entry(), terminal_history_kind: "history" });
 
     const link = screen.getByRole("link", { name: "View terminal history" });
     expect(link.getAttribute("href")).toBe("/terminal/local-runtime");
     expect(document.body.textContent).not.toContain("less -R");
+  });
+
+  it("links a last screen without the word history", () => {
+    renderBody({ ...entry(), terminal_history_kind: "last_screen" });
+
+    const link = screen.getByRole("link", { name: "View last screen" });
+    expect(link.getAttribute("href")).toBe("/terminal/local-runtime");
+    expect(screen.queryByRole("link", { name: "View terminal history" })).toBeNull();
   });
 
   it("omits the block facts for an entry that has none", () => {
