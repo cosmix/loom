@@ -93,6 +93,9 @@ fn named_rules(
     let named = [&paths.read_only, &paths.hidden_files, &paths.hidden_dirs];
     let named: Vec<PathBuf> = named.into_iter().flatten().cloned().collect();
     profile.push_str(&protected::seatbelt_rules(&paths, quote_checked(&named)?));
+    if let Some(journals) = grants.memory_journals {
+        profile.push_str(&protected::memory_journals_rule(&quote(&journals.dir)?));
+    }
     let hidden = ancestors::hidden_above(tree, readable);
     profile.push_str(&ancestors::seatbelt_rules(&hidden, quote_checked(&hidden)?));
     if let Some(home) = scratch.host_cargo_home() {

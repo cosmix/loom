@@ -69,6 +69,45 @@ fn a_tree_without_its_own_state_root_protects_nothing() {
     assert_eq!(protected(&root.join("doc")), Protected::default());
 }
 
+/// Bubblewrap mounts the journals read-only at their canonical path and again
+/// where the worktree's link reaches them when that path differs.
+#[cfg(target_os = "linux")]
+#[test]
+fn bubblewrap_mounts_the_journals_where_the_link_reaches_them() {
+    use crate::verify::criteria::MemoryJournals;
+    let args = |journals: &MemoryJournals| -> Vec<String> {
+        let mut command = std::process::Command::new("bwrap");
+        super::bind_memory_journals(&mut command, journals);
+        command
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect()
+    };
+    let canonical = MemoryJournals {
+        dir: PathBuf::from("/real/state/memory"),
+        linked: PathBuf::from("/real/state/memory"),
+    };
+    assert_eq!(
+        args(&canonical),
+        ["--ro-bind", "/real/state/memory", "/real/state/memory"]
+    );
+    let linked = MemoryJournals {
+        linked: PathBuf::from("/repo/.loom/work/memory"),
+        ..canonical
+    };
+    assert_eq!(
+        args(&linked),
+        [
+            "--ro-bind",
+            "/real/state/memory",
+            "/real/state/memory",
+            "--ro-bind",
+            "/real/state/memory",
+            "/repo/.loom/work/memory"
+        ]
+    );
+}
+
 /// Each check prints a word only when it got through; a refused write or
 /// read prints nothing, so stdout lists exactly what the command could do.
 fn canary() -> String {

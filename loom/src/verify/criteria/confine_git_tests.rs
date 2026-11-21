@@ -162,7 +162,7 @@ fn provisioning_binds_no_git_metadata() {
     let mut original = std::process::Command::new("/bin/sh");
     original.current_dir(&tree);
     let (wrapped, _scratch, git) =
-        super::super::wrap(&original, Some(&tree), NetworkAccess::Provision, None).unwrap();
+        super::super::wrap(&original, Some(&tree), NetworkAccess::Provision, None, None).unwrap();
     assert_eq!(git, None);
     let admin = admin.to_string_lossy();
     assert!(

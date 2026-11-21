@@ -13,6 +13,7 @@ use crate::stage_cache::StageCache;
 
 use super::cache::CachePolicy;
 use super::live_output::LiveOutput;
+use super::memory_journals::MemoryJournals;
 use super::result::CriterionResult;
 
 /// Default timeout for command execution (5 minutes)
@@ -68,6 +69,12 @@ pub struct CriteriaConfig {
     /// command's caches private and empty.
     pub stage_cache: Option<StageCache>,
 
+    /// The plan's memory journals, outside `tree_root`, that confined commands
+    /// may read, never write ([`super::memory_journals_grant`]). Their content is no
+    /// input the pass cache fingerprints, so a run with them neither reads nor
+    /// stores cached passes. `None` grants nothing beyond the tree.
+    pub memory_journals: Option<MemoryJournals>,
+
     /// Told each criterion's 0-based index and result as it finishes, before
     /// the next one starts. `None` by default.
     pub observer: Option<CriterionObserver>,
@@ -109,6 +116,7 @@ impl Default for CriteriaConfig {
             cache_dir: None,
             tree_root: None,
             stage_cache: None,
+            memory_journals: None,
             observer: None,
             live_output: None,
             only: None,
@@ -154,6 +162,12 @@ impl CriteriaConfig {
     /// Give confined commands the stage's build caches.
     pub fn with_stage_cache(mut self, stage_cache: Option<StageCache>) -> Self {
         self.stage_cache = stage_cache;
+        self
+    }
+
+    /// Let confined commands read `journals` (see [`Self::memory_journals`]).
+    pub fn with_memory_journals(mut self, journals: Option<MemoryJournals>) -> Self {
+        self.memory_journals = journals;
         self
     }
 

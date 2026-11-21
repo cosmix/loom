@@ -240,3 +240,35 @@ fn an_inherited_stage_resolves_no_cache_even_without_home() {
 
     assert!(config.stage_cache.is_none());
 }
+
+/// `loom stage complete` and `loom check` grant a knowledge-distill stage's
+/// criteria the plan's memory journals, and no other stage's.
+#[test]
+#[serial]
+fn only_a_distill_stage_runs_with_the_memory_journals() {
+    use crate::models::stage::StageType;
+    let _env = crate::test_cache_env::CacheEnv::pin();
+    let (_repo, work_dir) = crate::test_cache_env::repo_with_work_dir();
+    std::fs::create_dir_all(work_dir.join("memory")).unwrap();
+    let paths = StageExecutionPaths {
+        worktree_root: None,
+        acceptance_dir: None,
+    };
+    let stage = |stage_type| {
+        let mut stage = Stage::new("journal-stage".to_string(), None);
+        stage.stage_type = stage_type;
+        stage.sandbox.command_confinement = Some(CommandConfinement::Inherit);
+        stage
+    };
+    let config = |stage: &Stage| {
+        acceptance_config(stage, "journal-stage", &work_dir, &paths)
+            .unwrap()
+            .memory_journals
+    };
+
+    let distill = stage(StageType::KnowledgeDistill);
+    let grant = crate::verify::criteria::memory_journals_grant(&distill, &work_dir).unwrap();
+    assert!(grant.is_some(), "the state root holds journals");
+    assert_eq!(config(&distill), grant);
+    assert_eq!(config(&stage(StageType::Standard)), None);
+}

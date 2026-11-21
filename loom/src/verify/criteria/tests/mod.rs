@@ -9,6 +9,7 @@ mod config_tests;
 mod confine_tests;
 mod criterion_timeout_tests;
 mod executor_tests;
+mod memory_journals_cache_tests;
 mod result_tests;
 mod runner_tests;
 mod setup_tests;

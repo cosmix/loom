@@ -150,7 +150,8 @@ impl Harness {
             original.env_remove(inherited);
         }
         original.env("HOME", home).env("PATH", "/usr/bin:/bin");
-        let (mut wrapped, scratch, _) = wrap(&original, Some(&self.tree), network, None).unwrap();
+        let (mut wrapped, scratch, _) =
+            wrap(&original, Some(&self.tree), network, None, None).unwrap();
         if scratch.cache_overlays().is_empty() {
             return None;
         }
@@ -270,7 +271,7 @@ fn uv_resolves_a_dependency_only_in_the_warm_host_cache_offline() {
     if !launcher_available(name) || which::which("python3").is_err() {
         return;
     }
-    let Some(tool) = optional_tool("uv", "LOOM_TEST_UV_BIN") else {
+    let Some(tool) = optional_tool(name, "uv", "LOOM_TEST_UV_BIN") else {
         return;
     };
     let harness = Harness::new(&tool, "uv", ".cache/uv");

@@ -129,7 +129,7 @@ fn bun_installs_a_dependency_only_in_the_warm_host_cache_offline() {
     if !launcher_available(name) {
         return;
     }
-    let Some(tool) = optional_tool("bun", "LOOM_TEST_BUN_BIN") else {
+    let Some(tool) = optional_tool(name, "bun", "LOOM_TEST_BUN_BIN") else {
         return;
     };
     let harness = Harness::new(&tool, "bun", ".bun/install/cache");

@@ -66,6 +66,8 @@ mod tests_child_overlay_undo;
 #[cfg(test)]
 mod tests_child_reuse;
 #[cfg(test)]
+mod tests_child_state_root;
+#[cfg(test)]
 pub(crate) mod tests_complete_support;
 #[cfg(test)]
 mod tests_digest;

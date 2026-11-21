@@ -61,6 +61,7 @@ mod environment_contract_tests;
 mod escapees;
 mod executor;
 mod live_output;
+mod memory_journals;
 pub(crate) mod output;
 #[cfg(target_os = "linux")]
 pub(crate) mod pid_namespace;
@@ -100,6 +101,7 @@ pub use executor::{
     run_spec_in_optional_tree, run_spec_in_stage, run_spec_with_timeout,
 };
 pub use live_output::{LiveOutput, LiveWriterOpener};
+pub use memory_journals::{memory_journals_grant, MemoryJournals};
 pub(crate) use output::{format_criterion_result, running_block};
 pub(in crate::verify) use probe::{CachedRun, CriteriaProbe, ProbeRun, ProbeRunner};
 pub use result::{AcceptanceResult, CriterionResult};

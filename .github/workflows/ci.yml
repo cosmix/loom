@@ -158,6 +158,14 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v6
 
+      # The uv and bun confinement tests skip when their tool is not on PATH
+      # and fail when the variable naming it points at no file. Naming both
+      # here makes a tool that stops being installed fail the strict run.
+      - name: Require uv and bun for the confinement tests
+        run: |
+          echo "LOOM_TEST_UV_BIN=$(command -v uv)" >> "$GITHUB_ENV"
+          echo "LOOM_TEST_BUN_BIN=$(command -v bun)" >> "$GITHUB_ENV"
+
       - name: Set up sccache
         uses: mozilla-actions/sccache-action@v0.0.9
 
@@ -345,6 +353,14 @@ jobs:
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v6
+
+      # The uv and bun confinement tests skip when their tool is not on PATH
+      # and fail when the variable naming it points at no file. Naming both
+      # here makes a tool that stops being installed fail the strict run.
+      - name: Require uv and bun for the confinement tests
+        run: |
+          echo "LOOM_TEST_UV_BIN=$(command -v uv)" >> "$GITHUB_ENV"
+          echo "LOOM_TEST_BUN_BIN=$(command -v bun)" >> "$GITHUB_ENV"
 
       - name: Set up sccache
         uses: mozilla-actions/sccache-action@v0.0.9

@@ -11,8 +11,8 @@ use super::criterion_output::format_criterion_result;
 use crate::git::worktree::find_repo_root_from_cwd;
 use crate::models::stage::Stage;
 use crate::verify::criteria::{
-    confined_stage_cache, plan_confinement, resolve_confinement, run_acceptance_with_config,
-    CriteriaConfig, CriterionResult,
+    confined_stage_cache, memory_journals_grant, plan_confinement, resolve_confinement,
+    run_acceptance_with_config, CriteriaConfig, CriterionResult,
 };
 pub(crate) use crate::verify::execution_paths::{resolve_acceptance_dir, StageExecutionPaths};
 
@@ -100,7 +100,8 @@ pub(crate) fn run_acceptance_with_display(
 }
 
 /// The acceptance configuration of one run: confined commands share the
-/// stage's build cache, inherited ones get none.
+/// stage's build cache, inherited ones get none, and a knowledge-distill
+/// stage's read the plan's memory journals.
 fn acceptance_config(
     stage: &Stage,
     stage_id: &str,
@@ -113,7 +114,8 @@ fn acceptance_config(
         .with_plan_confinement(plan)
         .with_cache_dir(work_dir)
         .with_tree_root(paths.worktree_root.as_deref())
-        .with_stage_cache(confined_stage_cache(work_dir, stage_id, confinement)?))
+        .with_stage_cache(confined_stage_cache(work_dir, stage_id, confinement)?)
+        .with_memory_journals(memory_journals_grant(stage, work_dir)?))
 }
 
 /// [`run_acceptance_with_display`] limited to the 0-based criteria in `only`

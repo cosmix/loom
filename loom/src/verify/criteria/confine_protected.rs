@@ -12,16 +12,34 @@
 //! readable: knowledge criteria run `loom memory pending` and
 //! `loom knowledge check`.
 //!
-//! Under bubblewrap a secret is hidden by binding over the file, so one
-//! created after the command started stays readable. The daemon writes its
-//! tokens when it starts; the host child creates the completion attestation
-//! key, else made on the first completion, before a knowledge stage's
-//! criteria start (`host_verify::child::JobTree::resolve`).
+//! Under bubblewrap a secret is hidden by binding `/dev/null` over the file
+//! that exists when the command starts. A secret created later stays readable,
+//! and so does one replaced by a rename while the command runs: the daemon
+//! publishes a token by writing `.<name>.<uuid>.tmp` beside it and renaming
+//! that over it (`daemon::server::storage::publish_private_file`), which
+//! detaches the cover in the command's mount namespace. Seatbelt denies by
+//! path, so a replaced token stays hidden there; the temporary file is hidden
+//! on neither. The daemon writes its tokens when it starts; the host child
+//! creates the completion attestation key, else made on the first completion,
+//! before a knowledge stage's criteria start
+//! (`host_verify::child::JobTree::resolve`).
+//!
+//! A stage worktree's `.loom/work` is a symlink to the main checkout's state
+//! root, outside the tree, so none of it is in reach. A knowledge-distill
+//! stage's criteria get the one directory they read there, the memory
+//! journals (`verify::criteria::memory_journals`), read-only. No secret sits in it or below
+//! it, so nothing in the grant is hidden. Bubblewrap mounts the journals at
+//! their canonical path and where the worktree's link reaches them; that
+//! second path assumes the main checkout's state root is not itself a symlink
+//! out of the checkout, as `host_verify::child::JobTree::resolve` does when it
+//! finds the checkout from it.
 
 use std::path::{Path, PathBuf};
 
 use crate::fs::permissions::state_root::{resolve_state_root, STATE_ROOT_SECRET_FILES};
 use crate::orchestrator::terminal::tmux::history_dir;
+#[cfg(target_os = "linux")]
+use crate::verify::criteria::MemoryJournals;
 
 /// Entries of a tree holding its state root that stay read-only beside it.
 const CHECKOUT_CONTROL_ENTRIES: [&str; 3] = [".git", ".worktrees", ".claude"];
@@ -104,6 +122,30 @@ pub(super) fn seatbelt_rules(protected: &Protected, quote: impl Fn(&Path) -> Str
         ));
     }
     rules
+}
+
+/// Bubblewrap arguments mounting `journals` read-only at their canonical path
+/// and, when it differs, at the path the worktree's link reaches them.
+#[cfg(target_os = "linux")]
+pub(super) fn bind_memory_journals(command: &mut std::process::Command, journals: &MemoryJournals) {
+    command
+        .arg("--ro-bind")
+        .arg(&journals.dir)
+        .arg(&journals.dir);
+    if journals.linked != journals.dir {
+        command
+            .arg("--ro-bind")
+            .arg(&journals.dir)
+            .arg(&journals.linked);
+    }
+}
+
+/// The Seatbelt rule letting a command read the journals directory `quoted`
+/// and write none of it. Seatbelt matches the resolved path, so the canonical
+/// one covers every way of reaching it.
+#[cfg(target_os = "macos")]
+pub(super) fn memory_journals_rule(quoted: &str) -> String {
+    format!("(allow file-read* (subpath {quoted}))(deny file-write* (subpath {quoted}))")
 }
 
 #[cfg(test)]

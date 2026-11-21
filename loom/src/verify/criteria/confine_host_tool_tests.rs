@@ -92,7 +92,7 @@ fn run_cache_canary(cwd: &Path, home: &Path, port: u16, network: NetworkAccess, 
     ]);
     crate::process::apply_stage_environment(&mut original);
     original.env("HOME", home);
-    let (mut wrapped, scratch, _) = super::wrap(&original, None, network, None).unwrap();
+    let (mut wrapped, scratch, _) = super::wrap(&original, None, network, None, None).unwrap();
     let scratch_path = scratch.path().to_path_buf();
     scratch.populate().unwrap();
     let output = wrapped.output().unwrap();
@@ -171,16 +171,23 @@ fn private_scratch_does_not_change_acceptance_cache_identity() {
     );
 }
 
-pub(super) fn optional_tool(name: &str, variable: &str) -> Option<PathBuf> {
-    let tool = std::env::var_os(variable)
-        .map(PathBuf::from)
-        .or_else(|| which::which(name).ok());
-    if crate::process::sandbox_probe::skip_unless(
-        tool.as_ref().is_some_and(|path| path.is_file()),
-        name,
-        &format!("installed {name} absent; set {variable} to exercise its real boundary"),
-    ) {
-        return None;
+/// The tool `test_name` exercises: `variable`'s path when set, else `name` on
+/// PATH. A tool on neither is a plain skip even under
+/// `LOOM_TEST_REQUIRE_SANDBOX_FREE=1`, which demands a working sandbox, not
+/// every optional tool installed. A `variable` naming no file is a
+/// misconfiguration and fails the test.
+pub(super) fn optional_tool(test_name: &str, name: &str, variable: &str) -> Option<PathBuf> {
+    if let Some(path) = std::env::var_os(variable).map(PathBuf::from) {
+        assert!(
+            path.is_file(),
+            "{variable} names no file: {}",
+            path.display()
+        );
+        return Some(path);
+    }
+    let tool = which::which(name).ok().filter(|path| path.is_file());
+    if tool.is_none() {
+        eprintln!("SKIP {test_name}: `{name}` is not on PATH; set {variable} to exercise its real boundary");
     }
     tool
 }
@@ -208,7 +215,11 @@ fn actual_uv_lock_check_uses_private_writable_cache_offline() {
     if !launcher_available("actual_uv_lock_check_uses_private_writable_cache_offline") {
         return;
     }
-    let Some(tool) = optional_tool("uv", "LOOM_TEST_UV_BIN") else {
+    let Some(tool) = optional_tool(
+        "actual_uv_lock_check_uses_private_writable_cache_offline",
+        "uv",
+        "LOOM_TEST_UV_BIN",
+    ) else {
         return;
     };
     let root = tempfile::tempdir().unwrap();
@@ -305,7 +316,11 @@ fn actual_biome_git_worktree_keeps_cargo_sources_outside_lint_coverage() {
     if !launcher_available("actual_biome_git_worktree_keeps_cargo_sources_outside_lint_coverage") {
         return;
     }
-    let Some(tool) = optional_tool("biome", "LOOM_TEST_BIOME_BIN") else {
+    let Some(tool) = optional_tool(
+        "actual_biome_git_worktree_keeps_cargo_sources_outside_lint_coverage",
+        "biome",
+        "LOOM_TEST_BIOME_BIN",
+    ) else {
         return;
     };
     let root = tempfile::tempdir().unwrap();
@@ -325,7 +340,7 @@ fn actual_biome_git_worktree_keeps_cargo_sources_outside_lint_coverage() {
     crate::process::apply_stage_environment(&mut original);
     original.env("CARGO_HOME", cargo);
     let (mut command, scratch, _) =
-        super::wrap(&original, None, NetworkAccess::Denied, None).unwrap();
+        super::wrap(&original, None, NetworkAccess::Denied, None, None).unwrap();
     scratch.populate().unwrap();
     let output = command.output().unwrap();
     assert!(

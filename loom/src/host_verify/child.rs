@@ -22,9 +22,9 @@ use crate::git::worktree::WorktreeGit;
 use crate::models::dispute::truncate_to_byte_limit;
 use crate::models::stage::{Stage, StageType};
 use crate::verify::criteria::{
-    confined_stage_cache, plan_confinement, resolve_confinement, run_acceptance_with_config,
-    set_spawn_observer, CachePolicy, CriteriaConfig, CriterionObserver, CriterionResult,
-    SpawnObserver, SpawnObserverGuard,
+    confined_stage_cache, memory_journals_grant, plan_confinement, resolve_confinement,
+    run_acceptance_with_config, set_spawn_observer, CachePolicy, CriteriaConfig, CriterionObserver,
+    CriterionResult, MemoryJournals, SpawnObserver, SpawnObserverGuard,
 };
 use crate::verify::execution_paths::{resolve_acceptance_dir, StageExecutionPaths};
 use crate::verify::goal_backward::plan::{self, LoadedGoal};
@@ -109,7 +109,8 @@ fn check(work_dir: &Path, record: &JobRecord, progress: &Arc<Progress>) -> Resul
     let only = record.criteria.clone().map(BTreeSet::from_iter);
     let cache = check_cache_policy(work_dir, record)?;
     let root = tree.paths.worktree_root.as_deref();
-    let config = acceptance_config(&stage, root, work_dir, cache, progress)?;
+    let config = acceptance_config(&stage, root, work_dir, cache, progress)?
+        .with_memory_journals(tree.memory_journals.clone());
     run_configured(&stage, &tree, &config.with_only(only))?;
     progress.take_failure()?;
     // The goal-backward checks and the contracts belong to a run of every criterion.
@@ -134,7 +135,8 @@ pub(super) fn run_acceptance(
     progress: &Arc<Progress>,
 ) -> Result<()> {
     let root = tree.paths.worktree_root.as_deref();
-    let config = acceptance_config(stage, root, work_dir, requested_cache(no_cache), progress)?;
+    let config = acceptance_config(stage, root, work_dir, requested_cache(no_cache), progress)?
+        .with_memory_journals(tree.memory_journals.clone());
     run_configured(stage, tree, &config)
 }
 
@@ -251,6 +253,9 @@ pub(super) struct JobTree {
     pub(super) git: WorktreeGit,
     pub(super) paths: StageExecutionPaths,
     pub(super) knowledge: bool,
+    /// The memory journals a knowledge-distill stage's criteria read beside
+    /// its worktree, from the daemon's state root ([`memory_journals_grant`]).
+    pub(super) memory_journals: Option<MemoryJournals>,
 }
 
 impl JobTree {
@@ -277,6 +282,7 @@ impl JobTree {
             checkout.display()
         );
         let acceptance_dir = resolve_acceptance_dir(Some(&checkout), stage.working_dir.as_deref())?;
+        let memory_journals = memory_journals_grant(stage, work_dir)?;
         if knowledge {
             // The criteria's confinement holds the state root and hides each
             // secret by binding over the file (`confine_protected`), so the
@@ -294,6 +300,7 @@ impl JobTree {
                 acceptance_dir,
             },
             knowledge,
+            memory_journals,
         })
     }
 

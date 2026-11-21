@@ -17,6 +17,7 @@ fn provisioning_denies_the_stage_roots_and_the_scratch_base() {
     let grants = Grants {
         git: None,
         cache_root: Some(root),
+        memory_journals: None,
     };
     let rules = provision_network_rules(&grants).unwrap();
     assert!(rules.starts_with("(allow network-outbound)"), "{rules}");
@@ -37,6 +38,7 @@ fn the_provision_rules_parse() {
     let grants = Grants {
         git: None,
         cache_root: Some(root),
+        memory_journals: None,
     };
     let mut profile = String::from("(version 1)(allow default)");
     profile.push_str(&provision_network_rules(&grants).unwrap());
@@ -84,7 +86,7 @@ fn provisioning_takes_the_session_goproxy_chain() {
     original.current_dir(&tree);
     let network = super::super::NetworkAccess::Provision;
     let (wrapped, _scratch, _git) =
-        super::super::wrap(&original, Some(&tree), network, Some(&cache)).unwrap();
+        super::super::wrap(&original, Some(&tree), network, Some(&cache), None).unwrap();
     let proxy = wrapped
         .get_envs()
         .find(|(name, _)| *name == "GOPROXY")

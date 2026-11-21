@@ -288,6 +288,7 @@ fn a_relocated_seed_is_readable_and_named_by_the_same_path() {
     let grants = super::Grants {
         git: None,
         cache_root: Some(Path::new("/unused")),
+        memory_journals: None,
     };
     let seed_env = grants.seed_env().unwrap();
     let mut command = Command::new("/bin/sh");
@@ -326,7 +327,7 @@ fn a_symlinked_cache_base_gives_variables_under_the_granted_root() {
     original.current_dir(&tree);
     let network = super::NetworkAccess::Denied;
     let (wrapped, _scratch, _git) =
-        super::wrap(&original, Some(&tree), network, Some(&cache)).unwrap();
+        super::wrap(&original, Some(&tree), network, Some(&cache), None).unwrap();
     let granted = cache.ensure().unwrap();
     assert!(granted.starts_with(&real), "{granted:?}");
     let named = |name: &str| {

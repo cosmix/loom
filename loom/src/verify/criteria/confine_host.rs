@@ -19,6 +19,8 @@ use std::process::{Command, Stdio};
 
 use crate::stage_cache::{go_proxy, host_env_from_process, Consumer, StageCache};
 
+use crate::verify::criteria::MemoryJournals;
+
 pub(super) use super::scratch::CargoScratch;
 
 #[path = "confine_git.rs"]
@@ -63,6 +65,9 @@ pub(super) struct Grants<'a> {
     /// The canonical stage cache root: writable, and on macOS the only place
     /// the host-job sccache socket may be bound and reached.
     pub(super) cache_root: Option<&'a Path>,
+    /// The plan's memory journals outside the tree, read-only
+    /// (`confine_protected`).
+    pub(super) memory_journals: Option<&'a MemoryJournals>,
 }
 
 impl Grants<'_> {
@@ -76,12 +81,14 @@ impl Grants<'_> {
 
 /// Wrap `original` to start in its working directory with read-write access to
 /// `tree`, the working tree containing it (the working directory when `None`),
-/// and to `cache`, the stage's build-cache root, when given.
+/// and to `cache`, the stage's build-cache root, when given. `journals`, when
+/// given, are readable and read-only beside the tree.
 pub(super) fn wrap(
     original: &Command,
     tree: Option<&Path>,
     network: NetworkAccess,
     cache: Option<&StageCache>,
+    journals: Option<&MemoryJournals>,
 ) -> Result<(Command, CargoScratch, Option<git_roots::GitDirs>)> {
     let cwd = original
         .get_current_dir()
@@ -99,13 +106,13 @@ pub(super) fn wrap(
     let cache = cache
         .zip(cache_root.as_ref())
         .map(|(cache, root)| cache.clone().at_root(root.clone()));
-    let cache = cache.as_ref();
     // Only bubblewrap can bind a private directory at the host's Cargo home path.
     let mount = cfg!(target_os = "linux");
     let scratch = CargoScratch::prepare(original, &tree, mount, cache.is_some())?;
     let grants = Grants {
         git: git.as_ref(),
         cache_root: cache_root.as_deref(),
+        memory_journals: journals,
     };
     let mut command = platform_command(
         original,
@@ -116,7 +123,7 @@ pub(super) fn wrap(
         network,
         &grants,
     )?;
-    apply_environment(&mut command, original, &scratch, cache, &tree);
+    apply_environment(&mut command, original, &scratch, cache.as_ref(), &tree);
     if cache.is_some() && network == NetworkAccess::Provision {
         // Provisioning fetches, so Go takes the session's proxy chain
         // after the seed instead of a host job's `off`.
@@ -256,6 +263,9 @@ fn platform_command(
         command.arg("--ro-bind").arg(root).arg(root);
     }
     protected::bind(&mut command, &protected::protected(tree));
+    if let Some(journals) = grants.memory_journals {
+        protected::bind_memory_journals(&mut command, journals);
+    }
     bind_resolver_target(&mut command, Path::new("/etc/resolv.conf"))?;
     // The new root is a writable tmpfs in which `--bind` created the working
     // tree's parents; left writable, writes outside the working tree and the

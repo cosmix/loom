@@ -183,3 +183,36 @@ fn an_operator_is_warned_and_keeps_the_decision() {
 
     verify_resolved_completion_for_operator(&stage, &work_dir, |_, _| {}).unwrap();
 }
+
+/// The landing gate grants a knowledge-distill stage's criteria the plan's
+/// memory journals, and no other stage's.
+#[test]
+#[serial_test::serial]
+fn only_a_distill_landing_runs_with_the_memory_journals() {
+    use crate::models::stage::{CommandConfinement, StageType};
+    use crate::verify::criteria::memory_journals_grant;
+    let _env = crate::test_cache_env::CacheEnv::pin();
+    let temp = TempDir::new().unwrap();
+    let root = temp.path().canonicalize().unwrap().join("repo");
+    let work_dir = root.join(".loom/work");
+    std::fs::create_dir_all(work_dir.join("memory")).unwrap();
+    TestRepo::builder().no_seed().init_in(&root);
+    let worktree = root.join(".worktrees").join(STAGE);
+    let stage = |stage_type| {
+        let mut stage = Stage::new(STAGE.to_string(), None);
+        stage.stage_type = stage_type;
+        stage.sandbox.command_confinement = Some(CommandConfinement::Inherit);
+        stage
+    };
+    let journals = |stage: &Stage| {
+        acceptance_config(stage, &work_dir, &worktree)
+            .unwrap()
+            .memory_journals
+    };
+
+    let distill = stage(StageType::KnowledgeDistill);
+    let grant = memory_journals_grant(&distill, &work_dir).unwrap();
+    assert!(grant.is_some(), "the state root holds journals");
+    assert_eq!(journals(&distill), grant);
+    assert_eq!(journals(&stage(StageType::Standard)), None);
+}

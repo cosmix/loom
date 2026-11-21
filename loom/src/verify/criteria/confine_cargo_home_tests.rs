@@ -54,9 +54,9 @@ fn every_confined_command_for_one_tree_shares_one_cargo_home() {
     let cargo = host_cargo_home(root.path());
     let original = confined_shell(&tree, &cargo, "true");
     let (first, first_scratch, _) =
-        super::wrap(&original, None, NetworkAccess::Denied, None).unwrap();
+        super::wrap(&original, None, NetworkAccess::Denied, None, None).unwrap();
     let (second, second_scratch, _) =
-        super::wrap(&original, None, NetworkAccess::Denied, None).unwrap();
+        super::wrap(&original, None, NetworkAccess::Denied, None, None).unwrap();
     assert_ne!(first_scratch.path(), second_scratch.path());
     let home = effective_cargo_home(&first);
     assert_eq!(home, effective_cargo_home(&second));
@@ -91,7 +91,7 @@ touch "$CARGO_HOME/.package-cache" "$CARGO_HOME/.global-cache" 2>/dev/null && ex
 printf CARGO_HOME_PASSED"#;
     let original = confined_shell(&tree, &cargo, line);
     let (mut wrapped, scratch, _) =
-        super::wrap(&original, None, NetworkAccess::Denied, None).unwrap();
+        super::wrap(&original, None, NetworkAccess::Denied, None, None).unwrap();
     assert_eq!(effective_cargo_home(&wrapped), cargo);
     scratch.populate().unwrap();
     let output = wrapped.output().unwrap();
@@ -125,7 +125,7 @@ cat "$CARGO_HOME/credentials.toml" 2>/dev/null && exit 1
 touch "$CARGO_HOME/.package-cache" "$CARGO_HOME/.package-cache-mutate" "$CARGO_HOME/.global-cache"
 printf CARGO_HOME_PASSED"#;
     let original = confined_shell(&tree, &cargo, line);
-    let wrap = super::wrap(&original, None, NetworkAccess::Denied, None);
+    let wrap = super::wrap(&original, None, NetworkAccess::Denied, None, None);
     let (mut wrapped, scratch, _) = wrap.unwrap();
     assert_eq!(effective_cargo_home(&wrapped), cargo);
     let args: Vec<&std::ffi::OsStr> = wrapped.get_args().collect();

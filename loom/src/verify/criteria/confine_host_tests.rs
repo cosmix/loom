@@ -201,8 +201,14 @@ fn private_cargo_home_uses_read_only_sources_and_hides_credentials() {
         prepare_confined(&spec, Some(&cwd), None, CommandConfinement::Inherit, None).unwrap();
     crate::process::apply_stage_environment(&mut prepared.command);
     prepared.command.env("CARGO_HOME", &cargo);
-    let (wrapped, scratch, _) =
-        host::wrap(&prepared.command, None, host::NetworkAccess::Denied, None).unwrap();
+    let (wrapped, scratch, _) = host::wrap(
+        &prepared.command,
+        None,
+        host::NetworkAccess::Denied,
+        None,
+        None,
+    )
+    .unwrap();
     prepared.wrapped = Some(wrapped);
     prepared.scratch = Some(scratch);
     let result = crate::verify::criteria::executor::run_prepared_with_timeout(

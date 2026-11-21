@@ -55,6 +55,8 @@ use crate::fs::work_dir::WorkDir;
 use crate::models::stage::CommandConfinement;
 use crate::stage_cache::{DeveloperTools, StageCache};
 
+use super::MemoryJournals;
+
 /// A one-shot command whose environment and working directory are already
 /// fixed. Cache fingerprinting records its stable inputs and wrapper policy;
 /// only the generated private tool-state pathname is excluded from identity.
@@ -223,8 +225,29 @@ pub(super) fn prepare_confined(
     confinement: CommandConfinement,
     cache: Option<&StageCache>,
 ) -> Result<PreparedCommand> {
+    prepare_reading_journals(spec, working_dir, tree, confinement, cache, None)
+}
+
+/// [`prepare_confined`] for a command that may also read `journals`, the
+/// plan's memory journals outside `tree`, read-only.
+pub(super) fn prepare_reading_journals(
+    spec: &CommandSpec,
+    working_dir: Option<&Path>,
+    tree: Option<&Path>,
+    confinement: CommandConfinement,
+    cache: Option<&StageCache>,
+    journals: Option<&MemoryJournals>,
+) -> Result<PreparedCommand> {
     let network = host::NetworkAccess::Denied;
-    prepare(spec, working_dir, tree, confinement, network, cache)
+    prepare(
+        spec,
+        working_dir,
+        tree,
+        confinement,
+        network,
+        cache,
+        journals,
+    )
 }
 
 /// Provision entries are approved package setup: retain the command boundary
@@ -235,7 +258,15 @@ pub(super) fn prepare_provision(
     cache: Option<&StageCache>,
 ) -> Result<PreparedCommand> {
     let (confined, network) = (CommandConfinement::Confined, host::NetworkAccess::Provision);
-    prepare(spec, Some(working_dir), None, confined, network, cache)
+    prepare(
+        spec,
+        Some(working_dir),
+        None,
+        confined,
+        network,
+        cache,
+        None,
+    )
 }
 
 fn prepare(
@@ -245,6 +276,7 @@ fn prepare(
     confinement: CommandConfinement,
     network: host::NetworkAccess,
     cache: Option<&StageCache>,
+    journals: Option<&MemoryJournals>,
 ) -> Result<PreparedCommand> {
     let resolved_working_dir = working_dir
         .map(Path::to_path_buf)
@@ -267,7 +299,7 @@ fn prepare(
         }
     }
     let (wrapped, scratch, git) = if confinement == CommandConfinement::Confined {
-        let (wrapped, scratch, git) = wrap(&cmd, tree, network, cache)
+        let (wrapped, scratch, git) = wrap(&cmd, tree, network, cache, journals)
             .with_context(|| format!("Failed to confine command: {spec}"))?;
         (Some(wrapped), Some(scratch), git)
     } else {

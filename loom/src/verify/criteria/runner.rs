@@ -8,7 +8,7 @@ use super::cache;
 use super::cache_contract::{AssertionVerdict, CachedCriterionPass, CriterionContract};
 use super::cache_fingerprint::{self, ExecutionIdentity, InputFingerprint};
 use super::config::{extended_criterion_timeout, CriteriaConfig};
-use super::confine::{prepare_confined, resolve_confinement, CommandSpec, PreparedCommand};
+use super::confine::{prepare_reading_journals, resolve_confinement, CommandSpec, PreparedCommand};
 use super::criterion_eval::{evaluate, CriterionCommand};
 use super::executor::run_prepared_live;
 use super::live_output::LiveSink;
@@ -190,7 +190,8 @@ fn run_with_cache(
     };
     let tree = config.tree_root.as_deref();
     let cache = config.stage_cache.as_ref();
-    let prepared = prepare_confined(spec, working_dir, tree, confinement, cache)?;
+    let journals = config.memory_journals.as_ref();
+    let prepared = prepare_reading_journals(spec, working_dir, tree, confinement, cache, journals)?;
     let Some(work_dir) = enabled_cache_dir(config) else {
         return run(prepared, None);
     };
@@ -234,9 +235,12 @@ fn cached_outcome(spec: &CommandSpec, record: CachedCriterionPass, started: Inst
     }
 }
 
+/// The pass cache's directory, unless the run disables it: no directory, a
+/// policy that stores nothing, or granted memory journals, whose content the
+/// fingerprint does not hold.
 fn enabled_cache_dir(config: &CriteriaConfig) -> Option<&Path> {
     let dir = config.cache_dir.as_deref()?;
-    config.cache.writes().then_some(dir)
+    (config.cache.writes() && config.memory_journals.is_none()).then_some(dir)
 }
 
 fn execute(
