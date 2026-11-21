@@ -248,3 +248,7 @@ ends and every artifact judged by `loom usage --compare` under the net-total rul
 ## Implementers Do Not Verify
 
 In an orchestrated Loom stage, a subagent compiles its own files freely (`cargo check`, `cargo build`, `cargo test --no-run`, `tsc --noEmit`, `<pm> run build`) and runs targeted tests for its code and module when ready, with no run-count limit. The stage gate runs full suites through `loom check`; integration-verify orchestrators and reviewers use `loom check integration-verify`. See [Guidance Channels and Plugin Scope](conventions/guidance-channels-and-plugin-scope.md).
+
+## Defect Triage
+
+A defect that blocks a stage or opens a security hole is fixed in the session that finds it, never deferred. See [defect-triage](conventions/defect-triage.md).

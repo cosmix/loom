@@ -11,10 +11,10 @@
 | [architecture.md](architecture.md) | High-level component relationships, data flow, module dependencies | 250 |
 | [entry-points.md](entry-points.md) | Key files agents should read first | 86 |
 | [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 200 |
-| [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 250 |
+| [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 254 |
 | [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 262 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 116 |
-| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 248 |
+| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 250 |
 
 ## Tier 2 — Topics
 
@@ -122,6 +122,7 @@
 | [code-style-and-structure](conventions/code-style-and-structure.md) |  | 298 |
 | [commits](conventions/commits.md) | Format | 24 |
 | [config-plan-and-gate-rules](conventions/config-plan-and-gate-rules.md) |  | 39 |
+| [defect-triage](conventions/defect-triage.md) | Blocking and security defects are fixed when found, not deferred | 9 |
 | [dispute-and-adjudication](conventions/dispute-and-adjudication.md) |  | 155 |
 | [git-and-build-workflow](conventions/git-and-build-workflow.md) |  | 237 |
 | [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) |  | 134 |
@@ -194,6 +195,7 @@
 | [sandbox-tooling-and-network](mistakes/sandbox-tooling-and-network.md) |  | 397 |
 | [sandbox-write-rules-inert](mistakes/sandbox-write-rules-inert.md) |  | 67 |
 | [schema-reuse-and-silent-skips](mistakes/schema-reuse-and-silent-skips.md) |  | 130 |
+| [seatbelt-loopback-grant](mistakes/seatbelt-loopback-grant.md) | Seatbelt localhost listener re-added as if it held binds to loopback | 13 |
 | [session-identity-env](mistakes/session-identity-env.md) | Env | 126 |
 | [sessions-and-liveness](mistakes/sessions-and-liveness.md) |  | 399 |
 | [shell-command-matchers](mistakes/shell-command-matchers.md) |  | 295 |
@@ -236,6 +238,7 @@
 | [handoff-followups](concerns/handoff-followups.md) |  | 57 |
 | [knowledge-cli-gaps](concerns/knowledge-cli-gaps.md) |  | 108 |
 | [loom-ask-and-read-gate](concerns/loom-ask-and-read-gate.md) |  | 108 |
+| [macos-confined-networking](concerns/macos-confined-networking.md) | macOS confined IP networking: off by default, loopback opt-in, residual | 11 |
 | [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Edges | 105 |
 | [native-codex-qualification](concerns/native-codex-qualification.md) |  | 95 |
 | [plan-chat-followups](concerns/plan-chat-followups.md) | Chat | 41 |
