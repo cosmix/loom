@@ -86,7 +86,11 @@ fn host_module_seed_resolves_offline() {
          && GOSUMDB=off go list -m {module}"
     );
     let result = rig.run(&script);
-    assert!(result.success, "the seed did not resolve: {result:?}");
+    assert!(
+        result.success,
+        "the seed did not resolve: {result:?}{}",
+        rig.explain()
+    );
     let version = coordinate.split_once('@').unwrap().1;
     assert!(
         result.stdout.contains(&format!("{module} {version}")),

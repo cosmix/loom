@@ -108,10 +108,37 @@ impl Rig {
     /// the one cache; both must succeed.
     pub fn run_twice(&self, first: &str, second: &str) -> (CriterionResult, CriterionResult) {
         let first = self.run(first);
-        assert!(first.success, "first run failed: {first:?}");
+        assert!(
+            first.success,
+            "first run failed: {first:?}{}",
+            self.explain()
+        );
         let second = self.run(second);
-        assert!(second.success, "second run failed: {second:?}");
+        assert!(
+            second.success,
+            "second run failed: {second:?}{}",
+            self.explain()
+        );
         (first, second)
+    }
+
+    /// What a failed probe needs to tell a hidden host path from a changed
+    /// environment: this process's `HOME` and the one it started with, then
+    /// each `PATH` directory and the `HOME`-based seed roots as a confined
+    /// command sees them.
+    pub fn explain(&self) -> String {
+        // Split on `:` alone, so a PATH entry holding a space stays whole.
+        let script = "echo \"inside HOME=$HOME\"; IFS=:; set -f; \
+            for d in $PATH:$HOME/.bun/bin:$HOME/go/pkg/mod:$HOME/.m2/repository:$HOME/.gradle/caches; \
+            do if [ -d \"$d\" ]; then echo \"seen $d\"; else echo \"hidden $d\"; fi; done";
+        let inside = self.run(script);
+        format!(
+            "\n-- probe context --\nprocess HOME={:?}\nstarting HOME={:?}\n{}{}",
+            std::env::var_os("HOME"),
+            starting_home(),
+            inside.stdout,
+            inside.stderr
+        )
     }
 
     /// The cache root's canonical path: where the tools' variables point.
@@ -178,6 +205,17 @@ pub(super) fn listing(root: &Path) -> BTreeSet<(PathBuf, u64)> {
         }
     }
     found
+}
+
+/// `HOME` as the process received it at exec, where the OS exposes that
+/// (`/proc/self/environ` on Linux); a test that pinned `HOME` and never
+/// restored it shows up as a difference from the current value.
+fn starting_home() -> Option<String> {
+    let environ = std::fs::read("/proc/self/environ").ok()?;
+    environ
+        .split(|byte| *byte == 0)
+        .find_map(|entry| entry.strip_prefix(b"HOME="))
+        .map(|home| String::from_utf8_lossy(home).into_owned())
 }
 
 /// The operator's home directory, for host seeds.
