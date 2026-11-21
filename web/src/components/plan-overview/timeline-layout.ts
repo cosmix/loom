@@ -1,5 +1,6 @@
 import type { PlanPhase, PlanStageStats, PlanStats } from "@/api/schema";
 import { modelWithEffort } from "@/lib/format";
+import { maxOf } from "@/lib/tokens";
 
 import { clockHm, formatSpan } from "./plan-math";
 
@@ -105,7 +106,7 @@ function isSkipped(stage: PlanStageStats): boolean {
 /// fallback end of a stage.
 function lastPhaseEnd(stage: PlanStageStats): number {
   const ends = stage.phases.flatMap((span) => (span.ended_at ? [Date.parse(span.ended_at)] : []));
-  return ends.length > 0 ? Math.max(...ends) : Number.NaN;
+  return ends.length > 0 ? maxOf(ends, Number.NEGATIVE_INFINITY) : Number.NaN;
 }
 
 /// A stage with neither a start nor a phase has no extent: no bar, the recorded execution time.

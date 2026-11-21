@@ -123,8 +123,27 @@ describe("PlanOverviewDialog", () => {
     expect(parts[3]!.style.getPropertyValue("--po-grow")).toBe("56000");
   });
 
+  it("lists each timeline stage as text beside the labelled drawing", () => {
+    const dialog = open();
+    const list = within(dialog).getByRole("list", { name: "Timeline stages" });
+    const items = within(list)
+      .getAllByRole("listitem")
+      .map((item) => item.textContent);
+    expect(items).toHaveLength(3);
+    expect(items[0]).toMatch(/^server: \S.*, Contract writing, Executing$/);
+    expect(items[1]).toBe("docs: skipped");
+    expect(items[2]).toMatch(/^web: \S.*, Executing, Dispute and adjudication, Retry$/);
+    expect(list.className).toContain("sr-only");
+  });
+
   it("names the saved file in the footer", () => {
     expect(open().textContent).toContain(`~/.loom/stats/plans/${sampleRecord.plan_id}.json`);
+  });
+
+  it("names the saved file under the loom home, which LOOM_HOME may move", () => {
+    const text = open().textContent ?? "";
+    expect(text).toContain(`<loom home>/stats/plans/${sampleRecord.plan_id}.json`);
+    expect(text).toContain("LOOM_HOME");
   });
 
   it("copies the summary and says so", async () => {

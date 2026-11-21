@@ -1,6 +1,6 @@
 import type { PlanModelStats, PlanStats } from "@/api/schema";
 import { modelWithEffort } from "@/lib/format";
-import { compactTokens, fresh } from "@/lib/tokens";
+import { compactTokens, fresh, maxOf } from "@/lib/tokens";
 
 import { EMPTY, modelsByFresh } from "./plan-math";
 import { TOKEN_KINDS } from "./plan-totals";
@@ -52,7 +52,7 @@ function ModelRow({ model, max, total }: { model: PlanModelStats; max: number; t
 export function ModelsTable({ record }: { record: PlanStats }) {
   const models = modelsByFresh(record);
   const sizes = models.map((model) => fresh(model.tokens));
-  const max = Math.max(0, ...sizes);
+  const max = maxOf(sizes);
   const total = sizes.reduce((sum, size) => sum + size, 0);
   return (
     <section className="po-section" aria-labelledby="po-models-title">
