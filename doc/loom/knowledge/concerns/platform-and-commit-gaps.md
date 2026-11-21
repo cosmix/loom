@@ -238,7 +238,7 @@ Open items left by the scheduler busy-status plan (`busy::while_busy`, the tick'
 
 ## macOS Window Teardown Closes by Title and Is Unverified (GitHub #7)
 
-Teardown closes by window title: `orchestrator/core/completion_handler.rs::record_completion_time` → `NativeBackend::kill_session` (`terminal/native/mod.rs::kill_session`) → `close_iterm2_window` (`terminal/native/window_ops/macos.rs`), which runs `every window whose name is "loom-<stage-id>"`.
+A stage-only title such as `loom-<stage-id>` cannot authorize window teardown. `terminal/native/window_identity.rs` builds the title from the tracking key, a hash of the project work directory, and the session ID. `NativeBackend::kill_session` compares the persisted title with the derived value before asking the selected emulator to close that exact window. A missing or mismatched title leaves only guarded PID teardown available.
 
 **iTerm2.** The spawn arm (`terminal/emulator.rs::build_command`) sets `set name of loomWindow` before `write text`, and spawn, close and `iterm2_window_exists` all address `tell application "iTerm"`, so the `is_session_alive` title fallback can match too. `write text` types the wrapper into an interactive shell, so a close that misses leaves the window at a shell prompt after `pid_only_terminate` kills `claude`. `test_iterm2_build_command` asserts the name and the application in the generated script; no macOS run of the close is on record.
 

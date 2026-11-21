@@ -131,11 +131,7 @@ discovery and direct attach; `overview.rs` owns the viewer server.
 
 Both paths then apply one further precondition: `endpoint_ready`
 (`orchestrator/terminal/tmux/viewer.rs`) — the session's socket exists AND `has-session` succeeds on
-it. Attach and the viewer reconciler (below) are the only legitimate `has-session` callers, and it
-is not a contradiction of the liveness rule above: PID liveness answers "is the agent alive",
-attaching needs "is the server accepting clients", and the two disagree in both directions (a
-`Spawning` session has a live wrapper PID before its server is up; a torn-down server can outlive
-its `claude` PID by a moment). Attach's call sites report "still spawning, or just ended — re-run in
+it. The probe also runs during spawn in `tmux/mod.rs::spawn_in_tmux` and when resolving a browser terminal. It establishes server readiness. The PID identity file establishes agent liveness, since a surviving pane or server can outlive its agent. Attach's call sites report "still spawning, or just ended — re-run in
 a moment" rather than letting tmux's error surface.
 
 Viewer identity (socket name, `loom-overview` session name, the nested-attach pane command) and
@@ -249,8 +245,7 @@ Every tmux server starts with `set-option -g history-limit 50000` and `set-optio
 
 - `loom/src/orchestrator/terminal/backend.rs` — `SessionBackend`: `from_config`, `resolve_lane`,
   `dispatch_spawn` and the lazy `OnceLock` native lane. Tests in `terminal/backend/tests.rs`.
-- `loom/src/orchestrator/terminal/tmux/mod.rs` — `TmuxBackend`, `socket_name`,
-  `spawn_in_tmux`, `evaluate_new_session`, `kill_session`.
+- `loom/src/orchestrator/terminal/tmux/mod.rs` owns `socket_name`, `spawn_in_tmux` and `evaluate_new_session`. It re-exports `TmuxBackend`; the implementation, including `kill_session`, lives in `terminal/tmux/backend.rs`.
 - `loom/src/orchestrator/terminal/tmux/socket.rs` — `loom_socket_dir`, `socket_path_for`, `list_loom_sockets`, `socket_session_is_alive`, `kill_socket_server`.
 - `loom/src/orchestrator/terminal/native/pid_guard.rs` — the deduped PID-file liveness layers shared by
   both lanes (six former copies).
@@ -267,7 +262,7 @@ Every tmux server starts with `set-option -g history-limit 50000` and `set-optio
 
 **`--backend` flag**
 
-- `loom/src/cli/types.rs::Commands` — the `backend` option on `loom init` and `loom run`,
+- `loom/src/cli/types.rs::Commands` defines the init option. `loom/src/cli/types_runtime.rs::RunArgs` defines the run option. Both use
   `value_parser = ["native", "tmux"]`.
 - `loom/src/commands/run/mod.rs::resolve_backend_flag` — shared by `run/mod.rs::execute_background` and
   `run/foreground.rs::execute`. Rejects unknown values, refuses to persist a change while the daemon is

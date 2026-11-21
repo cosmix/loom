@@ -79,7 +79,7 @@
 | [status-data-model](architecture/status-data-model.md) | Fields | 268 |
 | [summary-store](architecture/summary-store.md) |  | 352 |
 | [target-guard](architecture/target-guard.md) | Tip | 127 |
-| [terminal-backends](architecture/terminal-backends.md) |  | 285 |
+| [terminal-backends](architecture/terminal-backends.md) |  | 280 |
 | [test-runner-adapters](architecture/test-runner-adapters.md) |  | 56 |
 | [token-accounting-and-receipts](architecture/token-accounting-and-receipts.md) | Ledger | 355 |
 | [token-flow-sources](architecture/token-flow-sources.md) |  | 84 |
@@ -137,9 +137,9 @@
 | --- | --- | --- |
 | [adjudication-autonomy-deadlock](mistakes/adjudication-autonomy-deadlock.md) |  | 238 |
 | [ambient-filesystem-trust](mistakes/ambient-filesystem-trust.md) |  | 186 |
-| [briefs-and-bug-reports](mistakes/briefs-and-bug-reports.md) |  | 386 |
+| [briefs-and-bug-reports](mistakes/briefs-and-bug-reports.md) |  | 396 |
 | [cargo-under-confinement](mistakes/cargo-under-confinement.md) | Cargo in sandboxes and confined runs: audit fetches, cold builds, Seatbelt | 83 |
-| [ci-toolchain-and-cargo](mistakes/ci-toolchain-and-cargo.md) |  | 410 |
+| [ci-toolchain-and-cargo](mistakes/ci-toolchain-and-cargo.md) |  | 420 |
 | [codex-direct-mode-invisible](mistakes/codex-direct-mode-invisible.md) |  | 23 |
 | [codex-lane-rogue-wrapper](mistakes/codex-lane-rogue-wrapper.md) |  | 187 |
 | [codex-navigation](mistakes/codex-navigation.md) | Reader | 202 |
@@ -175,7 +175,7 @@
 | [plan-server-delivery](mistakes/plan-server-delivery.md) | Slips | 376 |
 | [planner-design-brainstorm](mistakes/planner-design-brainstorm.md) | Stubs | 134 |
 | [planner-follow-ups-delivery](mistakes/planner-follow-ups-delivery.md) | Slips | 196 |
-| [planner-polish](mistakes/planner-polish.md) | Polish | 152 |
+| [planner-polish](mistakes/planner-polish.md) | Polish | 155 |
 | [planner-redesign](mistakes/planner-redesign.md) |  | 80 |
 | [planner-review-fixes](mistakes/planner-review-fixes.md) |  | 149 |
 | [planner-ui-repair](mistakes/planner-ui-repair.md) | Repair | 215 |
@@ -228,7 +228,7 @@
 | [agent-rule-bending-hardening](concerns/agent-rule-bending-hardening.md) |  | 375 |
 | [automatic-knowledge-source-graph-followups](concerns/automatic-knowledge-source-graph-followups.md) | Gap | 69 |
 | [ci-macos-test-build-time](concerns/ci-macos-test-build-time.md) | macOS lib test build swaps on the 7 GB runner; nightly split and open options | 16 |
-| [code-quality-and-hook-debt](concerns/code-quality-and-hook-debt.md) | Debt | 319 |
+| [code-quality-and-hook-debt](concerns/code-quality-and-hook-debt.md) | Debt | 323 |
 | [codex-heartbeat-starvation](concerns/codex-heartbeat-starvation.md) |  | 22 |
 | [consolidation-followups](concerns/consolidation-followups.md) |  | 148 |
 | [contract-autonomy-followups](concerns/contract-autonomy-followups.md) |  | 70 |
@@ -250,7 +250,7 @@
 | [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) |  | 400 |
 | [source-graph-known-gaps](concerns/source-graph-known-gaps.md) | Limits | 94 |
 | [source-graph-review-backlog](concerns/source-graph-review-backlog.md) | Todo | 295 |
-| [stage-build-cache-gaps](concerns/stage-build-cache-gaps.md) | Open reviewer suggestions and residuals of the stage build cache | 25 |
+| [stage-build-cache-gaps](concerns/stage-build-cache-gaps.md) | Open reviewer suggestions and residuals of the stage build cache | 26 |
 | [state-confinement-gaps](concerns/state-confinement-gaps.md) | Caches | 21 |
 | [token-accounting-and-proof-defects](concerns/token-accounting-and-proof-defects.md) |  | 333 |
 | [typed-config-values](concerns/typed-config-values.md) | Gap | 22 |

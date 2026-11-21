@@ -384,3 +384,13 @@ sibling's files.
 **Why:** scope was judged by what the original change touched, not by what the reviews found in the code being shipped.
 
 **Prevention:** an issue found during the work is fixed in the same session, as soon as it is found, unless the operator says otherwise or it needs a person's decision; then ask at once instead of reporting it at the end. A concerns entry is for what cannot be fixed now, with the reason.
+
+## Distinguish proposal evidence from the deliverable
+
+**What happened:** A progress update emphasized a plan-verification command during a request for a proposal. The operator had to ask what the command had to do with the deliverable.
+
+**Why:** The update left the role of the test input implicit. The old plan format was the subject of the compatibility experiment.
+
+**Prevention:** For a design proposal, lead with the design finding. If a command tests a legacy input, identify that input and explain which design decision the result informs.
+
+**Fix:** Deliver the dated proposal under `doc/` and describe the parser result as evidence for legacy plan compatibility.
