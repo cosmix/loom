@@ -109,10 +109,15 @@ only `/tmp` and `/var/tmp`, both read-only in the sandbox. The 9 guard tests ref
 containing `claude` (`tests/integration/hooks_subagent_verify_guard.rs::temp_dir_no_claude`); `TMPDIR` pointed at
 `$LOOM_SCRATCH_DIR` fixes those 9 and not the 17.
 
-**Prevention:** judge these names by `loom check <stage-id>`, the confined runner `loom stage
-complete` uses, which passes the full suite. Treat them as verifier-shell environment only when
-the diff touches neither `src/verify` nor the verify guard. Do not rerun with a `TMPDIR` override
-in a subagent shell to chase the 17.
+**Prevention:** judge these names by `loom check <stage-id>`, the confined runner stage completion
+uses. Its pass is not proof on macOS: the host job denies nested sandboxes, signals, PTYs, sockets
+and the process table, so the tests that need them probe and skip there, and only CI
+(`LOOM_TEST_REQUIRE_SANDBOX_FREE=1`) runs them ([Tests in a Host Job](../conventions/host-job-test-guards.md)).
+Treat the 26 as verifier-shell environment only when the diff touches neither `src/verify` nor
+the verify guard. Do not rerun with a `TMPDIR` override in a subagent shell to chase the 17.
+
+**Fix:** the 17 and 9 are environment limits of the session shell and stay. A host-job-only
+failure is fixed by a guard on the probe the test needs, never by `--skip`.
 
 ## A Symlinked Work Dir Made Every Session Record Read as Unreadable
 

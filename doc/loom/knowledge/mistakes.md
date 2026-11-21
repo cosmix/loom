@@ -256,3 +256,7 @@ A tag named like a stage branch broke stage detection, blocks left the scheduler
 ## Check 5 Hook Preflight Fixes
 
 Extending check 5's list of refused programs cannot cover what an unsandboxed hook loads (runners, shims, caches, hard links, unscanned launchers). See [mistakes/sandbox-hook-preflight.md](mistakes/sandbox-hook-preflight.md).
+
+## Dispute Guards Delivery
+
+Host-job test guards added only where a failure was seen (two full runs hung), parallel fix workers colliding through `rustfmt`, shared and oversized `CARGO_TARGET_DIR`s and unproven size limits, the contract signal's "No scaffold edits" wording for writer-chosen tests, a hook that blocks a Bash call quoting the completion command, and a `git checkout` that discarded edits. → [mistakes/dispute-guards-delivery.md](mistakes/dispute-guards-delivery.md)

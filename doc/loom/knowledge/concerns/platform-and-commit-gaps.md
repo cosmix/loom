@@ -60,8 +60,9 @@ children, `lifecycle/tests.rs` runs `run_server` with a pre-set shutdown flag, a
 `process::sandbox_probe::skip_unless(unix_socket_bindable)`, which skips inside a stage sandbox and
 runs on the host (a local `cargo test`) and in CI.
 
-- `.github/workflows/ci.yml` never sets `LOOM_TEST_REQUIRE_SANDBOX_FREE=1`, so `relay_commit_e2e` (skipped on missing
-  `jq`/`bash`/`git`) and the `AF_UNIX`-gated tests can skip silently in CI; set it in the cargo test job.
+- Both full-suite steps of `.github/workflows/ci.yml` set `LOOM_TEST_REQUIRE_SANDBOX_FREE=1`, so a skip there is a
+  failure; a macOS `loom check` passes those tests by skipping them ([Tests in a Host Job](../conventions/host-job-test-guards.md)).
+  Only the srt probes stay silent when `srt` or `socat` is missing, and CI installs neither.
 - The two `run_server` tests in `daemon/server/lifecycle/tests.rs` flip the process-wide umask to
   `0o077` around the bind; a concurrent test asserting a created file's mode could see it for
   microseconds. Mark them `#[serial]`.

@@ -39,9 +39,13 @@ The adjudicator amends ONLY:
 
 - `acceptance: Vec<AcceptanceCriterion>` (plan/schema/types.rs::StageDefinition)
 - `wiring: Vec<WiringCheck>` (plan/schema/types.rs::StageDefinition)
-- `contracts: Vec<ContractSpec>` on a v2 contract dispute (`AmendmentField::Contracts`; `loom stage amend` takes it too)
+- `contracts: Vec<ContractSpec>` on a v2 contract dispute (`AmendmentField::Contracts`)
 
 Never amends: `before_stage`, `after_stage`, `artifacts`, `dependencies`, `id`, `working_dir`, `model`, `sandbox`, `execution`. Use `AmendmentField` enum to enforce this at the type level.
+
+**A stage session cannot amend.** `loom stage amend` is an operator command: `commands/stage/amend.rs` refuses a process whose `LOOM_WORKTREE_PATH` names a stage worktree (`refuse_stage_session`) and one with `LOOM_STAGE_ID` or `LOOM_SESSION_ID` set (`refuse_session_identity`). Both are guards against a session running the command by mistake; the boundary is the session's write denies on `.loom`, which stop the amendment from being written whatever the environment says.
+
+**Narrowing needs base evidence.** An acceptance `delete` or narrowing `replace` must declare `plan_patch.leaves_out: [{index, tests, runs_at, reason}]`, and each entry needs a recorded run of that criterion at the stage's base that failed with tests executed (`verdict_narrowing.rs::check_narrowing`). A criterion that passes at the base, does not build there or selects no test is the stage's own failure and is refused; so is a `replace` equal to the current entry. A stage's own new test is never narrowed. Each accepted entry becomes a hand-off ([Criterion Narrowing](../architecture/criterion-narrowing-evidence.md)).
 
 ## Dispute Budget Limits Convention
 
@@ -124,18 +128,23 @@ A stage description does not order a dispute for an event the detector does not 
 
 ## Frozen Contracts Change Only Through `--replacement`
 
-A stage agent never edits a frozen contract file; the signal says so and the Claude Code permission classifier enforces it. A contract that must change is disputed with its complete replacement:
+A stage agent never edits a frozen contract file; the signal says so and the Claude Code permission classifier enforces it. A contract that must change is disputed with complete replacements, trialled first:
 
 ```bash
-loom stage dispute-contract <stage> --contract <id> --replacement <path> --reason "..."
+loom check <stage> --contracts --replacement <frozen-file>=<path> [--replacement ...]
+loom stage dispute-contract <stage> --contract <id> [--contract <id> ...] \
+  [--replacement <frozen-file>=<path> ...] --reason "..."
 ```
 
-- **Where the file lives.** The agent copies the frozen file to `$LOOM_SCRATCH_DIR`, edits the copy, and runs the stage's formatter check on it. The format and static checks of `verify/contracts/freeze.rs` run only at freeze time, so an unformatted replacement fails completion and costs another dispute. The CLI (`commands/stage/dispute_kinds.rs::snapshot`) refuses a path that canonicalizes into the stage worktree, reads it without following symlinks, and requires UTF-8.
-- **Size.** `MAX_REPLACEMENT_BYTES` (32 KiB, `models/dispute_replacement.rs`) bounds the file. The replacement travels inline in the `file-dispute` ticket, so the CLI also encodes the whole ticket and refuses it, before writing anything, when it exceeds `MAX_TICKET_BYTES` (64 KiB): JSON escaping can grow a control character to six bytes.
-- **Admission** (`stage_service/dispute_admission.rs`) refuses an oversize replacement and one identical to the frozen content, before the dispute budget is spent, and sets `replacement_base_sha256` to the frozen file's hash, overwriting any client value.
-- **Judging.** The prompt adds `## Proposed replacement` and a frozen → replacement diff (`prompt/contract_replacement.rs`). The judge runs no code: the contract command in the prompt runs the frozen content, and the judge reviews the replacement statically. Completion runs it after an accept. Every contract prompt forbids asking the agent to edit a frozen file.
-- **Accept** writes the bytes from the admitted dispute record into the worktree before the re-freeze ([Accepted Dispute Re-Freeze](../architecture/contract-phase.md#accepted-dispute-re-freeze)). The write is uncommitted: the accept notice tells the agent to `git add` the file and commit it through `loom stage commit`. A reject leaves the worktree unchanged.
-- **Needs more evidence.** For a contract dispute the feedback says never to edit a frozen file and to re-file with a complete `--replacement`; an earlier replacement is not carried over. `apply.rs::apply_needs_more_evidence` still owns the evidence-round cap.
+- **Where the file lives.** The agent copies the frozen file to `$LOOM_SCRATCH_DIR`, edits the copy, and runs the stage's formatter check on it. The CLI (`commands/stage/dispute_kinds.rs`) refuses a path that canonicalizes into the stage worktree, reads it without following symlinks, and requires UTF-8; it resolves the stage and worktree once for all replacements.
+- **One filing, several contracts.** `DisputeKind::Contract { contract_ids, replacements }` (`models/dispute.rs`) spends one unit of `contract_disputes` however many contracts it names. A replacement names any file of the freeze record, a harness file included, and carries that file's own base hash. A replacement for a contract file needs every contract of that file named.
+- **Size.** `MAX_REPLACEMENT_BYTES` (32 KiB, `models/dispute_replacement.rs`) bounds each file; the whole filing travels in one `file-dispute` ticket of at most `MAX_TICKET_BYTES` (64 KiB), checked before anything is written. A filing that does not fit is split by file.
+- **Trial.** `loom check <stage> --contracts` runs the stage's frozen contracts in a Check host job, the code completion runs (`verify/contracts/completion.rs`); a full `loom check` of a frozen standard stage runs them too. With `--replacement` the job lays each replacement over its frozen file (`verify/contracts/trial.rs::with_admitted_overlay`, under the host-job stage lock), runs the freeze's format and static gates on those files and the contracts with `CachePolicy::Bypass`, and puts the frozen files back whatever the outcome. A pass records a receipt (HEAD, file, sha256) in `trial.json`. A `kill_groups` retirement or a restart undoes a live overlay daemon-side (`verify/contracts/frozen_restore.rs::undo_trial_overlay`); the restore never overwrites a file that holds other bytes or that the freeze now records at the overlay bytes.
+- **Admission** (`stage_service/dispute_admission.rs`) refuses, before the budget is spent: an empty or repeated id, an id the stage no longer lists or the record does not freeze, a replacement for a file the record lacks, a replacement over the size limit or identical to the frozen content, any recorded frozen file changed or missing in the worktree (restore it with `loom stage contracts restore <stage>` and file the change as a replacement), and a replacement without a passing trial receipt for the same bytes at the worktree's HEAD (`trial::receipt_covers`). It overwrites any client-supplied base hash with the frozen file's.
+- **Judging.** The verdict is `contract-rulings`: one `accept` or `reject` per disputed contract, plus an optional `plan_patch` on `contracts`. The prompt (`prompt/contract_replacement.rs`) shows the trial result and every assertion statement the replacement loses or changes (`verify::integrity::lost_statements`); the judge cites what covers each or rejects. The judge runs no code. Every contract prompt forbids asking the agent to edit a frozen file.
+- **Recording.** `verdict_contract.rs` refuses an `accept` that changes nothing: its file needs a replacement the rulings let the daemon write, or a patch must name it (`files_to_write`, `apply_contract_rulings.rs`). The refusal returns to the judge as an `Err`, so no evidence round is spent.
+- **Accept** writes each replacement the rulings allow, then re-freezes ([Accepted Dispute Re-Freeze](../architecture/contract-phase.md#accepted-dispute-re-freeze)). The writes are uncommitted: the notice tells the agent to `git add` the files and commit through `loom stage commit`. A reject leaves the worktree unchanged and discards its replacement.
+- **Needs more evidence.** The feedback says never to edit a frozen file and to re-file with complete replacements; an earlier replacement is not carried over. `apply.rs::apply_needs_more_evidence` owns the evidence-round cap.
 
 ## Verification Design Priorities
 

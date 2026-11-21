@@ -1,0 +1,51 @@
+# Dispute Guards Delivery
+
+> host-job hangs, parallel worker collisions, scaffold wording, hook quirks
+
+## Host-Job Guards Were Added Where the Failure Was Seen, and Two Full Runs Hung
+
+**What happened:** integration-verify's full-suite host job hung twice: the lib test binary sat at 0% CPU for 36 minutes with six stand-in processes alive, and the first run leaked about 30 `sleep`/busy-loop stand-ins to PID 1. The first fix guarded `direct_worker_live_tests.rs` only; the second run hung in `codex_lifecycle/foreground_tests.rs`, `orchestrator/monitor/foreground_parallel_tests.rs`, `status/data/heartbeat_foreground_tests.rs` and `tests/integration/helpers.rs`. A third pass found 11 tests that still failed because the sandbox hides their own stand-ins from the process table.
+
+**Why:** the guard was written per test file from the failures in front of the worker. `LiveTree::drop` called `killpg` then an unbounded `wait()`, and the host job's profile granted no signal, so the wait never returned. Each stand-in spawner is independent, so one fix never covered the next.
+
+**Prevention:** before any full host-job run, search test code for every stand-in (`while :; do`, `sleep 300`, `killpg`, `process_group(0)`, `Command::new("kill")`), guard each before it spawns with the probe it needs (`process_groups_signalable`, plus `process_tree_visible` for a test that finds the process through the table), and bound every cleanup wait. Never use `--skip` for this. See [Tests in a Host Job](../conventions/host-job-test-guards.md).
+
+**Fix:** guards and macros (`require_group_signals!`, `require_process_control!`) in `process/sandbox_probe.rs`; the operator added `(allow signal (target same-sandbox))` to the host-job profile. `GroupAnchor::retire` still waits unbounded ([concern](../concerns/sandbox-and-confinement-gaps.md#host-job-test-gaps)).
+
+## Parallel Fix Workers Collided Through Formatting, Build Directories and the Size Limits
+
+**What happened:** during integration-verify, (1) a worker told to format only its files ran `rustfmt` over every changed file in the worktree while three siblings were editing them; (2) four workers each reported their files within the 400-line and 50-line limits, then `tests/maintainability.rs` found 11 new violations (3 test files over 400, 8 functions over 50); (3) each worker built into `loom/target/iv-<name>`, and nine such directories (81 GB) made stage completion refuse: `git ls-files --others --ignored ... stdout exceeded the 16777216 byte output limit`; (4) with several workers in one worktree, `cargo test --lib` ran a binary built from another source tree and reported a panic at a line of an older file version.
+
+**Why:** the briefs named the rule, not the command that proves it; completion lists every ignored file in the worktree; siblings sharing `loom/target` rebuild each other's inputs.
+
+**Prevention:** a brief that touches code ends with `cargo test --test maintainability` and requires its result quoted (a 3-line rustfmt-expanded guard pushes a 48-line test over 50; use the guard macros). `rustfmt` takes the worker's own file paths, never a `git diff` list; the orchestrator formats the tree once after all workers return. Give parallel workers `CARGO_TARGET_DIR` outside the worktree (under `$TMPDIR`) or delete theirs before completion. When a panic line does not match the file, or the test count changes between runs, rerun with a private `CARGO_TARGET_DIR`.
+
+## The Contract Signal Said "No Scaffold Edits" for Writer-Chosen Contracts
+
+**What happened:** four contract writers (`confined-test-guards`, `contract-check-and-trial`, `contract-dispute-filing`, `criterion-narrowing-evidence`) read "No scaffold edits: every contract file is already collected" although no contract file had a `mod` declaration, and each had to add the `#[cfg(test)] mod` lines itself.
+
+**Why:** `verify/contracts/collection/mod.rs::StageTree::scaffold` derives edits only for contracts whose `test` is set, and every contract in these plans read `(you choose)`. The freeze derives the scaffold over the merged `--test` choices, so the signal's text was wrong at the time it was printed.
+
+**Prevention:** recurrence across four stages: the signal should say the scaffold is derived at freeze when tests are writer-chosen. A writer declares each new contract file in its parent `mod.rs` itself. Tracked in [concerns](../concerns/dispute-guards-followups.md#contract-signal-and-prompt-text).
+
+## A Bash Call Quoting the Completion Command Was Blocked by the Control Hook
+
+**What happened:** three times a Bash call was refused with `completion must be one exact pinned command`, because its heredoc or script text merely mentioned the stage-completion command (a knowledge body, a python edit script quoting a doc comment).
+
+**Why:** the `loom-control-complete` PreToolUse hook matches the command text, not the executed command.
+
+**Prevention:** write such bodies with the Write tool and pass them by path (`loom knowledge replace-section <file> <heading> - < body.md`); never put the literal command in a Bash call's text.
+
+## A Temporary Debug Line Was Removed With `git checkout`
+
+**What happened:** a worker ran `git checkout <file>` to drop one debug line and lost every uncommitted edit to the file.
+
+**Why:** checkout restores HEAD, not the state before the debug line.
+
+**Prevention:** remove temporary debug lines with the Edit tool; never `git checkout` a file with uncommitted work.
+
+## Load Generators Started in a Sandboxed Call Outlived It
+
+**What happened:** detached `yes` CPU hogs started in one Bash call could not be killed by `pkill` at its end, because the macOS sandbox denies process listing.
+
+**Prevention:** start load generators as direct children and kill them by `$!` in the same call (`yes & pids+=($!); ...; kill ${pids[@]}`); never through `(cmd &)` subshells; report possible leftovers to the user.

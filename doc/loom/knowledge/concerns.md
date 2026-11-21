@@ -112,7 +112,7 @@ Open follow-ups from the token-accounting plans: git and bounded-runner hygiene,
 
 Open and fixed reviewer findings on the host-verification code, one bullet per defect with its file:line. The open ones cover the apply and recovery path, criteria confinement, observer git discovery, and skill and reference text that still describes the session sandbox as the criteria environment.
 
-→ [Host-Verification Review Suggestions](concerns/source-graph-review-backlog.md)
+→ [Host-Verification Review Suggestions](concerns/source-graph-review-backlog.md); dispute-guard and host-job test follow-ups: [dispute-guards-followups](concerns/dispute-guards-followups.md), [Host-Job Test Gaps](concerns/sandbox-and-confinement-gaps.md#host-job-test-gaps)
 
 ## Pressure Gaps
 
