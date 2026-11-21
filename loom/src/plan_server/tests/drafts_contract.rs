@@ -20,6 +20,7 @@ fn draft(session: &str, updated_at: &str, name: &str) -> Value {
         "session": session,
         "started_at": "2026-11-04T10:47:11Z",
         "updated_at": updated_at,
+        "size": "feature",
         "messages": ["i would like to add support for microvm test environment"],
         "shape": {
             "size": "feature",

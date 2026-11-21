@@ -16,6 +16,7 @@ fn draft_json() -> serde_json::Value {
         "session": SESSION,
         "started_at": "2026-11-04T10:47:11Z",
         "updated_at": "2026-11-04T10:50:00Z",
+        "size": "plan",
         "messages": ["first idea", "second idea"],
         "shape": {"size": "plan", "name": "my-plan", "proposal": false,
             "problem": "A problem", "decisions": ["Use one VM."],
