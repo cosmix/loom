@@ -7,10 +7,9 @@ use crate::models::worktree::Worktree;
 use crate::orchestrator::core::Orchestrator;
 use crate::orchestrator::session_registry::record_may_be_running;
 use crate::orchestrator::signals::publish_merge_session;
-use crate::orchestrator::terminal::native::{
-    read_pid_entry, session_process_status, NativeBackend, SessionProcessStatus,
-};
+use crate::orchestrator::terminal::native::{session_process_status, SessionProcessStatus};
 
+use super::super::launch_completion::complete_lost_launch;
 use super::review_route::awaits_merge;
 
 impl Orchestrator {
@@ -84,13 +83,8 @@ impl Orchestrator {
         stage_id: &str,
         session: &mut Session,
     ) -> anyhow::Result<()> {
-        let identity = NativeBackend::window_title_and_pid_key(session)
-            .and_then(|(_, key)| read_pid_entry(&self.config.work_dir, &key));
-        if let Some(identity) = identity {
-            session.set_pid(identity.pid);
-        }
-        session.set_worktree_path(Worktree::worktree_path(&self.config.repo_root, stage_id));
-        session.try_mark_running()?;
+        let worktree = Worktree::worktree_path(&self.config.repo_root, stage_id);
+        complete_lost_launch(&self.config.work_dir, session, Some(worktree))?;
         self.publish_spawned_resolver(session);
         Ok(())
     }

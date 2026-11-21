@@ -19,6 +19,7 @@ mod heartbeat_apply;
 mod host_jobs;
 mod inbox_drain;
 mod judge_close;
+mod launch_completion;
 mod lifecycle_snapshot;
 mod manual_start;
 mod merge_handler;

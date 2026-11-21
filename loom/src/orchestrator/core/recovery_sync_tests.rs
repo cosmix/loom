@@ -350,3 +350,37 @@ fn marking_the_graph_executing_forces_a_node_the_stage_file_has_already_passed()
         StageStatus::Executing
     );
 }
+
+/// A daemon that died after the agent started but before its `Running`
+/// record was saved leaves a pid-less `Spawning` record; recovery completes
+/// it from the PID file instead of tracking it as found.
+#[test]
+fn recovery_completes_a_live_session_left_spawning() {
+    use crate::fs::session_files::{load_session_exact, save_session};
+    use crate::models::session::SessionStatus;
+
+    let temp = TempDir::new().unwrap();
+    let mut orchestrator = resume_orchestrator(
+        &temp,
+        ExecutionGraph::build(vec![minimal_stage_definition("alpha")]).unwrap(),
+    );
+    orchestrator.liveness = crate::orchestrator::liveness::LivenessService::fixed_for_tests(true);
+    let work = orchestrator.config.work_dir.clone();
+    let mut session = restart_session("alpha");
+    session.backend = SessionBackendKind::Tmux;
+    assert_eq!(session.status, SessionStatus::Spawning);
+    save_session(&session, &work).unwrap();
+    save_stage(&restart_stage("alpha", &session.id), &work).unwrap();
+    let pid = std::process::id();
+    crate::orchestrator::terminal::native::write_test_pid_identity(&work, &session, pid).unwrap();
+
+    orchestrator.recover_current_sessions().unwrap();
+
+    let worktree = crate::models::worktree::Worktree::worktree_path(&work, "alpha");
+    let stored = load_session_exact(&work, &session.id).unwrap().unwrap();
+    for record in [&orchestrator.active_sessions["alpha"], &stored] {
+        assert_eq!(record.status, SessionStatus::Running);
+        assert_eq!(record.pid, Some(pid));
+        assert_eq!(record.worktree_path.as_deref(), Some(worktree.as_path()));
+    }
+}

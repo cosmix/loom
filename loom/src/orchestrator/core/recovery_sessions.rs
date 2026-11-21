@@ -64,7 +64,8 @@ impl Orchestrator {
         }
         match self.liveness.is_alive(session) {
             Ok(true) => {
-                register_live_current_session(&mut self.active_sessions, stage, session);
+                let settled = self.settled_live_session(session);
+                register_live_current_session(&mut self.active_sessions, stage, &settled);
                 false
             }
             Ok(false) => !recovery_guards::skip_too_young_orphan(&self.config.work_dir, session),
