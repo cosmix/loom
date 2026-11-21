@@ -282,7 +282,7 @@ A session's `loom check` and `loom stage complete` relay a host job, and the dae
 
 Environmental, not defects: `cargo audit` fails in a session because the user's global git `url.ssh://git@github.com/.insteadOf` rewrites the advisory-database fetch to SSH and the sandbox denies `~/.ssh`; a link step once aborted with `relocation R_X86_64_32 out of range` in `.debug_info` of one test binary and linked on an identical second run (treat as a linker flake and report both runs).
 
-**What to do when a criterion cannot pass confined.** Dispute it: one `loom stage dispute-criteria <stage> --criterion-index <n> [--criterion-index <n> ...]` filing names every criterion that fails only because of where completion runs, and the adjudicator replaces or deletes each. `loom stage block` is refused while the latest `loom stage complete` shows a failing criterion. The incident that forced this rule is [Completion Runner Blocks](../mistakes/completion-runner-blocks.md).
+**What to do when a criterion cannot pass confined.** Dispute it: one `loom stage dispute-criteria <stage> --criterion-index <n> [--criterion-index <n> ...]` filing names every criterion that fails only because of where completion runs, and the adjudicator replaces or deletes each. `loom stage block` is refused while the latest `loom stage complete` shows a failing criterion, frozen contract or impact-selected test. The incident that forced this rule is [Completion Runner Blocks](../mistakes/completion-runner-blocks.md).
 
 ## Criteria Run Outside the Session Sandbox
 

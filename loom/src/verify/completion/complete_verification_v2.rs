@@ -5,7 +5,8 @@
 //! belong here too.
 
 use super::{
-    completed_definitions, CheckSink, OutputStream, VerificationChecks, IMPACT_TESTS_LABEL,
+    completed_definitions, CheckSink, OutputStream, VerificationChecks, CONTRACTS_LABEL,
+    IMPACT_TESTS_LABEL,
 };
 use crate::context::worktree_graph::build_for_worktree;
 use crate::models::stage::StageType;
@@ -35,7 +36,7 @@ pub(crate) fn run_v2(
     let standard = stage.stage_type == StageType::Standard;
     let integration = stage.stage_type == StageType::IntegrationVerify;
     if standard && !stage.contracts.is_empty() {
-        sink("contracts", check_contracts(checks))?;
+        sink(CONTRACTS_LABEL, check_contracts(checks))?;
     }
     if (standard || integration) && !checks.daemon_gates {
         let worktree_root = worktree(checks, "check test integrity in")?;

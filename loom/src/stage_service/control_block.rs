@@ -15,21 +15,23 @@ use chrono::Utc;
 
 use super::Response;
 use crate::handoff::load_trusted_session_checkpoint;
-use crate::handoff::schema::CompletionPhase;
+use crate::handoff::schema::{CompletionPhase, CriterionResult};
 use crate::models::stage::Stage;
+use crate::verify::completion::{CONTRACTS_LABEL, IMPACT_TESTS_LABEL};
 use crate::verify::transitions::{load_stage, update_stage};
 
 /// A stage agent's `loom stage block`: refused while the stage session's
-/// latest signed `loom stage complete` attempt failed with at least one
-/// failing `acceptance-<i>` criterion, otherwise [`handle_block_stage`].
+/// latest signed `loom stage complete` attempt failed a check a dispute can
+/// answer: an `acceptance-<i>` criterion, the frozen contracts or the
+/// impact-selected tests, otherwise [`handle_block_stage`].
 ///
-/// A failing criterion has a route that keeps the stage moving: a dispute,
-/// judged by an adjudicator and escalated to the operator once the budget is
-/// spent. A block there parks the stage as an intentional block that is never
-/// retried, so the work waits on an operator for a question the adjudicator
-/// could have answered. A failed completion naming no criterion (missing
-/// sandbox, setup error) has no dispute route, so the block stays open.
-/// Operator blocks and the daemon's own signing block call
+/// Each of those has a route that keeps the stage moving: a dispute, judged by
+/// an adjudicator and escalated to the operator once the budget is spent. A
+/// block there parks the stage as an intentional block that is never retried,
+/// so the work waits on an operator for a question the adjudicator could have
+/// answered. A failed completion naming none of them (missing sandbox, setup
+/// error, a gap no dispute covers) has no dispute route, so the block stays
+/// open. Operator blocks and the daemon's own signing block call
 /// [`handle_block_stage`] directly.
 #[cfg(test)]
 pub(crate) fn handle_agent_block_stage(
@@ -47,45 +49,54 @@ pub(crate) fn handle_agent_block_for_session(
     session_id: Option<&str>,
 ) -> Result<Response> {
     crate::validation::validate_id(stage_id).context("invalid block stage id")?;
-    let failing = failing_criterion_indices(work_dir, stage_id);
-    if !failing.is_empty() {
+    let failed = disputable_failures(work_dir, stage_id);
+    if !failed.is_empty() {
         return Ok(Response::Error {
-            message: failed_completion_refusal(stage_id, &failing),
+            message: failed_completion_refusal(stage_id, &failed),
         });
     }
     block_for_session(work_dir, stage_id, reason, session_id)
 }
 
-/// Indices of the `acceptance-<i>` criteria that failed in the current session's
-/// latest signed `ToolFailed` completion attempt. A record that cannot be read
-/// yields none: the agent's way to stop must not hinge on it.
-fn failing_criterion_indices(work_dir: &Path, stage_id: &str) -> Vec<usize> {
-    let session = match load_stage(stage_id, work_dir) {
-        Ok(stage) => stage.session,
+/// The failures of the latest `ToolFailed` completion attempt that a dispute
+/// answers.
+#[derive(Debug, Default)]
+struct DisputableFailures {
+    /// Indices of the failing `acceptance-<i>` criteria.
+    criteria: Vec<usize>,
+    /// The stage's frozen contracts when the contract check failed. The
+    /// attempt records one outcome for the whole check, so it cannot say
+    /// which contract failed; the refusal offers every contract.
+    contracts: Vec<String>,
+    /// Whether the impact-selected tests failed.
+    impact_tests: bool,
+}
+
+impl DisputableFailures {
+    fn is_empty(&self) -> bool {
+        self.criteria.is_empty() && self.contracts.is_empty() && !self.impact_tests
+    }
+}
+
+/// What failed in the current session's latest signed `ToolFailed` completion
+/// attempt. A record that cannot be read yields nothing: the agent's way to
+/// stop must not hinge on it.
+fn disputable_failures(work_dir: &Path, stage_id: &str) -> DisputableFailures {
+    let stage = match load_stage(stage_id, work_dir) {
+        Ok(stage) => stage,
         Err(error) => {
             tracing::warn!(stage_id, error = %format!("{error:#}"), "block: stage unreadable");
-            return Vec::new();
+            return DisputableFailures::default();
         }
     };
-    let Some(session) = session else {
-        return Vec::new();
+    let Some(session) = stage.session.as_deref() else {
+        return DisputableFailures::default();
     };
-    match load_trusted_session_checkpoint(stage_id, &session, work_dir) {
+    match load_trusted_session_checkpoint(stage_id, session, work_dir) {
         Ok(checkpoint) => checkpoint
             .and_then(|checkpoint| checkpoint.latest)
             .filter(|latest| latest.phase == CompletionPhase::ToolFailed)
-            .map(|latest| {
-                let mut indices: Vec<usize> = latest
-                    .verification
-                    .criteria
-                    .iter()
-                    .filter(|result| !result.passed)
-                    .filter_map(|result| result.id.strip_prefix("acceptance-")?.parse().ok())
-                    .collect();
-                indices.sort_unstable();
-                indices.dedup();
-                indices
-            })
+            .map(|latest| failures_in(&stage, &latest.verification.criteria))
             .unwrap_or_default(),
         Err(error) => {
             tracing::warn!(
@@ -94,26 +105,88 @@ fn failing_criterion_indices(work_dir: &Path, stage_id: &str) -> Vec<usize> {
                 error = %format!("{error:#}"),
                 "block: completion record unreadable"
             );
-            Vec::new()
+            DisputableFailures::default()
         }
     }
 }
 
-fn failed_completion_refusal(stage_id: &str, failing: &[usize]) -> String {
-    let flags: Vec<String> = failing
+fn failures_in(stage: &Stage, results: &[CriterionResult]) -> DisputableFailures {
+    let failed = || results.iter().filter(|result| !result.passed);
+    let mut criteria: Vec<usize> = failed()
+        .filter_map(|result| result.id.strip_prefix("acceptance-")?.parse().ok())
+        .collect();
+    criteria.sort_unstable();
+    criteria.dedup();
+    let named = |label: &str| failed().any(|result| result.id == label);
+    let contracts = if named(CONTRACTS_LABEL) {
+        stage
+            .contracts
+            .iter()
+            .map(|contract| contract.id.clone())
+            .collect()
+    } else {
+        Vec::new()
+    };
+    DisputableFailures {
+        criteria,
+        contracts,
+        impact_tests: named(IMPACT_TESTS_LABEL),
+    }
+}
+
+/// The refusal: one route for each kind of failure the attempt recorded, so a
+/// stage that failed only impact-selected tests is not pointed at criteria.
+fn failed_completion_refusal(stage_id: &str, failed: &DisputableFailures) -> String {
+    let mut routes = Vec::new();
+    if !failed.criteria.is_empty() {
+        routes.push(criteria_route(stage_id, &failed.criteria));
+    }
+    if failed.impact_tests {
+        routes.push(format!(
+            "Failing impact-selected tests: `loom stage dispute-criteria {stage_id} --field \
+             impact-tests --test <id> --reason \"...\"` names each failing selection."
+        ));
+    }
+    if !failed.contracts.is_empty() {
+        routes.push(contracts_route(stage_id, &failed.contracts));
+    }
+    format!(
+        "cannot block stage '{stage_id}': the latest `loom stage complete` shows failing \
+         checks. A failing check is disputed, never blocked. {} Other routes: `loom stage \
+         dispute-findings` for open review findings, `loom stage dispute-integrity` for \
+         test-integrity events, `loom stage dispute-criteria --field wiring` or `--field \
+         wiring-tests` for wiring entries. A filing past the dispute budget goes to the \
+         operator automatically.",
+        routes.join(" ")
+    )
+}
+
+fn criteria_route(stage_id: &str, criteria: &[usize]) -> String {
+    let flags: Vec<String> = criteria
         .iter()
         .map(|index| format!("--criterion-index {index}"))
         .collect();
     format!(
-        "cannot block stage '{stage_id}': the latest `loom stage complete` shows failing \
-         criteria. A failing check is disputed, never blocked: `loom stage dispute-criteria \
-         {stage_id} {} --reason \"...\"` names every failing criterion in one filing \
-         (`--field wiring` or `--field wiring-tests` for wiring entries, `--field impact-tests \
-         --test <id>` for failing impact-selected tests); open review findings go to `loom \
-         stage dispute-findings`, test-integrity events to `loom stage dispute-integrity`, a \
-         frozen contract to `loom stage dispute-contract` (`--contract <id>` once for each \
-         contract with the same cause). A filing past the dispute budget goes to the operator \
-         automatically.",
+        "Failing criteria: `loom stage dispute-criteria {stage_id} {} --reason \"...\"` names \
+         every failing criterion in one filing.",
+        flags.join(" ")
+    )
+}
+
+/// The contract check fails on a contract's own test and on frozen-file drift,
+/// and records one outcome for both: `loom check --contracts` tells them
+/// apart, and drift has its own repair.
+fn contracts_route(stage_id: &str, contracts: &[String]) -> String {
+    let flags: Vec<String> = contracts
+        .iter()
+        .map(|id| format!("--contract {id}"))
+        .collect();
+    format!(
+        "The frozen contract check failed and does not say which contract or why: `loom check \
+         {stage_id} --contracts` shows which fail. A frozen file that drifted is repaired with \
+         `loom stage contracts restore {stage_id}`, which needs no dispute. A contract that is \
+         wrong is disputed with `loom stage dispute-contract {stage_id} {} --reason \"...\"`, \
+         which lists every contract of the stage; drop the flags of those that pass.",
         flags.join(" ")
     )
 }

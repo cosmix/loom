@@ -380,7 +380,7 @@ loom stage dispute-criteria <stage-id> --field wiring --criterion-index <n> --re
 loom stage dispute-criteria <stage-id> --criterion-index <n> [--criterion-index <n> ...] --reason "<why>"
 
 # A credential, a host install or a decision only a person can make (refused while the latest
-# `loom stage complete` shows a failing criterion)
+# `loom stage complete` shows a failing criterion, frozen contract or impact-selected test)
 loom stage block <stage-id> "<what is needed and why>"
 
 # Force complete a stage awaiting review (use sparingly): records the

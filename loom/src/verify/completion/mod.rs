@@ -50,6 +50,10 @@ pub(crate) type CheckSink<'s> = dyn FnMut(&'static str, Result<()>) -> Result<()
 /// The label of the impact-selected tests, whose failure a dispute names.
 pub(crate) const IMPACT_TESTS_LABEL: &str = "impact-tests";
 
+/// The label of the frozen-contract check: one outcome for every contract and
+/// frozen-file drift, so a record of a failed completion names no single contract.
+pub(crate) const CONTRACTS_LABEL: &str = "contracts";
+
 impl VerificationChecks<'_> {
     /// Confinement level for the plan-authored commands these checks run:
     /// the stage's own override, else the plan-level default, else `Confined`.

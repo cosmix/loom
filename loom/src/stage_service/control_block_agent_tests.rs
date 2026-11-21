@@ -12,6 +12,7 @@ use crate::handoff::schema::{
 };
 use crate::models::session::Session;
 use crate::models::stage::{Stage, StageStatus};
+use crate::plan::schema::ContractSpec;
 use crate::verify::transitions::save_stage;
 
 const STAGE: &str = "stage-blk";
@@ -99,13 +100,19 @@ fn an_agent_block_after_a_failed_completion_is_refused_with_the_dispute_route() 
     };
     for route in [
         "loom stage dispute-criteria stage-blk --criterion-index 2 --reason",
-        "--field impact-tests",
         "loom stage dispute-findings",
         "loom stage dispute-integrity",
-        "loom stage dispute-contract` (`--contract <id>` once for each contract with the same cause)",
+        "--field wiring",
         "operator automatically",
     ] {
         assert!(message.contains(route), "missing {route:?}: {message}");
+    }
+    for other_kind in [
+        "--field impact-tests",
+        "dispute-contract stage-blk",
+        "contracts",
+    ] {
+        assert!(!message.contains(other_kind), "{other_kind:?}: {message}");
     }
     let after = load_stage(STAGE, temp.path()).unwrap();
     assert_eq!(after.status, StageStatus::Executing);
@@ -196,4 +203,150 @@ fn a_failed_completion_with_no_failing_criterion_still_blocks() {
     assert!(matches!(response, Response::Ok), "{response:?}");
     let after = load_stage(STAGE, temp.path()).unwrap();
     assert_eq!(after.status, StageStatus::Blocked);
+}
+
+fn contract(id: &str) -> ContractSpec {
+    ContractSpec {
+        id: id.to_string(),
+        file: format!("tests/{id}.rs"),
+        test: None,
+        runner: None,
+        cwd: None,
+        scenario: "a scenario".to_string(),
+        rejects: "a wrong implementation".to_string(),
+    }
+}
+
+/// The stage of [`fixture`] with frozen contracts `ids`.
+fn fixture_with_contracts(ids: &[&str]) -> (TempDir, Session, Stage) {
+    let (temp, session, mut stage) = fixture();
+    stage.contracts = ids.iter().map(|id| contract(id)).collect();
+    let contracts = stage.contracts.clone();
+    crate::verify::transitions::update_stage(STAGE, temp.path(), |saved| {
+        saved.contracts = contracts;
+        Ok(())
+    })
+    .unwrap();
+    (temp, session, stage)
+}
+
+#[test]
+fn a_failing_frozen_contract_refuses_the_block_and_names_the_contracts() {
+    let (temp, session, stage) = fixture_with_contracts(&["web-wheel", "rust-history"]);
+    let results = [("acceptance-1", true), ("contracts", false)];
+    record_with(
+        &temp,
+        &session,
+        &stage,
+        CompletionPhase::ToolFailed,
+        &results,
+    );
+
+    let response = handle_agent_block_stage(temp.path(), STAGE, "contracts cannot pass").unwrap();
+
+    let Response::Error { message } = response else {
+        panic!("expected a refusal, got {response:?}");
+    };
+    assert!(
+        message.contains(
+            "dispute-contract stage-blk --contract web-wheel --contract rust-history --reason"
+        ),
+        "{message}"
+    );
+    for route in [
+        "loom check stage-blk --contracts",
+        "loom stage contracts restore stage-blk",
+        "drop the flags of those that pass",
+        "operator automatically",
+    ] {
+        assert!(message.contains(route), "missing {route:?}: {message}");
+    }
+    for other_kind in ["--criterion-index", "--field impact-tests"] {
+        assert!(!message.contains(other_kind), "{other_kind:?}: {message}");
+    }
+    let after = load_stage(STAGE, temp.path()).unwrap();
+    assert_eq!(after.status, StageStatus::Executing);
+    assert!(after.close_reason.is_none());
+}
+
+#[test]
+fn a_failing_impact_test_run_refuses_the_block() {
+    let (temp, session, stage) = fixture();
+    let results = [("acceptance-1", true), ("impact-tests", false)];
+    record_with(
+        &temp,
+        &session,
+        &stage,
+        CompletionPhase::ToolFailed,
+        &results,
+    );
+
+    let response = handle_agent_block_stage(temp.path(), STAGE, "x").unwrap();
+
+    let Response::Error { message } = response else {
+        panic!("expected a refusal, got {response:?}");
+    };
+    assert!(
+        message.contains("dispute-criteria stage-blk --field impact-tests --test <id> --reason"),
+        "{message}"
+    );
+    for other_kind in [
+        "--criterion-index",
+        "dispute-contract stage-blk",
+        "contracts restore",
+    ] {
+        assert!(!message.contains(other_kind), "{other_kind:?}: {message}");
+    }
+}
+
+#[test]
+fn every_failed_kind_gets_its_own_route() {
+    let (temp, session, stage) = fixture_with_contracts(&["web-wheel"]);
+    let results = [
+        ("acceptance-4", false),
+        ("contracts", false),
+        ("impact-tests", false),
+    ];
+    record_with(
+        &temp,
+        &session,
+        &stage,
+        CompletionPhase::ToolFailed,
+        &results,
+    );
+
+    let response = handle_agent_block_stage(temp.path(), STAGE, "x").unwrap();
+
+    let Response::Error { message } = response else {
+        panic!("expected a refusal, got {response:?}");
+    };
+    for route in [
+        "dispute-criteria stage-blk --criterion-index 4 --reason",
+        "--field impact-tests --test <id>",
+        "dispute-contract stage-blk --contract web-wheel --reason",
+        "contracts restore stage-blk",
+    ] {
+        assert!(message.contains(route), "missing {route:?}: {message}");
+    }
+}
+
+#[test]
+fn a_passing_contract_check_and_other_failed_gates_still_allow_the_block() {
+    let (temp, session, stage) = fixture_with_contracts(&["web-wheel"]);
+    let results = [
+        ("acceptance-1", true),
+        ("contracts", true),
+        ("unwired", false),
+    ];
+    record_with(
+        &temp,
+        &session,
+        &stage,
+        CompletionPhase::ToolFailed,
+        &results,
+    );
+
+    let response = handle_agent_block_stage(temp.path(), STAGE, "x").unwrap();
+
+    assert!(matches!(response, Response::Ok), "{response:?}");
 }

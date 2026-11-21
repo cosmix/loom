@@ -66,8 +66,8 @@ fn serve_file_dispute(
 /// Serve one `BlockStage`. A transition the state machine refuses comes back
 /// from the handler as `Response::Error`, not as an `Err`. A request naming a
 /// session comes from a stage agent and is refused while the latest completion
-/// shows a failing criterion; the operator's, with an empty session id, blocks
-/// unconditionally.
+/// shows a failing criterion, frozen contract or impact-selected test run; the
+/// operator's, with an empty session id, blocks unconditionally.
 fn serve_block_stage(work_dir: &Path, stage_id: &str, session_id: &str, reason: &str) -> Response {
     let blocked = if session_id.is_empty() {
         super::control_block::handle_block_stage(work_dir, stage_id, reason)
