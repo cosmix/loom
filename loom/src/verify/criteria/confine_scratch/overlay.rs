@@ -69,7 +69,6 @@ pub(super) fn overlay_supported(scratch: &Path, name: &str, source: &Path) -> bo
     {
         return false;
     }
-    use wait_timeout::ChildExt;
     let child = Command::new(bwrap)
         .args([
             "--die-with-parent",
@@ -92,14 +91,15 @@ pub(super) fn overlay_supported(scratch: &Path, name: &str, source: &Path) -> bo
     let Ok(mut child) = child else {
         return false;
     };
-    let supported = match child.wait_timeout(std::time::Duration::from_secs(3)) {
-        Ok(Some(status)) => status.success(),
-        _ => {
-            let _ = child.kill();
-            let _ = child.wait();
-            false
-        }
-    };
+    let supported =
+        match crate::process::wait_with_deadline(&mut child, std::time::Duration::from_secs(3)) {
+            Ok(Some(status)) => status.success(),
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                false
+            }
+        };
     super::reclaim::make_removable(&work);
     supported
 }
