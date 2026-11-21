@@ -1,5 +1,5 @@
 use super::*;
-use crate::process::sandbox_probe::skip_without_group_signals;
+use crate::test_stand_in::require_signals;
 
 const UNSUPPORTED_400: &str = r#"ERROR: {"type":"error","status":400,"error":{"type":"invalid_request_error","message":"The 'gpt-9-nonexistent' model is not supported when using Codex with a ChatGPT account."}}"#;
 
@@ -140,9 +140,7 @@ fn join_returns_the_fallback_outcome_and_clears_the_pid() {
 #[cfg(unix)]
 #[test]
 fn dropping_a_run_stops_and_reaps_its_active_attempt() {
-    if skip_without_group_signals("dropping_a_run_stops_and_reaps_its_active_attempt") {
-        return;
-    }
+    require_signals!();
     let repo = tempfile::tempdir().unwrap();
     std::fs::write(repo.path().join("exec"), "echo $$ > started\nsleep 30\n").unwrap();
     let run = spawn_codex_with_fallback(
@@ -219,9 +217,7 @@ fn a_finished_worker_leaves_no_group_to_signal() {
 #[cfg(unix)]
 #[test]
 fn an_attempts_group_is_dropped_once_empty_and_kept_while_a_child_outlives_it() {
-    crate::process::sandbox_probe::require_group_signals!(
-        "an_attempts_group_is_dropped_once_empty_and_kept_while_a_child_outlives_it"
-    );
+    require_signals!();
     let repo = tempfile::tempdir().unwrap();
     let control = Arc::new(Mutex::new(RunControl::default()));
     let job = job_in(repo.path(), &control);

@@ -12,6 +12,7 @@ use crate::host_verify::store::load_current;
 use crate::host_verify::submit::{submit, Submission, SubmitRequest};
 use crate::host_verify::{JobKind, JobRecord, JobState};
 use crate::models::session::SessionExitReason;
+use crate::test_stand_in::require_orphan_signals;
 
 const STAGE: &str = "test-stage";
 
@@ -93,9 +94,11 @@ fn taking_down_a_stages_agents_cancels_its_host_job() {
 
 #[test]
 fn recovering_a_hung_session_cancels_its_stages_host_job() {
+    require_orphan_signals!();
     let temp = handoff_work_dir();
     let work = temp.path().join(".loom").join("work");
-    let (session, agent_pid) = stalled_stage(&work);
+    let (session, agent_stand_in) = stalled_stage(&work);
+    let agent_pid = agent_stand_in.pid();
     let job = queue_check(&work);
     let mut orchestrator = orchestrator_for(&work, temp.path());
     orchestrator.graph.mark_executing(STAGE).unwrap();

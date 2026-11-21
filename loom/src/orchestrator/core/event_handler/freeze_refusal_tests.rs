@@ -1,7 +1,6 @@
 //! The `dispute_refused_freezes` tick step: which refusals it files, when,
 //! and what it does once the freeze-refusal budget is spent.
 
-use crate::process::sandbox_probe::skip_without_group_signals;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
@@ -9,7 +8,7 @@ use std::time::{Duration, SystemTime};
 use serial_test::serial;
 use tempfile::TempDir;
 
-use super::super::tests::{handoff_work_dir, orchestrator_for, spawn_orphan_process};
+use super::super::tests::{handoff_work_dir, orchestrator_for};
 use super::*;
 use crate::fs::session_files::save_session;
 use crate::models::session::{Session, SessionBackendKind, SessionStatus};
@@ -249,19 +248,16 @@ fn a_local_refusal_waits_while_the_writers_children_are_unknown() {
 #[test]
 #[serial]
 fn the_fourth_refusal_retires_the_writer_and_escalates() {
-    if skip_without_group_signals("the_fourth_refusal_retires_the_writer_and_escalates") {
-        return;
-    }
+    crate::test_stand_in::require_orphan_signals!();
     let mut fx = fixture();
     update_stage(STAGE, &fx.work, |stage| {
         stage.tally.freeze_refusal_disputes = 3;
         Ok(())
     })
     .unwrap();
-    // A real process the retirement has to kill, so the writer is live before
-    // the tick and only the retirement can take it down.
-    let writer_pid = spawn_orphan_process();
-    write_test_pid_identity(&fx.work, &fx.writer, writer_pid).unwrap();
+    // A real process only the retirement can take down, live before the tick.
+    let writer = crate::test_stand_in::orphan();
+    write_test_pid_identity(&fx.work, &fx.writer, writer.pid()).unwrap();
     let live = live_worker_sessions(&fx.work, &fx.stage()).unwrap();
     assert_eq!(live.len(), 1, "the writer is live before the tick");
     fx.record(&fx.writer.id);
@@ -275,7 +271,7 @@ fn the_fourth_refusal_retires_the_writer_and_escalates() {
         "the retirement released the writer's session"
     );
     assert!(
-        !crate::process::is_process_alive(writer_pid),
+        !crate::process::is_process_alive(writer.pid()),
         "the retirement killed the writer"
     );
     let reason = stage.review_reason.clone().unwrap_or_default();

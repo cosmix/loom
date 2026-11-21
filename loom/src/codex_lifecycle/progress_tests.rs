@@ -2,12 +2,12 @@
 //! then freshness of anything the job writes.
 
 use std::fs::File;
-use std::process::Command;
 
 use chrono::Utc;
 use tempfile::TempDir;
 
 use super::*;
+use crate::test_stand_in::reaped_pid;
 
 const BUDGET: Duration = Duration::from_secs(600);
 
@@ -20,15 +20,6 @@ fn running_job(pid: Option<u32>) -> CompanionJob {
         started_at: Some(Utc::now()),
         ..CompanionJob::default()
     }
-}
-
-/// A pid that has exited and been reaped: its number is free, so signalling it
-/// answers ESRCH exactly as a dead companion worker's would.
-fn reaped_pid() -> u32 {
-    let mut child = Command::new("true").spawn().expect("spawning true");
-    let pid = child.id();
-    child.wait().expect("reaping true");
-    pid
 }
 
 #[test]

@@ -10,6 +10,7 @@ use crate::plan_server::ids::{BrowserId, PublicId};
 use crate::plan_server::prereq::ReadOnly;
 use crate::plan_server::request::QueryParams;
 use crate::planning::watch::OwnWrites;
+use crate::test_stand_in::require_signals;
 use crate::web_server::http::RequestHead;
 use tempfile::TempDir;
 
@@ -211,10 +212,7 @@ fn concurrent_first_calls_start_one_child() {
 
 #[test]
 fn shutdown_drain_kills_child_and_prevents_restart() {
-    let false = skip_without_group_signals("shutdown_drain_kills_child_and_prevents_restart")
-    else {
-        return;
-    };
+    require_signals!();
     let (temp, ctx) = context();
     let bin = live_fake(temp.path());
     assert_eq!(call(&ctx, &bin).status, 200);
@@ -229,9 +227,7 @@ fn shutdown_drain_kills_child_and_prevents_restart() {
 
 #[test]
 fn shutdown_abort_kills_child() {
-    let false = skip_without_group_signals("shutdown_abort_kills_child") else {
-        return;
-    };
+    require_signals!();
     let (temp, ctx) = context();
     let bin = live_fake(temp.path());
     assert_eq!(call(&ctx, &bin).status, 200);
@@ -245,9 +241,7 @@ fn shutdown_abort_kills_child() {
 
 #[test]
 fn timeout_returns_502_and_reaps_child() {
-    let false = skip_without_group_signals("timeout_returns_502_and_reaps_child") else {
-        return;
-    };
+    require_signals!();
     let (temp, ctx) = context();
     let bin = fake(temp.path(), "exec sleep 60");
     let response = post_dashboard_with_bin(
@@ -271,9 +265,7 @@ fn timeout_returns_502_and_reaps_child() {
 
 #[test]
 fn startup_stops_after_twenty_lines() {
-    let false = skip_without_group_signals("startup_stops_after_twenty_lines") else {
-        return;
-    };
+    require_signals!();
     let (temp, ctx) = context();
     let bin = fake(temp.path(), &format!(
         "i=0; while [ \"$i\" -lt 20 ]; do echo waiting; i=$((i+1)); done\nprintf '%s\\n' '{STARTUP}'\nexec sleep 60"

@@ -57,6 +57,9 @@ pub(crate) mod test_git;
 #[cfg(test)]
 pub(crate) mod test_cache_env;
 
+#[cfg(test)]
+pub(crate) mod test_stand_in;
+
 /// ASCII art logo for loom CLI
 pub const LOGO: &str = "   ╷
    │  ┌─┐┌─┐┌┬┐

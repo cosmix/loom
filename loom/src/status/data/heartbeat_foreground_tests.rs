@@ -1,20 +1,22 @@
 //! Both public consumers read the same live process and persisted CPU history.
 
 use std::io::Write;
-use std::os::unix::process::CommandExt;
 use std::process::{Command, Stdio};
 use std::time::Duration;
+
+use nix::sys::signal::Signal;
 
 use super::*;
 use crate::orchestrator::monitor::detection::Detection;
 use crate::orchestrator::monitor::heartbeat::write_heartbeat;
 use crate::orchestrator::terminal::native::NativeBackend;
+use crate::process::process_start_time;
 use crate::process::sandbox_probe::skip_without_process_control;
-use crate::process::{process_start_time, OwnedProcess};
+use crate::test_stand_in::StandIn;
 
 struct LiveFixture {
     _tmp: tempfile::TempDir,
-    _agent: OwnedProcess,
+    _agent: StandIn,
     work: WorkDir,
     session: Session,
     stage: Stage,
@@ -110,30 +112,38 @@ fn write_transcript(root: &Path, session: &str, heartbeat: &mut Heartbeat) -> st
     projects
 }
 
-fn spawn_worker(path: &Path) -> (OwnedProcess, u32) {
-    let mut child = Command::new("sh")
+fn spawn_worker(path: &Path) -> (StandIn, u32) {
+    let mut agent = StandIn::group_leader(Command::new("sh")
         .args(["-c", "read line; sh -c 'sh -c \"while :; do :; done\" & echo $! > \"$1\"; wait' sh \"$1\" & wait", "sh"])
-        .arg(path).stdin(Stdio::piped()).process_group(0).spawn().unwrap();
+        .arg(path).stdin(Stdio::piped()));
     std::thread::sleep(Duration::from_millis(25));
-    child.stdin.take().unwrap().write_all(b"go\n").unwrap();
-    let agent = OwnedProcess::new(child);
+    agent
+        .child()
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"go\n")
+        .unwrap();
     let worker = wait_worker(path);
-    signal(worker, nix::sys::signal::Signal::SIGSTOP);
+    stop(worker);
     (agent, worker)
 }
 
-fn signal(pid: u32, signal: nix::sys::signal::Signal) {
-    nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid as i32), signal).unwrap();
-    if signal == nix::sys::signal::Signal::SIGSTOP {
-        let deadline = std::time::Instant::now() + Duration::from_secs(5);
-        while !std::fs::read_to_string(format!("/proc/{pid}/stat"))
-            .unwrap()
-            .contains(") T ")
-        {
-            assert!(std::time::Instant::now() < deadline, "worker did not stop");
-            std::thread::sleep(Duration::from_millis(1));
-        }
+/// Stop `pid` and wait until the kernel shows it stopped.
+fn stop(pid: u32) {
+    nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid as i32), Signal::SIGSTOP).unwrap();
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while !std::fs::read_to_string(format!("/proc/{pid}/stat"))
+        .unwrap()
+        .contains(") T ")
+    {
+        assert!(std::time::Instant::now() < deadline, "worker did not stop");
+        std::thread::sleep(Duration::from_millis(1));
     }
+}
+
+fn resume(pid: u32) {
+    nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid as i32), Signal::SIGCONT).unwrap();
 }
 
 fn wait_worker(path: &Path) -> u32 {
@@ -165,20 +175,20 @@ fn monitor_and_status_share_first_and_later_cpu_progress_at_identical_clocks() {
         let mut monitor = Detection::new();
         fixture.assert_consumers(&mut monitor, 301, true);
         fixture.assert_consumers(&mut monitor, 601, false);
-        signal(fixture.worker, nix::sys::signal::Signal::SIGCONT);
+        resume(fixture.worker);
         std::thread::sleep(Duration::from_millis(150));
-        signal(fixture.worker, nix::sys::signal::Signal::SIGSTOP);
+        stop(fixture.worker);
         fixture.assert_consumers(&mut monitor, 602, true);
         fixture.assert_consumers(&mut monitor, 899, true);
         fixture.assert_consumers(&mut monitor, 900, true);
-        signal(fixture.worker, nix::sys::signal::Signal::SIGCONT);
+        resume(fixture.worker);
         std::thread::sleep(Duration::from_millis(150));
-        signal(fixture.worker, nix::sys::signal::Signal::SIGSTOP);
+        stop(fixture.worker);
         fixture.assert_consumers(&mut monitor, 1000, true);
         fixture.assert_consumers(&mut monitor, 1300, false);
-        signal(fixture.worker, nix::sys::signal::Signal::SIGCONT);
+        resume(fixture.worker);
         std::thread::sleep(Duration::from_millis(150));
-        signal(fixture.worker, nix::sys::signal::Signal::SIGSTOP);
+        stop(fixture.worker);
         fixture.assert_consumers(&mut monitor, 1560, false);
     }
 }

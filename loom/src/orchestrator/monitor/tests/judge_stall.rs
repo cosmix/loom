@@ -8,7 +8,6 @@
 //! command it started, and then only up to its hold ceiling.
 
 use crate::process::sandbox_probe::require_process_control;
-use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
@@ -23,7 +22,7 @@ use crate::orchestrator::monitor::heartbeat::{
 use crate::orchestrator::monitor::running_command::running_command;
 use crate::orchestrator::monitor::{MonitorConfig, MonitorEvent};
 use crate::orchestrator::terminal::native::write_test_pid_identity;
-use crate::process::OwnedProcess;
+use crate::test_stand_in::StandIn;
 use crate::verify::criteria::DEFAULT_COMMAND_TIMEOUT;
 
 /// The disputed stage's response budget in these tests. Long enough that the
@@ -94,15 +93,14 @@ const JUDGE_WITH_NOTHING_RUNNING: &str = "exec sleep 30";
 /// Start a stand-in for `judge`'s Claude process and record it the way the
 /// session wrapper records claude. Its own process group, so dropping the
 /// guard ends it and everything it started.
-fn stand_in_judge(work_dir: &Path, judge: &Session, script: &str) -> OwnedProcess {
-    let child = std::process::Command::new("sh")
-        .args(["-c", script])
-        .env("LOOM_TEST_MARKER", work_dir.join("command-started"))
-        .process_group(0)
-        .spawn()
-        .expect("failed to spawn a stand-in judge process");
+fn stand_in_judge(work_dir: &Path, judge: &Session, script: &str) -> StandIn {
+    let child = StandIn::group_leader(
+        std::process::Command::new("sh")
+            .args(["-c", script])
+            .env("LOOM_TEST_MARKER", work_dir.join("command-started")),
+    );
     write_test_pid_identity(work_dir, judge, child.id()).unwrap();
-    OwnedProcess::new(child)
+    child
 }
 
 /// Block until the stand-in's command has started, so the probe cannot run

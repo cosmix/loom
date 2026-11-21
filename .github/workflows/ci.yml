@@ -304,7 +304,8 @@ jobs:
     runs-on: macos-latest
     needs: changes
     if: needs.changes.outputs.rust == 'true'
-    timeout-minutes: 90
+    # The host-job lane adds up to 30 minutes to the strict suite.
+    timeout-minutes: 120
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -464,6 +465,27 @@ jobs:
         run: "cargo test --lib -- stage_cache:: verify::criteria::confine::host::stage_cache_tests::"
         env:
           LOOM_TEST_REQUIRE_SANDBOX_FREE: "1"
+
+      # Runs the lib tests again inside the confinement a host job gives an
+      # acceptance criterion (process::sandbox_probe::host_job_lane), so a test
+      # that fails or hangs under that boundary fails the commit that adds it.
+      # The probe guards may skip there, so LOOM_TEST_REQUIRE_SANDBOX_FREE stays
+      # unset; the strict steps above prove the same tests run unconfined. The
+      # confined run is the test binary "Run tests" built, so nothing compiles
+      # or fetches inside the boundary. libtest names every test still running
+      # after 60 seconds; the lane kills the run after 25 minutes and the step
+      # timeout backs that bound. The lane fails when the confined run passed
+      # no test, and the step fails unless the lane itself ran and passed: a
+      # filter that matches nothing makes libtest report success on zero tests.
+      - name: Run the lib tests under host-job confinement
+        if: ${{ !cancelled() }}
+        working-directory: loom
+        timeout-minutes: 30
+        run: |
+          set -o pipefail
+          log="$RUNNER_TEMP/host-job-lane.log"
+          cargo test --lib -- --ignored --exact process::sandbox_probe::host_job_lane::the_lib_tests_pass_under_host_job_confinement --nocapture 2>&1 | tee "$log"
+          grep '^test result:' "$log" | tail -n 1 | grep -q '^test result: ok\. 1 passed;'
 
       - name: Build the loom binary
         id: build

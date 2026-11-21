@@ -15,7 +15,7 @@ use crate::orchestrator::core::{Orchestrator, OrchestratorConfig};
 use crate::orchestrator::monitor::heartbeat::judge_heartbeat_path;
 use crate::orchestrator::terminal::native::{session_settings_path, write_test_pid_identity};
 use crate::plan::ExecutionGraph;
-use crate::process::sandbox_probe::skip_without_group_signals;
+use crate::test_stand_in::{orphan, orphan_running, require_orphan_signals, Orphan};
 use crate::verify::transitions::{create_stage, load_stage, update_stage};
 use tempfile::TempDir;
 
@@ -46,32 +46,10 @@ fn orchestrator_for(work_dir: &std::path::Path, repo_root: &std::path::Path) -> 
     Orchestrator::new(config, ExecutionGraph::build(Vec::new()).unwrap()).unwrap()
 }
 
-/// Start a process that outlives its parent shell, so a test can watch loom
-/// actually kill it.
-fn spawn_orphan_process() -> u32 {
-    let output = std::process::Command::new("sh")
-        .arg("-c")
-        .arg("sleep 30 >/dev/null 2>&1 & echo $!")
-        .output()
-        .expect("failed to spawn a stand-in judge process");
-    String::from_utf8_lossy(&output.stdout)
-        .trim()
-        .parse()
-        .expect("the stand-in judge process printed no pid")
-}
-
 /// Start an orphan that ignores SIGTERM long enough for the bounded kill
 /// confirmation to observe it as a survivor.
-fn spawn_term_resistant_process() -> u32 {
-    let output = std::process::Command::new("sh")
-        .arg("-c")
-        .arg("trap '' TERM; sleep 30 >/dev/null 2>&1 & echo $!")
-        .output()
-        .expect("failed to spawn a term-resistant judge process");
-    String::from_utf8_lossy(&output.stdout)
-        .trim()
-        .parse()
-        .expect("the term-resistant judge process printed no pid")
+fn spawn_term_resistant_process() -> Orphan {
+    orphan_running("trap '' TERM; sleep 30", &[])
 }
 
 /// A stage under adjudication, as `try_request_adjudication` leaves it.
@@ -95,7 +73,7 @@ fn write_signal(work: &std::path::Path, session_id: &str) -> std::path::PathBuf 
 }
 
 /// A saved, live session of `kind` with a real process behind it.
-fn live_session(work: &std::path::Path, kind: SessionType) -> (Session, u32) {
+fn live_session(work: &std::path::Path, kind: SessionType) -> (Session, Orphan) {
     let mut session = match kind {
         SessionType::Adjudication => Session::new_adjudication("test-stage"),
         _ => {
@@ -107,10 +85,11 @@ fn live_session(work: &std::path::Path, kind: SessionType) -> (Session, u32) {
     session.status = SessionStatus::Running;
     session.backend = SessionBackendKind::Tmux;
     save_session(&session, work).unwrap();
-    let pid = spawn_orphan_process();
+    let stand_in = orphan();
+    let pid = stand_in.pid();
     write_test_pid_identity(work, &session, pid).unwrap();
     assert!(crate::process::is_process_alive(pid));
-    (session, pid)
+    (session, stand_in)
 }
 
 /// A judge that stopped working is closed outright, and the stage is left
@@ -119,15 +98,12 @@ fn live_session(work: &std::path::Path, kind: SessionType) -> (Session, u32) {
 /// would take that decision away from it.
 #[test]
 fn a_stalled_judge_is_closed_and_the_stage_stays_under_adjudication() {
-    if skip_without_group_signals(
-        "a_stalled_judge_is_closed_and_the_stage_stays_under_adjudication",
-    ) {
-        return;
-    }
+    require_orphan_signals!();
     let temp = work_root();
     let work = temp.path().join(".work");
     stage_needing_adjudication(&work);
-    let (judge, judge_pid) = live_session(&work, SessionType::Adjudication);
+    let (judge, judge_stand_in) = live_session(&work, SessionType::Adjudication);
+    let judge_pid = judge_stand_in.pid();
     let signal = write_signal(&work, &judge.id);
     let heartbeat = judge_heartbeat_path(&work, "test-stage");
     std::fs::create_dir_all(heartbeat.parent().unwrap()).unwrap();
@@ -170,9 +146,7 @@ fn a_stalled_judge_is_closed_and_the_stage_stays_under_adjudication() {
 /// the judge, its record and cleanup evidence must remain live.
 #[test]
 fn a_judge_that_survives_the_kill_is_not_marked_terminal() {
-    if skip_without_group_signals("a_judge_that_survives_the_kill_is_not_marked_terminal") {
-        return;
-    }
+    require_orphan_signals!();
     let temp = work_root();
     let work = temp.path().join(".work");
     stage_needing_adjudication(&work);
@@ -180,7 +154,8 @@ fn a_judge_that_survives_the_kill_is_not_marked_terminal() {
     judge.status = SessionStatus::Running;
     judge.backend = SessionBackendKind::Tmux;
     save_session(&judge, &work).unwrap();
-    let judge_pid = spawn_term_resistant_process();
+    let judge_stand_in = spawn_term_resistant_process();
+    let judge_pid = judge_stand_in.pid();
     write_test_pid_identity(&work, &judge, judge_pid).unwrap();
     let signal = write_signal(&work, &judge.id);
 
@@ -195,10 +170,6 @@ fn a_judge_that_survives_the_kill_is_not_marked_terminal() {
         (SessionStatus::Running, None)
     );
     assert!(signal.exists(), "a surviving judge still needs its signal");
-    let _ = nix::sys::signal::kill(
-        nix::unistd::Pid::from_raw(judge_pid as i32),
-        nix::sys::signal::Signal::SIGKILL,
-    );
 }
 
 /// The report names a session id and nothing else, so the handler re-reads the
@@ -206,14 +177,12 @@ fn a_judge_that_survives_the_kill_is_not_marked_terminal() {
 /// the judge watchdog.
 #[test]
 fn a_session_that_is_not_an_adjudicator_is_ignored() {
-    let false = skip_without_group_signals("a_session_that_is_not_an_adjudicator_is_ignored")
-    else {
-        return;
-    };
+    require_orphan_signals!();
     let temp = work_root();
     let work = temp.path().join(".work");
     stage_needing_adjudication(&work);
-    let (agent, agent_pid) = live_session(&work, SessionType::Stage);
+    let (agent, agent_stand_in) = live_session(&work, SessionType::Stage);
+    let agent_pid = agent_stand_in.pid();
 
     let mut orchestrator = orchestrator_for(&work, temp.path());
     orchestrator
@@ -226,8 +195,6 @@ fn a_session_that_is_not_an_adjudicator_is_ignored() {
     );
     let untouched = load_session_exact(&work, &agent.id).unwrap().unwrap();
     assert_eq!(untouched.status, SessionStatus::Running);
-
-    let _ = crate::process::terminate(agent_pid);
 }
 
 /// A judge already closed by the verdict path is reported stalled by a poll
@@ -235,13 +202,11 @@ fn a_session_that_is_not_an_adjudicator_is_ignored() {
 /// report harmless.
 #[test]
 fn a_judge_that_is_no_longer_running_is_ignored() {
-    let false = skip_without_group_signals("a_judge_that_is_no_longer_running_is_ignored") else {
-        return;
-    };
+    require_orphan_signals!();
     let temp = work_root();
     let work = temp.path().join(".work");
     stage_needing_adjudication(&work);
-    let (mut judge, judge_pid) = live_session(&work, SessionType::Adjudication);
+    let (mut judge, _judge_stand_in) = live_session(&work, SessionType::Adjudication);
     judge.status = SessionStatus::Completed;
     save_session(&judge, &work).unwrap();
 
@@ -252,6 +217,4 @@ fn a_judge_that_is_no_longer_running_is_ignored() {
 
     let untouched = load_session_exact(&work, &judge.id).unwrap().unwrap();
     assert_eq!(untouched.status, SessionStatus::Completed);
-
-    let _ = crate::process::terminate(judge_pid);
 }

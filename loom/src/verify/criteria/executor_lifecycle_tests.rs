@@ -1,20 +1,9 @@
 use super::*;
 use crate::process::lifecycle_tests::InheritorGuard;
 
-/// True when a host job's profile refuses the process-group signals these tests need.
-fn cannot_signal_groups(name: &str) -> bool {
-    crate::process::sandbox_probe::skip_unless(
-        crate::process::sandbox_probe::process_groups_signalable(),
-        name,
-        "this process cannot signal a child's process group",
-    )
-}
-
 #[test]
 fn verification_retires_stdout_inheritor_on_leader_exit() {
-    if cannot_signal_groups("verification_retires_stdout_inheritor_on_leader_exit") {
-        return;
-    }
+    crate::test_stand_in::require_orphan_signals!();
     let temp = tempfile::tempdir().unwrap();
     let guard = InheritorGuard::new(temp.path());
     let start = Instant::now();
@@ -33,9 +22,7 @@ fn verification_retires_stdout_inheritor_on_leader_exit() {
 
 #[test]
 fn verification_timeout_kills_before_collecting_and_reports_elapsed() {
-    if cannot_signal_groups("verification_timeout_kills_before_collecting_and_reports_elapsed") {
-        return;
-    }
+    crate::test_stand_in::require_orphan_signals!();
     let temp = tempfile::tempdir().unwrap();
     let guard = InheritorGuard::new(temp.path());
     let start = Instant::now();

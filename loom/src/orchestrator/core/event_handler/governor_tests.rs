@@ -5,14 +5,13 @@
 //! Split out of `tests.rs` to keep that file under its line limit.
 
 use super::tests::{
-    executing_stage, handoff_work_dir, orchestrator_for, recorded_session, spawn_orphan_process,
-    write_pid_file,
+    executing_stage, handoff_work_dir, orchestrator_for, recorded_session, write_pid_file,
 };
 use super::*;
 use crate::fs::session_files::save_session;
 use crate::models::session::{Session, SessionExitReason, SessionStatus};
 use crate::orchestrator::terminal::native::write_test_pid_identity;
-use crate::process::sandbox_probe::skip_without_group_signals;
+use crate::test_stand_in::{orphan, require_orphan_signals};
 use crate::verify::transitions::{load_stage, update_stage};
 use std::path::Path;
 
@@ -49,17 +48,14 @@ fn session_on_disk(work: &Path, session_id: &str) -> Session {
 /// healthy successor instead of the corpse it actually named.
 #[test]
 fn the_backstop_ignores_an_event_from_a_session_the_stage_has_moved_on_from() {
-    let false = skip_without_group_signals(
-        "the_backstop_ignores_an_event_from_a_session_the_stage_has_moved_on_from",
-    ) else {
-        return;
-    };
+    require_orphan_signals!();
     let temp = handoff_work_dir();
     let work = temp.path().join(".loom").join("work");
     executing_stage(&work);
 
     let live_session = recorded_session(&work);
-    let agent_pid = spawn_orphan_process();
+    let agent_stand_in = orphan();
+    let agent_pid = agent_stand_in.pid();
     write_test_pid_identity(&work, &live_session, agent_pid).unwrap();
     assert!(crate::process::is_process_alive(agent_pid));
     assign_stage_session(&work, &live_session.id);
@@ -92,8 +88,6 @@ fn the_backstop_ignores_an_event_from_a_session_the_stage_has_moved_on_from() {
         orchestrator.active_sessions.contains_key("test-stage"),
         "the live session must stay tracked"
     );
-
-    let _ = crate::process::terminate(agent_pid);
 }
 
 /// A delayed hook handoff from the previous attempt must obey the same
@@ -101,17 +95,14 @@ fn the_backstop_ignores_an_event_from_a_session_the_stage_has_moved_on_from() {
 /// kill the healthy successor currently assigned to the stage.
 #[test]
 fn handoff_ignores_an_event_from_a_session_the_stage_has_moved_on_from() {
-    let false = skip_without_group_signals(
-        "handoff_ignores_an_event_from_a_session_the_stage_has_moved_on_from",
-    ) else {
-        return;
-    };
+    require_orphan_signals!();
     let temp = handoff_work_dir();
     let work = temp.path().join(".loom").join("work");
     executing_stage(&work);
 
     let live_session = recorded_session(&work);
-    let agent_pid = spawn_orphan_process();
+    let agent_stand_in = orphan();
+    let agent_pid = agent_stand_in.pid();
     write_test_pid_identity(&work, &live_session, agent_pid).unwrap();
     assign_stage_session(&work, &live_session.id);
 
@@ -134,8 +125,6 @@ fn handoff_ignores_an_event_from_a_session_the_stage_has_moved_on_from() {
         StageStatus::Executing
     );
     assert!(orchestrator.active_sessions.contains_key("test-stage"));
-
-    let _ = crate::process::terminate(agent_pid);
 }
 
 /// A stage that reached the ceiling normally - not through the daemon

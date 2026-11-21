@@ -28,6 +28,9 @@ use crate::plan_session::kind::SessionKind;
 use crate::plan_session::model::TokenCounts;
 use crate::plan_session::transcript::Mapper;
 use crate::process::is_process_alive;
+// An adopted group is signalled only once its leader's start time is read,
+// which `require_orphan_signals!()` checks this host allows.
+use crate::test_stand_in::{require_orphan_signals, AdoptedGroup};
 
 const TEAMMATE: &str = include_str!("../fixtures/teammate.jsonl");
 const TEAMMATE_META: &str = include_str!("../fixtures/teammate.meta.json");
@@ -220,16 +223,6 @@ fn a_run_ending_tells_every_tab_to_fetch_the_options_once_the_slot_is_free() {
     f.finished();
 }
 
-/// Stops a fake Codex group on assertion failure, including its TERM-ignoring child.
-struct KillOnDrop(u32);
-
-impl Drop for KillOnDrop {
-    fn drop(&mut self) {
-        let pid = nix::unistd::Pid::from_raw(self.0 as i32);
-        let _ = nix::sys::signal::killpg(pid, nix::sys::signal::Signal::SIGKILL);
-    }
-}
-
 fn stubborn_child(f: &Fixture) -> u32 {
     let child = wait_for("TERM-ignoring Codex child", || {
         fs::read_to_string(f.bin.join("stubborn-child"))
@@ -264,17 +257,13 @@ fn assert_grace_blocks(f: &Fixture, viewer: &BrowserId, codex_pid: u32, child: u
 #[test]
 #[serial]
 fn a_codex_still_running_after_its_grace_blocks_launches_until_confirmed() {
-    let false = skip_without_group_signals(
-        "a_codex_still_running_after_its_grace_blocks_launches_until_confirmed",
-    ) else {
-        return;
-    };
+    require_orphan_signals!();
     let f = Fixture::new();
     f.codex("stubborn", "15");
     f.fake.script(vec![Script::Hold]);
     f.start(1);
     let codex = wait_for("Codex recorded", || f.fake.children("s-1").first().copied());
-    let _kill = KillOnDrop(codex.pid);
+    let _kill = AdoptedGroup::adopt(codex.pid);
     let child = stubborn_child(&f);
     let (status, _) = f.call("/api/pressure/stop", &f.holder, None);
     assert_eq!(status, 202);
@@ -298,16 +287,12 @@ fn a_codex_still_running_after_its_grace_blocks_launches_until_confirmed() {
 #[test]
 #[serial]
 fn a_codex_outliving_its_grace_after_the_marker_blocks_launches() {
-    let false =
-        skip_without_group_signals("a_codex_outliving_its_grace_after_the_marker_blocks_launches")
-    else {
-        return;
-    };
+    require_orphan_signals!();
     let f = Fixture::new();
     f.codex("stubborn", "15");
     f.start(1);
     let codex = wait_for("Codex recorded", || f.fake.children("s-1").first().copied());
-    let _kill = KillOnDrop(codex.pid);
+    let _kill = AdoptedGroup::adopt(codex.pid);
     let child = stubborn_child(&f);
     let runs = f.runs();
     wait_until("Codex running alone after the marker", || {

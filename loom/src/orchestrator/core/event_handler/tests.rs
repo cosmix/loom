@@ -9,7 +9,7 @@ use crate::orchestrator::core::OrchestratorConfig;
 use crate::orchestrator::terminal::native::write_test_pid_identity;
 use crate::plan::schema::StageDefinition;
 use crate::plan::ExecutionGraph;
-use crate::process::sandbox_probe::skip_without_group_signals;
+use crate::test_stand_in::{orphan, require_orphan_signals};
 use crate::verify::transitions::{create_stage, load_stage, update_stage};
 use std::path::Path;
 use tempfile::TempDir;
@@ -98,28 +98,6 @@ pub(super) fn write_pid_file(
     std::fs::write(path, contents).unwrap();
 }
 
-/// Start a process that outlives its parent shell, so a test can watch loom
-/// actually kill it.
-///
-/// `sh` exits the moment it has echoed the pid, which reparents the `sleep` to
-/// init — and init reaps it as soon as it dies, so `kill(pid, 0)` reports it
-/// gone. A DIRECT child of the test process would instead linger as an
-/// unreaped zombie that still answers `kill(pid, 0)`, and the assertion would
-/// prove nothing.
-pub(super) fn spawn_orphan_process() -> u32 {
-    let output = std::process::Command::new("sh")
-        .arg("-c")
-        // The background process must not inherit the pipe `output()` reads, or
-        // the read blocks until the `sleep` itself exits.
-        .arg("sleep 30 >/dev/null 2>&1 & echo $!")
-        .output()
-        .expect("failed to spawn a stand-in agent process");
-    String::from_utf8_lossy(&output.stdout)
-        .trim()
-        .parse()
-        .expect("the stand-in agent process printed no pid")
-}
-
 pub(super) fn executing_stage(work_dir: &Path) {
     let stage = Stage {
         id: "test-stage".to_string(),
@@ -140,15 +118,14 @@ pub(super) fn executing_stage(work_dir: &Path) {
 /// gone proves the takedown happened.
 #[test]
 fn budget_backstop_kills_the_agent_and_then_requeues() {
-    if skip_without_group_signals("budget_backstop_kills_the_agent_and_then_requeues") {
-        return;
-    }
+    require_orphan_signals!();
     let temp = handoff_work_dir();
     let work = temp.path().join(".loom").join("work");
     executing_stage(&work);
 
     let session = recorded_session(&work);
-    let agent_pid = spawn_orphan_process();
+    let agent_stand_in = orphan();
+    let agent_pid = agent_stand_in.pid();
     // A full identity (pid + start time) is what makes the teardown willing to
     // signal: `pid_only_terminate` refuses anything less.
     write_test_pid_identity(&work, &session, agent_pid).unwrap();

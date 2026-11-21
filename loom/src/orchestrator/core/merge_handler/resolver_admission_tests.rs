@@ -1,23 +1,24 @@
 //! Real CLI and daemon admission paths sharing a controlled backend.
 
-use crate::process::sandbox_probe::skip_without_group_signals;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{mpsc, Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use super::super::resolver_attempts::{merge_resolver_attempts, ReservedAttempt};
 use super::test_fixtures::{orchestrator_with_conflict, repo_with_conflicting_stage_branches};
 use crate::commands::stage::{test_spawn_merge_resolver, MergeResolverResult};
 use crate::orchestrator::signals::{find_live_merge_session_for_stage, merge_test_backend};
+use crate::test_stand_in::{require_signals, StandIn};
 use crate::verify::transitions::load_stage;
 
-struct ChildGuard(Arc<Mutex<Option<std::process::Child>>>);
+struct ChildGuard(Arc<Mutex<Option<StandIn>>>);
 
 impl Drop for ChildGuard {
     fn drop(&mut self) {
-        if let Some(mut child) = self.0.lock().unwrap().take() {
-            crate::process::sandbox_probe::reap::kill_and_reap(&mut child);
-        }
+        // A test that panicked while holding the lock poisoned it; unwrapping
+        // here would panic again during unwinding and abort the test binary.
+        let mut slot = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        drop(slot.take());
     }
 }
 
@@ -34,7 +35,7 @@ fn install_backend(
     let (release, proceed) = mpsc::channel();
     let proceed = Mutex::new(proceed);
     let count = Arc::new(AtomicUsize::new(0));
-    let child = Arc::new(Mutex::new(None::<std::process::Child>));
+    let child = Arc::new(Mutex::new(None::<StandIn>));
     let calls = count.clone();
     let child_slot = child.clone();
     let child_work = work.to_owned();
@@ -44,7 +45,7 @@ fn install_backend(
             calls.fetch_add(1, Ordering::SeqCst);
             entered.send(session.id.clone()).unwrap();
             proceed.lock().unwrap().recv().unwrap();
-            let process = std::process::Command::new("sleep").arg("60").spawn()?;
+            let process = StandIn::direct(std::process::Command::new("sleep").arg("60"));
             let pid = process.id();
             *child_slot.lock().unwrap() = Some(process);
             session.pid = Some(pid);
@@ -155,9 +156,7 @@ fn competing_launches(fail_publication: bool) {
         fail_publication,
     );
     merge_test_backend::remove(&work);
-    let mut process = guard.0.lock().unwrap().take().unwrap();
-    process.kill().unwrap();
-    process.wait().unwrap();
+    drop(guard.0.lock().unwrap().take().unwrap());
     crate::fs::session_files::mark_session_terminal_reason(
         &work,
         &id,
@@ -175,11 +174,7 @@ fn competing_launches(fail_publication: bool) {
 /// spends no resolver attempt and leaves the stage waiting for its merge.
 #[test]
 fn a_held_admission_lock_defers_the_spawn_without_spending_an_attempt() {
-    if skip_without_group_signals(
-        "a_held_admission_lock_defers_the_spawn_without_spending_an_attempt",
-    ) {
-        return;
-    }
+    require_signals!();
     let repo = repo_with_conflicting_stage_branches(&["race"]);
     let mut daemon = orchestrator_with_conflict(repo.path(), "race");
     let work = daemon.config.work_dir.clone();
@@ -202,16 +197,12 @@ fn a_held_admission_lock_defers_the_spawn_without_spending_an_attempt() {
 
 #[test]
 fn cli_and_daemon_launch_only_one_resolver() {
-    if skip_without_group_signals("cli_and_daemon_launch_only_one_resolver") {
-        return;
-    }
+    require_signals!();
     competing_launches(false);
 }
 
 #[test]
 fn failed_publication_after_spawn_blocks_the_other_surface() {
-    if skip_without_group_signals("failed_publication_after_spawn_blocks_the_other_surface") {
-        return;
-    }
+    require_signals!();
     competing_launches(true);
 }

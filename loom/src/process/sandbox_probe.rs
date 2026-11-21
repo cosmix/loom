@@ -14,6 +14,7 @@ use std::sync::{Mutex, OnceLock};
 
 mod launcher;
 mod needs;
+mod orphan;
 pub mod reap;
 
 pub use launcher::start_blocker;
@@ -24,6 +25,7 @@ pub use needs::{
 };
 #[cfg(test)]
 pub(crate) use needs::{require_unix_socket, require_unix_socket_and_loopback};
+pub use orphan::{orphans_signalable, skip_without_orphan_signals, spawn_orphan};
 
 /// A per-directory answer cache, backed by a `OnceLock`-initialized map so
 /// each unique `dir` a probe is asked about is only ever measured once.
@@ -239,13 +241,16 @@ fn confined_command_blocker() -> Result<(), String> {
 /// Whether this process can kill the process group of a child it started. A
 /// host job's Seatbelt profile may refuse it, and then tests that expect loom
 /// to retire a process group cannot run there. Memoized.
+///
+/// The child is `cat` on a pipe, so closing its stdin ends it when the kill is
+/// refused: the reap never depends on the signal it probes.
 pub fn process_groups_signalable() -> bool {
     use std::os::unix::process::CommandExt;
     static RESULT: OnceLock<bool> = OnceLock::new();
     *RESULT.get_or_init(|| {
-        let spawned = std::process::Command::new("/bin/sleep")
-            .arg("30")
-            .stdin(std::process::Stdio::null())
+        let spawned = std::process::Command::new("/bin/cat")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::null())
             .process_group(0)
             .spawn();
         let Ok(mut child) = spawned else {
@@ -253,7 +258,8 @@ pub fn process_groups_signalable() -> bool {
         };
         let group = nix::unistd::Pid::from_raw(child.id() as i32);
         let signalled = nix::sys::signal::killpg(group, nix::sys::signal::Signal::SIGKILL).is_ok();
-        reap::kill_and_reap(&mut child);
+        drop(child.stdin.take());
+        reap::reap_within(&mut child, reap::REAP_DEADLINE);
         signalled
     })
 }
@@ -339,6 +345,10 @@ pub fn skip_unless(probe_ok: bool, test_name: &str, why: &str) -> bool {
     eprintln!("SKIP {test_name}: {why} (set LOOM_TEST_REQUIRE_SANDBOX_FREE=1 to fail instead)");
     true
 }
+
+#[cfg(test)]
+#[path = "host_job_lane_tests.rs"]
+mod host_job_lane;
 
 #[cfg(test)]
 mod tests {

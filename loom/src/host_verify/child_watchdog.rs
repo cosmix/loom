@@ -58,7 +58,7 @@ pub(super) fn start(work_dir: &Path, stage_id: &str, job_id: &str) -> Option<Wat
 
 #[cfg(test)]
 mod tests {
-    use std::os::unix::process::{CommandExt, ExitStatusExt};
+    use std::os::unix::process::ExitStatusExt;
     use std::process::{Command, Stdio};
     use std::time::Instant;
 
@@ -66,6 +66,7 @@ mod tests {
     use crate::host_verify::store::save_current;
     use crate::host_verify::tests_runner::{state_root, STAGE};
     use crate::host_verify::tests_runner_recovery::running_record;
+    use crate::test_stand_in::{require_signals, StandIn};
 
     const CHILD_ENV: &str = "LOOM_HOST_WATCHDOG_TEST_CHILD";
 
@@ -74,40 +75,37 @@ mod tests {
         if std::env::var_os(CHILD_ENV).is_some() {
             run_child_until_interrupted();
         }
+        require_signals!();
         let (_dir, work) = state_root();
         let mut record = running_record(STAGE, None);
         save_current(&work, &record).unwrap();
-        let mut child = Command::new(std::env::current_exe().unwrap())
-            .args(["--exact", "host_verify::child_watchdog::tests::an_interrupted_owned_child_stops_its_own_group"])
-            .env(CHILD_ENV, "1")
-            .env("LOOM_WORK_DIR", &work)
-            .env("LOOM_HOST_WATCHDOG_JOB", &record.id)
-            .process_group(0)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .unwrap();
+        let mut child = StandIn::group_leader(
+            Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", "host_verify::child_watchdog::tests::an_interrupted_owned_child_stops_its_own_group"])
+                .env(CHILD_ENV, "1")
+                .env("LOOM_WORK_DIR", &work)
+                .env("LOOM_HOST_WATCHDOG_JOB", &record.id)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null()),
+        );
         let deadline = Instant::now() + Duration::from_secs(5);
         while !work.join("watchdog-ready").exists() && Instant::now() < deadline {
             std::thread::sleep(Duration::from_millis(10));
         }
-        if !work.join("watchdog-ready").exists() {
-            let _ = child.kill();
-            let _ = child.wait();
-            panic!("watchdog child did not start");
-        }
+        assert!(
+            work.join("watchdog-ready").exists(),
+            "watchdog child did not start"
+        );
         record.state = JobState::Interrupted;
         save_current(&work, &record).unwrap();
         while Instant::now() < deadline {
-            if let Some(status) = child.try_wait().unwrap() {
+            if let Some(status) = child.child().try_wait().unwrap() {
                 assert_eq!(status.signal(), Some(libc::SIGKILL));
                 return;
             }
             std::thread::sleep(Duration::from_millis(10));
         }
-        let _ = child.kill();
-        let _ = child.wait();
         panic!("watchdog did not stop the child within five seconds");
     }
 

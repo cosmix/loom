@@ -6,14 +6,11 @@
 //! contract agent's kill is observed through a real process, as the other
 //! takedown tests do.
 
-use crate::process::sandbox_probe::skip_without_group_signals;
 use std::path::Path;
 
 use serial_test::serial;
 
-use super::super::tests::{
-    create_test_graph, handoff_work_dir, orchestrator_for, spawn_orphan_process, write_pid_file,
-};
+use super::super::tests::{create_test_graph, handoff_work_dir, orchestrator_for, write_pid_file};
 use super::super::EventHandler;
 use super::*;
 use crate::fs::session_files::save_session;
@@ -22,6 +19,7 @@ use crate::models::stage::StageType;
 use crate::orchestrator::core::stage_executor::StageExecutor;
 use crate::orchestrator::core::OrchestratorConfig;
 use crate::orchestrator::terminal::native::write_test_pid_identity;
+use crate::test_stand_in::{orphan, require_orphan_signals};
 use crate::verify::contracts::store::attempts_spent;
 use crate::verify::contracts::test_support::{contract, contract_worktree, write_test_freeze};
 use crate::verify::transitions::{create_stage, load_stage};
@@ -140,9 +138,7 @@ fn contract_session_spawns_before_stage_session() {
 #[test]
 #[serial]
 fn contract_phase_finished_spawns_stage_session() {
-    if skip_without_group_signals("contract_phase_finished_spawns_stage_session") {
-        return;
-    }
+    require_orphan_signals!();
     let _hooks = HooksDirGuard::install();
     let temp = handoff_work_dir();
     let work = temp.path().join(".loom").join("work");
@@ -167,7 +163,8 @@ fn contract_phase_finished_spawns_stage_session() {
     assert_eq!(stage.session.as_deref(), Some(writer.id.as_str()));
 
     // Once it can be taken down, the implementation session takes over.
-    let agent_pid = spawn_orphan_process();
+    let agent_stand_in = orphan();
+    let agent_pid = agent_stand_in.pid();
     write_test_pid_identity(&work, &writer, agent_pid).unwrap();
     orchestrator
         .on_contract_phase_finished("test-stage", &writer.id)

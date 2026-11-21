@@ -200,12 +200,12 @@ mod tests {
         );
         let temp = tempfile::TempDir::new().unwrap();
         let path = temp.path().join("reconcile.lock");
-        // `read` is a builtin, so this argv stays in place until the kill below.
-        let mut child = Command::new("bash")
-            .args(["-c", "read -r _", "hook", "reconcile-graph"])
-            .stdin(std::process::Stdio::piped())
-            .spawn()
-            .unwrap();
+        // `read` is a builtin, so this argv stays in place until the drop below.
+        let child = crate::test_stand_in::StandIn::direct(
+            Command::new("bash")
+                .args(["-c", "read -r _", "hook", "reconcile-graph"])
+                .stdin(std::process::Stdio::piped()),
+        );
         let pid = child.id();
         let now = unix_now();
         let claimed_at = now - START_SKEW_SECS - 30;
@@ -221,7 +221,7 @@ mod tests {
         let before = is_reconciler(pid, read_lock(&path).unwrap().epoch, now);
         let began = begin_run(&path, pid, 7, unix_now());
         let after = is_reconciler(pid, read_lock(&path).unwrap().epoch, unix_now());
-        crate::process::sandbox_probe::reap::kill_and_reap(&mut child);
+        drop(child);
 
         assert_eq!(
             before,

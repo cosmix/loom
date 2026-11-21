@@ -4,6 +4,7 @@ use std::process::Stdio;
 use std::time::{Duration, Instant};
 
 use crate::models::stage::CommandConfinement;
+use crate::test_stand_in::{require_orphan_signals, Orphan, StandIn};
 use crate::verify::criteria::{
     run_spec_with_timeout, set_spawn_observer, CommandSpec, GroupAnchor, SpawnObserver,
 };
@@ -101,12 +102,14 @@ fn escaping_criterion(dir: &Path) -> CommandSpec {
 /// The processes a copy of the test binary started, by the pids they wrote
 /// into `*.pid` files of `dir`, one per line. A pid is taken with its start
 /// time only from a complete line and only when its process started after
-/// the copy did, so no unrelated process is ever named; on drop every one
-/// still running under the same identity is killed.
+/// the copy did, so no unrelated process is ever named. Each is adopted as it
+/// is seen, so on drop every one still running under the same identity is
+/// killed.
 struct Started {
     dir: PathBuf,
     since: Option<u64>,
     seen: Vec<(String, ProcessIdentity)>,
+    adopted: Vec<Orphan>,
 }
 
 impl Started {
@@ -115,6 +118,7 @@ impl Started {
             dir: dir.to_path_buf(),
             since: None,
             seen: Vec::new(),
+            adopted: Vec::new(),
         }
     }
 
@@ -140,6 +144,7 @@ impl Started {
                         start_time: Some(start),
                     };
                     self.seen.push((stem.to_string(), identity));
+                    self.adopted.push(Orphan::from_identity(identity));
                 }
             }
         }
@@ -170,25 +175,6 @@ impl Started {
     }
 }
 
-impl Drop for Started {
-    fn drop(&mut self) {
-        let all: Vec<&str> = self.seen.iter().map(|(stem, _)| stem.as_str()).collect();
-        for identity in self.running(&all) {
-            if let Ok(pid) = i32::try_from(identity.pid) {
-                let _ = kill(Pid::from_raw(pid), Signal::SIGKILL);
-            }
-        }
-    }
-}
-
-fn cannot_signal(name: &str) -> bool {
-    crate::process::sandbox_probe::skip_unless(
-        crate::process::sandbox_probe::process_groups_signalable(),
-        name,
-        "this process cannot signal a child's process group",
-    )
-}
-
 /// Run `spec` into its 1 s timeout from `dir`.
 fn time_out(spec: &CommandSpec, dir: &Path) {
     let timeout = Duration::from_secs(1);
@@ -217,19 +203,18 @@ fn run_in_copy(name: &str, dir: &Path, session: bool, started: &mut Started) {
     if session {
         lead_own_session(&mut command);
     }
-    let mut copy = command.spawn().unwrap();
+    let mut copy = StandIn::direct(&mut command);
     started.since = process_start_time(copy.id());
     let deadline = Instant::now() + COPY_DEADLINE;
     let status = loop {
         started.capture();
-        if let Some(status) = copy.try_wait().unwrap() {
+        if let Some(status) = copy.child().try_wait().unwrap() {
             break status;
         }
-        if Instant::now() >= deadline {
-            let _ = copy.kill();
-            let _ = copy.wait();
-            panic!("the copy ran past {COPY_DEADLINE:?}");
-        }
+        assert!(
+            Instant::now() < deadline,
+            "the copy ran past {COPY_DEADLINE:?}"
+        );
         std::thread::sleep(Duration::from_millis(10));
     };
     started.capture();
@@ -244,9 +229,7 @@ fn a_timeout_kills_what_left_the_leaders_group() {
         let dir = Path::new(&dir);
         return time_out(&escaping_criterion(dir), dir);
     }
-    if cannot_signal(name) {
-        return;
-    }
+    require_orphan_signals!();
     let dir = tempfile::tempdir().unwrap();
     let mut started = Started::new(dir.path());
     run_in_copy(name, dir.path(), false, &mut started);
@@ -258,9 +241,10 @@ fn a_timeout_kills_what_left_the_leaders_group() {
 /// for its owner to kill it.
 #[test]
 fn the_leaders_group_is_stopped_before_the_sweep() {
-    if cannot_signal("the_leaders_group_is_stopped_before_the_sweep") {
-        return;
-    }
+    // It reads the leader's state with `ps`, which a host job refuses.
+    crate::process::sandbox_probe::require_process_control!(
+        "the_leaders_group_is_stopped_before_the_sweep"
+    );
     let mut command = Command::new("sh");
     command
         .args(["-c", "while :; do sleep 0.05; done"])
@@ -294,9 +278,7 @@ fn a_host_childs_timeout_kills_what_left_the_anchors_group() {
     if let Some(dir) = std::env::var_os(CHILD_ENV) {
         return run_as_host_child(Path::new(&dir));
     }
-    if cannot_signal(name) {
-        return;
-    }
+    require_orphan_signals!();
     let dir = tempfile::tempdir().unwrap();
     let mut started = Started::new(dir.path());
     run_in_copy(name, dir.path(), true, &mut started);

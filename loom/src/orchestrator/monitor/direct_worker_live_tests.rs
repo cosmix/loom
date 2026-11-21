@@ -1,8 +1,7 @@
 //! Authenticating a direct worker against live process trees, with a same-named,
 //! same-environment impostor, at the clock points the hold is bounded by.
 
-use std::os::unix::process::CommandExt;
-use std::process::{Child, Command};
+use std::process::Command;
 use std::time::Instant;
 
 use chrono::TimeDelta;
@@ -10,58 +9,38 @@ use chrono::TimeDelta;
 use super::*;
 use crate::fs::save_session;
 use crate::models::session::{Session, SessionStatus};
-use crate::process::sandbox_probe::reap::{reap_within, REAP_DEADLINE};
 use crate::process::sandbox_probe::skip_without_process_control;
+use crate::test_stand_in::StandIn;
 
 /// True when these tests cannot run: they read the process table with `ps` and
 /// retire the trees they spawn with `killpg`, and a host job's profile may refuse
-/// either. Call it before anything is spawned, since a guard that cannot kill
-/// blocks on `wait`.
+/// either. Call it before anything is spawned: a [`StandIn`] refuses to start
+/// where the group kill is refused.
 pub(crate) fn cannot_run_live_trees(name: &str) -> bool {
     skip_without_process_control(name)
 }
 
 const INVOCATION: &str = "inv-0123456789abcdef0123456789abcdef";
 
-pub(crate) struct LiveTree(Child);
-
-impl Drop for LiveTree {
-    fn drop(&mut self) {
-        // SAFETY: the group was created for this child alone by process_group(0).
-        let killed = unsafe { libc::killpg(self.0.id() as i32, libc::SIGKILL) } == 0;
-        // A refused signal leaves the tree running, and waiting for it would never
-        // return; tests guard with `cannot_run_live_trees` before spawning.
-        if killed {
-            reap_within(&mut self.0, REAP_DEADLINE);
-        }
-    }
-}
-
 /// A process whose argv reads as the installed supervisor, running `body`.
 fn supervisor_shell(body: &str) -> String {
     format!("(exec -a python3 bash -c '{body}' /hooks/{SUPERVISOR_SCRIPT})")
 }
 
-fn spawn_group(script: String) -> LiveTree {
-    let child = Command::new("bash")
-        .arg("-c")
-        .arg(script)
-        .process_group(0)
-        .spawn()
-        .unwrap();
-    LiveTree(child)
+fn spawn_group(script: String) -> StandIn {
+    StandIn::group_leader(Command::new("bash").arg("-c").arg(script))
 }
 
 /// A launcher running a supervisor-named process running a CPU-burning worker.
 /// The trailing `:` keeps the launcher shell from exec-ing its last command.
-pub(crate) fn spawn_tree(quoted: &str) -> LiveTree {
+pub(crate) fn spawn_tree(quoted: &str) -> StandIn {
     let supervisor = supervisor_shell("bash -c \"while :; do :; done\" & wait");
     spawn_group(format!("{supervisor}; : '{quoted}'"))
 }
 
 /// A launcher running the wrapper's bounded wait on one companion job, returned
 /// once its process tree reads that way.
-pub(crate) fn spawn_companion_wait(invocation: &str, job_id: &str) -> LiveTree {
+pub(crate) fn spawn_companion_wait(invocation: &str, job_id: &str) -> StandIn {
     let tree = spawn_group(format!(
         "(exec -a node bash -c 'sleep 60; :' /hooks/{COMPANION_SCRIPT} status {job_id} --wait); \
          : '--invocation-id {invocation}'"

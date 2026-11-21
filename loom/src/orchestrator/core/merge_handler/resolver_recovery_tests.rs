@@ -1,9 +1,8 @@
 //! A resolver the daemon launched outlives both a failed publication and a
 //! daemon restart, and a launch that died gives its stage back.
 
-use crate::process::sandbox_probe::skip_without_group_signals;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use chrono::{Duration, Utc};
 
@@ -16,6 +15,7 @@ use crate::models::session::{SessionBackendKind, SessionStatus};
 use crate::models::stage::StageStatus;
 use crate::orchestrator::core::merge_handler::resolver_attempts::merge_resolver_attempts;
 use crate::orchestrator::signals::merge_test_backend;
+use crate::test_stand_in::{require_signals, StandIn};
 use crate::verify::transitions::load_stage;
 
 const STAGE: &str = "pub";
@@ -35,13 +35,14 @@ fn orchestrator_over(root: &std::path::Path) -> crate::orchestrator::core::Orche
     orchestrator
 }
 
-struct KillOnDrop(Arc<Mutex<Option<std::process::Child>>>);
+struct KillOnDrop(Arc<Mutex<Option<StandIn>>>);
 
 impl Drop for KillOnDrop {
     fn drop(&mut self) {
-        if let Some(mut child) = self.0.lock().unwrap().take() {
-            crate::process::sandbox_probe::reap::kill_and_reap(&mut child);
-        }
+        // A test that panicked while holding the lock poisoned it; unwrapping
+        // here would panic again during unwinding and abort the test binary.
+        let mut slot = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        drop(slot.take());
     }
 }
 
@@ -49,11 +50,7 @@ impl Drop for KillOnDrop {
 /// unreadable by then, as it is for a disk that filled up.
 #[test]
 fn a_failed_publication_keeps_the_resolver_tracked_and_counted() {
-    let false =
-        skip_without_group_signals("a_failed_publication_keeps_the_resolver_tracked_and_counted")
-    else {
-        return;
-    };
+    require_signals!();
     let repo = repo_with_conflicting_stage_branches(&[STAGE]);
     let mut orchestrator = orchestrator_with_conflict(repo.path(), STAGE);
     let work = orchestrator.config.work_dir.clone();
@@ -65,7 +62,7 @@ fn a_failed_publication_keeps_the_resolver_tracked_and_counted() {
         &work,
         Arc::new(move |mut session| {
             calls.fetch_add(1, Ordering::SeqCst);
-            let process = std::process::Command::new("sleep").arg("60").spawn()?;
+            let process = StandIn::direct(std::process::Command::new("sleep").arg("60"));
             let pid = process.id();
             *slot.lock().unwrap() = Some(process);
             let start = crate::process::process_start_time(pid).unwrap();

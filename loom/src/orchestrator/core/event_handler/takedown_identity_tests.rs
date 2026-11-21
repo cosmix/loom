@@ -11,42 +11,27 @@ use crate::models::session::{SessionExitReason, SessionStatus};
 use crate::orchestrator::terminal::native::{
     session_process_status, write_test_pid_identity, SessionProcessStatus,
 };
-use crate::process::sandbox_probe::skip_without_group_signals;
 use crate::verify::transitions::{load_stage, update_stage};
 use std::path::Path;
+
+use crate::test_stand_in::{orphan_running, require_orphan_signals, Orphan};
 use std::time::Duration;
 
 /// A stand-in agent that runs `on_term` when told to stop. An empty `on_term`
 /// ignores SIGTERM (it survives until force-killed); `sleep 1; exit 0` exits a
 /// second after the signal, as a session running its shutdown work does.
-fn spawn_agent(ready: &Path, on_term: &str) -> u32 {
-    let script = format!(
-        "(trap '{on_term}' TERM; : > \"$1\"; while :; do sleep 0.1; done) >/dev/null 2>&1 & echo $!"
+fn spawn_agent(ready: &Path, on_term: &str) -> Orphan {
+    let agent = orphan_running(
+        &format!("(trap '{on_term}' TERM; : > \"$1\"; while :; do sleep 0.1; done)"),
+        &[ready.as_os_str()],
     );
-    let output = std::process::Command::new("sh")
-        .args(["-c", &script, "sh"])
-        .arg(ready)
-        .output()
-        .expect("failed to spawn a stand-in agent");
-    let pid = String::from_utf8_lossy(&output.stdout)
-        .trim()
-        .parse()
-        .expect("stand-in agent printed no pid");
     for _ in 0..100 {
         if ready.exists() {
-            return pid;
+            return agent;
         }
         std::thread::sleep(Duration::from_millis(5));
     }
     panic!("stand-in agent never installed its SIGTERM handler");
-}
-
-fn force_kill(pid: u32) {
-    use nix::sys::signal::{kill, Signal};
-    use nix::unistd::Pid;
-
-    let pid = i32::try_from(pid).expect("test pid fits i32");
-    let _ = kill(Pid::from_raw(pid), Signal::SIGKILL);
 }
 
 #[test]
@@ -144,18 +129,15 @@ fn dispute_retirement_records_replaced() {
 
 #[test]
 fn handoff_does_not_requeue_a_verified_process_that_outlives_sigterm() {
-    if skip_without_group_signals(
-        "handoff_does_not_requeue_a_verified_process_that_outlives_sigterm",
-    ) {
-        return;
-    }
+    require_orphan_signals!();
     let temp = handoff_work_dir();
     let work = temp.path().join(".loom").join("work");
     executing_stage(&work);
     let session = recorded_session(&work);
     assign_stage_session(&work, &session.id);
 
-    let pid = spawn_agent(&work.join("slow-exit-ready"), "");
+    let agent = spawn_agent(&work.join("slow-exit-ready"), "");
+    let pid = agent.pid();
     write_test_pid_identity(&work, &session, pid).unwrap();
     assert_eq!(
         session_process_status(&work, &session),
@@ -179,8 +161,6 @@ fn handoff_does_not_requeue_a_verified_process_that_outlives_sigterm() {
         StageStatus::NeedsHandoff
     );
     assert!(!graph_has_ready_stage(&orchestrator.graph, "test-stage"));
-
-    force_kill(pid);
 }
 
 /// A session that needs a second to exit after SIGTERM, taken down under a
@@ -192,15 +172,15 @@ fn hand_off_a_slow_exiting_agent(window: Duration) -> (StageStatus, SessionStatu
     executing_stage(&work);
     let session = recorded_session(&work);
     assign_stage_session(&work, &session.id);
-    let pid = spawn_agent(&work.join("slow-exit-ready"), "sleep 1; exit 0");
-    write_test_pid_identity(&work, &session, pid).unwrap();
+    let agent = spawn_agent(&work.join("slow-exit-ready"), "sleep 1; exit 0");
+    write_test_pid_identity(&work, &session, agent.pid()).unwrap();
 
     let mut orchestrator = orchestrator_with_kill_window(&work, temp.path(), window);
     orchestrator.graph.mark_executing("test-stage").unwrap();
     orchestrator
         .on_needs_handoff(&session.id, "test-stage")
         .unwrap();
-    force_kill(pid);
+    drop(agent);
 
     let stage = load_stage("test-stage", &work).unwrap().status;
     let record = load_session_exact(&work, &session.id).unwrap().unwrap();
@@ -209,9 +189,7 @@ fn hand_off_a_slow_exiting_agent(window: Duration) -> (StageStatus, SessionStatu
 
 #[test]
 fn handoff_waits_out_an_agent_that_exits_within_the_window() {
-    if skip_without_group_signals("handoff_waits_out_an_agent_that_exits_within_the_window") {
-        return;
-    }
+    require_orphan_signals!();
     let (stage, session) = hand_off_a_slow_exiting_agent(Duration::from_secs(5));
 
     assert_eq!(stage, StageStatus::Queued);
@@ -220,9 +198,7 @@ fn handoff_waits_out_an_agent_that_exits_within_the_window() {
 
 #[test]
 fn handoff_calls_an_agent_that_outlasts_the_window_a_survivor() {
-    if skip_without_group_signals("handoff_calls_an_agent_that_outlasts_the_window_a_survivor") {
-        return;
-    }
+    require_orphan_signals!();
     let (stage, session) = hand_off_a_slow_exiting_agent(Duration::from_millis(300));
 
     assert_eq!(stage, StageStatus::NeedsHandoff);

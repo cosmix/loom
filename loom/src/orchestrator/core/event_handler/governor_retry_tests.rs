@@ -2,15 +2,14 @@
 
 use super::governor_tests::assign_stage_session;
 use super::tests::{
-    executing_stage, handoff_work_dir, orchestrator_for, recorded_session, spawn_orphan_process,
-    write_pid_file,
+    executing_stage, handoff_work_dir, orchestrator_for, recorded_session, write_pid_file,
 };
 use super::*;
 use crate::fs::session_files::{load_session_exact, save_session};
 use crate::handoff::{HandoffOrigin, ParsedHandoff};
 use crate::models::session::{Session, SessionStatus};
 use crate::orchestrator::terminal::native::write_test_pid_identity;
-use crate::process::sandbox_probe::require_group_signals;
+use crate::test_stand_in::{orphan, require_orphan_signals};
 use crate::verify::transitions::{load_stage, update_stage};
 
 fn handoff_count(work: &std::path::Path) -> usize {
@@ -291,12 +290,13 @@ fn handoff_probes_an_untracked_terminal_assigned_session() {
 /// phase must recheck workflow state and leave that decision intact.
 #[test]
 fn handoff_does_not_kill_or_requeue_a_stage_blocked_after_begin() {
-    require_group_signals!("handoff_does_not_kill_or_requeue_a_stage_blocked_after_begin");
+    require_orphan_signals!();
     let temp = handoff_work_dir();
     let work = temp.path().join(".loom").join("work");
     executing_stage(&work);
     let session = recorded_session(&work);
-    let session_pid = spawn_orphan_process();
+    let session_stand_in = orphan();
+    let session_pid = session_stand_in.pid();
     write_test_pid_identity(&work, &session, session_pid).unwrap();
     assign_stage_session(&work, &session.id);
 
@@ -327,8 +327,6 @@ fn handoff_does_not_kill_or_requeue_a_stage_blocked_after_begin() {
     );
     assert!(crate::process::is_process_alive(session_pid));
     assert!(!graph_has_ready_stage(&orchestrator.graph, "test-stage"));
-
-    let _ = crate::process::terminate(session_pid);
 }
 
 /// Identity must be rechecked immediately before the destructive step, not
@@ -336,7 +334,7 @@ fn handoff_does_not_kill_or_requeue_a_stage_blocked_after_begin() {
 /// replace the assignment after `begin_handoff`; that successor must survive.
 #[test]
 fn handoff_does_not_kill_an_assignment_that_changed_after_begin() {
-    require_group_signals!("handoff_does_not_kill_an_assignment_that_changed_after_begin");
+    require_orphan_signals!();
     let temp = handoff_work_dir();
     let work = temp.path().join(".loom").join("work");
     executing_stage(&work);
@@ -350,7 +348,8 @@ fn handoff_does_not_kill_an_assignment_that_changed_after_begin() {
         .is_some());
 
     let successor = recorded_session(&work);
-    let successor_pid = spawn_orphan_process();
+    let successor_stand_in = orphan();
+    let successor_pid = successor_stand_in.pid();
     write_test_pid_identity(&work, &successor, successor_pid).unwrap();
     update_stage("test-stage", &work, |stage| {
         stage.session = Some(successor.id.clone());
@@ -382,8 +381,6 @@ fn handoff_does_not_kill_an_assignment_that_changed_after_begin() {
     assert_eq!(stage.status, StageStatus::NeedsHandoff);
     assert_eq!(stage.session.as_deref(), Some(successor.id.as_str()));
     assert!(!graph_has_ready_stage(&orchestrator.graph, "test-stage"));
-
-    let _ = crate::process::terminate(successor_pid);
 }
 
 #[path = "governor_identityless_tests.rs"]

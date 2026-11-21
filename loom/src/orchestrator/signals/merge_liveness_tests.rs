@@ -13,6 +13,7 @@ use crate::models::session::{Session, SessionStatus, SessionType};
 use crate::models::stage::Stage;
 use crate::orchestrator::signals::find_live_merge_session_for_stage;
 use crate::orchestrator::terminal::native::NativeBackend;
+use crate::test_stand_in::reaped_pid;
 
 /// A merge signal for `session_id` that names no stage, so it cannot be parsed.
 fn write_unreadable_signal(work_dir: &Path, session_id: &str) -> PathBuf {
@@ -43,14 +44,6 @@ fn save_record(work_dir: &Path, session_type: SessionType, stage_id: &str, pid: 
     )
     .unwrap();
     session
-}
-
-/// A PID no process holds: that of a child already reaped.
-fn dead_pid() -> u32 {
-    let mut child = std::process::Command::new("true").spawn().unwrap();
-    let pid = child.id();
-    child.wait().unwrap();
-    pid
 }
 
 #[test]
@@ -84,7 +77,7 @@ fn an_unreadable_signal_of_a_live_resolver_of_this_stage_reports_it() {
 fn an_unreadable_signal_of_a_dead_resolver_of_this_stage_is_retired() {
     let temp = TempDir::new().unwrap();
     let work_dir = temp.path();
-    let resolver = save_record(work_dir, SessionType::Merge, "mine", dead_pid());
+    let resolver = save_record(work_dir, SessionType::Merge, "mine", reaped_pid());
     let signal = write_unreadable_signal(work_dir, &resolver.id);
     let found = find_live_merge_session_for_stage("mine", work_dir).unwrap();
     assert_eq!(found, None);

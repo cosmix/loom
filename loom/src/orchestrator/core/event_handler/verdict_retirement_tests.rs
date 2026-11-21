@@ -6,15 +6,13 @@
 //! taken down" lies in at least one lane.
 
 use super::governor_tests::assign_stage_session;
-use super::tests::{
-    executing_stage, handoff_work_dir, orchestrator_for, recorded_session, spawn_orphan_process,
-};
+use super::tests::{executing_stage, handoff_work_dir, orchestrator_for, recorded_session};
 use super::*;
 use crate::fs::session_files::{load_session_exact, save_session};
 use crate::models::failure::{FailureInfo, FailureType};
 use crate::models::session::{Session, SessionBackendKind, SessionExitReason, SessionStatus};
 use crate::orchestrator::terminal::native::write_test_pid_identity;
-use crate::process::sandbox_probe::skip_without_group_signals;
+use crate::test_stand_in::{orphan, require_orphan_signals, Orphan};
 use crate::verify::transitions::{load_stage, update_stage};
 
 /// An orchestrator that tracks `session` as the live session of `test-stage`.
@@ -30,7 +28,7 @@ fn tracking_orchestrator(
     orchestrator
 }
 
-fn disputing_stage(work: &std::path::Path) -> (Session, u32) {
+fn disputing_stage(work: &std::path::Path) -> (Session, Orphan) {
     executing_stage(work);
     update_stage("test-stage", work, |stage| {
         stage.try_request_adjudication(None)
@@ -38,11 +36,12 @@ fn disputing_stage(work: &std::path::Path) -> (Session, u32) {
     .unwrap();
 
     let session = recorded_session(work);
-    let agent_pid = spawn_orphan_process();
+    let agent_stand_in = orphan();
+    let agent_pid = agent_stand_in.pid();
     write_test_pid_identity(work, &session, agent_pid).unwrap();
     assert!(crate::process::is_process_alive(agent_pid));
     assign_stage_session(work, &session.id);
-    (session, agent_pid)
+    (session, agent_stand_in)
 }
 
 #[test]
@@ -78,13 +77,11 @@ fn retirement_keeps_a_missing_assigned_writer_for_block_and_dispute() {
 /// instead of the daemon adopting the same idle process.
 #[test]
 fn retiring_kills_the_disputing_agent_and_clears_the_stage_session() {
-    if skip_without_group_signals("retiring_kills_the_disputing_agent_and_clears_the_stage_session")
-    {
-        return;
-    }
+    require_orphan_signals!();
     let temp = handoff_work_dir();
     let work = temp.path().join(".loom").join("work");
-    let (session, agent_pid) = disputing_stage(&work);
+    let (session, agent_stand_in) = disputing_stage(&work);
+    let agent_pid = agent_stand_in.pid();
 
     let mut orchestrator = tracking_orchestrator(&work, temp.path(), &session);
 
@@ -120,17 +117,17 @@ fn retiring_kills_the_disputing_agent_and_clears_the_stage_session() {
 /// applied.
 #[test]
 fn retiring_leaves_the_adjudication_session_alone() {
-    if skip_without_group_signals("retiring_leaves_the_adjudication_session_alone") {
-        return;
-    }
+    require_orphan_signals!();
     let temp = handoff_work_dir();
     let work = temp.path().join(".loom").join("work");
-    let (session, agent_pid) = disputing_stage(&work);
+    let (session, agent_stand_in) = disputing_stage(&work);
+    let agent_pid = agent_stand_in.pid();
 
     let mut adjudication_session = Session::new_adjudication("test-stage");
     adjudication_session.status = SessionStatus::Running;
     save_session(&adjudication_session, &work).unwrap();
-    let adjudicator_pid = spawn_orphan_process();
+    let adjudicator_stand_in = orphan();
+    let adjudicator_pid = adjudicator_stand_in.pid();
     write_test_pid_identity(&work, &adjudication_session, adjudicator_pid).unwrap();
 
     let mut orchestrator = tracking_orchestrator(&work, temp.path(), &session);
@@ -143,23 +140,20 @@ fn retiring_leaves_the_adjudication_session_alone() {
         crate::process::is_process_alive(adjudicator_pid),
         "the live adjudication session judging this stage must not be touched",
     );
-
-    let _ = crate::process::terminate(adjudicator_pid);
 }
 
 /// A stage that isn't under adjudication has nothing to retire — this path
 /// runs only ahead of applying a verdict.
 #[test]
 fn a_stage_not_under_adjudication_is_not_retired() {
-    let false = skip_without_group_signals("a_stage_not_under_adjudication_is_not_retired") else {
-        return;
-    };
+    require_orphan_signals!();
     let temp = handoff_work_dir();
     let work = temp.path().join(".loom").join("work");
     executing_stage(&work);
 
     let session = recorded_session(&work);
-    let agent_pid = spawn_orphan_process();
+    let agent_stand_in = orphan();
+    let agent_pid = agent_stand_in.pid();
     write_test_pid_identity(&work, &session, agent_pid).unwrap();
     assign_stage_session(&work, &session.id);
 
@@ -172,8 +166,6 @@ fn a_stage_not_under_adjudication_is_not_retired() {
         crate::process::is_process_alive(agent_pid),
         "a stage not under adjudication must not have its agent retired"
     );
-
-    let _ = crate::process::terminate(agent_pid);
 }
 
 /// The crash evidence an earlier attempt leaves behind: a crash auto-retry
@@ -187,14 +179,15 @@ fn prior_crash() -> FailureInfo {
 }
 
 /// An Executing `test-stage` whose agent is a real, live stand-in process.
-fn stage_with_live_agent(work: &std::path::Path) -> (Session, u32) {
+fn stage_with_live_agent(work: &std::path::Path) -> (Session, Orphan) {
     executing_stage(work);
     let session = recorded_session(work);
-    let agent_pid = spawn_orphan_process();
+    let agent_stand_in = orphan();
+    let agent_pid = agent_stand_in.pid();
     write_test_pid_identity(work, &session, agent_pid).unwrap();
     assert!(crate::process::is_process_alive(agent_pid));
     assign_stage_session(work, &session.id);
-    (session, agent_pid)
+    (session, agent_stand_in)
 }
 
 fn block_directly(work: &std::path::Path, failure_info: Option<FailureInfo>) {
@@ -212,12 +205,11 @@ fn block_directly(work: &std::path::Path, failure_info: Option<FailureInfo>) {
 /// of an earlier attempt must not stand in the way.
 #[test]
 fn an_agent_block_retires_the_live_session() {
-    if skip_without_group_signals("an_agent_block_retires_the_live_session") {
-        return;
-    }
+    require_orphan_signals!();
     let temp = handoff_work_dir();
     let work = temp.path().join(".loom").join("work");
-    let (session, agent_pid) = stage_with_live_agent(&work);
+    let (session, agent_stand_in) = stage_with_live_agent(&work);
+    let agent_pid = agent_stand_in.pid();
     update_stage("test-stage", &work, |stage| {
         stage.failure_info = Some(prior_crash());
         Ok(())
@@ -264,13 +256,11 @@ fn an_agent_block_retires_the_live_session() {
 /// already gone or owned by the crash path, so the block handler leaves it.
 #[test]
 fn a_crash_blocked_stage_is_left_to_the_crash_path() {
-    let false = skip_without_group_signals("a_crash_blocked_stage_is_left_to_the_crash_path")
-    else {
-        return;
-    };
+    require_orphan_signals!();
     let temp = handoff_work_dir();
     let work = temp.path().join(".loom").join("work");
-    let (session, agent_pid) = stage_with_live_agent(&work);
+    let (session, agent_stand_in) = stage_with_live_agent(&work);
+    let agent_pid = agent_stand_in.pid();
     block_directly(&work, Some(prior_crash()));
 
     let mut orchestrator = orchestrator_for(&work, temp.path());
@@ -282,20 +272,17 @@ fn a_crash_blocked_stage_is_left_to_the_crash_path() {
     );
     let stage = load_stage("test-stage", &work).unwrap();
     assert_eq!(stage.session.as_deref(), Some(session.id.as_str()));
-
-    let _ = crate::process::terminate(agent_pid);
 }
 
 /// A stage retried between the block and the daemon learning of it has moved
 /// on; its session belongs to the new attempt and must not be touched.
 #[test]
 fn a_stage_that_left_blocked_is_not_retired() {
-    let false = skip_without_group_signals("a_stage_that_left_blocked_is_not_retired") else {
-        return;
-    };
+    require_orphan_signals!();
     let temp = handoff_work_dir();
     let work = temp.path().join(".loom").join("work");
-    let (_session, agent_pid) = stage_with_live_agent(&work);
+    let (_session, agent_stand_in) = stage_with_live_agent(&work);
+    let agent_pid = agent_stand_in.pid();
     block_directly(&work, None);
     update_stage("test-stage", &work, |stage| stage.try_mark_queued()).unwrap();
 
@@ -308,8 +295,6 @@ fn a_stage_that_left_blocked_is_not_retired() {
     );
     let stage = load_stage("test-stage", &work).unwrap();
     assert_eq!(stage.status, StageStatus::Queued);
-
-    let _ = crate::process::terminate(agent_pid);
 }
 
 /// `MergeConflict -> Blocked` is legal, so an operator can block a stage
@@ -317,9 +302,7 @@ fn a_stage_that_left_blocked_is_not_retired() {
 /// `ContextExhausted`, and `MergeSessionCompleted` would never fire.
 #[test]
 fn a_merge_resolver_is_not_retired_by_a_block() {
-    let false = skip_without_group_signals("a_merge_resolver_is_not_retired_by_a_block") else {
-        return;
-    };
+    require_orphan_signals!();
     let temp = handoff_work_dir();
     let work = temp.path().join(".loom").join("work");
     executing_stage(&work);
@@ -330,7 +313,8 @@ fn a_merge_resolver_is_not_retired_by_a_block() {
     resolver.status = SessionStatus::Running;
     resolver.backend = SessionBackendKind::Tmux;
     save_session(&resolver, &work).unwrap();
-    let resolver_pid = spawn_orphan_process();
+    let resolver_stand_in = orphan();
+    let resolver_pid = resolver_stand_in.pid();
     write_test_pid_identity(&work, &resolver, resolver_pid).unwrap();
 
     let mut orchestrator = tracking_orchestrator(&work, temp.path(), &resolver);
@@ -342,8 +326,6 @@ fn a_merge_resolver_is_not_retired_by_a_block() {
         "a block must not retire the merge resolver working the stage's branch"
     );
     assert!(orchestrator.active_sessions.contains_key("test-stage"));
-
-    let _ = crate::process::terminate(resolver_pid);
 }
 
 /// A daemon restart re-emits `StageBlocked` for every Blocked stage. One with no

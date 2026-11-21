@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_stand_in::StandIn;
 use chrono::TimeDelta;
 
 fn sample(ticks: u64) -> CommandProgress {
@@ -154,29 +155,21 @@ fn a_command_that_exits_mid_sample_keeps_its_recorded_observation() {
     let work = tempfile::TempDir::new().unwrap();
     let now = Utc::now();
     let later = now + TimeDelta::seconds(60);
-    let mut sampled = std::process::Command::new("sleep")
-        .arg("30")
-        .spawn()
-        .unwrap();
+    let sampled = StandIn::direct(std::process::Command::new("sleep").arg("30"));
     let pid = sampled.id();
 
     let first = observe_commands(work.path(), "session-1", &[pid], now, 300, now);
     assert!(first.is_some(), "a live command is sampled");
-    sampled.kill().unwrap();
-    sampled.wait().unwrap();
+    drop(sampled);
 
     let kept = observe_commands(work.path(), "session-1", &[pid], now, 300, later)
         .expect("the recorded observation stands");
     assert!(kept.holds(now, 300, later));
     assert!(!kept.holds(now, 300, now + TimeDelta::seconds(300)));
 
-    let mut other = std::process::Command::new("sleep")
-        .arg("30")
-        .spawn()
-        .unwrap();
+    let other = StandIn::direct(std::process::Command::new("sleep").arg("30"));
     let other_pid = other.id();
-    other.kill().unwrap();
-    other.wait().unwrap();
+    drop(other);
     let unseen = observe_commands(work.path(), "session-1", &[other_pid], now, 300, later);
     assert!(unseen.is_none(), "a process never observed earns nothing");
 }

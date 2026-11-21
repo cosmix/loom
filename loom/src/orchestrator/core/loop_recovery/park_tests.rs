@@ -1,6 +1,5 @@
 use super::super::tests::{
-    executing_stage, handoff_work_dir, orchestrator_for, recorded_session, spawn_orphan_process,
-    write_pid_file,
+    executing_stage, handoff_work_dir, orchestrator_for, recorded_session, write_pid_file,
 };
 use super::*;
 use crate::fs::session_files::load_session_exact;
@@ -14,8 +13,8 @@ use crate::models::stage::{StageStatus, StageType};
 use crate::orchestrator::monitor::events::CompletionEscalation;
 use crate::orchestrator::monitor::MonitorEvent;
 use crate::orchestrator::terminal::native::write_test_pid_identity;
-use crate::process::sandbox_probe::skip_without_group_signals;
 use crate::test_git::{git, TestRepo};
+use crate::test_stand_in::{orphan, require_orphan_signals};
 use crate::verify::transitions::{load_stage, update_stage};
 use chrono::Utc;
 use std::path::{Path, PathBuf};
@@ -246,11 +245,10 @@ fn second_failure_with_writer_gone_parks() {
 
 #[test]
 fn alive_writer_is_killed_confirmed_and_parked() {
-    if skip_without_group_signals("alive_writer_is_killed_confirmed_and_parked") {
-        return;
-    }
+    require_orphan_signals!();
     let mut fixture = fixture(2);
-    let pid = spawn_orphan_process();
+    let stand_in = orphan();
+    let pid = stand_in.pid();
     write_test_pid_identity(&fixture.work, &fixture.session, pid).unwrap();
     block(&mut fixture);
     assert!(!crate::process::is_process_alive(pid));

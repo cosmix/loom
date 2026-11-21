@@ -1,8 +1,8 @@
-use crate::process::sandbox_probe::skip_without_group_signals;
 use std::os::unix::process::ExitStatusExt;
 use std::time::Duration;
 
 use super::*;
+use crate::test_stand_in::{require_signals, StandIn};
 
 #[test]
 fn summary_args_preserve_sandbox_paths_model_effort_and_prompt() {
@@ -264,17 +264,9 @@ fn a_changed_configuration_outranks_a_requested_stop() {
 
 #[test]
 fn stop_all_closes_the_registry_and_stops_every_registered_job() {
-    let false =
-        skip_without_group_signals("stop_all_closes_the_registry_and_stops_every_registered_job")
-    else {
-        return;
-    };
+    require_signals!();
     let root = tempfile::TempDir::new().expect("temp dir");
-    let mut child = std::process::Command::new("sleep")
-        .arg("30")
-        .process_group(0)
-        .spawn()
-        .expect("spawn sleep");
+    let mut child = StandIn::group_leader(std::process::Command::new("sleep").arg("30"));
     let pid = Pid::from_raw(child.id() as i32);
     let jobs = jobs_with("c0de-1-0", job_for(root.path(), pid, false));
     let spawner = CodexSummarySpawner {
@@ -292,7 +284,7 @@ fn stop_all_closes_the_registry_and_stops_every_registered_job() {
     }
     // SIGTERM ends `sleep`; the group waits in `stopped_groups` for the server stop's force.
     assert_eq!(lock(&jobs).stopped_groups, [pid]);
-    let status = child.wait().expect("reap sleep");
+    let status = child.wait_within(Duration::from_secs(10));
     assert!(!status.success());
     lock(&jobs).jobs.remove("c0de-1-0");
     let late = job_for(root.path(), Pid::from_raw(i32::MAX), false);

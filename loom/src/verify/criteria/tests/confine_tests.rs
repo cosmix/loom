@@ -235,7 +235,11 @@ fn spawned_child_leads_its_own_process_group() {
     let reported_pgid = nix::unistd::getpgid(Some(nix::unistd::Pid::from_raw(child_pid)))
         .expect("the host should read the child's process group")
         .as_raw();
-    child.child().wait().expect("the child should exit");
+    let exited = crate::process::wait_with_deadline(child.child(), Duration::from_secs(10));
+    assert!(
+        matches!(exited, Ok(Some(_))),
+        "the child should exit: {exited:?}"
+    );
     assert_eq!(
         reported_pgid, child_pid,
         "child pgid should equal its own pid"

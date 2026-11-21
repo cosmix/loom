@@ -96,9 +96,7 @@ fn xdotool_close_tries_later_matching_windows_after_failure() {
 #[cfg(target_os = "linux")]
 #[test]
 fn failed_xdotool_close_reaches_verified_pid_teardown() {
-    crate::process::sandbox_probe::require_group_signals!(
-        "failed_xdotool_close_reaches_verified_pid_teardown"
-    );
+    crate::test_stand_in::require_signals!();
     use super::super::{pid_tracking, window_identity, NativeBackend};
     use crate::models::session::Session;
     use crate::orchestrator::terminal::emulator::TerminalEmulator;
@@ -110,7 +108,8 @@ fn failed_xdotool_close_reaches_verified_pid_teardown() {
     let mut session = Session::new();
     session.assign_to_stage("failed-close".to_string());
     session.native_window_title = window_identity::native_window_title(work.path(), &session);
-    let mut child = Command::new("sleep").arg("60").spawn().unwrap();
+    let mut stand_in = crate::test_stand_in::StandIn::direct(Command::new("sleep").arg("60"));
+    let child = stand_in.child();
     let start_time = crate::process::process_start_time(child.id()).unwrap();
     let (_, pid_key) = NativeBackend::window_title_and_pid_key(&session).unwrap();
     pid_tracking::write_pid_entry(
@@ -134,8 +133,7 @@ fn failed_xdotool_close_reaches_verified_pid_teardown() {
             break;
         }
         if Instant::now() >= deadline {
-            child.kill().unwrap();
-            child.wait().unwrap();
+            drop(stand_in);
             panic!("failed window close suppressed verified PID teardown");
         }
         std::thread::sleep(Duration::from_millis(10));

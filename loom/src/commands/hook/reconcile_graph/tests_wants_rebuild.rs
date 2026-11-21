@@ -6,6 +6,7 @@ use super::lock::{decide, read_lock, update_lock, LockDecision, LockState};
 use super::tests::{degraded_pack, leave};
 use super::*;
 use crate::process::sandbox_probe::require_process_control;
+use crate::test_stand_in::StandIn;
 use serial_test::serial;
 use std::os::unix::process::ExitStatusExt;
 use std::sync::atomic::AtomicBool;
@@ -25,27 +26,18 @@ pub(super) fn seed(lock_path: &Path, epoch: u64, pid: u32, failures: u32, pendin
     update_lock(lock_path, |_| (Some(state), ())).expect("seed the lock");
 }
 
-/// Kill and reap a child when its test ends.
-struct Reaped(std::process::Child);
-
-impl Drop for Reaped {
-    fn drop(&mut self) {
-        crate::process::sandbox_probe::reap::kill_and_reap(&mut self.0);
-    }
-}
-
-fn fake_reconciler() -> Reaped {
-    let child = Command::new("sh")
-        .args(["-c", "read line", "hook", "reconcile-graph"])
-        .stdin(Stdio::piped())
-        .spawn()
-        .unwrap();
+fn fake_reconciler() -> StandIn {
+    let child = StandIn::direct(
+        Command::new("sh")
+            .args(["-c", "read line", "hook", "reconcile-graph"])
+            .stdin(Stdio::piped()),
+    );
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
     let execed = |pid| cancel::process_argv(pid).is_some_and(|a| a.contains(&"hook".into()));
     while !execed(child.id()) && std::time::Instant::now() < deadline {
         std::thread::sleep(std::time::Duration::from_millis(5));
     }
-    Reaped(child)
+    child
 }
 
 fn lock_in(temp: &TempDir) -> PathBuf {
@@ -255,13 +247,13 @@ fn cancel_skips_a_decoy_process() {
     require_process_control!("cancel_skips_a_decoy_process");
     let temp = TempDir::new().unwrap();
     let lock_path = lock_in(&temp);
-    let mut decoy = Reaped(Command::new("sleep").arg("30").spawn().unwrap());
-    seed(&lock_path, unix_now(), decoy.0.id(), 2, true);
+    let mut decoy = StandIn::direct(Command::new("sleep").arg("30"));
+    seed(&lock_path, unix_now(), decoy.id(), 2, true);
 
     cancel::cancel_holder(&lock_path, unix_now());
 
     assert!(
-        decoy.0.try_wait().unwrap().is_none(),
+        decoy.child().try_wait().unwrap().is_none(),
         "the decoy must survive"
     );
     let released = read_lock(&lock_path).unwrap();
@@ -277,11 +269,16 @@ fn cancel_signals_a_holder_that_is_the_reconciler() {
     let temp = TempDir::new().unwrap();
     let lock_path = lock_in(&temp);
     let mut holder = fake_reconciler();
-    seed(&lock_path, unix_now(), holder.0.id(), 1, false);
+    seed(&lock_path, unix_now(), holder.id(), 1, false);
 
     cancel::cancel_holder(&lock_path, unix_now());
 
-    assert_eq!(holder.0.wait().unwrap().signal(), Some(libc::SIGTERM));
+    assert_eq!(
+        holder
+            .wait_within(std::time::Duration::from_secs(10))
+            .signal(),
+        Some(libc::SIGTERM)
+    );
     let released = read_lock(&lock_path).unwrap();
     assert_eq!((released.pid, released.failures), (0, 1));
 }
@@ -293,12 +290,12 @@ fn cancel_leaves_a_process_that_started_after_the_lease() {
     let lock_path = lock_in(&temp);
     let mut newcomer = fake_reconciler();
     // A lease stamped an hour ago cannot belong to a process that just started.
-    seed(&lock_path, unix_now() - 3600, newcomer.0.id(), 0, false);
+    seed(&lock_path, unix_now() - 3600, newcomer.id(), 0, false);
 
     cancel::cancel_holder(&lock_path, unix_now());
 
     assert!(
-        newcomer.0.try_wait().unwrap().is_none(),
+        newcomer.child().try_wait().unwrap().is_none(),
         "a reused pid must survive"
     );
     assert_eq!(read_lock(&lock_path).unwrap().pid, 0);

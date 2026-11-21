@@ -7,7 +7,6 @@
 //! `orchestrator/core/event_handler/verdict_retirement_tests.rs`: every proxy
 //! for "the agent was taken down" lies in at least one lane.
 
-use crate::process::sandbox_probe::skip_without_group_signals;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
@@ -24,6 +23,7 @@ use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::terminal::native::write_test_pid_identity;
 use crate::orchestrator::{Orchestrator, OrchestratorConfig};
 use crate::plan::ExecutionGraph;
+use crate::test_stand_in::{orphan, require_orphan_signals, Orphan};
 use crate::verify::transitions::load_stage;
 
 /// A repository whose `.loom/work` configures the tmux lane, so
@@ -52,22 +52,6 @@ fn orchestrator_for(work: &Path, repo_root: &Path) -> Orchestrator {
     Orchestrator::new(config, ExecutionGraph::build(Vec::new()).unwrap()).unwrap()
 }
 
-/// Start a process that outlives its parent shell, so the test can watch the
-/// retirement kill it. `sh` exits once it has echoed the pid, reparenting the
-/// `sleep` to init, which reaps it as soon as it dies; a direct child would
-/// linger as a zombie that still answers `kill(pid, 0)`.
-fn spawn_orphan_process() -> u32 {
-    let output = std::process::Command::new("sh")
-        .arg("-c")
-        .arg("sleep 30 >/dev/null 2>&1 & echo $!")
-        .output()
-        .expect("failed to spawn a stand-in agent process");
-    String::from_utf8_lossy(&output.stdout)
-        .trim()
-        .parse()
-        .expect("the stand-in agent process printed no pid")
-}
-
 /// A running worker record for `s1`, with no PID identity yet.
 fn worker_session(work: &Path) -> Session {
     let mut worker = Session::new();
@@ -87,13 +71,14 @@ fn file_dispute(work: &Path, mut stage: Stage, worker: &Session) {
 }
 
 /// A `NeedsAdjudication` stage whose disputing agent is a live process.
-fn live_disputing_stage(work: &Path, stage: Stage) -> (Session, u32) {
+fn live_disputing_stage(work: &Path, stage: Stage) -> (Session, Orphan) {
     let worker = worker_session(work);
-    let pid = spawn_orphan_process();
+    let stand_in = orphan();
+    let pid = stand_in.pid();
     write_test_pid_identity(work, &worker, pid).unwrap();
     assert!(crate::process::is_process_alive(pid));
     file_dispute(work, stage, &worker);
-    (worker, pid)
+    (worker, stand_in)
 }
 
 fn assert_retired_then_escalated(work: &Path, worker: &Session, pid: u32) {
@@ -133,13 +118,10 @@ fn assert_retired_then_escalated(work: &Path, worker: &Session, pid: u32) {
 /// silently abandoning the dispute.
 #[test]
 fn a_failed_adjudicator_spawn_retires_the_disputing_agent_before_escalating() {
-    if skip_without_group_signals(
-        "a_failed_adjudicator_spawn_retires_the_disputing_agent_before_escalating",
-    ) {
-        return;
-    }
+    require_orphan_signals!();
     let (temp, work) = work_dir();
-    let (worker, pid) = live_disputing_stage(&work, make_stage("s1"));
+    let (worker, stand_in) = live_disputing_stage(&work, make_stage("s1"));
+    let pid = stand_in.pid();
     // Every adjudication spawn fails before reaching a terminal backend: the
     // judge's signal cannot be written under a `signals` that is a file.
     std::fs::write(work.join("signals"), b"not a directory").unwrap();
@@ -163,14 +145,12 @@ fn a_failed_adjudicator_spawn_retires_the_disputing_agent_before_escalating() {
 
 #[test]
 fn the_evidence_cap_retires_the_disputing_agent_before_escalating() {
-    if skip_without_group_signals("the_evidence_cap_retires_the_disputing_agent_before_escalating")
-    {
-        return;
-    }
+    require_orphan_signals!();
     let (temp, work) = work_dir();
     let mut stage = make_stage("s1");
     stage.tally.evidence_rounds = MAX_EVIDENCE_ROUNDS;
-    let (worker, pid) = live_disputing_stage(&work, stage);
+    let (worker, stand_in) = live_disputing_stage(&work, stage);
+    let pid = stand_in.pid();
 
     orchestrator_for(&work, temp.path())
         .check_pending_disputes()

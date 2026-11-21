@@ -20,17 +20,18 @@ use crate::claude::auth::AuthProbe;
 use crate::fs::session_files::load_session_exact;
 use crate::models::session::{Session, SessionExitReason, SessionStatus};
 use crate::orchestrator::monitor::heartbeat::{write_heartbeat, Heartbeat};
+use crate::test_stand_in::{require_orphan_signals, Orphan};
 use crate::verify::transitions::{load_stage, update_stage};
 
 /// A stage executing behind a live agent, tracked by the daemon.
-fn tracked_stall(work: &Path, repo_root: &Path) -> (Session, u32, Orchestrator) {
-    let (session, agent_pid) = stalled_stage(work);
+fn tracked_stall(work: &Path, repo_root: &Path) -> (Session, Orphan, Orchestrator) {
+    let (session, agent) = stalled_stage(work);
     let mut orchestrator = orchestrator_for(work, repo_root);
     orchestrator.graph.mark_executing("test-stage").unwrap();
     orchestrator
         .active_sessions
         .insert("test-stage".to_string(), session.clone());
-    (session, agent_pid, orchestrator)
+    (session, agent, orchestrator)
 }
 
 /// The only heartbeat a session that never reached a tool call has written.
@@ -40,13 +41,11 @@ fn write_session_start(work: &Path, session: &Session) {
     write_heartbeat(work, &heartbeat).unwrap();
 }
 
-/// Whether the stand-in agent outlived `outcome`. A survivor is terminated
-/// before anything is asserted, so a failing test leaves no process behind.
-fn agent_survived(agent_pid: u32, outcome: anyhow::Result<()>) -> bool {
-    let survived = crate::process::is_process_alive(agent_pid);
-    if survived {
-        let _ = crate::process::terminate(agent_pid);
-    }
+/// Whether the stand-in agent outlived `outcome`. A survivor is killed before
+/// anything is asserted, so a failing test leaves no process behind.
+fn agent_survived(agent: Orphan, outcome: anyhow::Result<()>) -> bool {
+    let survived = crate::process::is_process_alive(agent.pid());
+    drop(agent);
     outcome.unwrap();
     survived
 }
@@ -74,7 +73,7 @@ fn review_reason(work: &Path) -> String {
 }
 
 /// A tracked stall whose stage has already used two automatic recoveries.
-fn exhausted_stall(work: &Path, repo_root: &Path) -> (Session, u32, Orchestrator) {
+fn exhausted_stall(work: &Path, repo_root: &Path) -> (Session, Orphan, Orchestrator) {
     let stall = tracked_stall(work, repo_root);
     update_stage("test-stage", work, |stage| {
         stage.stall_recoveries = 2;
@@ -86,9 +85,10 @@ fn exhausted_stall(work: &Path, repo_root: &Path) -> (Session, u32, Orchestrator
 
 #[test]
 fn exhausted_stall_parks_the_stage_and_takes_the_agent_down() {
+    require_orphan_signals!();
     let temp = handoff_work_dir();
     let work = temp.path().join(".loom").join("work");
-    let (session, agent_pid, mut orchestrator) = exhausted_stall(&work, temp.path());
+    let (session, agent, mut orchestrator) = exhausted_stall(&work, temp.path());
     let login_calls = Cell::new(0);
     let login = || -> Option<AuthProbe> {
         login_calls.set(login_calls.get() + 1);
@@ -99,7 +99,7 @@ fn exhausted_stall_parks_the_stage_and_takes_the_agent_down() {
     let outcome = park(&mut orchestrator, &session, ESCALATING, &login, &tail);
 
     assert!(
-        !agent_survived(agent_pid, outcome),
+        !agent_survived(agent, outcome),
         "a parked stage must not keep a live agent in its worktree"
     );
     assert_eq!(
@@ -136,9 +136,10 @@ fn exhausted_stall_parks_the_stage_and_takes_the_agent_down() {
 
 #[test]
 fn never_worked_session_parks_without_a_recovery_charge() {
+    require_orphan_signals!();
     let temp = handoff_work_dir();
     let work = temp.path().join(".loom").join("work");
-    let (session, agent_pid, mut orchestrator) = tracked_stall(&work, temp.path());
+    let (session, agent, mut orchestrator) = tracked_stall(&work, temp.path());
     write_session_start(&work, &session);
     let login = || {
         Some(AuthProbe::LoggedIn {
@@ -150,7 +151,7 @@ fn never_worked_session_parks_without_a_recovery_charge() {
     let outcome = park(&mut orchestrator, &session, BUDGET_SECS + 10, &login, &tail);
 
     assert!(
-        !agent_survived(agent_pid, outcome),
+        !agent_survived(agent, outcome),
         "a session that never worked is taken down at its first report"
     );
     let stage = load_stage("test-stage", &work).unwrap();
@@ -174,9 +175,10 @@ fn never_worked_session_parks_without_a_recovery_charge() {
 
 #[test]
 fn not_logged_in_session_parks_with_the_login_remedy() {
+    require_orphan_signals!();
     let temp = handoff_work_dir();
     let work = temp.path().join(".loom").join("work");
-    let (session, agent_pid, mut orchestrator) = tracked_stall(&work, temp.path());
+    let (session, agent, mut orchestrator) = tracked_stall(&work, temp.path());
     write_session_start(&work, &session);
     let login_calls = Cell::new(0);
     let login = || {
@@ -188,7 +190,7 @@ fn not_logged_in_session_parks_with_the_login_remedy() {
     let outcome = park(&mut orchestrator, &session, BUDGET_SECS + 10, &login, &tail);
 
     assert!(
-        !agent_survived(agent_pid, outcome),
+        !agent_survived(agent, outcome),
         "a session that is not logged in is taken down at its first report"
     );
     assert_eq!(login_calls.get(), 1, "the login is probed once per park");

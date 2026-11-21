@@ -2,24 +2,19 @@
 //! on the readiness pipe, plus the spawn guard and the daemon's command line.
 
 use super::*;
-use crate::process::sandbox_probe::skip_without_group_signals;
+use crate::test_stand_in::{require_signals, StandIn};
 use nix::sys::signal::Signal;
 use std::ffi::OsStr;
 use std::os::unix::process::ExitStatusExt;
 use tempfile::TempDir;
 
-/// Kills and reaps the child when the test ends, pass or fail.
-struct Reaped(Child);
+/// How a test's child is owned: [`StandIn::exits_alone`] for a script that
+/// ends by itself, [`StandIn::direct`] for one `await_ready` must signal.
+type Spawn = fn(&mut Command) -> StandIn;
 
-impl Drop for Reaped {
-    fn drop(&mut self) {
-        crate::process::sandbox_probe::reap::kill_and_reap(&mut self.0);
-    }
-}
-
-/// `/bin/sh -c 'ulimit -c 0; <script>' <arg0>`, stdin null, stdout and
-/// stderr on one pipe whose read end is returned.
-fn spawn_script(script: &str, arg0: &Path) -> (Reaped, PipeReader) {
+/// `/bin/sh -c 'ulimit -c 0; <script>' <arg0>` spawned through `spawn`, stdin
+/// null, stdout and stderr on one pipe whose read end is returned.
+fn spawn_script(script: &str, arg0: &Path, spawn: Spawn) -> (StandIn, PipeReader) {
     let (reader, writer) = std::io::pipe().expect("create pipe");
     let mut command = Command::new("/bin/sh");
     command
@@ -29,9 +24,9 @@ fn spawn_script(script: &str, arg0: &Path) -> (Reaped, PipeReader) {
         .stdin(Stdio::null())
         .stdout(writer.try_clone().expect("clone pipe writer"))
         .stderr(writer);
-    let child = command.spawn().expect("spawn sh");
+    let child = spawn(&mut command);
     drop(command);
-    (Reaped(child), reader)
+    (child, reader)
 }
 
 fn timing(deadline_ms: u64, grace_ms: u64) -> ReadyTiming {
@@ -43,11 +38,11 @@ fn timing(deadline_ms: u64, grace_ms: u64) -> ReadyTiming {
 
 /// Runs `script` with `$0` set to a log path in a fresh temp dir and returns
 /// `await_ready`'s error text.
-fn launch_failure(script: &str, timing: ReadyTiming) -> String {
+fn launch_failure(script: &str, timing: ReadyTiming, spawn: Spawn) -> String {
     let dir = TempDir::new().expect("temp dir");
     let log = dir.path().join("orchestrator.log");
-    let (mut child, reader) = spawn_script(script, &log);
-    match await_ready(&mut child.0, reader, &log, timing) {
+    let (mut child, reader) = spawn_script(script, &log, spawn);
+    match await_ready(child.child(), reader, &log, timing) {
         Ok(()) => panic!("`{script}` must not be accepted as a ready daemon"),
         Err(error) => format!("{error:#}"),
     }
@@ -55,21 +50,23 @@ fn launch_failure(script: &str, timing: ReadyTiming) -> String {
 
 #[test]
 fn a_ready_child_that_stays_alive_is_accepted() {
-    let false = skip_without_group_signals("a_ready_child_that_stays_alive_is_accepted") else {
-        return;
-    };
+    require_signals!();
     let dir = TempDir::new().expect("temp dir");
     let log = dir.path().join("orchestrator.log");
-    let (mut child, reader) = spawn_script("printf '\\001'; exec sleep 30", &log);
+    let (mut child, reader) = spawn_script("printf '\\001'; exec sleep 30", &log, StandIn::direct);
 
-    let result = await_ready(&mut child.0, reader, &log, timing(2000, 100));
+    let result = await_ready(child.child(), reader, &log, timing(2000, 100));
 
     assert!(result.is_ok(), "{result:?}");
 }
 
 #[test]
 fn an_early_exit_reports_status_and_text() {
-    let error = launch_failure("printf lockfail >&2; exit 3", timing(2000, 100));
+    let error = launch_failure(
+        "printf lockfail >&2; exit 3",
+        timing(2000, 100),
+        StandIn::exits_alone,
+    );
 
     assert!(error.contains("exit status 3"), "{error}");
     assert!(error.contains("lockfail"), "{error}");
@@ -79,7 +76,7 @@ fn an_early_exit_reports_status_and_text() {
 fn diagnostic_text_keeps_only_the_last_64_kib() {
     let script = "yes filler | head -c 200000 >&2; printf TAILMARK >&2; exit 3";
 
-    let error = launch_failure(script, timing(2000, 100));
+    let error = launch_failure(script, timing(2000, 100), StandIn::exits_alone);
 
     assert!(error.contains("TAILMARK"), "the tail of the text is kept");
     assert!(error.contains("exit status 3"), "the status is still named");
@@ -94,7 +91,7 @@ fn diagnostic_text_keeps_only_the_last_64_kib() {
 fn ready_then_abort_names_the_signal_and_the_log_tail() {
     let script = "printf '\\002'; echo boom >\"$0\"; printf '\\001'; kill -s ABRT $$";
 
-    let error = launch_failure(script, timing(2000, 2000));
+    let error = launch_failure(script, timing(2000, 2000), StandIn::exits_alone);
 
     assert!(error.contains("SIGABRT"), "{error}");
     assert!(error.contains("boom"), "{error}");
@@ -102,33 +99,27 @@ fn ready_then_abort_names_the_signal_and_the_log_tail() {
 
 #[test]
 fn a_silent_child_times_out_and_is_reaped() {
-    let false = skip_without_group_signals("a_silent_child_times_out_and_is_reaped") else {
-        return;
-    };
+    require_signals!();
     let dir = TempDir::new().expect("temp dir");
     let log = dir.path().join("orchestrator.log");
-    let (mut child, reader) = spawn_script("exec sleep 30", &log);
+    let (mut child, reader) = spawn_script("exec sleep 30", &log, StandIn::direct);
 
-    let result = await_ready(&mut child.0, reader, &log, timing(200, 100));
+    let result = await_ready(child.child(), reader, &log, timing(200, 100));
 
     let error = format!("{:#}", result.expect_err("a silent child is not ready"));
     assert!(error.contains("did not become ready"), "{error}");
     assert!(
-        matches!(child.0.try_wait(), Ok(Some(_))),
+        matches!(child.child().try_wait(), Ok(Some(_))),
         "the timed-out child is terminated and reaped"
     );
 }
 
 #[test]
 fn a_timed_out_child_reports_what_it_wrote_on_termination() {
-    let false =
-        skip_without_group_signals("a_timed_out_child_reports_what_it_wrote_on_termination")
-    else {
-        return;
-    };
+    require_signals!();
     let script = "trap 'printf LASTWORDS; exit 1' TERM; while :; do sleep 0.1; done";
 
-    let error = launch_failure(script, timing(300, 100));
+    let error = launch_failure(script, timing(300, 100), StandIn::direct);
 
     assert!(error.contains("did not become ready"), "{error}");
     assert!(
@@ -139,16 +130,12 @@ fn a_timed_out_child_reports_what_it_wrote_on_termination() {
 
 #[test]
 fn a_pipe_closed_while_the_child_lives_terminates_and_reaps_it() {
-    let false =
-        skip_without_group_signals("a_pipe_closed_while_the_child_lives_terminates_and_reaps_it")
-    else {
-        return;
-    };
+    require_signals!();
     let dir = TempDir::new().expect("temp dir");
     let log = dir.path().join("orchestrator.log");
-    let (mut child, reader) = spawn_script("exec >&- 2>&-; exec sleep 30", &log);
+    let (mut child, reader) = spawn_script("exec >&- 2>&-; exec sleep 30", &log, StandIn::direct);
 
-    let result = await_ready(&mut child.0, reader, &log, timing(5000, 100));
+    let result = await_ready(child.child(), reader, &log, timing(5000, 100));
 
     let error = format!("{:#}", result.expect_err("a closed pipe is not ready"));
     assert!(
@@ -156,7 +143,7 @@ fn a_pipe_closed_while_the_child_lives_terminates_and_reaps_it() {
         "{error}"
     );
     let status = child
-        .0
+        .child()
         .try_wait()
         .expect("check the child")
         .expect("the child is reaped");
@@ -167,7 +154,7 @@ fn a_pipe_closed_while_the_child_lives_terminates_and_reaps_it() {
 fn the_log_tail_is_made_safe_for_the_terminal() {
     let script = "printf '\\002'; printf 'evil\\033]52;c;AAAA\\007tail\\n' >\"$0\"; exit 3";
 
-    let error = launch_failure(script, timing(2000, 100));
+    let error = launch_failure(script, timing(2000, 100), StandIn::exits_alone);
 
     assert!(error.contains("evil"), "{error}");
     assert!(

@@ -6,6 +6,8 @@ use crate::pressure::codex_run::spawn_codex_with_fallback;
 #[cfg(target_os = "linux")]
 use crate::pressure::PressureDriver;
 #[cfg(target_os = "linux")]
+use crate::test_stand_in::StandIn;
+#[cfg(target_os = "linux")]
 use std::fs;
 #[cfg(target_os = "linux")]
 use std::os::unix::fs::PermissionsExt;
@@ -129,28 +131,31 @@ fn a_termination_signal_retires_codex_and_exits_130() {
     if let Some(repo) = std::env::var_os(SIGNAL_REPO_ENV) {
         await_signal_with_codex_running(Path::new(&repo));
     }
+    crate::test_stand_in::require_signals!();
     for signal in [Signal::SIGINT, Signal::SIGTERM, Signal::SIGHUP] {
         let repo = tempfile::tempdir().unwrap();
         fs::write(repo.path().join("exec"), WAITING_CODEX).unwrap();
-        let mut driver = std::process::Command::new(std::env::current_exe().unwrap())
-            .args([
-                "--exact",
-                "commands::pressure::terminal::tests::\
-                 a_termination_signal_retires_codex_and_exits_130",
-                "--nocapture",
-            ])
-            .env(SIGNAL_REPO_ENV, repo.path())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-            .unwrap();
+        let mut driver = StandIn::direct(
+            std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "commands::pressure::terminal::tests::\
+                     a_termination_signal_retires_codex_and_exits_130",
+                    "--nocapture",
+                ])
+                .env(SIGNAL_REPO_ENV, repo.path())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::piped()),
+        );
         let descendant = descendant_of(repo.path());
 
         kill(Pid::from_raw(driver.id() as i32), signal).unwrap();
 
-        assert_eq!(driver.wait().unwrap().code(), Some(130), "{signal}");
+        let status = driver.wait_within(Duration::from_secs(20));
+        assert_eq!(status.code(), Some(130), "{signal}");
         let mut stderr = String::new();
         driver
+            .child()
             .stderr
             .take()
             .unwrap()

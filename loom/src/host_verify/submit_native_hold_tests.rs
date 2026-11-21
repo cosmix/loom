@@ -3,14 +3,6 @@ use super::*;
 use crate::native_worker::model::{NativeManifest, NATIVE_DEADLINE_SECS};
 use crate::native_worker::store::create_invocation;
 
-pub(crate) struct ProcessGuard(pub(crate) u32);
-
-impl Drop for ProcessGuard {
-    fn drop(&mut self) {
-        let _ = crate::process::terminate(self.0);
-    }
-}
-
 pub(crate) fn seed(work: &Path, stage: &str) -> std::path::PathBuf {
     let manifest = NativeManifest {
         v: 1,

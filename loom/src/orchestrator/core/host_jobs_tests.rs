@@ -1,7 +1,6 @@
 //! The host-job runner on the orchestrator tick: running, stopping, and
 //! applying what ends, retries included.
 
-use crate::process::sandbox_probe::skip_without_group_signals;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -20,6 +19,7 @@ use crate::host_verify::{JobKind, JobRecord, JobState};
 use crate::models::session::{Session, SessionBackendKind, SessionStatus, TerminalConfig};
 use crate::models::stage::{Stage, StageStatus};
 use crate::plan::ExecutionGraph;
+use crate::test_stand_in::require_signals;
 use crate::verify::contracts::refusal::{daemon_refusal, INFRASTRUCTURE_PREFIX};
 
 const STAGE: &str = "stage-a";
@@ -121,11 +121,7 @@ fn the_tick_runs_a_queued_job_to_its_result() {
 
 #[test]
 fn stopping_the_host_jobs_cancels_a_running_job_and_kills_its_child() {
-    if skip_without_group_signals(
-        "stopping_the_host_jobs_cancels_a_running_job_and_kills_its_child",
-    ) {
-        return;
-    }
+    require_signals!();
     let (_temp, work, mut orchestrator) = orchestrator();
     orchestrator.set_host_job_runner(shell_runner(&work, "sleep 600"));
     queue(&work, JobKind::Check);

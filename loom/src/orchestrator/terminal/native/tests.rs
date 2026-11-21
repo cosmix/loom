@@ -3,6 +3,7 @@
 use super::*;
 use crate::orchestrator::terminal::emulator::TerminalEmulator;
 use crate::process::sandbox_probe::skip_without_group_signals;
+use crate::test_stand_in::StandIn;
 use tempfile::TempDir;
 
 fn test_backend(work_dir: &std::path::Path) -> NativeBackend {
@@ -88,10 +89,7 @@ fn kill_session_retains_verified_identity_and_is_idempotent_after_exit() {
     let session = stage_session("verified-then-missing");
     let (_, pid_key) = NativeBackend::window_title_and_pid_key(&session).unwrap();
 
-    let mut child = std::process::Command::new("sleep")
-        .arg("60")
-        .spawn()
-        .unwrap();
+    let mut child = StandIn::direct(std::process::Command::new("sleep").arg("60"));
     let start_time = crate::process::process_start_time(child.id());
     assert!(
         start_time.is_some(),
@@ -114,7 +112,7 @@ fn kill_session_retains_verified_identity_and_is_idempotent_after_exit() {
         pid_tracking::read_pid_entry(work_dir.path(), &pid_key).is_some(),
         "an asynchronous verified kill must retain its tracking entry"
     );
-    let _ = child.wait();
+    child.wait_within(std::time::Duration::from_secs(5));
 
     // Second kill: the retained identity now verifies Dead and is an
     // idempotent no-op.

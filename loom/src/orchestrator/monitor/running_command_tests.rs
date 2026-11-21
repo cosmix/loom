@@ -1,14 +1,15 @@
 //! Telling a Bash tool call apart from the children a Claude process always
 //! keeps, and reading both process-table formats that name them.
 
-use std::os::unix::process::CommandExt;
 use std::time::{Duration, Instant};
 
 use super::*;
 use crate::models::session::SessionType;
 use crate::orchestrator::monitor::direct_worker::live_tests::cannot_run_live_trees;
 use crate::orchestrator::terminal::native::create_wrapper_script;
-use crate::process::OwnedProcess;
+#[cfg(target_os = "linux")]
+use crate::test_stand_in::require_signals;
+use crate::test_stand_in::StandIn;
 
 /// The agent's pid in the synthetic process tables below.
 const AGENT: u32 = 100;
@@ -203,7 +204,7 @@ fn stub_claude(dir: &Path) -> String {
 /// Run the REAL generated session wrapper over [`stub_claude`] for
 /// `session`, in its own process group so dropping the guard ends it and
 /// everything it started.
-fn run_wrapped_stub(dir: &Path, session: &Session, pid_key: &str) -> OwnedProcess {
+fn run_wrapped_stub(dir: &Path, session: &Session, pid_key: &str) -> StandIn {
     let stub = dir.join("claude-stub.sh");
     std::fs::write(&stub, stub_claude(dir)).unwrap();
     let claude_cmd = format!("/bin/sh '{}'", stub.display());
@@ -221,14 +222,12 @@ fn run_wrapped_stub(dir: &Path, session: &Session, pid_key: &str) -> OwnedProces
     .unwrap();
     // `bash <script>` reads the script instead of executing the file just
     // written, so a sibling test's fork cannot fail the spawn with ETXTBSY.
-    let child = std::process::Command::new("bash")
-        .arg(&wrapper)
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .process_group(0)
-        .spawn()
-        .expect("failed to run the session wrapper");
-    OwnedProcess::new(child)
+    StandIn::group_leader(
+        std::process::Command::new("bash")
+            .arg(&wrapper)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null()),
+    )
 }
 
 /// Whether the wrapper's `tee` runs under `agent`, directly or under the
@@ -298,18 +297,11 @@ fn portable_cpu_time_parser_rejects_unknown_and_counts_days() {
 #[cfg(target_os = "linux")]
 #[test]
 fn a_reaped_child_leaves_its_work_in_the_command_total() {
-    let false = crate::process::sandbox_probe::skip_without_group_signals(
-        "a_reaped_child_leaves_its_work_in_the_command_total",
-    ) else {
-        return;
-    };
-    let mut shell = std::process::Command::new("sh")
-        .args([
-            "-c",
-            "sh -c 'i=0; while [ $i -lt 3000000 ]; do i=$((i+1)); done'; exec sleep 30",
-        ])
-        .spawn()
-        .unwrap();
+    require_signals!();
+    let shell = StandIn::direct(std::process::Command::new("sh").args([
+        "-c",
+        "sh -c 'i=0; while [ $i -lt 3000000 ]; do i=$((i+1)); done'; exec sleep 30",
+    ]));
     let pid = shell.id();
     let deadline = Instant::now() + Duration::from_secs(30);
     let mut peak = 0;
@@ -326,7 +318,7 @@ fn a_reaped_child_leaves_its_work_in_the_command_total() {
         std::thread::sleep(Duration::from_millis(5));
     };
     let after = command_cpu_ticks(&[pid]);
-    crate::process::sandbox_probe::reap::kill_and_reap(&mut shell);
+    drop(shell);
     assert!(finished, "the child never finished");
     assert!(peak > 0, "the child's work was never sampled");
     assert!(after.unwrap() >= peak, "{after:?} fell below {peak}");

@@ -18,7 +18,7 @@ use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::core::OrchestratorConfig;
 use crate::orchestrator::terminal::native::write_test_pid_identity;
 use crate::plan::ExecutionGraph;
-use crate::process::sandbox_probe::skip_without_group_signals;
+use crate::test_stand_in::{orphan, require_orphan_signals, Orphan};
 use crate::verify::transitions::{create_stage, load_stage, update_stage};
 use tempfile::TempDir;
 
@@ -46,22 +46,6 @@ fn orchestrator_for(work_dir: &std::path::Path, repo_root: &std::path::Path) -> 
         ..Default::default()
     };
     Orchestrator::new(config, ExecutionGraph::build(Vec::new()).unwrap()).unwrap()
-}
-
-/// Start a process that outlives its parent shell, so a test can watch loom
-/// actually kill it. `sh` exits once it has echoed the pid, reparenting
-/// `sleep` to init, which reaps it as soon as it dies — a direct child would
-/// instead linger as an unreaped zombie that still answers `kill(pid, 0)`.
-fn spawn_orphan_process() -> u32 {
-    let output = std::process::Command::new("sh")
-        .arg("-c")
-        .arg("sleep 30 >/dev/null 2>&1 & echo $!")
-        .output()
-        .expect("failed to spawn a stand-in judge process");
-    String::from_utf8_lossy(&output.stdout)
-        .trim()
-        .parse()
-        .expect("the stand-in judge process printed no pid")
 }
 
 /// A stage under adjudication, as `try_request_adjudication` leaves it.
@@ -121,7 +105,6 @@ fn write_verdict(work: &std::path::Path, stage_id: &str, id: u32, session_id: Op
     .unwrap();
 }
 
-/// A saved, live adjudication session with a real process behind it.
 /// A running tmux-backed session assigned to `test-stage`, saved under `work`.
 fn running_tmux_session(work: &std::path::Path) -> Session {
     let mut session = Session::new();
@@ -132,15 +115,17 @@ fn running_tmux_session(work: &std::path::Path) -> Session {
     session
 }
 
-fn live_judge(work: &std::path::Path) -> (Session, u32) {
+/// A saved, live adjudication session with a real process behind it.
+fn live_judge(work: &std::path::Path) -> (Session, Orphan) {
     let mut session = Session::new_adjudication("test-stage");
     session.status = SessionStatus::Running;
     session.backend = SessionBackendKind::Tmux;
     save_session(&session, work).unwrap();
-    let pid = spawn_orphan_process();
+    let stand_in = orphan();
+    let pid = stand_in.pid();
     write_test_pid_identity(work, &session, pid).unwrap();
     assert!(crate::process::is_process_alive(pid));
-    (session, pid)
+    (session, stand_in)
 }
 
 /// A dispute lock that cannot be taken is told to the operator once, however
@@ -201,16 +186,15 @@ fn receipt_replay_publishes_marker_without_retiring_a_later_session() {
 
 #[test]
 fn reset_between_scan_and_claim_cannot_retire_fresh_agent() {
-    if skip_without_group_signals("reset_between_scan_and_claim_cannot_retire_fresh_agent") {
-        return;
-    }
+    require_orphan_signals!();
     let temp = handoff_work_dir();
     let work = temp.path().join(".work");
     stage_needing_adjudication(&work);
     write_dispute_request(&work, "test-stage", 1);
     write_verdict(&work, "test-stage", 1, None);
     let fresh = running_tmux_session(&work);
-    let pid = spawn_orphan_process();
+    let stand_in = orphan();
+    let pid = stand_in.pid();
     write_test_pid_identity(&work, &fresh, pid).unwrap();
 
     let hook_work = work.clone();
@@ -243,9 +227,6 @@ fn reset_between_scan_and_claim_cannot_retire_fresh_agent() {
         Some(fresh.id.as_str())
     );
     assert!(work.join("disputes/test-stage/1/closed.marker").exists());
-    let _ = std::process::Command::new("kill")
-        .arg(pid.to_string())
-        .status();
 }
 
 /// The daemon must close the judge named by the applied verdict: a Claude
@@ -253,14 +234,13 @@ fn reset_between_scan_and_claim_cannot_retire_fresh_agent() {
 /// left alive blocks the next dispute on the stage (`claim_session_slot`).
 #[test]
 fn applying_a_verdict_closes_the_judge_that_wrote_it() {
-    if skip_without_group_signals("applying_a_verdict_closes_the_judge_that_wrote_it") {
-        return;
-    }
+    require_orphan_signals!();
     let temp = handoff_work_dir();
     let work = temp.path().join(".work");
     stage_needing_adjudication(&work);
     write_dispute_request(&work, "test-stage", 1);
-    let (judge, judge_pid) = live_judge(&work);
+    let (judge, judge_stand_in) = live_judge(&work);
+    let judge_pid = judge_stand_in.pid();
     write_verdict(&work, "test-stage", 1, Some(judge.id.clone()));
 
     let mut orchestrator = orchestrator_for(&work, temp.path());
@@ -286,15 +266,15 @@ fn applying_a_verdict_closes_the_judge_that_wrote_it() {
 /// for the same stage — however it came to exist — must never be touched.
 #[test]
 fn a_judge_for_another_dispute_is_left_alone() {
-    if skip_without_group_signals("a_judge_for_another_dispute_is_left_alone") {
-        return;
-    }
+    require_orphan_signals!();
     let temp = handoff_work_dir();
     let work = temp.path().join(".work");
     stage_needing_adjudication(&work);
     write_dispute_request(&work, "test-stage", 1);
-    let (judge, judge_pid) = live_judge(&work);
-    let (other_judge, other_pid) = live_judge(&work);
+    let (judge, judge_stand_in) = live_judge(&work);
+    let judge_pid = judge_stand_in.pid();
+    let (other_judge, other_stand_in) = live_judge(&work);
+    let other_pid = other_stand_in.pid();
     write_verdict(&work, "test-stage", 1, Some(judge.id.clone()));
 
     let mut orchestrator = orchestrator_for(&work, temp.path());
@@ -309,8 +289,6 @@ fn a_judge_for_another_dispute_is_left_alone() {
         .unwrap()
         .unwrap();
     assert_eq!(untouched.status, SessionStatus::Running);
-
-    let _ = crate::process::terminate(other_pid);
 }
 
 /// A verdict written before `session_id` existed falls back to closing any
@@ -318,17 +296,14 @@ fn a_judge_for_another_dispute_is_left_alone() {
 /// since a live judge might still be working one of those.
 #[test]
 fn a_verdict_without_a_session_id_closes_idle_judges_only_when_no_dispute_remains() {
-    if skip_without_group_signals(
-        "a_verdict_without_a_session_id_closes_idle_judges_only_when_no_dispute_remains",
-    ) {
-        return;
-    }
+    require_orphan_signals!();
     let temp = handoff_work_dir();
     let work = temp.path().join(".work");
     stage_needing_adjudication(&work);
     write_dispute_request(&work, "test-stage", 1);
     write_dispute_request(&work, "test-stage", 2);
-    let (judge, judge_pid) = live_judge(&work);
+    let (judge, judge_stand_in) = live_judge(&work);
+    let judge_pid = judge_stand_in.pid();
     write_verdict(&work, "test-stage", 1, None);
 
     let mut orchestrator = orchestrator_for(&work, temp.path());

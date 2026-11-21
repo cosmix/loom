@@ -257,11 +257,6 @@ fn a_planted_job_cannot_shadow_or_extend_the_authorized_direct_worker() {
     else {
         return;
     };
-    let false =
-        cannot_run_live_trees("a_planted_job_cannot_shadow_or_extend_the_authorized_direct_worker")
-    else {
-        return;
-    };
     let now = Utc::now();
     let (fixture, invocation, started) = authorized_invocation(now, 60, 11);
     plant_job(&fixture, &invocation, 1);
@@ -307,11 +302,6 @@ fn a_parallel_tool_call_does_not_void_a_healthy_forward() {
 
 #[test]
 fn a_parallel_tool_call_does_not_void_a_healthy_companion_forward() {
-    let false =
-        cannot_run_live_trees("a_parallel_tool_call_does_not_void_a_healthy_companion_forward")
-    else {
-        return;
-    };
     let false =
         cannot_run_live_trees("a_parallel_tool_call_does_not_void_a_healthy_companion_forward")
     else {

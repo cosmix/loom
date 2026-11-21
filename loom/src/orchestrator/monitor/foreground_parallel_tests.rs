@@ -2,7 +2,6 @@
 //! agent, sampled through the path the stall decision uses.
 
 use std::io::Write;
-use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::{Duration as StdDuration, Instant};
@@ -18,7 +17,8 @@ use crate::assets::install::test_env::InstallRootsEnv;
 use crate::codex_lifecycle::test_support::{Fixture, INV_A};
 use crate::orchestrator::monitor::direct_worker::live_tests::cannot_run_live_trees;
 use crate::orchestrator::terminal::native::NativeBackend;
-use crate::process::{process_start_time, OwnedProcess};
+use crate::process::process_start_time;
+use crate::test_stand_in::StandIn;
 
 /// A launcher running a worker that burns CPU, its pid written to `$1`, stopped
 /// by the test until the test says otherwise.
@@ -27,18 +27,22 @@ const BUSY_LAUNCHER: &str =
 
 /// A stand-in agent running `first` and then [`BUSY_LAUNCHER`] as tool calls.
 /// `read` puts both launchers past the agent's start.
-fn spawn_agent(first: &str, worker_file: &Path) -> (OwnedProcess, u32) {
+fn spawn_agent(first: &str, worker_file: &Path) -> (StandIn, u32) {
     let script = format!("read line; {first} {BUSY_LAUNCHER} wait");
-    let mut child = Command::new("sh")
-        .args(["-c", &script, "sh"])
-        .arg(worker_file)
-        .stdin(Stdio::piped())
-        .process_group(0)
-        .spawn()
-        .unwrap();
+    let mut agent = StandIn::group_leader(
+        Command::new("sh")
+            .args(["-c", &script, "sh"])
+            .arg(worker_file)
+            .stdin(Stdio::piped()),
+    );
     std::thread::sleep(StdDuration::from_millis(25));
-    child.stdin.take().unwrap().write_all(b"go\n").unwrap();
-    let agent = OwnedProcess::new(child);
+    agent
+        .child()
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"go\n")
+        .unwrap();
     let worker = wait_for_pid(worker_file);
     kill(Pid::from_raw(worker as i32), Signal::SIGSTOP).unwrap();
     // The launchers settle into `wait`, so only the worker can move the sum.

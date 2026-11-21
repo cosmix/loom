@@ -93,6 +93,36 @@ impl Repo {
         );
         output
     }
+
+    /// Run `script` confined until it creates `ready`, run `between`, create
+    /// `go`, and return the session's status, stdout and stderr once it ends.
+    /// bubblewrap's sandboxed shell stays in the session's process group, so
+    /// a failure on the way ends its wait for `go` when the group is killed.
+    pub(super) fn handshake(
+        &self,
+        script: &str,
+        (ready, go): (&Path, &Path),
+        between: impl FnOnce(),
+    ) -> (std::process::ExitStatus, String, String) {
+        // Files, unlike pipes, never hold a read open after the session ends.
+        let (out, err) = (self.outside.join("out"), self.outside.join("err"));
+        let mut command = self.confined_command(script);
+        let file = |path: &PathBuf| std::fs::File::create(path).unwrap();
+        command.stdout(file(&out)).stderr(file(&err));
+        let mut session = crate::test_stand_in::StandIn::group_leader(&mut command);
+        let bound = std::time::Duration::from_secs(30);
+        let deadline = std::time::Instant::now() + bound;
+        while !ready.exists() {
+            let late = std::time::Instant::now() > deadline;
+            assert!(!late, "the session never started within {bound:?}");
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        between();
+        std::fs::write(go, "").unwrap();
+        let status = session.wait_within(bound);
+        let read = |path: &PathBuf| String::from_utf8_lossy(&std::fs::read(path).unwrap()).into();
+        (status, read(&out), read(&err))
+    }
 }
 
 pub(super) fn skip(test: &str) -> bool {
@@ -242,6 +272,7 @@ fn a_host_rewrite_of_packed_refs_drops_its_bind_and_the_look_catches_the_plant()
     if skip("a_host_rewrite_of_packed_refs_drops_its_bind_and_the_look_catches_the_plant") {
         return;
     }
+    crate::test_stand_in::require_signals!();
     let repo = repo();
     let packed = repo.common.join("packed-refs");
     let victim = repo.outside.join("victim");
@@ -254,26 +285,12 @@ fn a_host_rewrite_of_packed_refs_drops_its_bind_and_the_look_catches_the_plant()
         packed = packed.display(),
         victim = victim.display(),
     );
-    let mut command = repo.confined_command(&script);
-    let mut session = command
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .unwrap();
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
-    while !ready.exists() {
-        if std::time::Instant::now() > deadline {
-            crate::process::sandbox_probe::reap::kill_and_reap(&mut session);
-            panic!("the session never started within 30 s");
-        }
-        std::thread::sleep(std::time::Duration::from_millis(20));
-    }
-    git(&repo.repo, &["pack-refs", "--all"]);
-    std::fs::write(&go, "").unwrap();
-    let session = session.wait_with_output().unwrap();
+    let (status, stdout, stderr) = repo.handshake(&script, (&ready, &go), || {
+        git(&repo.repo, &["pack-refs", "--all"]);
+    });
     assert!(
-        String::from_utf8_lossy(&session.stdout).contains("rc=0"),
-        "the bind held; the look and this test can be simplified: {session:?}"
+        stdout.contains("rc=0"),
+        "the bind held; the look and this test can be simplified: {status:?} {stdout:?} {stderr:?}"
     );
 
     let pinned = crate::git::worktree::WorktreeGit::pinned(&repo.repo, &repo.worktree).unwrap();

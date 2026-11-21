@@ -308,9 +308,7 @@ mod tests {
         let live = serde_json::json!({"pid": std::process::id()});
         assert!(owner_alive_with_record(live));
 
-        let mut child = std::process::Command::new("true").spawn().unwrap();
-        let dead = child.id();
-        child.wait().unwrap();
+        let dead = crate::test_stand_in::reaped_pid();
         assert!(!owner_alive_with_record(serde_json::json!({"pid": dead})));
     }
 }

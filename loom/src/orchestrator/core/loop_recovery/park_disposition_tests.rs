@@ -1,15 +1,14 @@
-use super::super::tests::spawn_orphan_process;
 use super::park_tests::{assert_ownership_unknown, block, fixture};
 use crate::fs::session_files::load_session_exact;
 use crate::models::session::SessionStatus;
 use crate::models::stage::StageStatus;
 use crate::orchestrator::terminal::native::write_test_pid_identity;
-use crate::process::sandbox_probe::skip_without_group_signals;
 use crate::subagent_lifecycle::model::{
     CodexEvidence, CodexEvidenceKind, CodexEvidenceOutcome, CodexExecution, LifecycleProducer,
     LifecycleRecord, LifecycleState, WorkerIdentity, LIFECYCLE_VERSION,
 };
 use crate::subagent_lifecycle::store::{append_locked, codex_event_id, replay, ChildDisposition};
+use crate::test_stand_in::{orphan, require_orphan_signals};
 use std::path::Path;
 
 fn child_evidence(evidence_kind: CodexEvidenceKind, terminal: bool) -> CodexEvidence {
@@ -100,11 +99,10 @@ fn corrupt_child_journal(work: &Path) {
 
 #[test]
 fn active_child_forbids_takedown() {
-    let false = skip_without_group_signals("active_child_forbids_takedown") else {
-        return;
-    };
+    require_orphan_signals!();
     let mut fixture = fixture(2);
-    let pid = spawn_orphan_process();
+    let stand_in = orphan();
+    let pid = stand_in.pid();
     write_test_pid_identity(&fixture.work, &fixture.session, pid).unwrap();
     active_child(&fixture.work, fixture._temp.path(), &fixture.session.id);
     block(&mut fixture);
@@ -129,23 +127,20 @@ fn active_child_forbids_takedown() {
             .status,
         SessionStatus::Running
     );
-    crate::process::terminate(pid).unwrap();
 }
 
 #[test]
 fn unknown_child_escalates_without_kill() {
-    let false = skip_without_group_signals("unknown_child_escalates_without_kill") else {
-        return;
-    };
+    require_orphan_signals!();
     let mut fixture = fixture(2);
-    let pid = spawn_orphan_process();
+    let stand_in = orphan();
+    let pid = stand_in.pid();
     write_test_pid_identity(&fixture.work, &fixture.session, pid).unwrap();
     corrupt_child_journal(&fixture.work);
     block(&mut fixture);
 
     assert!(crate::process::is_process_alive(pid));
     assert_ownership_unknown(&fixture);
-    crate::process::terminate(pid).unwrap();
 }
 
 #[test]
@@ -177,12 +172,10 @@ fn lifecycle_disposition_covers_no_children_active_and_unknown_journals() {
 #[test]
 #[serial_test::serial]
 fn park_native_active_worker_forbids_takedown() {
-    let false = skip_without_group_signals("park_native_active_worker_forbids_takedown") else {
-        return;
-    };
+    require_orphan_signals!();
     let mut fixture = fixture(2);
-    let pid = spawn_orphan_process();
-    let _process = crate::host_verify::submit::native_hold_tests::ProcessGuard(pid);
+    let stand_in = orphan();
+    let pid = stand_in.pid();
     write_test_pid_identity(&fixture.work, &fixture.session, pid).unwrap();
     crate::host_verify::submit::native_hold_tests::seed(&fixture.work, "test-stage");
     block(&mut fixture);
@@ -205,13 +198,10 @@ fn park_native_active_worker_forbids_takedown() {
 #[test]
 #[serial_test::serial]
 fn park_native_unverified_worker_escalates_ownership() {
-    let false = skip_without_group_signals("park_native_unverified_worker_escalates_ownership")
-    else {
-        return;
-    };
+    require_orphan_signals!();
     let mut fixture = fixture(2);
-    let pid = spawn_orphan_process();
-    let _process = crate::host_verify::submit::native_hold_tests::ProcessGuard(pid);
+    let stand_in = orphan();
+    let pid = stand_in.pid();
     write_test_pid_identity(&fixture.work, &fixture.session, pid).unwrap();
     let dir = crate::host_verify::submit::native_hold_tests::seed(&fixture.work, "test-stage");
     crate::native_worker::store::EventLog::open(&dir)

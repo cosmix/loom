@@ -1,9 +1,8 @@
 //! Bridge tests: recovery of a crashed server's sessions and its report.
 
-use crate::process::sandbox_probe::skip_without_group_signals;
 use std::fs;
 use std::os::unix::fs::DirBuilderExt;
-use std::process::{Child, Command};
+use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -20,20 +19,11 @@ use crate::plan_session::model::{DenyReason, FetchRule, Item, PermissionStatus};
 use crate::plan_session::permission::{write_answer, Answer, Behavior};
 use crate::plan_session::web_fetch::{FetchMode, FetchPolicy, FetchPolicyCell};
 use crate::process::{process_start_time, IdentityStatus};
+use crate::test_stand_in::{require_signals, StandIn};
 
-/// A child the test owns; killed and reaped on drop.
-struct OwnedChild(Child);
-
-impl OwnedChild {
-    fn alive(&mut self) -> bool {
-        matches!(self.0.try_wait(), Ok(None))
-    }
-}
-
-impl Drop for OwnedChild {
-    fn drop(&mut self) {
-        crate::process::sandbox_probe::reap::kill_and_reap(&mut self.0);
-    }
+/// Whether the test's child is still running.
+fn alive(child: &mut StandIn) -> bool {
+    matches!(child.child().try_wait(), Ok(None))
 }
 
 /// `session.json` and `answers/` as a crashed server left them.
@@ -140,15 +130,12 @@ fn a_start_waits_for_recovery() {
 
 #[test]
 fn a_live_pressure_session_is_torn_down_with_its_child() {
-    let false = skip_without_group_signals("a_live_pressure_session_is_torn_down_with_its_child")
-    else {
-        return;
-    };
+    require_signals!();
     let h = Harness::new(|_| {});
-    let mut child = OwnedChild(Command::new("sleep").arg("30").spawn().unwrap());
+    let mut child = StandIn::direct(Command::new("sleep").arg("30"));
     let s = recorded(&h, pressure(), Some(3_800_301));
     let mut record = read_record(&s.dir).unwrap();
-    let pid = child.0.id();
+    let pid = child.id();
     let label = "codex".to_owned();
     let start_time = process_start_time(pid);
     record.children.push(ChildRecord {
@@ -165,7 +152,7 @@ fn a_live_pressure_session_is_torn_down_with_its_child() {
         h.host.delivered(&s.socket).is_empty(),
         "a pressure session got a closing message"
     );
-    wait_until("the child terminated", || !child.alive());
+    wait_until("the child terminated", || !alive(&mut child));
     assert!(!s.dir.path().exists());
     wait_until("the Ended event", || torn_down(&h, &s.id));
 }
