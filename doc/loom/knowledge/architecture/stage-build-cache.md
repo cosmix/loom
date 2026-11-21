@@ -25,7 +25,7 @@ A stage has ONE persistent build-cache root outside its worktree, `StageCache` (
 | ccache | `CCACHE_DIR=ccache`, `CCACHE_BASEDIR=<worktree root>`; with a seed `CCACHE_REMOTE_STORAGE` and `CCACHE_SECONDARY_STORAGE=file:<seed>\|read-only` | host `CCACHE_DIR`, else the platform default |
 | sccache | `SCCACHE_DIR=sccache`, `SCCACHE_SERVER_UDS` (below) | none |
 | Maven | `MAVEN_OPTS=-Dmaven.repo.local=<root>/m2` plus `-Dmaven.repo.local.tail=<seed>` | `~/.m2/repository`; Maven older than 3.9 ignores the tail |
-| Gradle | `GRADLE_USER_HOME=gradle`, `GRADLE_RO_DEP_CACHE=<seed>`, `GRADLE_OPTS=-Xmx1g -Dorg.gradle.jvmargs=-Xmx1g` (the client JVM satisfies the requested args, so `--no-daemon` builds in-process; a forked daemon needs loopback TCP, denied by Seatbelt; the host's `GRADLE_OPTS` is never read) | host `caches` when `caches/modules-2` exists |
+| Gradle | `GRADLE_USER_HOME=gradle`, `GRADLE_RO_DEP_CACHE=<seed>`, `GRADLE_OPTS=-Xmx1g` (Gradle 8.10 `canUseCurrentProcess` reuses the client JVM unless its heap is at most 64 MB, the start script's `-Xmx64m`, or the build sets `org.gradle.jvmargs`, which must then equal the client's args exactly; so `--no-daemon` builds in-process; a forked daemon needs loopback TCP, denied by Seatbelt; the host's `GRADLE_OPTS` is never read) | host `caches` when `caches/modules-2` exists |
 | npm, pnpm, yarn, bun, deno, uv, pip | `npm_config_cache`, `npm_config_store_dir`, `YARN_CACHE_FOLDER`, `BUN_INSTALL_CACHE_DIR`, `DENO_DIR`, `UV_CACHE_DIR`, `PIP_CACHE_DIR` | none |
 | anything else | `XDG_CACHE_HOME=xdg` | none |
 

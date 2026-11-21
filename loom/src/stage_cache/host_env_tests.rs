@@ -26,7 +26,7 @@ fn credential_free_go_settings_are_kept_and_maven_opts_is_never_read() {
         assert_eq!(var(&env, "MAVEN_OPTS"), Some(local.clone()), "{consumer:?}");
         assert_eq!(
             var(&env, "GRADLE_OPTS").as_deref(),
-            Some("-Xmx1g -Dorg.gradle.jvmargs=-Xmx1g"),
+            Some("-Xmx1g"),
             "{consumer:?}: the host's GRADLE_OPTS is never read"
         );
         let (goflags, proxy) = match consumer {

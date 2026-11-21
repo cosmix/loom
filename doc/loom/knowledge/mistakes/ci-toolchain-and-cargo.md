@@ -408,3 +408,13 @@ A host `cargo check --target x86_64-unknown-linux-gnu` does not replace this: aw
 **Prevention:** start a CI run only when every failure it can show is unknown. Reproduce and fix known failures locally first; the macOS host-job lane and the confined probes both run on a Mac (`cargo test --lib -- --ignored --exact process::sandbox_probe::host_job_lane::the_lib_tests_pass_under_host_job_confinement`).
 
 **Fix:** the dispatch was cancelled; the known failures are fixed locally before the next nightly dispatch.
+
+## A Tool's Behaviour Was Taken From Memory, Costing a CI Round (2026-11-21)
+
+**What happened:** to keep confined Gradle from forking a daemon (which needs loopback TCP that Seatbelt denies), `GRADLE_OPTS` was set to `-Xmx1g -Dorg.gradle.jvmargs=-Xmx1g` on a recollection of Gradle's launcher. A 30-minute nightly round showed it still forked: in Gradle 8.10 setting `org.gradle.jvmargs` makes `canUseCurrentProcess` demand exact equality of immutable JVM args, which the client cannot meet.
+
+**Why:** the fix and its explanation came from memory; no source, doc or run confirmed them before the push.
+
+**Prevention:** verify a third-party tool's behaviour before relying on it: read its source at the exact version (`gh api repos/<owner>/<repo>/git/trees/<tag>?recursive=1`, then `contents/<path>?ref=<tag>` with the raw media type) or run it. State in the code comment which source was read.
+
+**Fix:** `GRADLE_OPTS=-Xmx1g` only (`stage_cache/environment.rs::GRADLE_IN_PROCESS_OPTS`), derived from `BuildActionsFactory::canUseCurrentProcess` and `CurrentProcess::isLowMemoryProcess` at v8.10.2.

@@ -75,7 +75,7 @@ fn gradle_resolves_from_the_read_only_cache_offline() {
         ),
     );
     rig.write("src/main/java/App.java", APP);
-    let result = rig.run("gradle --offline --no-daemon --stacktrace compileJava");
+    let result = rig.run("gradle --offline --no-daemon --stacktrace --info compileJava");
     assert!(
         result.success,
         "gradle did not resolve offline: {result:?}{}",
