@@ -14,6 +14,8 @@ use super::child_base::{base_config, base_dirs, base_summary, describe, evidence
 use super::tests_child::{confinement_unavailable, git, Fixture, STAGE};
 use super::{store, JobRecord, JobState};
 use crate::models::stage::StageType;
+use crate::orchestrator::provision::write_provision_snapshot;
+use crate::plan::schema::ProvisionEntry;
 use crate::testrun::RunningTests;
 use crate::verify::review::handoffs::{load_base_evidence, BaseEvidence};
 
@@ -124,6 +126,40 @@ fn a_criterion_passing_at_the_base_records_a_pass() {
     assert_eq!(evidence.len(), 1, "{evidence:?}");
     assert!(evidence[0].passed);
     assert_eq!((evidence[0].executed, evidence[0].failed), (Some(2), None));
+}
+
+/// The provision command that turns the base's `pytest` into a passing one.
+const FIX_PYTEST: &str = "printf '#!/bin/sh\\necho \"=== 2 passed in 0.01s ===\"\\n' > bin/pytest";
+
+/// A base run of a plan whose provision entries are `commands`, each run at the
+/// checkout's top.
+fn provisioned_run(commands: &[&str]) -> (BaseFixture, super::JobResult) {
+    let bfx = BaseFixture::new("1 failed, 2 passed in 0.01s", 1);
+    let entry = |command: &&str| ProvisionEntry {
+        working_dir: ".".to_string(),
+        command: command.to_string(),
+    };
+    let entries: Vec<_> = commands.iter().map(entry).collect();
+    write_provision_snapshot(&bfx.fx.work_dir, &entries).unwrap();
+    let result = bfx.run();
+    (bfx, result)
+}
+
+#[test]
+#[serial]
+fn provision_runs_before_the_criterion_and_a_failure_stops_the_job() {
+    if confinement_unavailable("provision_runs_before_the_criterion_and_a_failure_stops_the_job") {
+        return;
+    }
+    let (_, result) = provisioned_run(&[FIX_PYTEST]);
+    assert!(result.passed && result.error.is_none(), "{result:?}");
+    let (bfx, result) = provisioned_run(&["echo no network >&2; exit 3", FIX_PYTEST]);
+    let error = result.error.as_deref().unwrap_or_default();
+    assert!(error.contains("could not be provisioned"), "{error}");
+    assert!(error.contains("no network"), "{error}");
+    assert!(result.criteria.is_empty(), "no criterion ran");
+    let evidence = load_base_evidence(&bfx.fx.work_dir, STAGE).unwrap();
+    assert!(evidence.is_empty(), "{evidence:?}");
 }
 
 #[test]

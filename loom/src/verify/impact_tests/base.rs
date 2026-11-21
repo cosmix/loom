@@ -19,13 +19,24 @@
 //! confined run at the base writes, so loom's own git never reads that
 //! checkout's `.git` (`stage_cache::base_checkout`).
 //!
-//! A checkout holds tracked files only. A package whose installed
-//! environment (`node_modules`, `.venv`) is untracked is not run there, and a
-//! compiled language builds from nothing within the selection timeout; either
-//! way the failure stands with the reason and the stage disputes it (`loom
-//! stage dispute-criteria --field impact-tests`). Revisit when such disputes
-//! become routine: the base run could borrow the worktree's environment and
-//! build cache.
+//! A checkout holds tracked files only, so an installed environment
+//! (`node_modules`, `.venv`) is missing from it. The plan's `provision`
+//! entries (the snapshot `loom init` took) therefore run in the checkout
+//! before any selection does, confined, with a build cache of the
+//! comparison's own beside the checkout and removed with it (`provision`);
+//! the pass cache is never used. Only then are the selections compared. A
+//! provision that fails, or a selected runner still missing its environment
+//! or refused by the sandbox, leaves a note `base not runnable: <reason>`
+//! and no failure: the operator's decision (plan Decisions item 6) is that a
+//! base which cannot run says nothing about the stage, and integration-verify's
+//! full suite is the backstop. An unknown or unreadable base, a real build
+//! failure, unreadable output, no selected test and a timeout still stand as
+//! failures with what the base showed, and the stage disputes them (`loom
+//! stage dispute-criteria --field impact-tests`). The compiled languages
+//! still build from nothing within the selection timeout.
+//!
+//! The explicit `--at-base` job provisions its kept checkout the same way
+//! (`host_verify::child_base`).
 
 use anyhow::{Context, Result};
 use std::collections::BTreeSet;
@@ -34,13 +45,18 @@ use tempfile::TempDir;
 
 use super::failure::ImpactFailure;
 use super::runs::{Failed, Run, Site};
-use super::FULL_SUITE;
+use super::{selection_digest, FULL_SUITE};
 use crate::git::changes::read_only;
 use crate::git::runner::run_git_checked;
-use crate::models::stage::Stage;
+use crate::plan::schema::ProvisionEntry;
 use crate::utils::text::single_line;
-use crate::verify::criteria::{CriteriaConfig, CriteriaProbe, ProbeRunner};
+use crate::verify::criteria::ProbeRunner;
 use crate::verify::review::fingerprint::local_git;
+
+mod prepare;
+
+pub(crate) use prepare::provision_base;
+pub(super) use prepare::BaseCriteria;
 
 /// Name prefix of a dry-run checkout's scratch directory, which the dry run's
 /// sweep of earlier runs' leftovers matches on.
@@ -49,31 +65,14 @@ pub(crate) const DRY_RUN_PREFIX: &str = "loom-dry-run-";
 /// Hex digits of the base commit a note shows.
 const SHORT_COMMIT: usize = 12;
 
-/// Makes the runner for selections in a base checkout.
+/// Makes the runner for selections in a base checkout, and provisions it.
 pub(super) trait BaseRunner {
     /// The runner for the checkout whose top directory is `root`.
     fn runner_for(&self, root: &Path) -> Box<dyn ProbeRunner + '_>;
-}
 
-/// The acceptance-criteria runner a base checkout gets: the selection's own
-/// configuration with the checkout as its tree, and no pass cache, since a
-/// scratch copy's runs are worth nothing once it is gone.
-pub(super) struct BaseCriteria<'a> {
-    pub(super) stage: &'a Stage,
-    pub(super) config: CriteriaConfig,
-}
-
-impl BaseRunner for BaseCriteria<'_> {
-    fn runner_for(&self, root: &Path) -> Box<dyn ProbeRunner + '_> {
-        let config = CriteriaConfig {
-            cache_dir: None,
-            ..self.config.clone()
-        };
-        Box::new(CriteriaProbe {
-            stage: self.stage,
-            config: config.with_tree_root(Some(root)),
-        })
-    }
+    /// Run the plan's provision entries in the checkout at `root`, before any
+    /// selection runs there; `Err` is why the base cannot be provisioned.
+    fn provision(&self, root: &Path) -> Result<(), String>;
 }
 
 /// The stage's base, for re-running the selections that failed.
@@ -212,11 +211,15 @@ pub(super) fn compare(
             return failed.into_iter().map(|f| stands(f, why.clone())).collect();
         }
     };
+    if let Err(reason) = base.runner.provision(checkout.root()) {
+        notes.insert(not_runnable(&reason));
+        return Vec::new();
+    }
     let runner = base.runner.runner_for(checkout.root());
     let site = Site {
         root: checkout.root(),
         runner: runner.as_ref(),
-        place: "the base checkout (it holds tracked files only)",
+        place: "the base checkout (tracked files, then the plan's provision)",
     };
     let mut standing = Vec::new();
     for failed in failed {
@@ -230,6 +233,24 @@ pub(super) fn compare(
     standing
 }
 
+/// Run each of `entries` in order in `root` through `run`, stopping at the
+/// first `Err`, which is the reason the base cannot be provisioned.
+pub(crate) fn provision_with<F>(
+    entries: &[ProvisionEntry],
+    root: &Path,
+    mut run: F,
+) -> Result<(), String>
+where
+    F: FnMut(&ProvisionEntry, &Path) -> Result<(), String>,
+{
+    entries.iter().try_for_each(|entry| run(entry, root))
+}
+
+/// The note for a base that cannot run a selection for reasons of its own.
+fn not_runnable(reason: &str) -> String {
+    format!("base not runnable: {}; {FULL_SUITE}", single_line(reason))
+}
+
 /// The pre-existing note when `failed` fails at the base no better, else
 /// what the base run showed.
 ///
@@ -241,7 +262,7 @@ pub(super) fn compare(
 /// as pre-existing. Revisit if an adapter learns to name failed tests.
 fn at_base(site: &Site<'_>, failed: &Failed, short: &str) -> Result<String, String> {
     let kind = &failed.failure.kind;
-    match site.run(&failed.package, failed.adapter, &failed.targets) {
+    match site.run_selection(&failed.package, failed.adapter, &failed.targets) {
         Run::Failed(base) if base.kind.covers(kind) => Ok(format!(
             "`{}` {} at the stage's base {short} as well ({}): a failure this stage did not \
              cause; {FULL_SUITE}",
@@ -259,6 +280,7 @@ fn at_base(site: &Site<'_>, failed: &Failed, short: &str) -> Result<String, Stri
             base.kind.describe()
         )),
         Run::Passed { .. } => Err(format!("it passes at the stage's base {short}")),
+        Run::Inconclusive(why) if why.is_environment() => Ok(not_runnable(&why.to_string())),
         Run::Inconclusive(why) => Err(format!("the stage's base {short} proved nothing: {why}")),
     }
 }
@@ -266,6 +288,7 @@ fn at_base(site: &Site<'_>, failed: &Failed, short: &str) -> Result<String, Stri
 /// `failed` as the gate reports it, with what the base showed.
 fn stands(failed: Failed, base: String) -> ImpactFailure {
     ImpactFailure {
+        selection_digest: selection_digest(&failed.targets),
         tests: failed.tests(),
         id: failed.id,
         command: failed.failure.command,
@@ -273,6 +296,22 @@ fn stands(failed: Failed, base: String) -> ImpactFailure {
         base,
         accepted: failed.accepted,
         output: failed.failure.output,
+    }
+}
+
+/// Never makes a base runner: a test whose selections all pass, or whose base
+/// is unknown, never needs one.
+#[cfg(test)]
+pub(crate) struct NoBaseRunner;
+
+#[cfg(test)]
+impl BaseRunner for NoBaseRunner {
+    fn runner_for(&self, _root: &Path) -> Box<dyn ProbeRunner + '_> {
+        unreachable!("no selection is re-run at the base")
+    }
+
+    fn provision(&self, _root: &Path) -> Result<(), String> {
+        unreachable!("no selection is re-run at the base")
     }
 }
 

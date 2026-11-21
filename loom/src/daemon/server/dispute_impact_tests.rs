@@ -10,7 +10,10 @@ use super::*;
 use crate::fs::work_dir::WorkDir;
 use crate::models::dispute::{DISPUTE_REASON_MAX_BYTES, FAILURE_OUTPUT_MAX_BYTES};
 use crate::models::stage::StageStatus;
-use crate::verify::impact_tests::{record_observed, FailureKind, ImpactFailure, ObservedImpact};
+use crate::testrun::TestTarget;
+use crate::verify::impact_tests::{
+    record_observed, selection_digest, FailureKind, ImpactFailure, ObservedImpact,
+};
 use crate::verify::transitions::save_stage;
 
 const STAGE: &str = "stage-impact";
@@ -40,6 +43,10 @@ fn failure(id: &str, output: String) -> ImpactFailure {
         id: id.to_string(),
         command: "cargo test -- tests::adds".to_string(),
         tests: vec!["tests::adds".to_string()],
+        selection_digest: selection_digest(&[TestTarget {
+            file: "src/lib.rs".to_string(),
+            name: Some("tests::adds".to_string()),
+        }]),
         kind: FailureKind::Fails { failed: Some(1) },
         base: "it passes at the stage's base 0123abcd".to_string(),
         accepted: None,
@@ -119,6 +126,7 @@ fn forged_client_evidence_is_replaced_by_the_observed_record() {
     let forged = ImpactFailure {
         kind: FailureKind::Fails { failed: None },
         tests: Vec::new(),
+        selection_digest: "0".repeat(64),
         base: "it fails at the stage's base as well".to_string(),
         output: "forged".to_string(),
         ..failure(ID, String::new())
@@ -130,8 +138,37 @@ fn forged_client_evidence_is_replaced_by_the_observed_record() {
     let evidence = &yaml["evidence"][0];
     assert_eq!(evidence["kind"]["failed"], 1);
     assert_eq!(evidence["tests"][0], "tests::adds");
+    assert_eq!(
+        evidence["selection_digest"],
+        failure(ID, String::new()).selection_digest
+    );
     assert_eq!(evidence["output"], "loom saw this");
     assert_eq!(evidence["base"], "it passes at the stage's base 0123abcd");
+}
+
+/// A selection of 721 tests is recorded with 64 names and the digest of all
+/// of them; the dispute's evidence carries both, so an accept can match it.
+#[test]
+fn an_impact_dispute_over_721_tests_carries_the_whole_selection_digest() {
+    let (_tmp, work_dir) = setup(StageType::Standard);
+    let targets: Vec<TestTarget> = (0..721)
+        .map(|n| TestTarget {
+            file: "src/lib.rs".to_string(),
+            name: Some(format!("suite::case_{n:03}")),
+        })
+        .collect();
+    let large = ImpactFailure {
+        tests: targets.iter().filter_map(|t| t.name.clone()).collect(),
+        selection_digest: selection_digest(&targets),
+        ..failure(ID, String::new())
+    };
+    observed(&work_dir, &[large]);
+
+    let id = created(file(&work_dir, impact(&[ID], Vec::new())));
+
+    let evidence = &frontmatter(&work_dir, id)["evidence"][0];
+    assert_eq!(evidence["tests"].as_array().unwrap().len(), 64);
+    assert_eq!(evidence["selection_digest"], selection_digest(&targets));
 }
 
 #[test]

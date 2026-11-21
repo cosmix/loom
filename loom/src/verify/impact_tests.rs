@@ -25,11 +25,16 @@
 //! the completion records them (`observed`) for that dispute to name.
 
 mod accepted;
+#[cfg(test)]
+mod accepted_contract_tests;
 pub(crate) mod base;
+#[cfg(test)]
+mod base_contract_tests;
 mod failure;
 mod libtest;
 mod observed;
 mod reach;
+mod replay;
 mod report;
 mod runs;
 mod scoped;
@@ -52,8 +57,10 @@ use crate::verify::review::fingerprint::{checkout_git, local_git};
 
 pub(in crate::verify) use accepted::ACCEPTED_FILE;
 pub use accepted::{load_accepted, AcceptedFailure, AcceptedImpact};
+pub(crate) use failure::selection_digest;
 pub use failure::{check_failure_id, FailureKind, ImpactFailure};
 pub use observed::{load_observed, record_observed, ObservedImpact};
+pub(crate) use replay::{Replay, ReplayPlan};
 pub use report::ImpactTestsFailed;
 
 /// Failures observed by the impact gate in a completion error, if any.
@@ -69,7 +76,7 @@ use base::{BaseCriteria, BaseProbe};
 use libtest::{LibtestPath, LibtestPaths};
 use reach::{reached_test_nodes, TestNodes};
 use report::Report;
-use runs::Selection;
+pub(in crate::verify) use runs::Selection;
 
 /// How long one selection may run (DESIGN D14).
 const IMPACT_TIMEOUT: Duration = Duration::from_secs(300);
@@ -138,7 +145,7 @@ fn check(
         stage,
         config: config.clone(),
     };
-    let base_runner = BaseCriteria { stage, config };
+    let base_runner = BaseCriteria::new(stage, config, work_dir)?;
     let check = Check {
         stage,
         working_dir,
@@ -217,8 +224,36 @@ struct Check<'a> {
 }
 
 fn run_with(check: &Check<'_>, graph: &WorktreeGraph, changed: &[PathBuf]) -> Result<Report> {
-    let profile = ProjectProfile::discover(check.working_dir);
-    let contracts = contract_files(check.stage, check.working_dir, &profile.root)?;
+    let Plan {
+        root,
+        groups,
+        notes,
+    } = plan(check.stage, check.working_dir, graph, changed)?;
+    let mut selection = Selection::new(&root, check.runner, notes);
+    for ((package, _), (adapter, targets)) in &groups {
+        selection.run_group(package, *adapter, targets);
+    }
+    Ok(Report::judge(selection, &check.accepted, &check.base))
+}
+
+/// What the `changed` files of a stage select in the checkout holding
+/// `working_dir`: the checkout root, the targets grouped by package and
+/// runner, and the notes the derivation left. Reading only, so a replay
+/// derives the selection a completion run ran.
+struct Plan {
+    root: PathBuf,
+    groups: Groups,
+    notes: BTreeSet<String>,
+}
+
+fn plan(
+    stage: &Stage,
+    working_dir: &Path,
+    graph: &WorktreeGraph,
+    changed: &[PathBuf],
+) -> Result<Plan> {
+    let profile = ProjectProfile::discover(working_dir);
+    let contracts = contract_files(stage, working_dir, &profile.root)?;
     let reached = reached_test_nodes(&graph.graph, changed, &contracts);
     let mut notes: BTreeSet<String> = graph
         .degraded
@@ -237,11 +272,11 @@ fn run_with(check: &Check<'_>, graph: &WorktreeGraph, changed: &[PathBuf]) -> Re
         )
     }));
     let groups = group_targets(&graph.graph, &profile, &reached.selected, &mut notes);
-    let mut selection = Selection::new(&profile.root, check.runner, notes);
-    for ((package, _), (adapter, targets)) in &groups {
-        selection.run_group(package, *adapter, targets);
-    }
-    Ok(Report::judge(selection, &check.accepted, &check.base))
+    Ok(Plan {
+        root: profile.root,
+        groups,
+        notes,
+    })
 }
 
 /// The stage's contract files, checkout-relative: the contract check ran them.

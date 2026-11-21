@@ -34,6 +34,10 @@ fn cargo_run(failed: u32) -> ProbeRun {
 struct Canned {
     answer: fn() -> Result<ProbeRun>,
     seen: RefCell<Vec<(PathBuf, String)>>,
+    /// Why provisioning fails, when it does.
+    provision_error: Option<&'static str>,
+    /// Each checkout root a provision ran in, with the `src/lib.rs` there.
+    provisioned: RefCell<Vec<(PathBuf, String)>>,
 }
 
 impl Canned {
@@ -41,13 +45,29 @@ impl Canned {
         Self {
             answer,
             seen: RefCell::new(Vec::new()),
+            provision_error: None,
+            provisioned: RefCell::new(Vec::new()),
         }
+    }
+
+    fn unprovisionable(mut self, why: &'static str) -> Self {
+        self.provision_error = Some(why);
+        self
     }
 }
 
 impl BaseRunner for Canned {
     fn runner_for(&self, _root: &Path) -> Box<dyn ProbeRunner + '_> {
         Box::new(self)
+    }
+
+    fn provision(&self, root: &Path) -> Result<(), String> {
+        let lib = fs::read_to_string(root.join("src/lib.rs")).unwrap_or_default();
+        self.provisioned
+            .borrow_mut()
+            .push((root.to_path_buf(), lib));
+        self.provision_error
+            .map_or(Ok(()), |why| Err(why.to_string()))
     }
 }
 
@@ -297,4 +317,80 @@ fn a_base_that_cannot_be_compared_keeps_the_failure_with_why() {
         missing[0].base
     );
     assert!(canned.seen.borrow().is_empty());
+    assert!(
+        canned.provisioned.borrow().is_empty(),
+        "a base that was not checked out is not provisioned"
+    );
+}
+
+/// What a run the sandbox killed prints: nothing the adapter reads.
+fn sandbox_refused() -> Result<ProbeRun> {
+    Ok(ProbeRun {
+        stdout: String::new(),
+        stderr: "bwrap: setting up uid map failed\n".to_string(),
+        exit_code: Some(1),
+        timed_out: false,
+        output_complete: true,
+        cached: None,
+    })
+}
+
+#[test]
+fn the_base_is_provisioned_in_its_checkout_before_the_selection_runs() {
+    let (repo, base) = stage_repo();
+    let canned = Canned::new(|| Ok(cargo_run(2)));
+
+    let (standing, notes) = compare_with(repo.path(), Ok(base), &canned, failed(2));
+
+    assert!(standing.is_empty(), "{standing:?}");
+    assert_eq!(notes.len(), 1, "{notes:?}");
+    let provisioned = canned.provisioned.borrow();
+    let seen = canned.seen.borrow();
+    assert_eq!(provisioned.len(), 1);
+    assert_eq!(provisioned[0].1, "base", "provision saw the base's tree");
+    assert_eq!(
+        provisioned[0].0, seen[0].0,
+        "provision and the selection share one checkout root"
+    );
+    assert!(!provisioned[0].0.starts_with(repo.path()));
+}
+
+#[test]
+fn a_base_that_cannot_be_provisioned_is_one_note_whatever_failed() {
+    let (repo, base) = stage_repo();
+    let canned = Canned::new(|| Ok(cargo_run(2))).unprovisionable("provision `x` failed:\nboom");
+    let mut other = failed(2);
+    other.id = "IT-cargo-test:other".to_string();
+    let probe = BaseProbe {
+        worktree: repo.path(),
+        commit: Ok(base),
+        runner: &canned,
+    };
+    let mut notes = BTreeSet::new();
+
+    let standing = compare(&probe, vec![failed(2), other], &mut notes);
+
+    assert!(standing.is_empty(), "{standing:?}");
+    assert_eq!(
+        notes.into_iter().collect::<Vec<_>>(),
+        ["base not runnable: provision `x` failed: boom; the full suite runs in integration-verify"]
+    );
+    assert!(canned.seen.borrow().is_empty(), "no selection ran");
+    assert_eq!(canned.provisioned.borrow().len(), 1);
+}
+
+#[test]
+fn a_base_refused_by_the_sandbox_is_a_note_not_a_failure() {
+    let (repo, base) = stage_repo();
+    let canned = Canned::new(sandbox_refused);
+
+    let (standing, notes) = compare_with(repo.path(), Ok(base), &canned, failed(1));
+
+    assert!(standing.is_empty(), "{standing:?}");
+    let note = notes.iter().next().unwrap();
+    assert!(note.starts_with("base not runnable: "), "{note}");
+    assert!(
+        note.ends_with("the full suite runs in integration-verify"),
+        "{note}"
+    );
 }

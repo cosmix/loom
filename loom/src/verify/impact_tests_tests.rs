@@ -7,7 +7,7 @@ use crate::context::refresh::{reconcile_source_graph, SourceGraphScope};
 use crate::context::store::{ContextStore, CACHE_RELATIVE_DIR};
 use crate::test_git::TestRepo;
 use crate::verify::criteria::ProbeRun;
-use crate::verify::impact_tests::base::BaseRunner;
+use crate::verify::impact_tests::base::NoBaseRunner;
 use std::cell::RefCell;
 use std::fs;
 use tempfile::TempDir;
@@ -72,16 +72,6 @@ impl ProbeRunner for NotFound {
             output_complete: true,
             cached: None,
         })
-    }
-}
-
-/// Never makes a base runner: a test whose selections all pass, or whose base
-/// is unknown, never needs one.
-struct NoBaseRunner;
-
-impl BaseRunner for NoBaseRunner {
-    fn runner_for(&self, _root: &Path) -> Box<dyn ProbeRunner + '_> {
-        unreachable!("no selection is re-run at the base")
     }
 }
 

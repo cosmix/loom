@@ -4,7 +4,8 @@
 use super::*;
 use crate::testrun::{registry, TestTarget};
 use crate::verify::criteria::{ProbeRun, ProbeRunner};
-use crate::verify::impact_tests::base::BaseRunner;
+use crate::verify::impact_tests::base::NoBaseRunner;
+use crate::verify::impact_tests::selection_digest;
 use crate::verify::impact_tests::ObservedImpact;
 use crate::verify::impact_tests::{load_accepted, AcceptedFailure, FailureKind, ImpactFailure};
 use crate::verify::review::verdict_records::append_impact_acceptance;
@@ -12,7 +13,7 @@ use std::collections::BTreeSet;
 use std::path::Path;
 use tempfile::TempDir;
 
-const ID: &str = "IT-cargo-test:.";
+pub(super) const ID: &str = "IT-cargo-test:.";
 
 /// Reports `FAILED` cargo output with two of three tests failing.
 struct TwoFail;
@@ -32,16 +33,7 @@ impl ProbeRunner for TwoFail {
     }
 }
 
-/// Never makes a base runner: these tests leave the base unknown.
-struct NoBaseRunner;
-
-impl BaseRunner for NoBaseRunner {
-    fn runner_for(&self, _root: &Path) -> Box<dyn ProbeRunner + '_> {
-        unreachable!("the base is unknown")
-    }
-}
-
-fn targets(names: &[&str]) -> Vec<TestTarget> {
+pub(super) fn targets(names: &[&str]) -> Vec<TestTarget> {
     names
         .iter()
         .map(|name| TestTarget {
@@ -51,7 +43,7 @@ fn targets(names: &[&str]) -> Vec<TestTarget> {
         .collect()
 }
 
-fn fails(failed: u64) -> FailureKind {
+pub(super) fn fails(failed: u64) -> FailureKind {
     FailureKind::Fails {
         failed: Some(failed),
     }
@@ -59,11 +51,12 @@ fn fails(failed: u64) -> FailureKind {
 
 /// Dispute 3 of stage `s` accepted [`ID`] failing as `kind` over `tests`, as
 /// the daemon records it; returns the record the gate loads.
-fn accepted(work: &Path, kind: FailureKind, tests: &[&str]) -> AcceptedImpact {
+pub(super) fn accepted(work: &Path, kind: FailureKind, tests: &[&str]) -> AcceptedImpact {
     let failure = AcceptedFailure {
         id: ID.to_string(),
         kind,
         tests: tests.iter().map(|test| test.to_string()).collect(),
+        selection_digest: selection_digest(&targets(tests)),
         dispute: 3,
     };
     append_impact_acceptance(work, "s", &[failure]).unwrap();
@@ -72,7 +65,7 @@ fn accepted(work: &Path, kind: FailureKind, tests: &[&str]) -> AcceptedImpact {
 
 /// Run the cargo selection of `selected` with two failures, then judge it
 /// against `accepted` with the base unknown.
-fn judged(accepted: &AcceptedImpact, selected: &[&str]) -> Report {
+pub(super) fn judged(accepted: &AcceptedImpact, selected: &[&str]) -> Report {
     let root = TempDir::new().unwrap();
     let mut selection = Selection::new(root.path(), &TwoFail, BTreeSet::new());
     let cargo = registry::by_name("cargo-test").unwrap();
@@ -112,7 +105,7 @@ fn an_accepted_uncounted_failure_covers_only_an_identical_one() {
     let work = TempDir::new().unwrap();
     let uncounted = FailureKind::Fails { failed: None };
     let uncounted_record = accepted(work.path(), uncounted.clone(), &["a"]);
-    let standing = |kind: &FailureKind| uncounted_record.standing(ID, kind, &["a".to_string()]);
+    let standing = |kind: &FailureKind| uncounted_record.standing(ID, kind, &targets(&["a"]));
 
     assert!(matches!(standing(&uncounted), Standing::Covered(_)));
     assert!(matches!(standing(&fails(1)), Standing::Changed(_)));
@@ -123,7 +116,7 @@ fn an_accepted_uncounted_failure_covers_only_an_identical_one() {
 
     let work = TempDir::new().unwrap();
     let unbuilt_record = accepted(work.path(), FailureKind::DoesNotBuild, &["a"]);
-    let standing = |kind: &FailureKind| unbuilt_record.standing(ID, kind, &["a".to_string()]);
+    let standing = |kind: &FailureKind| unbuilt_record.standing(ID, kind, &targets(&["a"]));
     assert!(matches!(
         standing(&FailureKind::DoesNotBuild),
         Standing::Covered(_)
@@ -138,9 +131,8 @@ fn an_accepted_uncounted_failure_covers_only_an_identical_one() {
 fn an_accepted_failure_covers_only_an_identical_one() {
     let work = TempDir::new().unwrap();
     let record = accepted(work.path(), fails(5), &["a", "b"]);
-    let tests = |names: &[&str]| -> Vec<String> { names.iter().map(|n| n.to_string()).collect() };
 
-    let exact = record.standing(ID, &fails(5), &tests(&["b", "a"]));
+    let exact = record.standing(ID, &fails(5), &targets(&["b", "a"]));
     assert!(matches!(exact, Standing::Covered(_)), "{exact:?}");
     for (kind, selected) in [
         (fails(4), &["a", "b"][..]),
@@ -149,7 +141,7 @@ fn an_accepted_failure_covers_only_an_identical_one() {
         (fails(5), &["a", "b", "c"][..]),
         (FailureKind::DoesNotBuild, &["a", "b"][..]),
     ] {
-        let standing = record.standing(ID, &kind, &tests(selected));
+        let standing = record.standing(ID, &kind, &targets(selected));
         assert!(
             matches!(standing, Standing::Changed(_)),
             "{kind:?} over {selected:?}: {standing:?}"
@@ -166,6 +158,7 @@ fn a_forged_record_once_accepted_covers_nothing_but_its_claim() {
         id: ID.to_string(),
         command: "cargo test -- a b".to_string(),
         tests: vec!["a".to_string(), "b".to_string()],
+        selection_digest: selection_digest(&targets(&["a", "b"])),
         kind: fails(500),
         base: "it fails at the base as well".to_string(),
         accepted: None,
@@ -233,7 +226,7 @@ fn an_accepted_selection_that_grew_a_test_is_judged_again() {
     let why = report.failures[0].accepted.as_deref().unwrap_or_default();
     assert!(
         why.contains(
-            "dispute 3 accepted it (fails (2 failed)) over other selected tests (selected: a)"
+            "dispute 3 accepted it (fails (2 failed)) over a different selection of tests"
         ),
         "{why}"
     );
@@ -273,6 +266,7 @@ fn failures_past_the_kept_ones_are_named_as_not_disputable() {
         id: format!("IT-pytest:p{n}"),
         command: "pytest a.py".to_string(),
         tests: vec!["a.py".to_string()],
+        selection_digest: String::new(),
         kind: fails(1),
         base: "it passes at the stage's base 0123abcd".to_string(),
         accepted: None,

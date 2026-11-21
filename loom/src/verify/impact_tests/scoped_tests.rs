@@ -148,7 +148,7 @@ fn the_site_runs_and_reports_the_scoped_chain() {
         place: "here",
     };
     let targets = [target("src/lib.rs", "a::t"), target("tests/it.rs", "flow")];
-    let Run::Passed { command, .. } = site.run(Path::new(""), cargo(), &targets) else {
+    let Run::Passed { command, .. } = site.run_selection(Path::new(""), cargo(), &targets) else {
         panic!("the recording runner passes");
     };
     let expected = "cargo test --lib -- --exact a::t && cargo test --test it -- --exact flow";

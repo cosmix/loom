@@ -187,6 +187,7 @@ fn incomplete_capture_is_inconclusive_even_with_a_pass_or_cached_count() {
         let Run::Inconclusive(why) = judge("cargo test x".to_string(), cargo(), &run) else {
             panic!("incomplete output must be inconclusive");
         };
+        let why = why.to_string();
         assert!(why.contains("output capture was incomplete"), "{why}");
     }
 }
@@ -197,6 +198,7 @@ fn a_cached_run_that_selected_nothing_stays_inconclusive() {
     let Run::Inconclusive(why) = judge("cargo test x".to_string(), cargo(), &run) else {
         panic!("a cached run that selected no test must be inconclusive");
     };
+    let why = why.to_string();
     assert!(why.contains("selected no test"), "{why}");
 }
 
@@ -225,5 +227,113 @@ fn incomplete_capture_of_a_run_that_could_not_start_stays_inconclusive() {
     let Run::Inconclusive(why) = judge("cargo test x".to_string(), cargo(), &run) else {
         panic!("exit 127 must stay inconclusive");
     };
+    let why = why.to_string();
     assert!(why.contains("could not start"), "{why}");
+}
+
+/// A finished, completely captured run printing `stdout` and `stderr`.
+fn finished(stdout: &str, stderr: &str, exit_code: Option<i32>) -> ProbeRun {
+    ProbeRun {
+        stdout: stdout.to_string(),
+        stderr: stderr.to_string(),
+        exit_code,
+        timed_out: false,
+        output_complete: true,
+        cached: None,
+    }
+}
+
+#[test]
+fn a_failed_unparsed_run_with_a_denial_is_an_environment_inconclusive() {
+    let denied = finished(
+        "",
+        "sandbox-exec: sandbox_apply: Operation not permitted\n",
+        Some(71),
+    );
+    let Run::Inconclusive(why) = judge("cargo test x".to_string(), cargo(), &denied) else {
+        panic!("a sandbox refusal must be inconclusive");
+    };
+    assert!(why.is_environment());
+    assert_eq!(
+        why.to_string(),
+        "environment failure (sandbox denial: sandbox-exec: sandbox_apply: Operation not permitted)"
+    );
+    let other = Inconclusive::from("`x` selected no test".to_string());
+    assert!(!other.is_environment());
+}
+
+#[test]
+fn a_missing_dependency_is_an_environment_inconclusive() {
+    let root = TempDir::new().unwrap();
+    std::fs::create_dir_all(root.path().join("deps/kit")).unwrap();
+    std::fs::write(root.path().join("deps/kit/uv.lock"), "").unwrap();
+    let site = Site {
+        root: root.path(),
+        runner: &CannotSpawn,
+        place: "this checkout",
+    };
+    let pytest = registry::by_name("pytest").unwrap();
+    let Run::Inconclusive(why) =
+        site.run_selection(Path::new("deps/kit"), pytest, &named(["t".to_string()]))
+    else {
+        panic!("a package without its environment must be inconclusive");
+    };
+    assert!(why.is_environment());
+    assert!(why.to_string().starts_with("`deps/kit` has no .venv"));
+    let ran = site.run_selection(Path::new(""), cargo(), &named(["t".to_string()]));
+    assert!(matches!(ran, Run::Inconclusive(why) if !why.is_environment()));
+}
+
+#[test]
+fn a_denied_selection_notes_the_full_suite_hint_once() {
+    struct Denied;
+    impl ProbeRunner for Denied {
+        fn run(&self, _command: &str, _package_dir: &Path) -> Result<ProbeRun> {
+            Ok(finished(
+                "",
+                "bwrap: Creating new namespace failed\n",
+                Some(1),
+            ))
+        }
+    }
+    let root = TempDir::new().unwrap();
+    let mut selection = Selection::new(root.path(), &Denied, BTreeSet::new());
+    selection.run_group(Path::new(""), cargo(), &named(["a".to_string()]));
+    assert!(selection.failed.is_empty() && selection.ran.is_empty());
+    let notes: Vec<_> = selection.notes.iter().collect();
+    assert_eq!(notes.len(), 1, "{notes:?}");
+    assert!(notes[0].starts_with("environment failure (sandbox denial: bwrap:"));
+    assert_eq!(notes[0].matches(FULL_SUITE).count(), 1, "{notes:?}");
+}
+
+/// Output carrying the marker words keeps its own verdict when a test summary,
+/// a build failure, an incomplete capture or a passing exit decides.
+#[test]
+fn a_runs_own_verdict_wins_over_marker_words_in_its_output() {
+    let counted = "running 1 test\ntest t::k ... FAILED\n\nfailures:\n\n---- t::k stdout ----\n\
+        assertion failed: kill returned EPERM\n\nfailures:\n    t::k\n\n\
+        test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out\n";
+    let run = finished(counted, "", Some(101));
+    let Run::Failed(failure) = judge("cargo test x".to_string(), cargo(), &run) else {
+        panic!("a counted failure must stay a failure");
+    };
+    assert_eq!(failure.kind, FailureKind::Fails { failed: Some(1) });
+    let build = "error[E0425]: cannot find value `EPERM` in this scope\n\
+        error: could not compile `demo` (lib test) due to 1 previous error\n";
+    let run = finished("", build, Some(101));
+    let Run::Failed(failure) = judge("cargo test x".to_string(), cargo(), &run) else {
+        panic!("a build failure must stay a failure");
+    };
+    assert_eq!(failure.kind, FailureKind::DoesNotBuild);
+    let mut run = finished("", "Error: kill EPERM\n", Some(1));
+    run.output_complete = false;
+    assert!(matches!(
+        judge("cargo test x".to_string(), cargo(), &run),
+        Run::Failed(_)
+    ));
+    let run = finished("", "Error: kill EPERM\n", Some(0));
+    assert!(matches!(
+        judge("cargo test x".to_string(), cargo(), &run),
+        Run::Passed { .. }
+    ));
 }

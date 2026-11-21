@@ -36,37 +36,18 @@ fn launcher_absent(test: &str) -> bool {
     )
 }
 
-/// The `-p` argument of the wrapped command.
+/// The profile a confined `/bin/sh` in `tree` runs under with no grants.
 fn profile_for(tree: &Path) -> String {
     let mut original = Command::new("/bin/sh");
     original.current_dir(tree);
     crate::process::apply_stage_environment(&mut original);
-    let scratch = super::CargoScratch::prepare(&original, tree, false, false).unwrap();
-    let wrapped = super::platform_command(
-        &original,
-        tree,
-        tree,
-        Path::new("/bin/sh"),
-        &scratch,
-        super::NetworkAccess::Denied,
-        &Default::default(),
-    )
-    .unwrap();
-    let args: Vec<String> = wrapped
-        .get_args()
-        .map(|arg| arg.to_string_lossy().into_owned())
-        .collect();
-    let at = args.iter().position(|arg| arg == "-p").unwrap();
-    args[at + 1].clone()
+    super::seatbelt_profile(&original, tree, super::NetworkAccess::Denied).unwrap()
 }
 
 /// Seatbelt applies the last matching rule: a deny before the global
 /// `(allow file-read-metadata)` would leave the files' metadata readable.
 #[test]
 fn the_profile_denies_every_read_of_the_cargo_files_after_allowing_metadata() {
-    if launcher_absent("the_profile_denies_every_read_of_the_cargo_files_after_allowing_metadata") {
-        return;
-    }
     let (_root, tree) = tree_below_cargo_files("[package]\n", "");
     let profile = profile_for(&tree);
     let metadata = profile.find("(allow file-read-metadata)").unwrap();
@@ -88,27 +69,13 @@ fn the_profile_denies_every_read_of_the_cargo_files_after_allowing_metadata() {
 
 #[test]
 fn a_profile_naming_a_path_with_a_control_character_is_refused() {
-    if launcher_absent("a_profile_naming_a_path_with_a_control_character_is_refused") {
-        return;
-    }
     let root = TempDir::new().unwrap();
     let tree = root.path().canonicalize().unwrap().join("work\u{1}tree");
     std::fs::create_dir(&tree).unwrap();
     let mut original = Command::new("/bin/sh");
     original.current_dir(&tree);
-    let scratch = super::CargoScratch::prepare(&original, &tree, false, false).unwrap();
-    let network = super::NetworkAccess::Denied;
-    let shell = Path::new("/bin/sh");
-    let error = super::platform_command(
-        &original,
-        &tree,
-        &tree,
-        shell,
-        &scratch,
-        network,
-        &Default::default(),
-    )
-    .expect_err("a control character in the tree path must be refused");
+    let error = super::seatbelt_profile(&original, &tree, super::NetworkAccess::Denied)
+        .expect_err("a control character in the tree path must be refused");
     let message = format!("{error:#}");
     assert!(message.contains("control character"), "{message}");
 }
@@ -249,4 +216,80 @@ fn a_tmpdir_symlink_does_not_reach_a_host_socket() {
         .lines()
         .any(|line| line.starts_with("ln: ") && line.ends_with(": Operation not permitted"));
     assert!(ln_refused, "{result:?}");
+}
+
+/// Issue #40 in one denied-network command: a listener on `127.0.0.1` port 0
+/// starts and the parent directory lists, while a wildcard bind and reads of
+/// the Cargo files two levels up are refused. The command never dials its own
+/// listener: a denied network grants no outbound connect at all.
+#[test]
+fn open_issues_macos_completion_kernel_binds_loopback_and_keeps_ancestor_cargo_files_hidden() {
+    let name =
+        "open_issues_macos_completion_kernel_binds_loopback_and_keeps_ancestor_cargo_files_hidden";
+    if launcher_absent(name) {
+        return;
+    }
+    let (_root, beside) = tree_below_cargo_files("[workspace]\n", "[build]\n");
+    let tree = beside.parent().unwrap().join("mid/worktree");
+    std::fs::create_dir_all(&tree).unwrap();
+    let listen = |address: &str, marker: &str| {
+        format!(
+            "/usr/bin/perl -MIO::Socket::INET -e 'IO::Socket::INET->new(LocalAddr => \
+             \"{address}\", LocalPort => 0, Proto => \"tcp\", Listen => 1) \
+             and print \"{marker}\\n\"'"
+        )
+    };
+    let spec = CommandSpec::shell(format!(
+        "{}; {}; ls .. >/dev/null && echo LISTED; \
+         cat ../../Cargo.toml >/dev/null 2>&1 && echo MANIFEST_READ; \
+         cat ../../.cargo/config.toml >/dev/null 2>&1 && echo CONFIG_READ; true",
+        listen("127.0.0.1", "LOOPBACK_BOUND"),
+        listen("0.0.0.0", "WILDCARD_BOUND"),
+    ));
+    let timeout = Duration::from_secs(15);
+    let control =
+        run_spec_with_timeout(&spec, Some(&tree), timeout, CommandConfinement::Inherit).unwrap();
+    for marker in ["LOOPBACK_BOUND", "LISTED", "MANIFEST_READ", "CONFIG_READ"] {
+        assert!(
+            control.stdout.contains(marker),
+            "unconfined, the fixture shows {marker}: {control:?}"
+        );
+    }
+    let result =
+        run_spec_with_timeout(&spec, Some(&tree), timeout, CommandConfinement::Confined).unwrap();
+    assert!(
+        result.success
+            && result.stdout.contains("LOOPBACK_BOUND")
+            && result.stdout.contains("LISTED"),
+        "a confined command listens on loopback and lists its parent: {result:?}"
+    );
+    for marker in ["WILDCARD_BOUND", "MANIFEST_READ", "CONFIG_READ"] {
+        assert!(
+            !result.stdout.contains(marker),
+            "a confined command must not reach {marker}: {result:?}"
+        );
+    }
+}
+
+/// `sandbox-exec` parses both modes' whole profiles, listener and listings
+/// included. Exit 65 is a parse error; a sandbox that refuses to nest another
+/// (71) has parsed it.
+#[test]
+fn both_network_modes_render_a_profile_that_parses() {
+    let (_root, tree) = tree_below_cargo_files("[package]\n", "");
+    let mut original = Command::new("/bin/sh");
+    original.current_dir(&tree);
+    for network in [
+        super::NetworkAccess::Denied,
+        super::NetworkAccess::Provision,
+    ] {
+        let profile = super::seatbelt_profile(&original, &tree, network).unwrap();
+        let status = Command::new("/usr/bin/sandbox-exec")
+            .arg("-p")
+            .arg(&profile)
+            .arg("/usr/bin/true")
+            .status()
+            .unwrap();
+        assert_ne!(status.code(), Some(65), "{profile}");
+    }
 }

@@ -2,8 +2,8 @@
 //! outcome it is, how serious that is for a stage of a given shape, and when a
 //! first timeout earns a second run.
 
-use crate::verify::criteria::environment::environment_marker;
 use crate::verify::criteria::CriterionResult;
+use crate::verify::environment::environment_marker;
 
 /// What one criterion did at the base commit.
 #[derive(Debug, Clone, PartialEq, Eq)]

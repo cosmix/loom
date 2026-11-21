@@ -5,6 +5,11 @@ pub mod context;
 pub mod contracts;
 pub mod criteria;
 pub mod duplicate_detection;
+pub mod environment;
+#[cfg(test)]
+mod environment_contract_tests;
+#[cfg(test)]
+mod environment_tests;
 pub(crate) mod execution_paths;
 pub mod goal_backward;
 pub mod impact_tests;
