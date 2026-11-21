@@ -43,3 +43,13 @@ Review suggestions and gaps left by `PLAN-contract-and-criterion-dispute-guards`
 - `loom memory pending --strict` finds the state root through the worktree's `.loom/work` link and exits 0 with `no memory journals` when it finds none (`commands/memory/handlers/pending.rs`). A stage that removes or repoints the link passes the criterion without its memories being read. No environment variable names the state root to the CLI today; `LOOM_WORK_DIR` is read by hooks only.
 - `memory_journals_grant` canonicalizes `<state root>/memory` and follows it when it is a symlink. Only the operator and the daemon can write there.
 - On the operator's `loom stage complete` and `loom check` run from inside a worktree, the grant comes from the state root that worktree's link names, as the stage record does.
+
+## Open Items of the Stand-In Guard and Helper
+
+- The guard reads text. It does not see a child returned by a helper, stored in a field or passed as a parameter, an inline `Command::new(..).spawn().unwrap().wait()` chain, `.spawn().map_err(..)?` or a `let ... else` binding, tokio children, `.output()`, a `try_wait` loop with no deadline, or kills through `kill_group`, `signal_group`, `pkill` and `/bin/kill`. An unbalanced bracket inside a string literal can cut a region short.
+- An allowance in `ALLOWED_CALLS` matches by call text per file, so one entry excuses every identical call in that file.
+- The lane passes when every signal-guarded test skipped; it does not assert that group signals work inside the confined run.
+- `StandIn` with `Reach::Group` after the test reaped the leader: a later child of the same test binary that gets the leader's pid passes `unreaped`, and its group is killed. Recording the leader's start time at launch would close it.
+- `StandIn::exits_alone` kills a child that did not end by itself without failing the test.
+- `verify/criteria/confine_seatbelt_signal_tests.rs` keeps a raw sleeper under a whole-file allowance; it can become a `StandIn`.
+- The Linux-only tests (`tests_ref_store_denies.rs`, the Linux branches of the converted tests) and the adopted-group tests on Linux have run only in CI.

@@ -125,7 +125,7 @@
 | [dispute-and-adjudication](conventions/dispute-and-adjudication.md) |  | 155 |
 | [git-and-build-workflow](conventions/git-and-build-workflow.md) |  | 237 |
 | [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) |  | 134 |
-| [host-job-test-guards](conventions/host-job-test-guards.md) | macOS host-job denials, sandbox_probe guards, strict-CI skips | 34 |
+| [host-job-test-guards](conventions/host-job-test-guards.md) | macOS host-job denials, sandbox_probe guards, strict-CI skips | 48 |
 | [model-and-effort-config](conventions/model-and-effort-config.md) |  | 147 |
 | [plan-web](conventions/plan-web.md) |  | 215 |
 | [plan-yaml-and-hooks](conventions/plan-yaml-and-hooks.md) |  | 186 |
@@ -231,7 +231,7 @@
 | [codex-heartbeat-starvation](concerns/codex-heartbeat-starvation.md) |  | 22 |
 | [consolidation-followups](concerns/consolidation-followups.md) |  | 148 |
 | [contract-autonomy-followups](concerns/contract-autonomy-followups.md) |  | 70 |
-| [dispute-guards-followups](concerns/dispute-guards-followups.md) | open review suggestions: trial, overlay undo, narrowing, prompt text | 45 |
+| [dispute-guards-followups](concerns/dispute-guards-followups.md) | open review suggestions: trial, overlay undo, narrowing, prompt text | 55 |
 | [handoff-followups](concerns/handoff-followups.md) |  | 57 |
 | [knowledge-cli-gaps](concerns/knowledge-cli-gaps.md) |  | 108 |
 | [loom-ask-and-read-gate](concerns/loom-ask-and-read-gate.md) |  | 108 |
