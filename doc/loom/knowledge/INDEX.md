@@ -76,7 +76,7 @@
 | [source-graph-resolution](architecture/source-graph-resolution.md) |  | 125 |
 | [source-graph-view](architecture/source-graph-view.md) |  | 78 |
 | [stage-build-cache](architecture/stage-build-cache.md) | Per-stage cache root: env, seeds, sockets, read roots, xcrun bypass | 50 |
-| [status-data-model](architecture/status-data-model.md) | Fields | 268 |
+| [status-data-model](architecture/status-data-model.md) | Fields | 270 |
 | [summary-store](architecture/summary-store.md) |  | 352 |
 | [target-guard](architecture/target-guard.md) | Tip | 127 |
 | [terminal-backends](architecture/terminal-backends.md) |  | 280 |

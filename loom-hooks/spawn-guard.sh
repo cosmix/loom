@@ -278,10 +278,13 @@ record_spawn() {
 
 	# The effort the subagent runs at: the reviewer's configured effort (which
 	# replaces the caller's in the rewritten input), else the caller's, else the
-	# agent definition's default; empty when none is known.
+	# agent definition's default, else the parent session's own effort (which
+	# loom exports as LOOM_SESSION_EFFORT; a subagent without one inherits it);
+	# empty when none is known.
 	local effort="${EFFORT:-}"
 	[[ -n "$effort" ]] || effort=$(printf '%s' "$TOOL_INPUT" | jq -r '.effort | strings' 2>/dev/null || true)
 	[[ -n "$effort" ]] || effort=$(resolve_defined_effort "$AGENT_TYPE_REQ" || true)
+	[[ -n "$effort" ]] || effort="${LOOM_SESSION_EFFORT:-}"
 
 	local ts line
 	ts=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")

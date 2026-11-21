@@ -8,10 +8,14 @@
 //! [`super::super::tmux::TmuxBackend::spawn`] call this so the two lanes can
 //! never silently diverge on any of these behaviors.
 
+mod command;
 mod host;
 
 use anyhow::Result;
+// The test modules below use these through `super::*`.
+#[cfg(test)]
 use shell_escape::escape;
+#[cfg(test)]
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
@@ -20,7 +24,7 @@ use crate::models::stage::Stage;
 use crate::sandbox::MergedSandboxConfig;
 use crate::stage_cache::session::apply_session_grant;
 
-use super::SessionCapsule;
+use command::{claude_command, session_capsule_for};
 use host::LaunchHost;
 pub(crate) use host::{record_daemon_binary, run_host_facts};
 
@@ -222,34 +226,6 @@ fn session_sandbox(work_dir: &Path, stage: &Stage, kind: SessionType) -> MergedS
     sandbox
 }
 
-/// The `claude` invocation for this launch; `build_claude_command`
-/// shell-escapes the path, model, effort, mode and remote-control name (S-3).
-/// The claude path is absolute, since macOS terminals do not inherit PATH.
-fn claude_command(
-    host: &LaunchHost,
-    work_dir: &Path,
-    kind: SessionType,
-    stage: &Stage,
-    signal_path: &Path,
-    sandbox: &MergedSandboxConfig,
-    capsule: &SessionCapsule,
-) -> String {
-    let prompt = initial_prompt(kind, stage, signal_path);
-    let escaped_prompt = escape(Cow::Borrowed(&prompt));
-    let (model, effort) = model_and_effort(kind, stage, work_dir);
-    let rc_name = remote_control_session_name(kind, stage);
-    let remote_control = crate::remote_control::resolve_invocation(work_dir, &rc_name);
-    super::build_claude_command(
-        &host.claude_path.display().to_string(),
-        &model,
-        &effort,
-        sandbox.permission_mode.as_settings_value(),
-        capsule,
-        &remote_control,
-        &escaped_prompt,
-    )
-}
-
 /// Prepare everything needed to launch a session, short of actually starting
 /// the terminal/tmux process.
 ///
@@ -306,24 +282,14 @@ fn prepare_session_launch_with(
     crate::sandbox::preflight::require_confined_host(&host.facts)?;
     let cache = host.stage_cache(work_dir, &stage.id)?;
     let sandbox = granted_session_sandbox(work_dir, stage, kind, &cache);
-    let scratch_dir = host.prepare_scratch(&session.id)?;
-    let settings_file = host.write_capsule(
-        work_dir,
-        kind,
-        stage,
-        &session.id,
-        &sandbox,
-        cwd,
-        &scratch_dir,
-    )?;
-    let prefix_file = resolve_prompt_cache_split_prefix_file(work_dir, stage);
-    let capsule = super::session_capsule(
-        host.capsule_support,
-        Some(settings_file.clone()),
-        prefix_file,
-    );
-    capsule.require_isolation(&settings_file)?;
-    let claude_cmd = claude_command(host, work_dir, kind, stage, signal_path, &sandbox, &capsule);
+    let (scratch_dir, capsule) =
+        session_capsule_for(host, work_dir, kind, stage, &session.id, &sandbox, cwd)?;
+    let (claude_cmd, effort) =
+        claude_command(host, work_dir, kind, stage, signal_path, &sandbox, &capsule);
+    let host_env = super::wrapper::WrapperHostEnv {
+        session_effort: Some(effort),
+        ..host.wrapper_env(scratch_dir, &cache, cwd)
+    };
     let context_ceiling_tokens =
         crate::fs::work_dir::resolve_context_ceiling_tokens(work_dir, stage.context_ceiling_tokens);
     let wrapper_path = super::wrapper::create_session_wrapper_script(
@@ -336,7 +302,7 @@ fn prepare_session_launch_with(
         kind,
         context_ceiling_tokens,
         super::build_cache::sccache_usable_in(&sandbox),
-        &host.wrapper_env(scratch_dir, &cache, cwd),
+        &host_env,
     )?;
     // Absolute: macOS terminals open in the home directory.
     let wrapper_path_abs = wrapper_path.canonicalize().unwrap_or(wrapper_path);

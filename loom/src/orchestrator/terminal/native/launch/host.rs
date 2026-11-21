@@ -164,6 +164,7 @@ impl LaunchHost {
             hook_path: self.facts.hook_path.clone(),
             // The daemon reads the boot ID unsandboxed; a session's sandbox can deny it.
             boot_id: crate::process::boot_id::os_boot_id().ok(),
+            session_effort: None,
         }
     }
 }

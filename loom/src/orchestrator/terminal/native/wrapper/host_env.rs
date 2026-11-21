@@ -28,6 +28,10 @@ pub(crate) struct WrapperHostEnv {
     pub hook_path: Vec<PathBuf>,
     /// The operating system's boot ID, exported as `LOOM_BOOT_ID`.
     pub boot_id: Option<String>,
+    /// The effort the session's `claude` runs with, exported as
+    /// `LOOM_SESSION_EFFORT`. `spawn-guard.sh` records it for a subagent that
+    /// resolves no effort of its own, since that subagent inherits this one.
+    pub session_effort: Option<String>,
     /// The stage cache's session environment, already rendered as
     /// continuation lines by `stage_cache::session::wrapper_exports`.
     pub cache_exports: String,
@@ -59,6 +63,7 @@ impl WrapperHostEnv {
             ),
             ("LOOM_HOOK_PATH", hook_path),
             ("LOOM_BOOT_ID", self.boot_id.clone()),
+            ("LOOM_SESSION_EFFORT", self.session_effort.clone()),
             // No reflog for a branch without one, so a session's ref updates finish
             // under the capsule's deny on `<common>/logs`.
             (git_setting_name, Some(git_setting_value.to_string())),

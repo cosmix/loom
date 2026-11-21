@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # spawn-guard.sh records the effort a spawn runs at in spawns.jsonl: the
 # caller's explicit `effort`, else the agent definition's frontmatter default,
-# else an empty string.
+# else the session's LOOM_SESSION_EFFORT, else an empty string.
 set -euo pipefail
 
 unset LOOM_STAGE_ID LOOM_SESSION_ID LOOM_WORK_DIR LOOM_SESSION_TYPE LOOM_MAIN_AGENT_PID
@@ -24,6 +24,7 @@ mkdir -p "$HOME_DIR" "$CWD/.claude/agents" "$WORK"
 printf -- '---\nname: with-effort\nmodel: opus\neffort: medium\n---\n' >"$CWD/.claude/agents/with-effort.md"
 printf -- '---\nname: no-effort\nmodel: sonnet\n---\n' >"$CWD/.claude/agents/no-effort.md"
 
+# SESSION_EFFORT, when set, is exported to the hook as LOOM_SESSION_EFFORT.
 # spawn <agent-type> [effort] - run the hook inside a stage and print the
 # `effort` of the ledger row it appended.
 spawn() {
@@ -32,7 +33,7 @@ spawn() {
 		'{tool_name:"Task",tool_input:({subagent_type:$t,description:"d",prompt:"p"} + (if $e != "" then {effort:$e} else {} end))}')
 	rm -f "$LEDGER"
 	(cd "$CWD" && printf '%s' "$payload" | env -i PATH="$PATH" HOME="$HOME_DIR" TMPDIR="$d" \
-		LOOM_STAGE_ID=test-stage LOOM_MAIN_AGENT_PID=$$ LOOM_WORK_DIR="$WORK" LOOM_SESSION_ID=test-session \
+		LOOM_STAGE_ID=test-stage LOOM_MAIN_AGENT_PID=$$ LOOM_WORK_DIR="$WORK" LOOM_SESSION_ID=test-session ${SESSION_EFFORT:+LOOM_SESSION_EFFORT=$SESSION_EFFORT} \
 		bash "$HOOK" >/dev/null 2>&1) || true
 	[[ -f "$LEDGER" ]] || fail "no ledger row written for $1"
 	jq -r '.effort' "$LEDGER"
@@ -41,5 +42,11 @@ spawn() {
 [[ $(spawn with-effort high) == high ]] || fail "explicit effort not recorded"
 [[ $(spawn with-effort) == medium ]] || fail "frontmatter effort default not recorded"
 [[ -z $(spawn no-effort) ]] || fail "effort recorded though none is known"
+
+SESSION_EFFORT=xhigh
+[[ $(spawn no-effort) == xhigh ]] || fail "session effort not the last fallback"
+[[ $(spawn no-effort low) == low ]] || fail "explicit effort lost to the session effort"
+[[ $(spawn with-effort) == medium ]] || fail "frontmatter effort lost to the session effort"
+SESSION_EFFORT=
 
 echo "PASS"

@@ -52,6 +52,7 @@ fn full_host_env() -> WrapperHostEnv {
         loom_bin: Some(PathBuf::from("/opt/loom/bin/loom")),
         hook_path: vec![PathBuf::from("/usr/bin"), PathBuf::from("/bin")],
         boot_id: None,
+        session_effort: None,
         cache_exports: String::new(),
     }
 }
@@ -98,6 +99,20 @@ fn host_env_values_are_shell_escaped() {
         script.contains("'LOOM_SCRATCH_DIR=/scratch dir/session1'"),
         "{script}"
     );
+}
+
+#[test]
+fn wrapper_script_exports_session_effort_escaped() {
+    let with = |effort: &str| WrapperHostEnv {
+        session_effort: Some(effort.to_string()),
+        ..WrapperHostEnv::default()
+    };
+    let script = wrapper_script_with(SessionType::Stage, false, &with("xhigh"));
+    assert!(script.contains("LOOM_SESSION_EFFORT=xhigh"), "{script}");
+    let script = wrapper_script_with(SessionType::Stage, false, &with("hi gh"));
+    assert!(script.contains("'LOOM_SESSION_EFFORT=hi gh'"), "{script}");
+    let script = wrapper_script_for(SessionType::Stage);
+    assert!(!script.contains("LOOM_SESSION_EFFORT="), "{script}");
 }
 
 #[test]
