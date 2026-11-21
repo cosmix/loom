@@ -15,6 +15,9 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: "-Dwarnings"
+  # Without debuginfo the lib test crate's rustc peaks near 8.5 GB instead of
+  # 10.4 GB. Panic messages keep file and line; backtraces lose line numbers.
+  CARGO_PROFILE_DEV_DEBUG: "0"
 
 jobs:
   # Every job uses these filters. Include every root-level crate input:
@@ -123,6 +126,7 @@ jobs:
         include:
           - suite: lib
             cargo-args: --lib --bins
+            test-args: "--skip stage_cache::toolchain_tests::"
           - suite: integration
             cargo-args: --test '*'
     steps:
@@ -210,321 +214,13 @@ jobs:
         env:
           LOOM_TEST_REQUIRE_SANDBOX_FREE: "1"
 
-      # Seeds the host caches that stage_cache::toolchain_tests:: reads, then
-      # exports the coordinates the probes need through GITHUB_ENV.
-      - name: Seed the toolchain caches
-        run: |
-          go_seed="$RUNNER_TEMP/go-seed"
-          mkdir -p "$go_seed"
-          (cd "$go_seed" && go mod init seed && go mod download github.com/pkg/errors@v0.9.1)
-          # Compiling unconfined fetches every plugin the probe's offline
-          # `mvn -o -B compile` needs (resources, compiler, surefire) besides
-          # the dependency.
-          maven_seed="$RUNNER_TEMP/maven-seed"
-          mkdir -p "$maven_seed/src/main/java"
-          cat > "$maven_seed/pom.xml" <<'EOF'
-          <project xmlns="http://maven.apache.org/POM/4.0.0">
-            <modelVersion>4.0.0</modelVersion>
-            <groupId>example</groupId>
-            <artifactId>seed</artifactId>
-            <version>1</version>
-            <properties>
-              <maven.compiler.source>11</maven.compiler.source>
-              <maven.compiler.target>11</maven.compiler.target>
-              <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-            </properties>
-            <dependencies>
-              <dependency>
-                <groupId>commons-lang</groupId>
-                <artifactId>commons-lang</artifactId>
-                <version>2.6</version>
-              </dependency>
-            </dependencies>
-          </project>
-          EOF
-          cat > "$maven_seed/src/main/java/App.java" <<'EOF'
-          public class App {
-              public static void main(String[] args) {}
-          }
-          EOF
-          (cd "$maven_seed" && mvn -q -B compile)
-          gradle_seed="$RUNNER_TEMP/gradle-seed"
-          mkdir -p "$gradle_seed/src/main/java/seed"
-          cat > "$gradle_seed/settings.gradle" <<'EOF'
-          rootProject.name = 'seed'
-          EOF
-          cat > "$gradle_seed/build.gradle" <<'EOF'
-          plugins {
-              id 'java'
-          }
-
-          repositories {
-              mavenCentral()
-          }
-
-          dependencies {
-              implementation 'commons-lang:commons-lang:2.6'
-          }
-          EOF
-          cat > "$gradle_seed/src/main/java/seed/Seed.java" <<'EOF'
-          package seed;
-
-          import org.apache.commons.lang.StringUtils;
-
-          public class Seed {
-              public static void main(String[] args) {
-                  System.out.println(StringUtils.isBlank(" "));
-              }
-          }
-          EOF
-          (cd "$gradle_seed" && gradle -q --no-daemon compileJava)
-          echo "LOOM_TEST_GO_SEED_MODULE=github.com/pkg/errors@v0.9.1" >> "$GITHUB_ENV"
-          echo "LOOM_TEST_MAVEN_SEED=commons-lang:commons-lang:2.6" >> "$GITHUB_ENV"
-          echo "LOOM_TEST_GRADLE_SEED=commons-lang:commons-lang:2.6" >> "$GITHUB_ENV"
-
-      # Runs after the seeding: LOOM_TEST_REQUIRE_SANDBOX_FREE fails every
-      # toolchain probe whose seed variable is not yet in GITHUB_ENV.
+      # The toolchain probes need seeded host caches and run in nightly.yml.
       - name: Run tests
         working-directory: loom
-        run: cargo test ${{ matrix.cargo-args }} --no-fail-fast
+        run: cargo test ${{ matrix.cargo-args }} --no-fail-fast -- ${{ matrix.test-args }}
         env:
           LOOM_E2E_REQUIRE_TMUX: "1"
           LOOM_TEST_REQUIRE_SANDBOX_FREE: "1"
-
-      # Runs every stage_cache:: test and the confine stage-cache tests, among
-      # them the confined toolchain probes in stage_cache::toolchain_tests::.
-      # LOOM_TEST_REQUIRE_SANDBOX_FREE turns every skip into a failure, so a
-      # missing toolchain or launcher on either runner is a red build.
-      - name: Run the confined toolchain probes
-        if: matrix.suite == 'lib'
-        working-directory: loom
-        run: "cargo test --lib -- stage_cache:: verify::criteria::confine::host::stage_cache_tests::"
-        env:
-          LOOM_TEST_REQUIRE_SANDBOX_FREE: "1"
-
-      - name: Build the loom binary
-        id: build
-        if: ${{ !cancelled() && matrix.suite == 'integration' }}
-        working-directory: loom
-        run: cargo build --bin loom
-
-      # The smoke scripts need the binary and the rg the tools step installs;
-      # without them they only repeat an earlier step's failure.
-      - name: Run the web dashboard smoke test
-        if: ${{ !cancelled() && matrix.suite == 'integration' && steps.build.outcome == 'success' && steps.tools.outcome == 'success' }}
-        run: ./scripts/smoke-web-dashboard.sh loom/target/debug/loom
-
-      - name: Run the web terminal smoke test
-        if: ${{ !cancelled() && matrix.suite == 'integration' && steps.build.outcome == 'success' && steps.tools.outcome == 'success' }}
-        run: ./scripts/smoke-web-terminal.sh loom/target/debug/loom
-
-  # The Linux jobs never see Darwin's sockets, sandbox, BSD userland or path
-  # layout (/var/folders temp dirs that resolve under /private), and most
-  # contributors have no Mac to run the suite on. --no-fail-fast reports every
-  # failing target in one run.
-  # The host-job lane gets its own job: it reruns the whole lib suite
-  # confined, for up to 30 minutes. Its "Run tests" step only builds the lib
-  # test binary the lane runs.
-  test-macos:
-    name: Test (macos, ${{ matrix.suite }})
-    runs-on: macos-latest
-    needs: changes
-    if: needs.changes.outputs.rust == 'true'
-    timeout-minutes: 90
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - suite: lib
-            cargo-args: --lib --bins
-          - suite: integration
-            cargo-args: --test '*'
-          - suite: host-lane
-            cargo-args: --lib --no-run
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Cargo dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: loom
-          shared-key: tests
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: stable
-
-      - name: Set up Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "21"
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "8.10.2"
-
-      - name: Check Maven is 3.9 or later
-        run: |
-          mvn -v
-          line=$(mvn -v | head -n 1)
-          case "$line" in
-            "Apache Maven 3.9."*|"Apache Maven 3."[1-9][0-9].*) ;;
-            *) echo "expected Maven 3.9 or a later 3.x, got: $line"; exit 1 ;;
-          esac
-
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@v2
-
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v6
-
-      # The uv and bun confinement tests skip when their tool is not on PATH
-      # and fail when the variable naming it points at no file. Naming both
-      # here makes a tool that stops being installed fail the strict run.
-      - name: Require uv and bun for the confinement tests
-        run: |
-          echo "LOOM_TEST_UV_BIN=$(command -v uv)" >> "$GITHUB_ENV"
-          echo "LOOM_TEST_BUN_BIN=$(command -v bun)" >> "$GITHUB_ENV"
-
-      - name: Set up sccache
-        uses: mozilla-actions/sccache-action@v0.0.9
-
-      - name: Install ccache
-        run: brew install ccache
-
-      - name: Check cmake
-        run: cmake --version
-
-      # The smoke scripts call rg and jq.
-      - name: Install tmux, ripgrep and jq
-        id: tools
-        run: brew install tmux ripgrep jq
-
-      # Seeds the host caches that stage_cache::toolchain_tests:: reads, then
-      # exports the coordinates the probes need through GITHUB_ENV.
-      - name: Seed the toolchain caches
-        run: |
-          go_seed="$RUNNER_TEMP/go-seed"
-          mkdir -p "$go_seed"
-          (cd "$go_seed" && go mod init seed && go mod download github.com/pkg/errors@v0.9.1)
-          # Compiling unconfined fetches every plugin the probe's offline
-          # `mvn -o -B compile` needs (resources, compiler, surefire) besides
-          # the dependency.
-          maven_seed="$RUNNER_TEMP/maven-seed"
-          mkdir -p "$maven_seed/src/main/java"
-          cat > "$maven_seed/pom.xml" <<'EOF'
-          <project xmlns="http://maven.apache.org/POM/4.0.0">
-            <modelVersion>4.0.0</modelVersion>
-            <groupId>example</groupId>
-            <artifactId>seed</artifactId>
-            <version>1</version>
-            <properties>
-              <maven.compiler.source>11</maven.compiler.source>
-              <maven.compiler.target>11</maven.compiler.target>
-              <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-            </properties>
-            <dependencies>
-              <dependency>
-                <groupId>commons-lang</groupId>
-                <artifactId>commons-lang</artifactId>
-                <version>2.6</version>
-              </dependency>
-            </dependencies>
-          </project>
-          EOF
-          cat > "$maven_seed/src/main/java/App.java" <<'EOF'
-          public class App {
-              public static void main(String[] args) {}
-          }
-          EOF
-          (cd "$maven_seed" && mvn -q -B compile)
-          gradle_seed="$RUNNER_TEMP/gradle-seed"
-          mkdir -p "$gradle_seed/src/main/java/seed"
-          cat > "$gradle_seed/settings.gradle" <<'EOF'
-          rootProject.name = 'seed'
-          EOF
-          cat > "$gradle_seed/build.gradle" <<'EOF'
-          plugins {
-              id 'java'
-          }
-
-          repositories {
-              mavenCentral()
-          }
-
-          dependencies {
-              implementation 'commons-lang:commons-lang:2.6'
-          }
-          EOF
-          cat > "$gradle_seed/src/main/java/seed/Seed.java" <<'EOF'
-          package seed;
-
-          import org.apache.commons.lang.StringUtils;
-
-          public class Seed {
-              public static void main(String[] args) {
-                  System.out.println(StringUtils.isBlank(" "));
-              }
-          }
-          EOF
-          (cd "$gradle_seed" && gradle -q --no-daemon compileJava)
-          echo "LOOM_TEST_GO_SEED_MODULE=github.com/pkg/errors@v0.9.1" >> "$GITHUB_ENV"
-          echo "LOOM_TEST_MAVEN_SEED=commons-lang:commons-lang:2.6" >> "$GITHUB_ENV"
-          echo "LOOM_TEST_GRADLE_SEED=commons-lang:commons-lang:2.6" >> "$GITHUB_ENV"
-
-      # Runs after the seeding: LOOM_TEST_REQUIRE_SANDBOX_FREE fails every
-      # toolchain probe whose seed variable is not yet in GITHUB_ENV.
-      - name: Run tests
-        working-directory: loom
-        run: cargo test ${{ matrix.cargo-args }} --no-fail-fast
-        env:
-          LOOM_E2E_REQUIRE_TMUX: "1"
-          LOOM_TEST_REQUIRE_SANDBOX_FREE: "1"
-
-      # Runs every stage_cache:: test and the confine stage-cache tests, among
-      # them the confined toolchain probes in stage_cache::toolchain_tests::.
-      # LOOM_TEST_REQUIRE_SANDBOX_FREE turns every skip into a failure, so a
-      # missing toolchain or launcher on either runner is a red build.
-      - name: Run the confined toolchain probes
-        if: matrix.suite == 'lib'
-        working-directory: loom
-        run: "cargo test --lib -- stage_cache:: verify::criteria::confine::host::stage_cache_tests::"
-        env:
-          LOOM_TEST_REQUIRE_SANDBOX_FREE: "1"
-
-      # Runs the lib tests again inside the confinement a host job gives an
-      # acceptance criterion (process::sandbox_probe::host_job_lane), so a test
-      # that fails or hangs under that boundary fails the commit that adds it.
-      # The probe guards may skip there, so LOOM_TEST_REQUIRE_SANDBOX_FREE stays
-      # unset; the strict steps above prove the same tests run unconfined. The
-      # confined run is the test binary "Run tests" built, so nothing compiles
-      # or fetches inside the boundary. libtest names every test still running
-      # after 60 seconds; the lane kills the run after 25 minutes and the step
-      # timeout backs that bound. The lane fails when the confined run passed
-      # no test, and the step fails unless the lane itself ran and passed: a
-      # filter that matches nothing makes libtest report success on zero tests.
-      - name: Run the lib tests under host-job confinement
-        if: ${{ !cancelled() && matrix.suite == 'host-lane' }}
-        working-directory: loom
-        timeout-minutes: 30
-        run: |
-          set -o pipefail
-          log="$RUNNER_TEMP/host-job-lane.log"
-          cargo test --lib -- --ignored --exact process::sandbox_probe::host_job_lane::the_lib_tests_pass_under_host_job_confinement --nocapture 2>&1 | tee "$log"
-          grep '^test result:' "$log" | tail -n 1 | grep -q '^test result: ok\. 1 passed;'
 
       - name: Build the loom binary
         id: build
@@ -591,8 +287,8 @@ jobs:
 
   # Runs the lint gates whose result depends on the target OS: clippy and
   # rustdoc both see code under macOS-only cfg. fmt does not, so it runs on
-  # Linux only. A separate job from test-macos because a job compiles the
-  # crate in one mode.
+  # Linux only. A separate job from nightly.yml's test-macos because a job
+  # compiles the crate in one mode.
   lint-macos:
     name: Lint (macos)
     runs-on: macos-latest
