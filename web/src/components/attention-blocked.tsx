@@ -1,6 +1,7 @@
 import { Link } from "react-router";
 
 import type { Attention, FailingCriterion } from "@/api/schema";
+import { historyLabels } from "@/components/terminal/history-labels";
 import { terminalHref } from "@/components/terminal/terminal-view";
 
 /// The acceptance criteria that failed in the stage's last attempt, numbered
@@ -38,7 +39,7 @@ export function BlockedFacts({ entry }: { entry: Attention }) {
       {entry.failing_criteria.length > 0 && <FailingCriteria criteria={entry.failing_criteria} />}
       {entry.terminal_history && (
         <Link to={terminalHref(entry.id)} className="w-fit text-xs font-medium hover:underline">
-          View terminal history
+          {historyLabels(entry.terminal_history_kind ?? "history").link}
         </Link>
       )}
     </>

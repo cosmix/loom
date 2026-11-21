@@ -33,14 +33,16 @@
 
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 
-use crate::fs::safe_fs::{safe_create_dir_all, safe_locked_write, MAX_LOG_BYTES};
+use crate::fs::safe_fs::{safe_create_dir_all, MAX_LOG_BYTES};
 use crate::fs::safe_read::{is_not_found, open_regular_no_follow, read_bounded};
+use crate::fs::safe_replace::replace_private;
+use crate::fs::session_files::{load_session_exact, record_session_fullscreen_exact};
 use crate::models::session::Session;
 use crate::validation::validate_id;
 
-use super::capture::capture_history;
+use super::capture::{PaneReads, PaneScreen, TmuxPane};
 
 /// Options set on the server in the same invocation that creates it; see the
 /// module docs for why that timing matters.
@@ -85,30 +87,105 @@ fn bound_history(captured: Vec<u8>) -> Vec<u8> {
 
 /// Write `history` as `session_id`'s history file, replacing any earlier one.
 ///
-/// The write goes through `safe_fs`, which refuses a symlink at any component
-/// of the path.
+/// The file is published atomically (a private temp file renamed over the
+/// target), so a crash or a full disk mid-write leaves the previous frame, never
+/// a truncated file; the directory walk refuses a symlink at any directory
+/// component, and a link planted at the file itself is replaced, not followed.
 pub fn write_history(work_dir: &Path, session_id: &str, history: &[u8]) -> Result<()> {
     validate_id(session_id).context("invalid session id for terminal history")?;
+    if history.len() > MAX_HISTORY_BYTES {
+        bail!("terminal history exceeds the maximum file size");
+    }
     safe_create_dir_all(work_dir, Path::new(HISTORY_DIR), 0o700)?;
-    safe_locked_write(work_dir, &history_relpath(session_id), history)
+    replace_private(work_dir, &history_relpath(session_id), history)
 }
 
-/// Capture `session`'s whole scrollback and write it to its history file.
+/// What teardown captures for a session's history file.
+pub enum CaptureMode {
+    /// The whole scrollback with colors: an ordinary session.
+    Full,
+    /// The visible screen: a pane on its alternate screen has no scrollback
+    /// worth keeping, only the frame it shows.
+    Visible,
+}
+
+/// What to capture at teardown, `None` to keep the file already saved.
 ///
-/// Best-effort: a pane that cannot be read (its server already gone, a probe
-/// timeout) is skipped; a file that cannot be written is logged, and the kill
-/// the caller is about to perform goes ahead. A capture that yields nothing leaves an
-/// earlier history file alone.
-pub(super) fn save_history(work_dir: &Path, session: &Session) {
-    let Some(captured) = capture_history(session).filter(|bytes| !bytes.is_empty()) else {
+/// A pane on the alternate screen now is captured visible. Otherwise a session
+/// the monitor saw fullscreen keeps the last frame it saved: the pane now shows
+/// a restored main screen or cannot be read, and its scrollback holds none of
+/// what the session showed. Only a session never seen fullscreen gets its
+/// scrollback.
+pub fn capture_mode(fullscreen_seen: bool, alternate_now: Option<bool>) -> Option<CaptureMode> {
+    match (alternate_now, fullscreen_seen) {
+        (Some(true), _) => Some(CaptureMode::Visible),
+        (_, true) => None,
+        (_, false) => Some(CaptureMode::Full),
+    }
+}
+
+/// Keep `visible` as `session`'s last screen. The flag is recorded before the
+/// file is written, so a teardown that finds the file never replaces it with
+/// the scrollback. Nothing is written for an empty frame.
+pub(super) fn save_last_screen(work_dir: &Path, session: &Session, visible: Vec<u8>) {
+    if visible.is_empty() {
         return;
-    };
+    }
+    if let Err(error) = record_session_fullscreen_exact(work_dir, &session.id) {
+        tracing::warn!(
+            session_id = %session.id,
+            %error,
+            "Failed to record that the session ran fullscreen"
+        );
+    }
+    write_captured(work_dir, session, visible);
+}
+
+fn write_captured(work_dir: &Path, session: &Session, captured: Vec<u8>) {
     if let Err(error) = write_history(work_dir, &session.id, &bound_history(captured)) {
         tracing::warn!(
             session_id = %session.id,
             %error,
             "Failed to save terminal history; the session is killed without it"
         );
+    }
+}
+
+/// Capture `session`'s history and write it to its history file.
+pub(super) fn save_history(work_dir: &Path, session: &Session) {
+    save_history_with(work_dir, session, &TmuxPane);
+}
+
+/// Capture `session`'s history through `pane` and write it to its history file:
+/// its whole scrollback, or, for a session that ran fullscreen
+/// ([`capture_mode`]), its last alternate screen.
+///
+/// Best-effort: a pane that cannot be read (its server already gone, a probe
+/// timeout) is skipped; a file that cannot be written is logged, and the kill
+/// the caller is about to perform goes ahead. A capture that yields nothing
+/// leaves an earlier history file alone. `session` may be an older snapshot, so
+/// the `fullscreen_seen` flag is read from disk.
+pub(super) fn save_history_with(work_dir: &Path, session: &Session, pane: &impl PaneReads) {
+    let seen = load_session_exact(work_dir, &session.id)
+        .ok()
+        .flatten()
+        .map_or(session.fullscreen_seen, |record| record.fullscreen_seen);
+    let screen = pane.alternate_screen(session);
+    let alternate_now = screen
+        .as_ref()
+        .map(|screen| matches!(screen, PaneScreen::Alternate(_)));
+    match capture_mode(seen, alternate_now) {
+        None => {}
+        Some(CaptureMode::Visible) => {
+            if let Some(PaneScreen::Alternate(visible)) = screen {
+                save_last_screen(work_dir, session, visible);
+            }
+        }
+        Some(CaptureMode::Full) => {
+            if let Some(scrollback) = pane.scrollback(session).filter(|bytes| !bytes.is_empty()) {
+                write_captured(work_dir, session, scrollback);
+            }
+        }
     }
 }
 
@@ -194,6 +271,22 @@ mod tests {
     }
 
     #[test]
+    fn a_refused_write_keeps_the_previous_file() {
+        let work = TempDir::new().unwrap();
+        write_history(work.path(), "session-a", b"last good frame").unwrap();
+
+        let oversized = vec![b'x'; MAX_HISTORY_BYTES + 1];
+        assert!(write_history(work.path(), "session-a", &oversized).is_err());
+
+        assert_eq!(
+            read_history(work.path(), "session-a").unwrap().as_deref(),
+            Some(&b"last good frame"[..])
+        );
+        let leftovers = std::fs::read_dir(history_dir(work.path())).unwrap().count();
+        assert_eq!(leftovers, 1, "no temp file is left behind");
+    }
+
+    #[test]
     fn an_id_that_could_leave_the_history_directory_is_refused() {
         let work = TempDir::new().unwrap();
         for id in ["../escape", "a/b", ""] {
@@ -204,7 +297,7 @@ mod tests {
     }
 
     #[test]
-    fn a_planted_symlink_is_not_followed_on_write_or_read() {
+    fn a_planted_symlink_is_not_followed_on_write() {
         let work = TempDir::new().unwrap();
         let outside = TempDir::new().unwrap();
         let target = outside.path().join("target");
@@ -213,10 +306,19 @@ mod tests {
         std::os::unix::fs::symlink(&target, work.path().join(history_relpath("session-a")))
             .unwrap();
 
-        assert!(write_history(work.path(), "session-a", b"overwritten").is_err());
-        assert!(read_history(work.path(), "session-a").is_err());
-        assert!(!has_history(work.path(), "session-a"));
+        // A rename replaces the planted link rather than writing through it.
+        write_history(work.path(), "session-a", b"overwritten").unwrap();
         assert_eq!(std::fs::read(&target).unwrap(), b"untouched");
+        assert_eq!(
+            read_history(work.path(), "session-a").unwrap().as_deref(),
+            Some(&b"overwritten"[..])
+        );
+
+        // A link on the directory itself is refused.
+        let other = TempDir::new().unwrap();
+        std::os::unix::fs::symlink(outside.path(), other.path().join(HISTORY_DIR)).unwrap();
+        assert!(write_history(other.path(), "session-a", b"x").is_err());
+        assert!(!outside.path().join("session-a.terminal").exists());
     }
 
     #[test]

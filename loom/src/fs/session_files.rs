@@ -15,12 +15,15 @@ use crate::parser::markdown::parse_frontmatter_strings;
 mod enumerate;
 #[path = "session_files/exact.rs"]
 mod exact;
+#[path = "session_files/fullscreen.rs"]
+mod fullscreen;
 pub use enumerate::{enumerate_sessions, SessionEnumeration, SessionRecord};
 pub(crate) use exact::validate_session_file_id;
 pub use exact::{
     load_session_exact, load_session_exact_unlocked, mark_session_terminal_reason,
     record_session_context_exact, record_session_heartbeat_exact,
 };
+pub use fullscreen::record_session_fullscreen_exact;
 
 /// Persist a session to `.loom/work/sessions/{id}.md`.
 ///

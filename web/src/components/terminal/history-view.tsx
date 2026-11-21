@@ -7,6 +7,7 @@ import { fetchTerminalHistory, type HistoryLoader } from "@/api/terminal-history
 import type { StageSummary } from "@/api/schema";
 import { CopyCommand } from "@/components/copy-command";
 import { createHistoryEmulator } from "@/components/terminal/emulator";
+import { historyLabels, type HistoryKind } from "@/components/terminal/history-labels";
 import { BackButton, Line, Name, rise, terminalHref } from "@/components/terminal/terminal-view";
 import type { EmulatorFactory } from "@/components/terminal/use-terminal";
 import { Kbd } from "@/components/ui/kbd";
@@ -18,6 +19,8 @@ export interface HistoryViewProps {
   stage: StageSummary;
   /// The ended session whose saved screen this shows.
   session: string;
+  /// What the saved screen is; it words every label of the view.
+  kind: HistoryKind;
   frame: "dialog" | "page";
   factory?: EmulatorFactory;
   load?: HistoryLoader;
@@ -34,11 +37,6 @@ const WELL_PHASE: Record<Phase, string> = {
   shown: "history",
   missing: "refused",
   failed: "refused",
-};
-
-const NOTICE: Record<"missing" | "failed", string> = {
-  missing: "This session left no saved terminal history.",
-  failed: "The saved terminal history could not be loaded.",
 };
 
 /// The `less -R` command that reads the saved screen from a shell.
@@ -92,12 +90,14 @@ function useSavedScreen(session: string, factory: EmulatorFactory, load: History
 export function HistoryView({
   stage,
   session,
+  kind,
   frame,
   factory = createHistoryEmulator,
   load = fetchTerminalHistory,
   onBack,
 }: HistoryViewProps): ReactElement {
   const { hostRef, phase } = useSavedScreen(session, factory, load);
+  const labels = historyLabels(kind);
 
   return (
     <div
@@ -106,28 +106,30 @@ export function HistoryView({
       data-mode="view"
       data-phase={WELL_PHASE[phase]}
     >
-      <HistoryHead stage={stage} frame={frame} onBack={onBack} />
+      <HistoryHead stage={stage} eyebrow={labels.eyebrow} frame={frame} onBack={onBack} />
       <div className="terminal-well-wrap">
         <div className="terminal-well" data-mode="view" data-phase={WELL_PHASE[phase]}>
-          <div ref={hostRef} className="terminal-host" aria-label="Saved terminal history" />
+          <div ref={hostRef} className="terminal-host" aria-label={labels.screenAria} />
           {(phase === "missing" || phase === "failed") && (
             <div className="terminal-notice" role="alert">
-              <span className="line">{NOTICE[phase]}</span>
+              <span className="line">{labels[phase]}</span>
             </div>
           )}
         </div>
       </div>
-      <HistoryFoot stage={stage} session={session} frame={frame} />
+      <HistoryFoot stage={stage} session={session} footer={labels.footer} frame={frame} />
     </div>
   );
 }
 
 function HistoryHead({
   stage,
+  eyebrow,
   frame,
   onBack,
 }: {
   stage: StageSummary;
+  eyebrow: string;
   frame: HistoryViewProps["frame"];
   onBack?: () => void;
 }) {
@@ -136,7 +138,7 @@ function HistoryHead({
       <div className="flex min-w-0 flex-col gap-1.5">
         <div className="rise flex items-center gap-2" style={rise(0)}>
           {onBack && <BackButton onBack={onBack} />}
-          <span className="eyebrow">Terminal history</span>
+          <span className="eyebrow">{eyebrow}</span>
         </div>
         <div className="rise flex flex-wrap items-baseline gap-x-3 gap-y-1" style={rise(1)}>
           <Name stage={stage} frame={frame} />
@@ -151,16 +153,18 @@ function HistoryHead({
 function HistoryFoot({
   stage,
   session,
+  footer,
   frame,
 }: {
   stage: StageSummary;
   session: string;
+  footer: string;
   frame: HistoryViewProps["frame"];
 }) {
   return (
     <footer className="terminal-foot">
       <span className="terminal-hint">
-        read-only · the session ended · this is its saved screen
+        {footer}
         {frame === "dialog" && (
           <>
             {" · "}

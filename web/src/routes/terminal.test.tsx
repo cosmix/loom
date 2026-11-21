@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import fixtureJson from "@/api/fixtures/snapshot.json";
 import { snapshotSchema, type Snapshot, type StageSummary } from "@/api/schema";
+import { StagePage } from "@/routes/stage";
 import { TerminalPage } from "@/routes/terminal";
 import { fakeFactory } from "@/components/terminal/terminal-view-test-helpers";
 import type { EmulatorFactory } from "@/components/terminal/use-terminal";
@@ -52,6 +53,44 @@ function renderPage(path: string, stage = terminalStage()) {
 }
 
 afterEach(cleanup);
+
+describe("stage page terminal action", () => {
+  function renderStagePage(stage: StageSummary) {
+    const store = createStore();
+    applySnapshot(store, snapshotFor(stage));
+    const router = createMemoryRouter([{ path: "/stages/:stageId", element: <StagePage /> }], {
+      initialEntries: [`/stages/${stage.id}`],
+    });
+    render(
+      <Provider store={store}>
+        <TooltipProvider>
+          <RouterProvider router={router} />
+        </TooltipProvider>
+      </Provider>,
+    );
+  }
+  const ended = (overrides: Partial<StageSummary> = {}): StageSummary => ({
+    ...terminalStage(),
+    session_alive: false,
+    terminal_history_session: "session-ab12cd34-1700000000",
+    ...overrides,
+  });
+
+  it("opens terminal history for an ended session", () => {
+    renderStagePage(ended());
+
+    const link = screen.getByRole("link", { name: "open terminal history" });
+    expect(link.textContent).toContain("Terminal history");
+  });
+
+  it("opens the last screen of an ended fullscreen session, without the word history", () => {
+    renderStagePage(ended({ terminal_history_kind: "last_screen" }));
+
+    const link = screen.getByRole("link", { name: "open last screen" });
+    expect(link.textContent).toContain("Last screen");
+    expect(screen.queryByRole("link", { name: "open terminal history" })).toBeNull();
+  });
+});
 
 describe("terminal route", () => {
   it("renders a known terminal in the page frame", () => {

@@ -8,6 +8,7 @@ use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::terminal::tmux::has_history;
 
 use super::resolver::is_live;
+use super::HistoryKind;
 
 /// Most acceptance criteria one stage contributes to a payload the whole
 /// dashboard shares.
@@ -46,11 +47,14 @@ pub(super) fn blocked_acceptance(stage: &Stage) -> Vec<String> {
 ///
 /// An adjudication judge's session counts, since the judge is what the stage's
 /// terminal showed last when it ran last.
-pub(super) fn terminal_history_session(
+///
+/// The session id and the kind of its file are resolved together: a session that
+/// ran fullscreen left its last screen, any other its scrollback.
+pub(super) fn terminal_history(
     stage: &Stage,
     sessions: &[Session],
     work_dir: &WorkDir,
-) -> Option<String> {
+) -> Option<(String, HistoryKind)> {
     let latest = sessions
         .iter()
         .filter(|session| {
@@ -59,7 +63,12 @@ pub(super) fn terminal_history_session(
                 && !is_live(session)
         })
         .max_by_key(|session| session.created_at)?;
-    has_history(work_dir.root(), &latest.id).then(|| latest.id.clone())
+    let kind = if latest.fullscreen_seen {
+        HistoryKind::LastScreen
+    } else {
+        HistoryKind::History
+    };
+    has_history(work_dir.root(), &latest.id).then(|| (latest.id.clone(), kind))
 }
 
 #[cfg(test)]
@@ -70,6 +79,14 @@ mod tests {
     use crate::orchestrator::terminal::tmux::write_history;
     use chrono::{Duration, Utc};
     use tempfile::TempDir;
+
+    fn terminal_history_session(
+        stage: &Stage,
+        sessions: &[Session],
+        work_dir: &WorkDir,
+    ) -> Option<String> {
+        terminal_history(stage, sessions, work_dir).map(|(session, _)| session)
+    }
 
     fn work_dir() -> (TempDir, WorkDir) {
         let temp = TempDir::new().unwrap();
@@ -199,5 +216,25 @@ mod tests {
         );
 
         assert_eq!(named, Some(judge.id));
+    }
+
+    #[test]
+    fn the_kind_follows_whether_the_named_session_ran_fullscreen() {
+        let (_temp, work) = work_dir();
+        let ordinary = ended_session("server", 600);
+        let mut fullscreen = ended_session("server", 60);
+        fullscreen.fullscreen_seen = true;
+        write_history(work.root(), &ordinary.id, b"scrollback").unwrap();
+        write_history(work.root(), &fullscreen.id, b"last screen").unwrap();
+        let blocked = stage(StageStatus::Blocked);
+
+        assert_eq!(
+            terminal_history(&blocked, std::slice::from_ref(&ordinary), &work),
+            Some((ordinary.id.clone(), HistoryKind::History))
+        );
+        assert_eq!(
+            terminal_history(&blocked, &[ordinary, fullscreen.clone()], &work),
+            Some((fullscreen.id, HistoryKind::LastScreen))
+        );
     }
 }

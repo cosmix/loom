@@ -19,7 +19,7 @@ const SESSION = "session-9c1d4e7a-1788700000";
 function blockedStage(overrides: Partial<StageSummary> = {}): StageSummary {
   const source = fixture.status.stages.find((stage) => stage.id === "local-runtime");
   if (!source) throw new Error("fixture stage local-runtime is missing");
-  return { ...source, ...overrides };
+  return { ...source, terminal_history_kind: "history", ...overrides };
 }
 
 function snapshotFor(stage: StageSummary, terminals: boolean): Snapshot {
@@ -90,6 +90,26 @@ describe("stage modal terminal history", () => {
     expect(asked).toEqual([SESSION]);
     expect(doubles[0].calls.readOnly).toEqual([true]);
     expect(screen.getByText(/read-only/)).toBeTruthy();
+  });
+
+  it("words an ended fullscreen session as its last screen", async () => {
+    const { asked, doubles } = renderModal(
+      blockedStage({ terminal_history_kind: "last_screen" }),
+      "/?stage=local-runtime",
+    );
+
+    const button = screen.getByRole("button", { name: "open last screen" });
+    expect(button.textContent).toContain("Last screen");
+    expect(button.getAttribute("title")).toBe("The session ended; its last screen opens read-only");
+    expect(button.textContent).not.toMatch(/history/i);
+    expect(button.getAttribute("aria-label")).not.toMatch(/history/i);
+
+    fireEvent.click(button);
+
+    await waitFor(() => expect(doubles[0]?.calls.written).toHaveLength(1));
+    expect(asked).toEqual([SESSION]);
+    expect(screen.getByLabelText("Saved last screen")).toBeTruthy();
+    expect(screen.queryByText("Terminal history")).toBeNull();
   });
 
   it("opens it with t as well", async () => {

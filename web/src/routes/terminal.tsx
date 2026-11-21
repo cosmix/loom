@@ -50,7 +50,8 @@ export function TerminalPage({
         ) : (
           <HistoryView
             stage={stage}
-            session={history}
+            session={history.session}
+            kind={history.kind}
             frame="page"
             factory={historyFactory}
             load={historyLoader}

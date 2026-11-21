@@ -3,6 +3,7 @@ import { useAtomValue } from "jotai/react";
 
 import type { StageSummary } from "@/api/schema";
 import { toneClass } from "@/components/state-badge";
+import type { HistoryKind } from "@/components/terminal/history-labels";
 import { displayState } from "@/lib/display-state";
 import { stateMeta } from "@/lib/format";
 import { snapshotAtom } from "@/state/atoms";
@@ -21,12 +22,20 @@ export function terminalGate(terminals: boolean, stage: StageSummary): string | 
 
 /// The ended session whose saved screen the stage's Terminal button opens
 /// read-only when `terminalGate` refuses a live terminal for want of a live
-/// session, or `null` when there is none. The history is served by the same
-/// lane as the terminals, so it needs `--terminals` too.
-export function terminalHistory(terminals: boolean, stage: StageSummary): string | null {
+/// session, or `null` when there is none, with the kind of saved screen it
+/// left (`history` when the daemon names none). The history is served by the
+/// same lane as the terminals, so it needs `--terminals` too.
+export function terminalHistory(
+  terminals: boolean,
+  stage: StageSummary,
+): { session: string; kind: HistoryKind } | null {
   if (!terminals || stage.session_backend === "native") return null;
   if (terminalGate(terminals, stage) === null) return null;
-  return stage.terminal_history_session ?? null;
+  if (stage.terminal_history_session === undefined) return null;
+  return {
+    session: stage.terminal_history_session,
+    kind: stage.terminal_history_kind ?? "history",
+  };
 }
 
 /// The reason from `terminalGate` for the current snapshot.

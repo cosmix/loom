@@ -310,6 +310,25 @@ describe("snapshot schema", () => {
     expect(snapshotSchema.safeParse(withUnknown).success).toBe(false);
   });
 
+  it("accepts the saved-screen kind on a stage and an entry, and rejects an unknown one", () => {
+    const parse = (kind: string) => {
+      const withKind = structuredClone(fixtureJson) as {
+        status: { stages: Array<Record<string, unknown>> };
+        attention: Array<Record<string, unknown>>;
+      };
+      withKind.status.stages[0].terminal_history_kind = kind;
+      withKind.attention[0].terminal_history_kind = kind;
+      return snapshotSchema.safeParse(withKind);
+    };
+
+    const parsed = parse("last_screen");
+    expect(parsed.success && parsed.data.status.stages[0].terminal_history_kind).toBe(
+      "last_screen",
+    );
+    expect(parsed.success && parsed.data.attention[0].terminal_history_kind).toBe("last_screen");
+    expect(parse("scrollback").success).toBe(false);
+  });
+
   it("requires every attention entry to carry its introduction and alternatives", () => {
     const withoutAlternatives = structuredClone(fixtureJson) as {
       attention: Array<Record<string, unknown>>;

@@ -59,6 +59,8 @@ export const sessionTypeSchema = z.enum([
   "contract",
 ]);
 export const sessionBackendSchema = z.enum(["native", "tmux"]);
+/// A saved screen is the scrollback a session kept or the one screen a fullscreen session left.
+export const historyKindSchema = z.enum(["history", "last_screen"]);
 export const outgoingSessionExitReasonSchema = z.enum([
   "completed",
   "crashed",
@@ -182,6 +184,7 @@ export const stageSummarySchema = z
     close_reason: z.string().optional(),
     acceptance: z.array(z.string()).optional(),
     terminal_history_session: z.string().optional(),
+    terminal_history_kind: historyKindSchema.optional(),
     block_detail: blockDetailSchema.optional(),
     contract_testing: contractTestingSchema.nullish(),
     // The daemon verifying a stage whose disputes are all ruled; same shape as a freeze job.
@@ -258,6 +261,7 @@ export const attentionSchema = z.object({
   acceptance: z.array(z.string()),
   failing_criteria: z.array(failingCriterionSchema),
   terminal_history: z.boolean(),
+  terminal_history_kind: historyKindSchema.optional(),
   cleanup_warning: z.string().nullable(),
   has_human_review_choices: z.boolean(),
   dispute_count: z.number().int().nullable(),
@@ -312,6 +316,7 @@ export function parseSnapshot(raw: unknown): ReturnType<typeof snapshotSchema.sa
 
 export type StageStatus = z.infer<typeof stageStatusSchema>;
 export type SessionType = z.infer<typeof sessionTypeSchema>;
+export type HistoryKind = z.infer<typeof historyKindSchema>;
 export type StageSummary = z.infer<typeof stageSummarySchema>;
 export type StatusData = z.infer<typeof statusDataSchema>;
 export type FailingCriterion = z.infer<typeof failingCriterionSchema>;

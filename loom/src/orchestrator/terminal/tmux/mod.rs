@@ -23,6 +23,7 @@
 //! and the live reconciler from disagreeing about who is attachable.
 
 mod capture;
+mod fullscreen;
 mod history;
 mod reap;
 mod reconcile;
@@ -45,6 +46,7 @@ use crate::models::session::Session;
 use super::native;
 
 pub(crate) use capture::capture_pane_tail;
+pub(crate) use fullscreen::sample_fullscreen;
 pub use history::{
     has_history, history_dir, history_relpath, read_history, write_history, MAX_HISTORY_BYTES,
 };
@@ -349,6 +351,8 @@ fn abort_tmux_spawn(work_dir: &Path, socket: &str, pid_key: &str) {
 mod backend;
 pub use backend::TmuxBackend;
 
+#[cfg(test)]
+mod history_contract_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

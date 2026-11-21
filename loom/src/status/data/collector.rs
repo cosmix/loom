@@ -19,7 +19,7 @@ use super::heartbeat_facts::{heartbeat_facts, HeartbeatFacts};
 use super::merge_note::{merge_block_text, stash_warning};
 use super::resolver::{merge_resolver_facts, speaking_for};
 use super::sanitize::{flow_is_fresh, neutralize, sanitize_stage_summary, sanitize_token_flow};
-use super::stopped::{blocked_acceptance, blocked_close_reason, terminal_history_session};
+use super::stopped::{blocked_acceptance, blocked_close_reason, terminal_history};
 use super::timing::{elapsed_secs_live, execution_secs_live};
 use super::{
     BlockDetail, CompletionBlockerSummary, ContractTesting, MergeSummary, ProgressSummary,
@@ -182,12 +182,14 @@ fn native_fields(
 ///
 /// `rustfmt::skip` keeps the field pairs that come from one source on one line
 /// each (the live timers, the completion view, the merge resolver, the native
-/// values, the pid and liveness), holding the 48-field literal inside the
+/// values, the pid and liveness, the review, close and terminal-history pairs),
+/// holding the 48-field literal inside the
 /// function-length limit.
 #[rustfmt::skip]
 fn build_stage_summary(stage: &Stage, sessions: &[Session], work_dir: &WorkDir) -> StageSummary {
     let (facts, now) = (session_facts(stage, sessions, work_dir), Utc::now());
     let (model, effort, execution_models, codex_jobs) = native_fields(stage, work_dir);
+    let (history_session, history_kind) = terminal_history(stage, sessions, work_dir).unzip();
     StageSummary {
         id: stage.id.clone(),
         name: stage.name.clone(),
@@ -206,8 +208,7 @@ fn build_stage_summary(stage: &Stage, sessions: &[Session], work_dir: &WorkDir) 
         last_activity: facts.heartbeat.last_activity,
         staleness_secs: facts.heartbeat.staleness_secs,
         context_ceiling_tokens: facts.context_ceiling_tokens,
-        review_reason: stage.review_reason.clone(),
-        review_notes: stage.review_reason.clone(),
+        review_reason: stage.review_reason.clone(), review_notes: stage.review_reason.clone(),
         merged: stage.merged,
         merge_assumed: stage.merge_assumed,
         cleanup_warning: stage.cleanup_warning.clone(),
@@ -226,9 +227,8 @@ fn build_stage_summary(stage: &Stage, sessions: &[Session], work_dir: &WorkDir) 
         session_backend: facts.session.map(|s| s.backend),
         outgoing_session_exit_reason: facts.completion_view.0, completion_blocker: facts.completion_view.1,
         merge_resolver_session: facts.merge_resolver_session, merge_resolver_attempts: facts.merge_resolver_attempts,
-        close_reason: blocked_close_reason(stage),
-        acceptance: blocked_acceptance(stage),
-        terminal_history_session: terminal_history_session(stage, sessions, work_dir),
+        close_reason: blocked_close_reason(stage), acceptance: blocked_acceptance(stage),
+        terminal_history_session: history_session, terminal_history_kind: history_kind,
         block_detail: block_detail(stage, sessions, work_dir),
         history: super::history::stage_history(stage, work_dir),
         contract_testing: contract_testing_for(stage, facts.session_type, work_dir, now),

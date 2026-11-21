@@ -154,7 +154,17 @@ describe("terminal glyph", () => {
       });
 
     it("names the ended session when no live terminal can open", () => {
-      expect(terminalHistory(true, ended())).toBe("session-ab12cd34-1700000000");
+      expect(terminalHistory(true, ended())).toEqual({
+        session: "session-ab12cd34-1700000000",
+        kind: "history",
+      });
+    });
+
+    it("carries the kind the daemon names", () => {
+      expect(terminalHistory(true, ended({ terminal_history_kind: "last_screen" }))).toEqual({
+        session: "session-ab12cd34-1700000000",
+        kind: "last_screen",
+      });
     });
 
     it("yields to a live terminal", () => {
