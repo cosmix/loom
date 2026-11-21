@@ -138,13 +138,13 @@ jobs:
         with:
           gradle-version: "8.10.2"
 
-      - name: Check Maven is 3.9
+      - name: Check Maven is 3.9 or later
         run: |
           mvn -v
           line=$(mvn -v | head -n 1)
           case "$line" in
-            "Apache Maven 3.9."*) ;;
-            *) echo "expected Maven 3.9, got: $line"; exit 1 ;;
+            "Apache Maven 3.9."*|"Apache Maven 3."[1-9][0-9].*) ;;
+            *) echo "expected Maven 3.9 or a later 3.x, got: $line"; exit 1 ;;
           esac
 
       - name: Set up Node
@@ -326,13 +326,13 @@ jobs:
         with:
           gradle-version: "8.10.2"
 
-      - name: Check Maven is 3.9
+      - name: Check Maven is 3.9 or later
         run: |
           mvn -v
           line=$(mvn -v | head -n 1)
           case "$line" in
-            "Apache Maven 3.9."*) ;;
-            *) echo "expected Maven 3.9, got: $line"; exit 1 ;;
+            "Apache Maven 3.9."*|"Apache Maven 3."[1-9][0-9].*) ;;
+            *) echo "expected Maven 3.9 or a later 3.x, got: $line"; exit 1 ;;
           esac
 
       - name: Set up Node
