@@ -46,7 +46,7 @@
 | [knowledge-hierarchy](architecture/knowledge-hierarchy.md) | KB fs | 264 |
 | [live-preview-editor](architecture/live-preview-editor.md) | Editor | 32 |
 | [loom-ask](architecture/loom-ask.md) |  | 75 |
-| [memory-spool](architecture/memory-spool.md) |  | 205 |
+| [memory-spool](architecture/memory-spool.md) |  | 211 |
 | [merge-checkout-state](architecture/merge-checkout-state.md) | FF | 32 |
 | [merge-flow](architecture/merge-flow.md) |  | 133 |
 | [native-codex-workers](architecture/native-codex-workers.md) |  | 74 |
@@ -155,7 +155,7 @@
 | [daemon-singleton](mistakes/daemon-singleton.md) |  | 141 |
 | [detached-spawn-in-tests](mistakes/detached-spawn-in-tests.md) |  | 65 |
 | [dev-install](mistakes/dev-install.md) | Daemon | 58 |
-| [dispute-guards-delivery](mistakes/dispute-guards-delivery.md) | host-job hangs, parallel worker collisions, scaffold wording, hook quirks | 101 |
+| [dispute-guards-delivery](mistakes/dispute-guards-delivery.md) | host-job hangs, parallel worker collisions, scaffold wording, hook quirks | 121 |
 | [doctrine-and-acceptance](mistakes/doctrine-and-acceptance.md) |  | 392 |
 | [hooks-shell-portability](mistakes/hooks-shell-portability.md) |  | 402 |
 | [host-verify-group-containment](mistakes/host-verify-group-containment.md) |  | 47 |
@@ -231,7 +231,7 @@
 | [codex-heartbeat-starvation](concerns/codex-heartbeat-starvation.md) |  | 22 |
 | [consolidation-followups](concerns/consolidation-followups.md) |  | 148 |
 | [contract-autonomy-followups](concerns/contract-autonomy-followups.md) |  | 70 |
-| [dispute-guards-followups](concerns/dispute-guards-followups.md) | open review suggestions: trial, overlay undo, narrowing, prompt text | 38 |
+| [dispute-guards-followups](concerns/dispute-guards-followups.md) | open review suggestions: trial, overlay undo, narrowing, prompt text | 45 |
 | [handoff-followups](concerns/handoff-followups.md) |  | 57 |
 | [knowledge-cli-gaps](concerns/knowledge-cli-gaps.md) |  | 108 |
 | [loom-ask-and-read-gate](concerns/loom-ask-and-read-gate.md) |  | 108 |

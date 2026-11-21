@@ -36,3 +36,10 @@ Review suggestions and gaps left by `PLAN-contract-and-criterion-dispute-guards`
 - **The contract signal prints "No scaffold edits: every contract file is already collected"** when every contract's `test` is writer-chosen, because `StageTree::scaffold` skips contracts whose test is unset. Four writers hit it ([mistake](../mistakes/dispute-guards-delivery.md#the-contract-signal-said-no-scaffold-edits-for-writer-chosen-contracts)); the signal should say the scaffold is derived at freeze. A hook or `loom plan verify` check cannot see this; the fix is the signal text.
 - **Size ceilings.** `skills/loom-orchestration/SKILL.md` and the standard-signal boilerplate floor are pinned to exact byte ceilings (`signals/tests_size.rs`); any stage-text addition needs a matching trim. Contract prompt headings repeat once per file, so `prompt/truncate.rs::section_body` skips an already-halved section.
 - **Struct growth.** Adding a field to `JobRecord`, `HostJobRequest`, `WaitSite` or `RequestState` breaks about 25 struct literals in test files outside `host_verify` (`rg '\b(WaitSite|JobRecord|HostJobRequest|RequestState) \{'` lists them before ownership is planned).
+
+## Open Items of the Memory Journals Grant
+
+- The bubblewrap side (`confine_protected.rs::bind_memory_journals`, the second bind where the worktree's link reaches the journals, `tests_child_state_root.rs` under bubblewrap) has run only in CI, never locally.
+- `loom memory pending --strict` finds the state root through the worktree's `.loom/work` link and exits 0 with `no memory journals` when it finds none (`commands/memory/handlers/pending.rs`). A stage that removes or repoints the link passes the criterion without its memories being read. No environment variable names the state root to the CLI today; `LOOM_WORK_DIR` is read by hooks only.
+- `memory_journals_grant` canonicalizes `<state root>/memory` and follows it when it is a symlink. Only the operator and the daemon can write there.
+- On the operator's `loom stage complete` and `loom check` run from inside a worktree, the grant comes from the state root that worktree's link names, as the stage record does.

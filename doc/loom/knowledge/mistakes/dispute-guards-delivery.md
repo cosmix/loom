@@ -99,3 +99,23 @@
 **Why:** a copied `target` keeps fingerprints that match the copy's unchanged sources, and `env!("CARGO_MANIFEST_DIR")` is fixed at compile time.
 
 **Prevention:** in a copied clone, touch or edit a source file of the test target before any check whose test reads files through `CARGO_MANIFEST_DIR`, and confirm `Compiling` appears in the log. A mutation that edits the crate's own source rebuilds by itself; one that only adds a file does not.
+
+## The Last Stage of the Plan Stalled on `loom memory pending --strict`
+
+**What happened:** knowledge-distill filed three criterion disputes in eleven minutes and ended in human review. Its criterion `loom memory pending --strict` exited 0 in the session and failed in the host job with `Operation not permitted (os error 1)`; the operator force-completed the stage.
+
+**Why:** the host job confines a distill stage's criteria to its worktree, and the command lists `<state root>/memory` through the worktree's `.loom/work` link, outside the boundary. The dispute could not remove the criterion either: at the stage's base (a tracked-files checkout with no state root) the command prints `no memory journals` and passes, so the base-evidence gate answered "passes at the base: it fails because of the stage's own change". Every plan ends with this criterion, so every plan would have stalled the same way.
+
+**Prevention:** a criterion that reads plan state needs a grant for exactly what it reads ([A Knowledge-Distill Stage's Criteria Read the Memory Journals](../architecture/memory-spool.md#a-knowledge-distill-stages-criteria-read-the-memory-journals)). A base pass by a command that found no state to read proves nothing about the stage. When a change adds a gate that refuses a way out (here, narrowing only on base evidence), run each standard criterion of each stage type through it once before the plan that adds it completes.
+
+**Fix:** the memory journals grant, on all three routes that run a stage's criteria.
+
+## Closing the Plan Left the Working Tree Dirty
+
+**What happened:** after the last merge the daemon renamed the plan to `DONE-PLAN-*`, logged `Failed to commit post-completion changes: git add -A -- ... failed: The following paths are ignored`, and left the tracked `IN_PROGRESS-PLAN-*` file deleted in the working tree. The next `loom run` would have refused the dirty tree.
+
+**Why:** the closing commit staged the old and the new path in one `git add`, and git refuses the whole command when one path is ignored. This repository ignores `doc/plans/DONE-*`.
+
+**Prevention:** stage paths whose ignore status differs in separate commands, and test a git step against a repository that ignores the path it writes.
+
+**Fix:** `fs/plan_lifecycle/commit.rs` always stages the old path's removal and stages the new path only when `git check-ignore` says it is not ignored.
