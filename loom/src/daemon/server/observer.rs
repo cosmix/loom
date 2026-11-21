@@ -21,7 +21,6 @@ use std::path::Path;
 use super::core::DaemonServer;
 use super::lock::{inspect_lock, LockState};
 use crate::daemon::protocol::Response;
-#[cfg(test)]
 use crate::models::stage::Stage;
 use crate::verify::integrity;
 use crate::verify::review::fingerprint::{self, ChangeFingerprint};
@@ -86,6 +85,26 @@ pub(crate) fn check_completion_gates(work_dir: &Path, stage_id: &str) -> Result<
         .context("failed to compute the worktree's change fingerprint for the completion gates")?;
     integrity::check_changes(&stage, work_dir, &repo, &changes)?;
     gate::check(&stage, work_dir, &changes)
+}
+
+/// The test-integrity half of [`check_completion_gates`], measured the same
+/// way. A full `loom check` runs it so an event surfaces while the stage can
+/// still revert or dispute it, rather than first at `loom stage complete`.
+/// The review half stays with completion: review rounds follow the checks.
+/// `None` for a stage the gates do not cover.
+pub(crate) fn check_integrity_gate(work_dir: &Path, stage: &Stage) -> Option<Result<()>> {
+    if !gate::covers(stage) {
+        return None;
+    }
+    Some(integrity_of_changes(work_dir, stage))
+}
+
+fn integrity_of_changes(work_dir: &Path, stage: &Stage) -> Result<()> {
+    let (repo, target_branch) = stage_worktree_and_target(work_dir, stage)?;
+    let changes = fingerprint::compute_local(&repo, &target_branch).context(
+        "failed to compute the worktree's change fingerprint for the test-integrity gate",
+    )?;
+    integrity::check_changes(stage, work_dir, &repo, &changes)
 }
 
 /// The stage's test-integrity events as this daemon measures them: its

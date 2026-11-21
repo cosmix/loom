@@ -13,7 +13,7 @@ use crate::models::session::{Session, SessionStatus};
 use crate::models::stage::{StageStatus, StageType};
 use crate::orchestrator::terminal::native::write_test_pid_identity;
 use crate::verify::contracts::test_support::{
-    contract_worktree, pinned, plant_foreign_git_dir, CONTRACT_FILE,
+    contract_worktree, contract_worktree_with, pinned, plant_foreign_git_dir, CONTRACT_FILE,
 };
 use crate::verify::review::store::{write_round, ReviewRound, RECORD_VERSION};
 use crate::verify::tool_artifacts::NAMES;
@@ -246,6 +246,49 @@ fn a_round_recorded_among_placeholders_passes_the_completion_gates() {
     let error = check_completion_gates(&fx.work_dir, STAGE).unwrap_err();
     let message = format!("{error:#}");
     assert!(message.contains("changed since: late.rs"), "{message}");
+}
+
+/// The gate a full `loom check` runs: test integrity alone, so a stage with
+/// no review round yet passes it, an assertion the stage removed from a base
+/// test fails it, and a stage the gates do not cover runs nothing.
+#[test]
+fn the_check_time_integrity_gate_fails_on_an_unaccepted_event_only() {
+    let temp = TempDir::new().unwrap();
+    let project = temp.path().join("repo");
+    let base = "#[test]\nfn a() {\n    assert_eq!(1, 1);\n}\n";
+    let worktree = contract_worktree_with(&project, STAGE, &[("src/calc_tests.rs", base)]);
+    let work_dir = project.join(".loom").join("work");
+    std::fs::create_dir_all(work_dir.join("stages")).unwrap();
+    let mut stage = Stage {
+        id: STAGE.to_string(),
+        status: StageStatus::Executing,
+        plan_version: 2,
+        stage_type: StageType::Standard,
+        worktree: Some(STAGE.to_string()),
+        ..Stage::default()
+    };
+    save_stage(&stage, &work_dir).unwrap();
+
+    assert!(
+        check_completion_gates(&work_dir, STAGE).is_err(),
+        "no review round"
+    );
+    assert!(matches!(
+        check_integrity_gate(&work_dir, &stage),
+        Some(Ok(()))
+    ));
+
+    let edited = "#[test]\nfn a() {}\n";
+    std::fs::write(worktree.join("src/calc_tests.rs"), edited).unwrap();
+    let Some(Err(error)) = check_integrity_gate(&work_dir, &stage) else {
+        panic!("a removed assertion must fail the gate");
+    };
+    let message = format!("{error:#}");
+    assert!(message.contains("test-integrity gate failed"), "{message}");
+    assert!(message.contains("src/calc_tests.rs"), "{message}");
+
+    stage.plan_version = 1;
+    assert!(check_integrity_gate(&work_dir, &stage).is_none());
 }
 
 /// The message `fingerprint::compute` fails with when it may not compute.

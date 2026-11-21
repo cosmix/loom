@@ -204,9 +204,14 @@ fn a_full_check_runs_the_frozen_contracts_after_its_criteria() {
     }
     let fx = Fixture::new(&[("fails", "false")], &["true"]);
     let result = fx.run(&fx.job(false, &[]));
+    // A plan v2 standard stage also runs the test-integrity gate last.
     assert_eq!(
         labels_and_verdicts(&result),
-        [("acceptance-0", true), ("contract:fails", false)]
+        [
+            ("acceptance-0", true),
+            ("contract:fails", false),
+            ("test-integrity", true)
+        ]
     );
     assert!(!result.passed, "{result:?}");
 }

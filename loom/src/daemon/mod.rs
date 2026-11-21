@@ -23,8 +23,8 @@ pub use server::{
     ReadyTiming,
 };
 pub(crate) use server::{
-    caller_is_inside_session, check_completion_gates, daemon_environment_pairs, handle_block_stage,
-    handle_freeze_contracts, DaemonUnavailable,
+    caller_is_inside_session, check_completion_gates, check_integrity_gate,
+    daemon_environment_pairs, handle_block_stage, handle_freeze_contracts, DaemonUnavailable,
 };
 pub use socket::{socket_path, socket_path_fits, socket_path_problem, SOCKET_FILE, SUN_PATH_MAX};
 pub use wire::{ResponseFrameReader, MAX_CREDENTIAL_BYTES, MAX_REQUEST_BYTES};

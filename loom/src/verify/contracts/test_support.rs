@@ -120,7 +120,18 @@ pub(crate) fn write_test_freeze(work_dir: &Path, stage_id: &str, session_id: &st
 /// worktree leaves it: no daemon runs, so a process other than the daemon may
 /// compute the worktree's change fingerprint. Returns the worktree root.
 pub(crate) fn contract_worktree(repo_root: &Path, stage_id: &str) -> PathBuf {
-    let base = [("Cargo.toml", PACKAGE_MANIFEST), ("src/lib.rs", "")];
+    contract_worktree_with(repo_root, stage_id, &[])
+}
+
+/// [`contract_worktree`] whose base also commits `files`, for a test that
+/// needs base tests the stage can change.
+pub(crate) fn contract_worktree_with(
+    repo_root: &Path,
+    stage_id: &str,
+    files: &[(&str, &str)],
+) -> PathBuf {
+    let mut base = vec![("Cargo.toml", PACKAGE_MANIFEST), ("src/lib.rs", "")];
+    base.extend_from_slice(files);
     worktree_over(repo_root, stage_id, &base)
 }
 

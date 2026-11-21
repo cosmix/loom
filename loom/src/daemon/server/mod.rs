@@ -35,7 +35,7 @@ pub use dispute::handle_dispute_criteria;
 pub(crate) use dispute_kinds::handle_file_dispute;
 pub(crate) use environment::daemon_environment_pairs;
 pub use launch::{await_ready, disable_spawn_for_tests, ReadyTiming};
-pub(crate) use observer::check_completion_gates;
+pub(crate) use observer::{check_completion_gates, check_integrity_gate};
 pub(crate) use orchestrator::finish_foreground;
 pub(crate) use peer_identity::caller_is_inside_session;
 pub(crate) use shutdown::DaemonUnavailable;

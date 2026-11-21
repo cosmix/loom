@@ -120,9 +120,16 @@ fn check(work_dir: &Path, record: &JobRecord, progress: &Arc<Progress>) -> Resul
         }
         child_contracts::run_full(&stage, &tree, work_dir, progress)?;
         progress.take_failure()?;
+        if let Some(integrity) = crate::daemon::check_integrity_gate(work_dir, &stage) {
+            let outcome = child_complete::check_outcome(INTEGRITY_LABEL, &integrity);
+            progress.record(outcome, None);
+        }
     }
     tree.differences(record)
 }
+
+/// The outcome label of the test-integrity gate a full check runs.
+pub(super) const INTEGRITY_LABEL: &str = "test-integrity";
 
 /// Run every acceptance criterion, as a completion does. A check builds the
 /// same configuration, so a completion reuses each pass a check on the same

@@ -165,7 +165,7 @@ fn log_event(stream: OutputStream, line: &str) {
 }
 
 /// A check's outcome: a failure carries its message as the summary.
-fn check_outcome(label: &str, checked: &Result<()>) -> CriterionOutcome {
+pub(super) fn check_outcome(label: &str, checked: &Result<()>) -> CriterionOutcome {
     let summary = match checked {
         Ok(()) => format!("✓ {label}"),
         Err(error) => format!("✗ {label}: {error:#}"),
