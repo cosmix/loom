@@ -17,6 +17,7 @@ on:
           - linux-probes
           - macos
           - macos-probes
+          - probes
   pull_request:
 
 concurrency:
@@ -70,7 +71,7 @@ jobs:
     name: Toolchain probes (linux)
     needs: changes
     # inputs.jobs is empty on schedule and pull_request runs.
-    if: needs.changes.outputs.run == 'true' && (inputs.jobs == '' || inputs.jobs == 'all' || inputs.jobs == 'linux-probes')
+    if: needs.changes.outputs.run == 'true' && (inputs.jobs == '' || inputs.jobs == 'all' || inputs.jobs == 'linux-probes' || inputs.jobs == 'probes')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -462,7 +463,7 @@ jobs:
   macos-probes:
     name: Toolchain probes (macos)
     needs: changes
-    if: inputs.jobs == 'macos-probes'
+    if: inputs.jobs == 'macos-probes' || inputs.jobs == 'probes'
     runs-on: macos-latest
     timeout-minutes: 60
     steps:
