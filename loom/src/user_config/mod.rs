@@ -165,6 +165,12 @@ pub struct UserConfig {
 /// Errors only when neither `LOOM_HOME` is set nor the home directory can be
 /// resolved. Never creates anything — this is a pure path computation.
 pub fn config_path() -> Result<PathBuf> {
+    // The lib test binary follows the per-thread redirect, so every consumer of the
+    // config location (the plan statistics archive among them) stays off the real home.
+    #[cfg(test)]
+    if let Some(path) = redirect::test_redirect() {
+        return Ok(path);
+    }
     if let Some(dir) = std::env::var_os("LOOM_HOME").filter(|value| !value.is_empty()) {
         return Ok(PathBuf::from(dir).join("config.toml"));
     }
@@ -173,6 +179,16 @@ pub fn config_path() -> Result<PathBuf> {
         .ok_or_else(|| {
             anyhow::anyhow!("could not resolve the home directory for ~/.loom/config.toml")
         })
+}
+
+/// The loom user directory: the parent of [`config_path`], so `LOOM_HOME` and the test
+/// redirect move everything stored beside the config with it.
+pub fn loom_user_dir() -> Result<PathBuf> {
+    let config = config_path()?;
+    config
+        .parent()
+        .map(std::path::Path::to_path_buf)
+        .ok_or_else(|| anyhow::anyhow!("loom config path has no parent: {}", config.display()))
 }
 
 /// The file the read paths (`UserConfig::load`/`UserConfig::load_strict`)

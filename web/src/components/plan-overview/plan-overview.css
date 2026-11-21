@@ -1,0 +1,306 @@
+/* Locked plan overview. Phase colours sit four hues apart (contract magenta ~340, executing green
+ * ~150, adjudication blue ~255, retry orange to amber); an adjudication teal beside the executing
+ * green read as one colour. The dark values are shared by every dark theme and lifted for the
+ * dark grounds. Everything else reads the theme tokens. The dialog is the query container, so
+ * its sections fold by its own width. */
+.plan-overview {
+  --phase-contract: oklch(0.56 0.2 340);
+  --phase-executing: oklch(0.49 0.12 150);
+  --phase-adjudication: oklch(0.52 0.17 258);
+  --phase-retry: oklch(0.6 0.16 55);
+  --po-pad: 22px;
+  container: plan-overview / inline-size;
+}
+.dark .plan-overview {
+  --phase-contract: oklch(0.76 0.17 340);
+  --phase-executing: oklch(0.77 0.13 152);
+  --phase-adjudication: oklch(0.74 0.15 255);
+  --phase-retry: oklch(0.78 0.15 75);
+}
+
+.po-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px 20px;
+  padding: 18px var(--po-pad) 16px;
+  border-bottom: 1px solid var(--border);
+}
+.po-head-main {
+  flex: 1 1 320px;
+  min-width: 0;
+}
+.po-head .po-title {
+  margin-top: 3px;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+}
+.po-head .po-lock {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  max-width: 68ch;
+  margin-top: 8px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--muted-foreground);
+}
+.po-lock svg {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  margin-top: 3px;
+}
+.po-lock code,
+.po-foot code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--muted);
+  color: var(--foreground);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.po-pill {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 7px;
+  margin-top: 2px;
+  padding: 3px 11px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  color: var(--po-pill-tone, var(--tone-completed));
+  border: 1px solid color-mix(in oklch, currentColor 40%, transparent);
+  background: color-mix(in oklch, currentColor 10%, transparent);
+}
+/* No stage completed (every one was skipped): the pill stops claiming the completed green. */
+.po-pill[data-tone="dimmed"] {
+  --po-pill-tone: var(--muted-foreground);
+}
+.po-pill::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.po-body {
+  display: grid;
+  align-content: start;
+  gap: 22px;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 20px var(--po-pad) 24px;
+}
+.po-body:focus-visible,
+.po-scroll:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+
+/* Five totals in one ruled box. The 1px gaps show the box's border colour as the rules, so the
+ * folded layouts need no per-cell border bookkeeping. */
+.po-kpis {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--border);
+}
+.po-kpi {
+  display: grid;
+  align-content: start;
+  gap: 3px;
+  min-width: 0;
+  padding: 12px 14px 13px;
+  background: var(--card);
+}
+.po-kpi-label,
+.po-kpi-sub,
+.po-note {
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--muted-foreground);
+}
+.po-kpi-label {
+  font-weight: 500;
+}
+.po-kpi-value {
+  font-size: 25px;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+.po-kpi-sub {
+  font-variant-numeric: tabular-nums;
+}
+
+.po-mix {
+  display: grid;
+  gap: 8px;
+}
+/* Segments grow by their token count; a kind that was used at all keeps a visible sliver even
+ * when cache reads are 95% of the bar. */
+.po-mix-bar {
+  display: flex;
+  gap: 1px;
+  height: 10px;
+  overflow: hidden;
+  border-radius: 5px;
+  background: var(--muted);
+}
+.po-mix-bar span {
+  flex: var(--po-grow, 0) 0 0px;
+  min-width: 3px;
+  height: 100%;
+}
+.po-mix-bar span[data-empty] {
+  display: none;
+}
+.po-legend,
+.po-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+  color: var(--muted-foreground);
+}
+.po-legend li,
+.po-key li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.po-legend i {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+}
+.po-legend b {
+  color: var(--foreground);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.po-section {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+.po-section-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 16px;
+}
+.po-section-head h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+}
+.po-empty {
+  margin: 0;
+  padding: 18px 14px;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  font-size: 14px;
+  color: var(--muted-foreground);
+}
+
+.po-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 20px;
+  padding: 12px var(--po-pad);
+  border-top: 1px solid var(--border);
+  background: color-mix(in oklab, var(--muted) 55%, transparent);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted-foreground);
+}
+.po-foot-text {
+  flex: 1 1 320px;
+  min-width: 0;
+}
+.po-foot code {
+  background: color-mix(in oklab, var(--foreground) 9%, transparent);
+  overflow-wrap: anywhere;
+}
+/* Wide enough for its longest label, so the button keeps its place when the label changes. */
+.po-foot .po-copy {
+  flex: none;
+  min-width: 8.5em;
+}
+.po-copy[data-copy="copied"] {
+  color: var(--tone-completed);
+  border-color: color-mix(in oklch, var(--tone-completed) 55%, transparent);
+}
+.po-copy[data-copy="failed"] {
+  color: var(--tone-blocked);
+  border-color: color-mix(in oklch, var(--tone-blocked) 55%, transparent);
+}
+
+@container plan-overview (max-width: 720px) {
+  .po-kpis {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+  .po-kpi {
+    grid-column: span 2;
+  }
+  .po-kpi:nth-child(n + 4) {
+    grid-column: span 3;
+  }
+}
+@container plan-overview (max-width: 460px) {
+  .po-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .po-kpi,
+  .po-kpi:nth-child(n + 4) {
+    grid-column: span 1;
+  }
+  .po-kpi:last-child {
+    grid-column: 1 / -1;
+  }
+  .po-kpi-value {
+    font-size: 22px;
+  }
+}
+/* A phone, or a short window: a fixed header and footer would leave the statistics a slot a few
+ * lines tall, so the whole dialog scrolls as one page inside the viewport. */
+@media (max-width: 640px), (max-height: 600px) {
+  .plan-overview {
+    --po-pad: 14px;
+    display: block;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .po-body {
+    overflow-y: visible;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .plan-overview {
+    animation: none;
+    transition: none;
+  }
+}

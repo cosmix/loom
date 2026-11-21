@@ -52,6 +52,8 @@ mod tokens_pane;
 
 /// Render the ledger dashboard.
 pub use layout::render;
+/// Compact token counts (`812`, `12.3k`, `9.84M`), shared with the plan overview.
+pub(in crate::commands::status::ui::tui) use tokens_pane::compact_tokens;
 
 /// Narrowest terminal the ledger lays out; below this a notice replaces the dashboard.
 pub const MIN_COLS: u16 = 64;

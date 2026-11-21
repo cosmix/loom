@@ -10,7 +10,9 @@ use super::dispute_budgets::DisputeTally;
 use super::implementers::Implementers;
 use super::merge_block::MergeRecord;
 use super::persisted::deserialize_persisted_reasoning_effort;
+use super::phases::PhaseSpan;
 use super::sandbox_config::StageSandboxConfig;
+use super::verification_status::VerificationStatus;
 
 /// Type of stage for specialized handling.
 ///
@@ -159,35 +161,6 @@ pub struct RegressionTest {
 /// Allowed values for `reasoning_effort` on a stage: the set Claude Code accepts on its CLI.
 /// A new value needs a matching change in `native/mod.rs`, which passes it as `--effort <value>`.
 pub const ALLOWED_REASONING_EFFORTS: &[&str] = &["low", "medium", "high", "xhigh", "max"];
-
-/// Status of goal-backward verification for a stage
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
-#[serde(rename_all = "kebab-case")]
-pub enum VerificationStatus {
-    /// Verification has not been run
-    #[default]
-    NotRun,
-    /// All verifications passed
-    Passed,
-    /// Gaps were found
-    GapsFound {
-        /// Number of gaps found
-        gap_count: usize,
-    },
-    /// Some checks require human judgment
-    HumanNeeded,
-}
-
-impl std::fmt::Display for VerificationStatus {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            VerificationStatus::NotRun => write!(f, "NotRun"),
-            VerificationStatus::Passed => write!(f, "Passed"),
-            VerificationStatus::GapsFound { gap_count } => write!(f, "GapsFound({gap_count})"),
-            VerificationStatus::HumanNeeded => write!(f, "HumanNeeded"),
-        }
-    }
-}
 
 /// A structured output from a completed stage that can be passed to dependent stages.
 ///
@@ -437,6 +410,9 @@ pub struct Stage {
     /// One-line reason no consumer of this stage's new units exists. Copied from the plan's StageDefinition.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub consumer_deferred: Option<String>,
+    /// Work phases this stage has been through, oldest first; owned by `phases::record`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub phases: Vec<PhaseSpan>,
 }
 
 /// Status of a stage in the execution lifecycle.

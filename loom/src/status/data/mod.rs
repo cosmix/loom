@@ -129,6 +129,11 @@ pub struct StatusData {
     /// event log.
     #[serde(default)]
     pub activity: Vec<crate::fs::stage_events::StageEvent>,
+    /// The finished plan's statistics report, from the run's `plan-stats.json`;
+    /// absent until the plan ends and when the report is unreadable or would
+    /// not fit the daemon frame (the file stays readable on disk).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan_stats: Option<crate::plan_stats::PlanStatsRecord>,
 }
 
 /// Stage display data
@@ -290,6 +295,13 @@ pub struct StageSummary {
     /// No judge is working then; the daemon is verifying the stage.
     #[serde(default)]
     pub verdict_completing: Option<VerdictCompleting>,
+    /// Work phases the stage has been through, oldest first. Report-only: the
+    /// per-frame dynamic feed leaves them out.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub phases: Vec<crate::models::stage::phases::PhaseSpan>,
+    /// When the stage reached a terminal success state, if it has.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub completed_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 /// The facts about a blocked stage that the attention card lists: which

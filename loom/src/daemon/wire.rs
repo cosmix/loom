@@ -70,7 +70,7 @@ pub(super) fn response_serialization_count() -> usize {
 pub(super) fn encode_response_frame(response: &Response) -> Result<Vec<u8>> {
     #[cfg(test)]
     RESPONSE_SERIALIZATIONS.with(|count| count.set(count.get() + 1));
-    let json = serde_json::to_vec(response).context("Failed to serialize message")?;
+    let json = serialize_response(response)?;
     if json.len() > MAX_RESPONSE_BYTES {
         bail!(
             "Serialized message of {} bytes exceeds the {MAX_RESPONSE_BYTES} byte frame limit",
@@ -82,6 +82,27 @@ pub(super) fn encode_response_frame(response: &Response) -> Result<Vec<u8>> {
     frame.extend_from_slice(&length.to_be_bytes());
     frame.extend_from_slice(&json);
     Ok(frame)
+}
+
+/// The response as JSON. A status update that would overflow the frame while
+/// carrying the finished plan's inline report is sent without that report, so
+/// the other status fields keep flowing; `plan-stats.json` stays on disk for a
+/// local reader. Revisit if a consumer needs the report only over the socket.
+fn serialize_response(response: &Response) -> Result<Vec<u8>> {
+    let json = serde_json::to_vec(response).context("Failed to serialize message")?;
+    match response {
+        Response::StatusUpdate { data }
+            if json.len() > MAX_RESPONSE_BYTES && data.plan_stats.is_some() =>
+        {
+            let mut trimmed = data.as_ref().clone();
+            trimmed.plan_stats = None;
+            serde_json::to_vec(&Response::StatusUpdate {
+                data: Box::new(trimmed),
+            })
+            .context("Failed to serialize message")
+        }
+        _ => Ok(json),
+    }
 }
 
 /// Allocation-free authentication metadata read before a request frame.
@@ -361,3 +382,7 @@ mod tests;
 #[cfg(test)]
 #[path = "wire_response_frame_tests.rs"]
 mod response_frame_tests;
+
+#[cfg(test)]
+#[path = "wire_plan_stats_tests.rs"]
+mod plan_stats_tests;

@@ -177,24 +177,8 @@ fn series(buckets: &Buckets, now_bucket: i64, len: usize) -> Vec<u64> {
 fn hit_series(buckets: &Buckets, now_bucket: i64, len: usize) -> Vec<Option<u8>> {
     let first = now_bucket - (len as i64 - 1);
     (first..=now_bucket)
-        .map(|bucket| buckets.get(&bucket).and_then(hit_percent))
+        .map(|bucket| buckets.get(&bucket).and_then(TokenUsage::cache_hit_percent))
         .collect()
-}
-
-fn hit_percent(usage: &TokenUsage) -> Option<u8> {
-    let denominator = usage
-        .cache_read
-        .saturating_add(usage.input)
-        .saturating_add(usage.cache_write);
-    if denominator == 0 {
-        return None;
-    }
-    let doubled = usage
-        .cache_read
-        .saturating_mul(200)
-        .saturating_add(denominator);
-    let percent = (doubled / denominator.saturating_mul(2)).min(100);
-    Some(percent as u8)
 }
 
 /// Usage per minute over the last [`RATE_BUCKETS`] buckets up to `now`, integer

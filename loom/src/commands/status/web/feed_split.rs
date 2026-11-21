@@ -32,6 +32,11 @@ pub(super) const IMMUTABLE_STAGE_KEYS: [&str; 7] = [
     "max_retries",
 ];
 
+/// Stage keys that only a `full` carries: the work phases the plan overview
+/// reads from `status.plan_stats`, kept out of every `state` message and out of
+/// change detection. No dashboard view reads a stage's `phases` live.
+pub(super) const REPORT_ONLY_STAGE_KEYS: [&str; 1] = ["phases"];
+
 /// Stage keys that advance with the wall clock, with their `tick` entry names.
 /// `contract_testing.running_secs` is the fifth clock value (`contract`).
 pub(super) const CLOCK_STAGE_KEYS: [(&str, &str); 4] = [
@@ -47,6 +52,11 @@ pub(super) const STATE_TOP_KEYS: [&str; 5] = ["attention", "alerts", "daemon", "
 /// `status` keys sent in a `state` message when they change.
 pub(super) const STATE_STATUS_KEYS: [&str; 5] =
     ["merge", "progress", "plan_name", "quota", "activity"];
+
+/// `status` keys whose appearance, removal or change forces a `full`: the plan
+/// report changes once, when the plan ends, and is large next to a `state`.
+#[cfg(test)]
+pub(super) const FULL_ONLY_STATUS_KEYS: [&str; 1] = ["plan_stats"];
 
 /// Top-level keys that carry the clock of a `tick`.
 #[cfg(test)]
@@ -120,6 +130,7 @@ impl StagePart {
             .to_owned();
         let (immutable, dynamic): (Map<String, Value>, Map<String, Value>) = object
             .into_iter()
+            .filter(|(key, _)| !REPORT_ONLY_STAGE_KEYS.contains(&key.as_str()))
             .partition(|(key, _)| IMMUTABLE_STAGE_KEYS.contains(&key.as_str()));
         let mut masked = Value::Object(dynamic.clone());
         mask_clock(&mut masked, &CLOCK_STAGE_KEYS.map(|(key, _)| key));
@@ -183,7 +194,8 @@ impl Split {
             }
         }
         let state_status = take_keys(&mut status, &STATE_STATUS_KEYS);
-        // Unclassified keys keep the protocol correct: their change is a `full`.
+        // Unclassified keys keep the protocol correct: their change is a `full`
+        // (`plan_stats` is one: see `FULL_ONLY_STATUS_KEYS`).
         let mut full_only = root;
         full_only.extend(
             status

@@ -1,6 +1,7 @@
 //! Supervised scheduler exits and the terminal outcome each one publishes.
 
 use super::*;
+use crate::user_config::{redirect_user_config, UserConfigRedirect};
 
 #[test]
 fn initialization_errors_and_panics_retire_essential_worker() {
@@ -63,6 +64,16 @@ fn cyclic_graph_fails_at_supervised_initialization_boundary() {
 /// A merged run whose archive target is blocked by a file at `.loom/memory/archive`.
 /// Returns the work directory, its plan, the blocker and the finished result.
 fn run_with_blocked_archive(root: &Path) -> (WorkDir, PathBuf, PathBuf, OrchestratorResult) {
+    let (work, plan, result) = merged_run(root);
+    fs::create_dir_all(root.join(".loom/memory")).unwrap();
+    let blocker = root.join(".loom/memory/archive");
+    fs::write(&blocker, "blocker").unwrap();
+    (work, plan, blocker, result)
+}
+
+/// A run whose one stage completed and merged. Returns the work directory,
+/// its plan and the finished result.
+fn merged_run(root: &Path) -> (WorkDir, PathBuf, OrchestratorResult) {
     let work = WorkDir::new(root).unwrap();
     work.initialize().unwrap();
     let plan = root.join("IN_PROGRESS-PLAN-test.md");
@@ -90,9 +101,6 @@ fn run_with_blocked_archive(root: &Path) -> (WorkDir, PathBuf, PathBuf, Orchestr
     .unwrap();
     fs::create_dir_all(work.root().join("memory")).unwrap();
     fs::write(work.root().join("memory/test.md"), "journal").unwrap();
-    fs::create_dir_all(root.join(".loom/memory")).unwrap();
-    let blocker = root.join(".loom/memory/archive");
-    fs::write(&blocker, "blocker").unwrap();
     let now = chrono::Utc::now();
     let result = OrchestratorResult {
         completed_stages: vec!["test".into()],
@@ -103,7 +111,15 @@ fn run_with_blocked_archive(root: &Path) -> (WorkDir, PathBuf, PathBuf, Orchestr
         started_at: now,
         completed_at: now,
     };
-    (work, plan, blocker, result)
+    (work, plan, result)
+}
+
+/// Points the loom home, where plan statistics are archived, at `root/home`.
+fn redirect_home(root: &Path) -> (PathBuf, UserConfigRedirect) {
+    let home = root.join("home");
+    fs::create_dir_all(&home).unwrap();
+    let redirect = redirect_user_config(home.join("config.toml"));
+    (home, redirect)
 }
 
 fn published_outcome(work: &WorkDir) -> TerminalOutcome {
@@ -114,6 +130,7 @@ fn published_outcome(work: &WorkDir) -> TerminalOutcome {
 #[test]
 fn archive_failure_is_published_as_finalization_failure() {
     let temp = tempfile::tempdir().unwrap();
+    let (home, _redirect) = redirect_home(temp.path());
     let (work, plan, _blocker, result) = run_with_blocked_archive(temp.path());
     let shutdown = AtomicBool::new(false);
     supervise_worker(work.root(), &shutdown, || {
@@ -127,11 +144,16 @@ fn archive_failure_is_published_as_finalization_failure() {
     assert!(finish_foreground(&work, &result).is_err());
     let summary = super::super::status::collect_completion_summary(work.root()).unwrap();
     assert_eq!((summary.failure_count, summary.success_count), (1, 1));
+    assert!(
+        !home.join("stats").exists(),
+        "a failed finalization publishes no plan statistics"
+    );
 }
 
 #[test]
 fn finalization_retries_to_success_and_repeating_it_moves_nothing_again() {
     let temp = tempfile::tempdir().unwrap();
+    let (_home, _redirect) = redirect_home(temp.path());
     let (work, plan, blocker, result) = run_with_blocked_archive(temp.path());
     assert!(finish_foreground(&work, &result).is_err());
     assert!(
@@ -162,4 +184,55 @@ fn finalization_retries_to_success_and_repeating_it_moves_nothing_again() {
         .unwrap()
         .count();
     assert_eq!(after_repeat, archived, "a repeat must not archive twice");
+}
+
+fn archived_stats(home: &Path) -> usize {
+    fs::read_dir(home.join("stats/plans")).map_or(0, Iterator::count)
+}
+
+#[test]
+fn plan_statistics_publish_only_on_success_and_never_change_the_outcome() {
+    let temp = tempfile::tempdir().unwrap();
+    let (home, _redirect) = redirect_home(temp.path());
+    let (work, _plan, result) = merged_run(temp.path());
+    let current = work.root().join("plan-stats.json");
+
+    let failed = OrchestratorResult {
+        completed_stages: vec![],
+        failed_stages: vec!["test".into()],
+        unfinished_stages: vec![],
+        needs_handoff: vec![],
+        total_sessions_spawned: 1,
+        started_at: result.started_at,
+        completed_at: result.completed_at,
+    };
+    assert!(matches!(
+        finish_orchestration(&work, &failed),
+        TerminalOutcome::Incomplete(_)
+    ));
+    assert!(!home.join("stats").exists(), "an incomplete run published");
+    assert!(
+        !current.exists(),
+        "an incomplete run wrote the current copy"
+    );
+
+    // A file where the archive directory goes fails the publish.
+    fs::write(home.join("stats"), "blocker").unwrap();
+    assert_eq!(
+        finish_orchestration(&work, &result),
+        TerminalOutcome::Success,
+        "a failed publish must not change the outcome"
+    );
+    assert!(!current.exists());
+
+    fs::remove_file(home.join("stats")).unwrap();
+    assert_eq!(
+        finish_orchestration(&work, &result),
+        TerminalOutcome::Success
+    );
+    assert_eq!(archived_stats(&home), 1);
+    assert!(
+        current.is_file(),
+        "a published run exposes the current copy"
+    );
 }

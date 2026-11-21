@@ -4,12 +4,15 @@
 //! - Loading and saving stage state to/from `.loom/work/stages/` markdown files
 
 use anyhow::{Context, Result};
+use chrono::Utc;
 use std::fs;
 use std::path::Path;
 
 use crate::fs::locking::{atomic_write_locked, locked_dir_update, locked_read};
 use crate::fs::stage_events::{append_event, StageEvent};
 use crate::fs::stage_files::{find_stage_file, stage_file_path};
+use crate::models::session::SessionType;
+use crate::models::stage::phases::{phase_for, record};
 use crate::models::stage::{Stage, StageStatus};
 use crate::plan::graph::levels::compute_all_levels;
 
@@ -168,24 +171,70 @@ where
     let before = stage.status.clone();
     let previous_session = stage.session.clone();
     modify(&mut stage)?;
+    // Stage files live in `<work_dir>/stages/`.
+    let work_dir = stage_path.parent().and_then(Path::parent);
+    let moved = stage.status != before || stage.session != previous_session;
+    let session_type = work_dir
+        .filter(|_| moved)
+        .and_then(|dir| session_type_of(dir, &stage));
+    if moved {
+        record_phase_change(&mut stage, session_type);
+    }
     let new_content = serialize_stage_to_markdown(&stage)?;
     atomic_write_locked(stage_path, &new_content)?;
     let session_started = stage.status == StageStatus::Executing
         && stage.session.is_some()
         && stage.session != previous_session;
-    if stage.status != before || session_started {
-        record_status_change(stage_path, &stage, before);
+    if let Some(work_dir) = work_dir.filter(|_| stage.status != before || session_started) {
+        record_status_change(work_dir, &stage, before, session_type);
     }
     Ok(stage)
 }
 
+/// Move the stage's phase spans to the phase its new status and session put it in.
+///
+/// An Executing stage whose session record cannot be read keeps its spans: a
+/// handover clears the session before the next one is written, and that gap is not
+/// a phase of its own. A terminal close is stamped with the persisted completion
+/// time, which `phases::record` keeps from running backwards.
+fn record_phase_change(stage: &mut Stage, session_type: Option<SessionType>) {
+    if stage.status == StageStatus::Executing && session_type.is_none() {
+        return;
+    }
+    let phase = phase_for(
+        stage.status.clone(),
+        session_type,
+        stage.retry_count,
+        !stage.phases.is_empty(),
+    );
+    let now = Utc::now();
+    let at = match phase {
+        Some(_) => now,
+        None => stage.completed_at.unwrap_or(now),
+    };
+    record(&mut stage.phases, phase, at);
+}
+
+/// Type of the stage's current session record.
+///
+/// Unlocked read: callers such as `complete_stage` hold the sessions-directory
+/// lock across `update_stage`, and a second `flock` in this process would block.
+fn session_type_of(work_dir: &Path, stage: &Stage) -> Option<SessionType> {
+    let id = stage.session.as_deref()?;
+    crate::fs::session_files::load_session_exact_unlocked(work_dir, id)
+        .ok()
+        .flatten()
+        .map(|session| session.session_type)
+}
+
 /// Append the status or executing-session change to the durable event log. The stage write already
 /// succeeded, so a failed append is logged and never fails the update.
-fn record_status_change(stage_path: &Path, stage: &Stage, from: StageStatus) {
-    // Stage files live in `<work_dir>/stages/`.
-    let Some(work_dir) = stage_path.parent().and_then(Path::parent) else {
-        return;
-    };
+fn record_status_change(
+    work_dir: &Path,
+    stage: &Stage,
+    from: StageStatus,
+    session_type: Option<SessionType>,
+) {
     let mut event = StageEvent::new(
         &stage.id,
         from,
@@ -193,14 +242,7 @@ fn record_status_change(stage_path: &Path, stage: &Stage, from: StageStatus) {
         stage.session.clone(),
         stage.close_reason.as_deref(),
     );
-    // Unlocked read: callers such as `complete_stage` hold the sessions-directory
-    // lock across `update_stage`, and a second `flock` in this process would block.
-    event.session_type = stage.session.as_deref().and_then(|id| {
-        crate::fs::session_files::load_session_exact_unlocked(work_dir, id)
-            .ok()
-            .flatten()
-            .map(|session| session.session_type)
-    });
+    event.session_type = session_type;
     if let Err(err) = append_event(work_dir, &event) {
         tracing::warn!(stage = %stage.id, "failed to record stage event: {err:#}");
     }

@@ -55,14 +55,17 @@ pub fn execute(live: bool, compact: bool, verbose: bool) -> Result<()> {
     if live {
         if DaemonServer::is_running(work_path) {
             return ui::run_tui(work_path);
-        } else {
-            eprintln!("{}", "Daemon not running. Cannot use --live mode.".yellow());
-            println!(
-                "{}",
-                "Start the daemon with 'loom run' or use static mode.".dimmed()
-            );
+        }
+        // A finished plan keeps its report on disk after the daemon exits.
+        if ui::run_finished_report(work_path)? {
             return Ok(());
         }
+        eprintln!("{}", "Daemon not running. Cannot use --live mode.".yellow());
+        println!(
+            "{}",
+            "Start the daemon with 'loom run' or use static mode.".dimmed()
+        );
+        return Ok(());
     }
 
     // Static mode (default): show snapshot of current state

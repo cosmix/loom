@@ -19,7 +19,7 @@ use crate::tokens::{AgentFlow, AgentKind, QuotaLeft, StageFlow, TokenFlow};
 const LIVE_MAX_ROWS: usize = 16;
 /// The live rows, a blank line and the by-model block.
 pub(super) const PANE_MAX_ROWS: u16 = (LIVE_MAX_ROWS + 1 + MODEL_BLOCK_MAX_ROWS) as u16;
-pub(super) fn compact_tokens(n: u64) -> String {
+pub(in crate::commands::status::ui::tui) fn compact_tokens(n: u64) -> String {
     match n {
         0..=999 => n.to_string(),
         1_000..=99_999 => format!("{}.{:01}k", n / 1_000, (n % 1_000) / 100),

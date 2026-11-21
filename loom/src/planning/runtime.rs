@@ -222,11 +222,7 @@ fn loom_user_dir() -> Result<PathBuf> {
         return test_loom_user_dir();
     }
 
-    let config = crate::user_config::config_path()?;
-    config
-        .parent()
-        .map(Path::to_path_buf)
-        .ok_or_else(|| anyhow!("loom config path has no parent: {}", config.display()))
+    crate::user_config::loom_user_dir()
 }
 
 /// Keep in-crate tests without an explicit home out of the operator's runtime state.

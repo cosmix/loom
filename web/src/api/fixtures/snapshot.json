@@ -123,6 +123,19 @@
         "verdict_completing": null,
         "elapsed_secs": 700,
         "execution_secs": 655,
+        "completed_at": "2026-09-04T12:00:00Z",
+        "phases": [
+          {
+            "phase": "executing",
+            "started_at": "2026-09-04T11:48:20Z",
+            "ended_at": "2026-09-04T11:56:00Z"
+          },
+          {
+            "phase": "retry",
+            "started_at": "2026-09-04T11:56:00Z",
+            "ended_at": "2026-09-04T12:00:00Z"
+          }
+        ],
         "base_branch": null,
         "base_merged_from": [],
         "failure_info": {

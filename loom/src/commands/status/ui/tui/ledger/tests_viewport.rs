@@ -81,6 +81,7 @@ fn data_without_attention() -> StatusData {
         quota: crate::quota::QuotaSnapshot::default(),
         tokens: None,
         activity: Vec::new(),
+        plan_stats: None,
     }
 }
 

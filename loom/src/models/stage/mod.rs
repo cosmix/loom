@@ -6,14 +6,22 @@ mod issue_history;
 mod merge_block;
 mod methods;
 mod persisted;
+pub mod phases;
 mod sandbox_config;
 mod status_display;
 mod transitions;
 mod types;
 mod verdict_completion;
+mod verification_status;
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod phases_contract_tests;
+
+#[cfg(test)]
+mod phases_tests;
 
 pub use checks::{AcceptanceCriterion, PlanIdentity, TruthCheck, WiringCheck};
 pub use dispute_budgets::DisputeTally;

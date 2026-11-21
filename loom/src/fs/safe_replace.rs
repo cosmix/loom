@@ -18,6 +18,7 @@ use anyhow::{bail, Context, Result};
 
 use super::safe_fs::{open_safely, safe_open_dirfd};
 
+pub(crate) mod create_new;
 #[cfg(test)]
 #[path = "safe_replace_tests.rs"]
 mod tests;

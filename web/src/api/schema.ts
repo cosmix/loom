@@ -1,5 +1,5 @@
 import { busySchema } from "@/api/busy-schema";
-import { codexJobSchema, tokenFlowSchema } from "@/api/token-schema";
+import { codexJobSchema, tokenFlowSchema, tokenUsageSchema } from "@/api/token-schema";
 import { z } from "@/api/zod";
 
 export { busySchema, type Busy } from "@/api/busy-schema";
@@ -134,6 +134,17 @@ export const contractTestingSchema = z.object({
   queued: z.boolean(),
   running_secs: z.number().int().nullable(),
 });
+export const PLAN_PHASES = ["contract", "executing", "adjudication", "retry", "waiting"] as const;
+export const planPhaseSchema = z.enum(PLAN_PHASES);
+// One span of a stage's persisted phase history (`PhaseSpan` in loom/src/models/stage).
+// An open span has no `ended_at`; Rust writes it as null.
+export const phaseSpanSchema = z
+  .object({
+    phase: planPhaseSchema,
+    started_at: z.string(),
+    ended_at: z.string().nullish(),
+  })
+  .strict();
 export const stageSummarySchema = z
   .object({
     id: z.string(),
@@ -146,6 +157,8 @@ export const stageSummarySchema = z
     context_tokens: z.number().int().nullable(),
     elapsed_secs: z.number().int().nullable(),
     execution_secs: z.number().int().nullable(),
+    completed_at: z.string().nullish(),
+    phases: z.array(phaseSpanSchema).optional(),
     base_branch: z.string().nullable(),
     base_merged_from: z.array(z.string()),
     failure_info: failureInfoSchema.nullable(),
@@ -230,6 +243,46 @@ export const stageEventSchema = z.object({
   session_type: sessionTypeSchema.nullish(),
   reason: z.string().nullable(),
 });
+// The finished-plan record (`PlanStatsRecord` in loom/src/plan_stats/record.rs). Rust writes
+// every nullable field as an explicit null; `nullish` also tolerates a record without the key.
+export const planStageStatsSchema = z
+  .object({
+    id: z.string(),
+    name: z.string(),
+    stage_type: stageTypeSchema,
+    status: stageStatusSchema,
+    started_at: z.string().nullish(),
+    completed_at: z.string().nullish(),
+    execution_secs: z.number().int().nonnegative(),
+    model: z.string().nullish(),
+    effort: z.string().nullish(),
+    phases: z.array(phaseSpanSchema),
+    tokens: tokenUsageSchema,
+  })
+  .strict();
+export const planModelStatsSchema = z
+  .object({
+    model: z.string(),
+    effort: z.string().nullish(),
+    lane: z.enum(["claude", "codex"]),
+    agents: z.number().int().nonnegative(),
+    tokens: tokenUsageSchema,
+  })
+  .strict();
+export const planStatsSchema = z
+  .object({
+    schema_version: z.literal(1),
+    plan_id: z.string(),
+    plan_name: z.string(),
+    started_at: z.string(),
+    ended_at: z.string(),
+    wall_secs: z.number().int().nonnegative(),
+    execution_secs: z.number().int().nonnegative(),
+    totals: tokenUsageSchema,
+    stages: z.array(planStageStatsSchema),
+    models: z.array(planModelStatsSchema),
+  })
+  .strict();
 export const statusDataSchema = z.object({
   stages: z.array(stageSummarySchema),
   merge: mergeSummarySchema,
@@ -237,6 +290,7 @@ export const statusDataSchema = z.object({
   plan_name: z.string().nullable(),
   quota: quotaSnapshotSchema,
   tokens: tokenFlowSchema.optional(),
+  plan_stats: planStatsSchema.optional(),
   activity: z.array(stageEventSchema),
 });
 export const alternativeSchema = z.object({
@@ -288,32 +342,30 @@ export const snapshotSchema = z
   })
   .strict();
 
-const TOKENS_PATH = ["status", "tokens"] as const;
+// Token flow and the finished-plan record are overlays of `status`: a frame whose only
+// defects sit inside them parses with those blocks absent, so ordinary status still
+// renders. Any other defect fails the frame exactly as `snapshotSchema.safeParse` does.
+const OVERLAY_KEYS: PropertyKey[] = ["tokens", "plan_stats"];
 
-function isTokensIssue(issue: { path: PropertyKey[] }): boolean {
-  return TOKENS_PATH.every((key, index) => issue.path[index] === key);
-}
-
-// Only called once every issue sits under `status.tokens`, so zod has already
-// walked `raw` and `raw.status` as objects.
-function withoutTokens(raw: unknown): unknown {
-  const frame = raw as { status: Record<string, unknown> };
-  const status = { ...frame.status };
-  delete status.tokens;
-  return { ...frame, status };
-}
-
-// Token flow is an overlay: a frame whose only defects are inside `tokens`
-// parses with the block absent, so ordinary status still renders. Any defect
-// outside it fails the frame exactly as `snapshotSchema.safeParse` does.
 export function parseSnapshot(raw: unknown): ReturnType<typeof snapshotSchema.safeParse> {
   const result = snapshotSchema.safeParse(raw);
-  if (result.success || !result.error.issues.every(isTokensIssue)) {
+  if (result.success) return result;
+  const issues = result.error.issues;
+  if (!issues.every((i) => i.path[0] === "status" && OVERLAY_KEYS.includes(i.path[1]))) {
     return result;
   }
-  return snapshotSchema.safeParse(withoutTokens(raw));
+  // Every issue is under `status`, so zod has already walked it as an object.
+  const frame = raw as { status: Record<string, unknown> };
+  const status = { ...frame.status };
+  issues.forEach((i) => delete status[String(i.path[1])]);
+  return snapshotSchema.safeParse({ ...frame, status });
 }
 
+export type PlanPhase = z.infer<typeof planPhaseSchema>;
+export type PhaseSpan = z.infer<typeof phaseSpanSchema>;
+export type PlanStats = z.infer<typeof planStatsSchema>;
+export type PlanStageStats = z.infer<typeof planStageStatsSchema>;
+export type PlanModelStats = z.infer<typeof planModelStatsSchema>;
 export type StageStatus = z.infer<typeof stageStatusSchema>;
 export type SessionType = z.infer<typeof sessionTypeSchema>;
 export type HistoryKind = z.infer<typeof historyKindSchema>;

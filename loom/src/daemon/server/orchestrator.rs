@@ -20,13 +20,17 @@ use crate::orchestrator::{
 };
 use crate::plan::graph::ExecutionGraph;
 use crate::plan::schema::SandboxConfig;
+use crate::plan_stats::finish_plan;
+use crate::tokens::TokenTracker;
 
 /// Spawn the orchestrator thread to execute stages.
 ///
-/// Returns a join handle for the orchestrator thread.
+/// Returns a join handle for the orchestrator thread. The thread ends
+/// `token_tracker` when the scheduler run returns, before the final scan.
 pub fn spawn_orchestrator(
     server: &DaemonServer,
     lock_identity: Option<LockIdentity>,
+    token_tracker: Arc<TokenTracker>,
 ) -> Result<Option<JoinHandle<()>>> {
     let work_dir = server.work_dir.clone();
     let daemon_config = server.config.clone();
@@ -41,6 +45,7 @@ pub fn spawn_orchestrator(
                 shutdown_flag.clone(),
                 lock_identity,
                 ready_tx,
+                &token_tracker,
             )
         });
     });
@@ -90,6 +95,7 @@ fn run_orchestrator(
     shutdown_flag: Arc<AtomicBool>,
     lock_identity: Option<LockIdentity>,
     ready: std::sync::mpsc::SyncSender<()>,
+    token_tracker: &TokenTracker,
 ) -> Result<TerminalOutcome> {
     let (mut orchestrator, repo_root_for_plan) = initialize_orchestrator(
         work_dir,
@@ -111,7 +117,10 @@ fn run_orchestrator(
         ));
     }
 
-    let result = orchestrator.run().context("Orchestrator run failed")?;
+    let result = orchestrator.run();
+    // No tracker pass may run alongside, or after, the final scan.
+    token_tracker.stop_and_join();
+    let result = result.context("Orchestrator run failed")?;
     let outcome = finish_orchestration(&WorkDir::new(&repo_root_for_plan)?, &result);
 
     Ok(outcome)
@@ -171,14 +180,11 @@ fn plan_context(work_dir: &Path) -> (PathBuf, Option<String>) {
     (repo_root, plan_id)
 }
 
+/// The run's terminal outcome. A successful run also gets its plan
+/// statistics, after the plan file is marked done.
 fn finish_orchestration(work_dir: &WorkDir, result: &OrchestratorResult) -> TerminalOutcome {
     log_stage_lists(result);
-    if result.is_success() {
-        println!("All stages completed successfully");
-        if let Err(error) = mark_plan_done_if_all_merged(work_dir) {
-            return TerminalOutcome::FinalizationFailure(format!("{error:#}"));
-        }
-    } else {
+    if !result.is_success() {
         return TerminalOutcome::Incomplete(format!(
             "{} failed, {} unfinished, {} requiring handoff",
             result.failed_stages.len(),
@@ -186,7 +192,25 @@ fn finish_orchestration(work_dir: &WorkDir, result: &OrchestratorResult) -> Term
             result.needs_handoff.len()
         ));
     }
+    println!("All stages completed successfully");
+    if let Err(error) = mark_plan_done_if_all_merged(work_dir) {
+        return TerminalOutcome::FinalizationFailure(format!("{error:#}"));
+    }
+    publish_plan_stats(work_dir.root());
     TerminalOutcome::Success
+}
+
+/// Counts the run's last token usage with a final scan, then publishes the
+/// plan statistics over the same work root. Either failure is logged and
+/// leaves the outcome alone: the stages are done whatever the statistics say.
+fn publish_plan_stats(work_root: &Path) {
+    let now = chrono::Utc::now().timestamp();
+    if let Err(error) = crate::tokens::final_scan(work_root, None, now) {
+        tracing::error!("final token scan failed: {error:#}");
+    }
+    if let Err(error) = finish_plan(work_root) {
+        tracing::error!("publishing plan statistics failed: {error:#}");
+    }
 }
 
 pub(crate) fn finish_foreground(work_dir: &WorkDir, result: &OrchestratorResult) -> Result<()> {

@@ -1,6 +1,7 @@
 //! TempDir fixtures shared by the tracker's unit tests. Lines follow the
 //! samples captured in the token-flow spec (common.md section 5).
 
+use super::accumulate::MESSAGE_TABLE_CAP;
 use super::model::{AgentFlow, AgentKind, StageFlow, TokenFlow, TokenUsage};
 use super::tracker::scan_pass;
 use crate::fs::session_files::save_session;
@@ -82,6 +83,24 @@ pub(super) fn codex_count(ts: i64, [input, cached, output]: [u64; 3]) -> String 
         "info": {"total_token_usage": total, "last_token_usage": total,
             "model_context_window": 475000}}})
     .to_string()
+}
+
+/// A transcript of [`MESSAGE_TABLE_CAP`] lines of one cache-write token each
+/// with distinct 1200-character message ids: its agent's checkpointed table is
+/// about 5 MB of JSON, so one fits `MAX_CHECKPOINT_BYTES` and two do not.
+pub(super) fn bulky_body(tag: &str, now: i64) -> String {
+    let one = usage(0, 1, 0, 0);
+    let lines: Vec<String> = (0..MESSAGE_TABLE_CAP)
+        .map(|n| {
+            claude_line(
+                &format!("{tag}{n:0>1200}"),
+                now - 60,
+                "claude-opus-5-5",
+                &one,
+            )
+        })
+        .collect();
+    body(&lines)
 }
 
 /// Lines each followed by a newline.

@@ -1,0 +1,967 @@
+{
+  "status": {
+    "stages": [
+      {
+        "id": "knowledge-bootstrap",
+        "name": "Bootstrap Knowledge",
+        "description": null,
+        "summary": null,
+        "status": "completed",
+        "stage_type": "knowledge",
+        "dependencies": [],
+        "context_tokens": null,
+        "contract_testing": null,
+        "verdict_completing": null,
+        "elapsed_secs": 412,
+        "execution_secs": 380,
+        "base_branch": null,
+        "base_merged_from": [],
+        "failure_info": null,
+        "activity_status": "Idle",
+        "last_tool": null,
+        "last_activity": null,
+        "staleness_secs": null,
+        "context_ceiling_tokens": null,
+        "review_reason": null,
+        "review_notes": null,
+        "history": [],
+        "merged": false,
+        "merge_assumed": false,
+        "held": false,
+        "retry_count": 0,
+        "max_retries": null,
+        "pid": null,
+        "session_alive": false,
+        "model": "opus",
+        "effort": "high",
+        "codex_jobs": [],
+        "session_type": null,
+        "incoherence": null,
+        "execution_models": [],
+        "dispute_count": 0,
+        "judge_heartbeat_secs": null,
+        "session_backend": null
+      },
+      {
+        "id": "server",
+        "name": "Rust server",
+        "description": null,
+        "summary": null,
+        "status": "executing",
+        "stage_type": "standard",
+        "dependencies": ["knowledge-bootstrap"],
+        "context_tokens": 312000,
+        "contract_testing": null,
+        "verdict_completing": null,
+        "elapsed_secs": 905,
+        "execution_secs": 640,
+        "base_branch": null,
+        "base_merged_from": [],
+        "failure_info": null,
+        "activity_status": "Working",
+        "last_tool": "Bash",
+        "last_activity": "cargo test",
+        "staleness_secs": 3,
+        "context_ceiling_tokens": 800000,
+        "review_reason": null,
+        "review_notes": null,
+        "history": [],
+        "merged": false,
+        "merge_assumed": false,
+        "held": false,
+        "retry_count": 0,
+        "max_retries": null,
+        "pid": 4242,
+        "session_alive": true,
+        "model": "opus",
+        "effort": "high",
+        "codex_jobs": [
+          {
+            "unit_id": "hex-test",
+            "invocation_id": "inv-b63fd09ed5d66b5899fcaef4a521ffcd",
+            "model": "gpt-6.2-sol",
+            "effort": "xhigh",
+            "phase": "terminal",
+            "outcome": "succeeded",
+            "outcome_reason": "turn completed",
+            "thread_id": "01a1396b-099e-7ef2-92c0-52e2b3314eb2",
+            "started_at": "2026-11-16T18:23:55.094Z",
+            "ended_at": "2026-11-16T18:24:18.813Z",
+            "deadline_secs": 1500
+          },
+          {
+            "unit_id": "hex-lint",
+            "invocation_id": "inv-5c1e0a7d2f4b49c0a1e3b6d8f9072a14",
+            "model": "gpt-6.2-sol",
+            "effort": "xhigh",
+            "phase": "terminal",
+            "outcome": "failed",
+            "outcome_reason": "codex exited before starting a thread",
+            "thread_id": null,
+            "started_at": "2026-11-16T18:25:02.411Z",
+            "ended_at": "2026-11-16T18:25:04.911Z",
+            "deadline_secs": 1500
+          }
+        ],
+        "session_type": "stage",
+        "incoherence": null,
+        "execution_models": ["sonnet/medium", "gpt-6.1-terra/xhigh (requested)"],
+        "dispute_count": 0,
+        "judge_heartbeat_secs": null,
+        "session_backend": "native"
+      },
+      {
+        "id": "client",
+        "name": "TypeScript client",
+        "description": null,
+        "summary": null,
+        "status": "completed-with-failures",
+        "stage_type": "standard",
+        "dependencies": ["knowledge-bootstrap"],
+        "context_tokens": null,
+        "contract_testing": null,
+        "verdict_completing": null,
+        "elapsed_secs": 700,
+        "execution_secs": 655,
+        "completed_at": "2026-09-04T12:00:00Z",
+        "phases": [
+          {
+            "phase": "executing",
+            "started_at": "2026-09-04T11:48:20Z",
+            "ended_at": "2026-09-04T11:56:00Z"
+          },
+          {
+            "phase": "retry",
+            "started_at": "2026-09-04T11:56:00Z",
+            "ended_at": "2026-09-04T12:00:00Z"
+          }
+        ],
+        "base_branch": null,
+        "base_merged_from": [],
+        "failure_info": {
+          "failure_type": "test-failure",
+          "detected_at": "2026-09-04T12:00:00Z",
+          "evidence": [
+            "cargo test failed",
+            "1 test failed: schema::parses_fixture",
+            "see loom stage retry client"
+          ]
+        },
+        "activity_status": "Error",
+        "last_tool": null,
+        "last_activity": null,
+        "staleness_secs": null,
+        "context_ceiling_tokens": null,
+        "review_reason": null,
+        "review_notes": null,
+        "history": [],
+        "merged": false,
+        "merge_assumed": false,
+        "held": false,
+        "retry_count": 1,
+        "max_retries": 3,
+        "pid": null,
+        "session_alive": false,
+        "model": "opus",
+        "effort": "high",
+        "codex_jobs": [],
+        "session_type": null,
+        "incoherence": null,
+        "execution_models": [],
+        "dispute_count": 0,
+        "judge_heartbeat_secs": null,
+        "session_backend": null
+      },
+      {
+        "id": "design",
+        "name": "Visual design",
+        "description": null,
+        "summary": null,
+        "status": "waiting-for-deps",
+        "stage_type": "standard",
+        "dependencies": ["server", "client"],
+        "context_tokens": null,
+        "contract_testing": null,
+        "verdict_completing": null,
+        "elapsed_secs": 0,
+        "execution_secs": null,
+        "base_branch": null,
+        "base_merged_from": [],
+        "failure_info": null,
+        "activity_status": "Idle",
+        "last_tool": null,
+        "last_activity": null,
+        "staleness_secs": null,
+        "context_ceiling_tokens": null,
+        "review_reason": null,
+        "review_notes": null,
+        "history": [],
+        "merged": false,
+        "merge_assumed": false,
+        "held": false,
+        "retry_count": 0,
+        "max_retries": null,
+        "pid": null,
+        "session_alive": false,
+        "model": "opus",
+        "effort": "high",
+        "codex_jobs": [],
+        "session_type": null,
+        "incoherence": null,
+        "execution_models": [],
+        "dispute_count": 0,
+        "judge_heartbeat_secs": null,
+        "session_backend": null
+      },
+      {
+        "id": "docs",
+        "name": "Documentation",
+        "description": null,
+        "summary": null,
+        "status": "merge-conflict",
+        "stage_type": "standard",
+        "dependencies": ["knowledge-bootstrap"],
+        "context_tokens": null,
+        "contract_testing": null,
+        "verdict_completing": null,
+        "elapsed_secs": 300,
+        "execution_secs": 290,
+        "base_branch": null,
+        "base_merged_from": [],
+        "failure_info": null,
+        "activity_status": "Working",
+        "last_tool": null,
+        "last_activity": null,
+        "staleness_secs": 40,
+        "context_ceiling_tokens": null,
+        "review_reason": null,
+        "review_notes": null,
+        "history": [],
+        "merged": false,
+        "merge_assumed": false,
+        "held": false,
+        "retry_count": 0,
+        "max_retries": null,
+        "pid": 4343,
+        "session_alive": true,
+        "model": "opus",
+        "effort": "high",
+        "codex_jobs": [],
+        "session_type": "merge",
+        "incoherence": null,
+        "execution_models": [],
+        "dispute_count": 0,
+        "judge_heartbeat_secs": null,
+        "session_backend": "tmux",
+        "merge_resolver_session": "session-3f9a2c1e-1788720000",
+        "merge_resolver_attempts": 1
+      },
+      {
+        "id": "integration-verify",
+        "name": "Integration Verification",
+        "description": null,
+        "summary": null,
+        "status": "needs-human-review",
+        "stage_type": "integration-verify",
+        "dependencies": ["design", "docs"],
+        "context_tokens": null,
+        "contract_testing": null,
+        "verdict_completing": null,
+        "elapsed_secs": 120,
+        "execution_secs": null,
+        "base_branch": null,
+        "base_merged_from": [],
+        "failure_info": null,
+        "activity_status": "Idle",
+        "last_tool": null,
+        "last_activity": null,
+        "staleness_secs": null,
+        "context_ceiling_tokens": null,
+        "review_reason": "acceptance criterion 3 disputed twice",
+        "review_notes": "acceptance criterion 3 disputed twice",
+        "history": [],
+        "merged": false,
+        "merge_assumed": false,
+        "held": true,
+        "retry_count": 0,
+        "max_retries": null,
+        "pid": null,
+        "session_alive": false,
+        "model": "opus",
+        "effort": "high",
+        "codex_jobs": [],
+        "session_type": null,
+        "incoherence": null,
+        "execution_models": [],
+        "dispute_count": 2,
+        "judge_heartbeat_secs": 40,
+        "session_backend": null
+      },
+      {
+        "id": "knowledge-distill",
+        "name": "Knowledge Distillation",
+        "description": null,
+        "summary": null,
+        "status": "waiting-for-deps",
+        "stage_type": "knowledge-distill",
+        "dependencies": ["integration-verify"],
+        "context_tokens": null,
+        "contract_testing": null,
+        "verdict_completing": null,
+        "elapsed_secs": null,
+        "execution_secs": null,
+        "base_branch": null,
+        "base_merged_from": [],
+        "failure_info": null,
+        "activity_status": "Idle",
+        "last_tool": null,
+        "last_activity": null,
+        "staleness_secs": null,
+        "context_ceiling_tokens": null,
+        "review_reason": null,
+        "review_notes": null,
+        "history": [],
+        "merged": false,
+        "merge_assumed": false,
+        "held": false,
+        "retry_count": 0,
+        "max_retries": null,
+        "pid": null,
+        "session_alive": false,
+        "model": "sonnet",
+        "effort": "high",
+        "codex_jobs": [],
+        "session_type": null,
+        "incoherence": null,
+        "execution_models": [],
+        "dispute_count": 0,
+        "judge_heartbeat_secs": null,
+        "session_backend": null
+      },
+      {
+        "id": "merge-gate",
+        "name": "Merge Gate",
+        "description": null,
+        "summary": null,
+        "status": "merge-blocked",
+        "stage_type": "standard",
+        "dependencies": ["knowledge-bootstrap"],
+        "context_tokens": null,
+        "contract_testing": null,
+        "verdict_completing": null,
+        "elapsed_secs": 200,
+        "execution_secs": 190,
+        "base_branch": null,
+        "base_merged_from": [],
+        "failure_info": null,
+        "activity_status": "Idle",
+        "last_tool": null,
+        "last_activity": null,
+        "staleness_secs": null,
+        "context_ceiling_tokens": null,
+        "review_reason": null,
+        "review_notes": null,
+        "history": [],
+        "merged": false,
+        "merge_assumed": false,
+        "merge_block": "the target branch moved while the merge was being prepared; it will be retried",
+        "held": false,
+        "retry_count": 0,
+        "max_retries": null,
+        "pid": null,
+        "session_alive": false,
+        "model": "sonnet",
+        "effort": "high",
+        "codex_jobs": [],
+        "session_type": null,
+        "incoherence": null,
+        "execution_models": [],
+        "dispute_count": 0,
+        "judge_heartbeat_secs": null,
+        "session_backend": null
+      },
+      {
+        "id": "local-runtime",
+        "name": "Local runtime",
+        "description": null,
+        "summary": null,
+        "status": "blocked",
+        "stage_type": "standard",
+        "dependencies": ["knowledge-bootstrap"],
+        "context_tokens": null,
+        "contract_testing": null,
+        "verdict_completing": null,
+        "elapsed_secs": 1800,
+        "execution_secs": 1500,
+        "base_branch": null,
+        "base_merged_from": [],
+        "failure_info": null,
+        "activity_status": "Idle",
+        "last_tool": null,
+        "last_activity": null,
+        "staleness_secs": null,
+        "context_ceiling_tokens": null,
+        "review_reason": null,
+        "review_notes": null,
+        "history": [],
+        "merged": false,
+        "merge_assumed": false,
+        "held": false,
+        "retry_count": 0,
+        "max_retries": null,
+        "pid": null,
+        "session_alive": false,
+        "model": "opus",
+        "effort": "high",
+        "codex_jobs": [],
+        "session_type": null,
+        "incoherence": null,
+        "execution_models": [],
+        "dispute_count": 0,
+        "judge_heartbeat_secs": null,
+        "session_backend": "tmux",
+        "close_reason": "Adjudicator needs an unsandboxed run only the operator can do. From the worktree root run: TROOFOO_STACK=ephemeral bun run stack:ephemeral --with objectstore -- bun test packages/storage packages/db/src/ephemeral-services; report exit code, test summary, and .stack/objectstore.log on failure. Criterion 5 (stack:ephemeral --with objectstore) cannot pass in this sandbox: it denies AF_UNIX socket creation everywhere.\nOr allow AF_UNIX for this stage. All work committed; 0 open findings.",
+        "acceptance": [
+          "cargo build",
+          "cargo test",
+          "bun run typecheck",
+          "bun test packages/storage",
+          "TROOFOO_STACK=ephemeral bun run stack:ephemeral --with objectstore -- bun test packages/db/src/ephemeral-services"
+        ],
+        "terminal_history_session": "session-9c1d4e7a-1788700000",
+        "terminal_history_kind": "last_screen",
+        "block_detail": {
+          "failing_criteria": [
+            {
+              "index": 4,
+              "command": "TROOFOO_STACK=ephemeral bun run stack:ephemeral --with objectstore -- bun test packages/db/src/ephemeral-services",
+              "diagnostic": "FAILED [criterion 4]: stack:ephemeral cannot create AF_UNIX sockets"
+            }
+          ]
+        }
+      }
+    ],
+    "merge": {
+      "merged": [],
+      "pending": ["docs"],
+      "conflicts": ["docs"]
+    },
+    "progress": {
+      "total": 9,
+      "completed": 1,
+      "executing": 1,
+      "pending": 3,
+      "blocked": 4
+    },
+    "plan_name": "Web Dashboard Fixture",
+    "quota": {
+      "claude": {
+        "observed_at": 1788523200,
+        "windows": [
+          {
+            "kind": "five-hour",
+            "used_percent": 48.0,
+            "resets_at": 1788531180
+          },
+          {
+            "kind": "seven-day",
+            "used_percent": 31.0,
+            "resets_at": 1788876000
+          }
+        ],
+        "plan": null,
+        "error": null
+      },
+      "codex": {
+        "observed_at": 1788522960,
+        "windows": [
+          {
+            "kind": "seven-day",
+            "used_percent": 63.0,
+            "resets_at": 1788728400
+          }
+        ],
+        "plan": "pro",
+        "error": null
+      }
+    },
+    "tokens": {
+      "observed_at": 1788523200,
+      "bucket_secs": 30,
+      "plan": {
+        "total": {
+          "input": 120000,
+          "cache_write": 1800000,
+          "cache_read": 26000000,
+          "output": 310000
+        },
+        "rate": {
+          "input": 2000,
+          "cache_write": 36000,
+          "cache_read": 600000,
+          "output": 5200
+        },
+        "series": [
+          21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600,
+          21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600,
+          21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600,
+          21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600,
+          21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600
+        ]
+      },
+      "stages": [
+        {
+          "stage_id": "server",
+          "total": {
+            "input": 120000,
+            "cache_write": 1800000,
+            "cache_read": 26000000,
+            "output": 310000
+          },
+          "rate": {
+            "input": 2000,
+            "cache_write": 36000,
+            "cache_read": 600000,
+            "output": 5200
+          },
+          "series": [
+            21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600,
+            21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600,
+            21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600,
+            21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600,
+            21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600,
+            21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600,
+            21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600,
+            21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600,
+            21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600,
+            21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600, 21600
+          ],
+          "hit_series": [
+            94, 94, 94, 94, 94, 94, 94, 94, 94, 94, 94, 94, 94, 94, 94, 94, 94, 94, 94, 94, 94, 94,
+            94, 94, 94, 94, 94, 94, 94, 94, 94, 94, 94, 94, 94, 94, 94, 94, 94, 94, 94, 94, 94, 94,
+            94, 94, 94, 94, 94, 94, 94, 94, 94, 94, 94, 94, 94, 94, 94, 94, 94, 94, 94, 94, 94, 94,
+            94, 94, 94, 94, 94, 94, 94, 94, 94, 94, 94, 94, 94, 94, 94, 94, 94, 94, 94, 94, 94, 94,
+            94, 94, 94, 94, 94, 94, 94, 94, 94, 94, 94, 94, 94, 94, 94, 94, 94, 94, 94, 94, 94, 94,
+            94, 94, 94, 94, 94, 94, 94, 94, 94, 94
+          ],
+          "agents": [
+            {
+              "id": "main-01ed9f4c",
+              "kind": "main",
+              "agent_type": null,
+              "forwarder": null,
+              "model": "claude-opus-5-5",
+              "effort": "high",
+              "unit_id": null,
+              "active": true,
+              "total": {
+                "input": 40000,
+                "cache_write": 600000,
+                "cache_read": 9000000,
+                "output": 100000
+              },
+              "rate": {
+                "input": 600,
+                "cache_write": 12000,
+                "cache_read": 200000,
+                "output": 1600
+              },
+              "series": [
+                7100, 7100, 7100, 7100, 7100, 7100, 7100, 7100, 7100, 7100, 7100, 7100, 7100, 7100,
+                7100, 7100, 7100, 7100, 7100, 7100, 7100, 7100, 7100, 7100, 7100, 7100, 7100, 7100,
+                7100, 7100, 7100, 7100, 7100, 7100, 7100, 7100, 7100, 7100, 7100, 7100, 7100, 7100,
+                7100, 7100, 7100, 7100, 7100, 7100, 7100, 7100, 7100, 7100, 7100, 7100, 7100, 7100,
+                7100, 7100, 7100, 7100, 7100, 7100, 7100, 7100, 7100, 7100, 7100, 7100, 7100, 7100,
+                7100, 7100, 7100, 7100, 7100, 7100, 7100, 7100, 7100, 7100, 7100, 7100, 7100, 7100,
+                7100, 7100, 7100, 7100, 7100, 7100, 7100, 7100, 7100, 7100, 7100, 7100, 7100, 7100,
+                7100, 7100, 7100, 7100, 7100, 7100, 7100, 7100, 7100, 7100, 7100, 7100, 7100, 7100,
+                7100, 7100, 7100, 7100, 7100, 7100, 7100, 7100
+              ]
+            },
+            {
+              "id": "a04baa183f888b773",
+              "kind": "subagent",
+              "agent_type": "loom-software-engineer",
+              "forwarder": null,
+              "model": "claude-sonnet-5-5",
+              "effort": "medium",
+              "unit_id": null,
+              "active": true,
+              "total": {
+                "input": 50000,
+                "cache_write": 900000,
+                "cache_read": 13000000,
+                "output": 160000
+              },
+              "rate": {
+                "input": 1200,
+                "cache_write": 21000,
+                "cache_read": 350000,
+                "output": 3000
+              },
+              "series": [
+                12600, 12600, 12600, 12600, 12600, 12600, 12600, 12600, 12600, 12600, 12600, 12600,
+                12600, 12600, 12600, 12600, 12600, 12600, 12600, 12600, 12600, 12600, 12600, 12600,
+                12600, 12600, 12600, 12600, 12600, 12600, 12600, 12600, 12600, 12600, 12600, 12600,
+                12600, 12600, 12600, 12600, 12600, 12600, 12600, 12600, 12600, 12600, 12600, 12600,
+                12600, 12600, 12600, 12600, 12600, 12600, 12600, 12600, 12600, 12600, 12600, 12600,
+                12600, 12600, 12600, 12600, 12600, 12600, 12600, 12600, 12600, 12600, 12600, 12600,
+                12600, 12600, 12600, 12600, 12600, 12600, 12600, 12600, 12600, 12600, 12600, 12600,
+                12600, 12600, 12600, 12600, 12600, 12600, 12600, 12600, 12600, 12600, 12600, 12600,
+                12600, 12600, 12600, 12600, 12600, 12600, 12600, 12600, 12600, 12600, 12600, 12600,
+                12600, 12600, 12600, 12600, 12600, 12600, 12600, 12600, 12600, 12600, 12600, 12600
+              ]
+            },
+            {
+              "id": "codex-01a1396b",
+              "kind": "codex",
+              "agent_type": null,
+              "forwarder": null,
+              "model": "gpt-6.2-sol",
+              "effort": "xhigh",
+              "unit_id": "hex-test",
+              "active": true,
+              "total": {
+                "input": 30000,
+                "cache_write": 300000,
+                "cache_read": 4000000,
+                "output": 50000
+              },
+              "rate": {
+                "input": 200,
+                "cache_write": 3000,
+                "cache_read": 50000,
+                "output": 600
+              },
+              "series": [
+                1900, 1900, 1900, 1900, 1900, 1900, 1900, 1900, 1900, 1900, 1900, 1900, 1900, 1900,
+                1900, 1900, 1900, 1900, 1900, 1900, 1900, 1900, 1900, 1900, 1900, 1900, 1900, 1900,
+                1900, 1900, 1900, 1900, 1900, 1900, 1900, 1900, 1900, 1900, 1900, 1900, 1900, 1900,
+                1900, 1900, 1900, 1900, 1900, 1900, 1900, 1900, 1900, 1900, 1900, 1900, 1900, 1900,
+                1900, 1900, 1900, 1900, 1900, 1900, 1900, 1900, 1900, 1900, 1900, 1900, 1900, 1900,
+                1900, 1900, 1900, 1900, 1900, 1900, 1900, 1900, 1900, 1900, 1900, 1900, 1900, 1900,
+                1900, 1900, 1900, 1900, 1900, 1900, 1900, 1900, 1900, 1900, 1900, 1900, 1900, 1900,
+                1900, 1900, 1900, 1900, 1900, 1900, 1900, 1900, 1900, 1900, 1900, 1900, 1900, 1900,
+                1900, 1900, 1900, 1900, 1900, 1900, 1900, 1900
+              ]
+            }
+          ]
+        }
+      ],
+      "models": [
+        {
+          "model": "claude-sonnet-5-5",
+          "effort": "medium",
+          "total": {
+            "input": 50000,
+            "cache_write": 900000,
+            "cache_read": 13000000,
+            "output": 160000
+          }
+        },
+        {
+          "model": "claude-opus-5-5",
+          "effort": "xhigh",
+          "total": {
+            "input": 30000,
+            "cache_write": 450000,
+            "cache_read": 7000000,
+            "output": 80000
+          }
+        },
+        {
+          "model": "gpt-6.2-sol",
+          "effort": "xhigh",
+          "total": {
+            "input": 30000,
+            "cache_write": 300000,
+            "cache_read": 4000000,
+            "output": 50000
+          }
+        },
+        {
+          "model": "claude-opus-5-5",
+          "effort": "high",
+          "total": {
+            "input": 10000,
+            "cache_write": 150000,
+            "cache_read": 2000000,
+            "output": 20000
+          }
+        }
+      ],
+      "quota_left": [
+        {
+          "provider": "claude",
+          "minutes_left": 127,
+          "lasts_to_reset": false
+        }
+      ],
+      "unreadable_lines": 0
+    },
+    "activity": [
+      {
+        "at": "2026-09-04T11:50:00Z",
+        "stage_id": "server",
+        "from": "executing",
+        "to": "needs-adjudication",
+        "session": "session-server-1",
+        "reason": null
+      },
+      {
+        "at": "2026-09-04T11:58:00Z",
+        "stage_id": "server",
+        "from": "needs-adjudication",
+        "to": "queued",
+        "session": null,
+        "reason": null
+      }
+    ],
+    "plan_stats": {
+      "schema_version": 1,
+      "plan_id": "20260904T110000Z-web-dashboard-fixture-0b8f5d2e-4c1a-4a57-9f6e-2d7c1b3a9e10",
+      "plan_name": "Web Dashboard Fixture",
+      "started_at": "2026-09-04T11:00:00Z",
+      "ended_at": "2026-09-04T12:00:00Z",
+      "wall_secs": 3600,
+      "execution_secs": 2400,
+      "totals": {
+        "input": 1000,
+        "cache_write": 3000,
+        "cache_read": 50000,
+        "output": 700
+      },
+      "stages": [
+        {
+          "id": "server",
+          "name": "Rust server",
+          "stage_type": "standard",
+          "status": "completed",
+          "started_at": "2026-09-04T11:00:00Z",
+          "completed_at": "2026-09-04T11:40:00Z",
+          "execution_secs": 2400,
+          "model": "opus",
+          "effort": "high",
+          "phases": [
+            {
+              "phase": "contract",
+              "started_at": "2026-09-04T11:00:00Z",
+              "ended_at": "2026-09-04T11:10:00Z"
+            },
+            {
+              "phase": "executing",
+              "started_at": "2026-09-04T11:10:00Z",
+              "ended_at": "2026-09-04T11:40:00Z"
+            }
+          ],
+          "tokens": {
+            "input": 1000,
+            "cache_write": 3000,
+            "cache_read": 50000,
+            "output": 700
+          }
+        },
+        {
+          "id": "docs",
+          "name": "Documentation",
+          "stage_type": "standard",
+          "status": "skipped",
+          "started_at": null,
+          "completed_at": null,
+          "execution_secs": 0,
+          "model": null,
+          "effort": null,
+          "phases": [],
+          "tokens": {
+            "input": 0,
+            "cache_write": 0,
+            "cache_read": 0,
+            "output": 0
+          }
+        }
+      ],
+      "models": [
+        {
+          "model": "opus",
+          "effort": "high",
+          "lane": "claude",
+          "agents": 2,
+          "tokens": {
+            "input": 1000,
+            "cache_write": 3000,
+            "cache_read": 50000,
+            "output": 700
+          }
+        }
+      ]
+    }
+  },
+  "attention": [
+    {
+      "id": "client",
+      "name": "TypeScript client",
+      "label": "ACCEPTANCE FAILED",
+      "status": "completed-with-failures",
+      "command": "loom stage retry client",
+      "command_when": null,
+      "alternatives": [],
+      "note": null,
+      "automatic": false,
+      "failure_type": "test-failure",
+      "failure_label": "test",
+      "evidence": [
+        "cargo test failed",
+        "1 test failed: schema::parses_fixture",
+        "see loom stage retry client"
+      ],
+      "review_reason": null,
+      "cleanup_warning": null,
+      "has_human_review_choices": false,
+      "dispute_count": null,
+      "judge_heartbeat_secs": null,
+      "reason": null,
+      "acceptance": [],
+      "failing_criteria": [],
+      "terminal_history": false
+    },
+    {
+      "id": "docs",
+      "name": "Documentation",
+      "label": "MERGE CONFLICT",
+      "status": "merge-conflict",
+      "command": null,
+      "command_when": null,
+      "alternatives": [],
+      "note": "merge resolver session-3f9a2c1e-1788720000 is working (attempt 1 of 6); run loom attach docs to watch it, or open the stage's terminal in the web UI",
+      "automatic": true,
+      "failure_type": null,
+      "failure_label": null,
+      "evidence": [],
+      "review_reason": null,
+      "cleanup_warning": null,
+      "has_human_review_choices": false,
+      "dispute_count": null,
+      "judge_heartbeat_secs": null,
+      "reason": null,
+      "acceptance": [],
+      "failing_criteria": [],
+      "terminal_history": false
+    },
+    {
+      "id": "integration-verify",
+      "name": "Integration Verification",
+      "label": "NEEDS REVIEW",
+      "status": "needs-human-review",
+      "command": null,
+      "command_when": null,
+      "alternatives": [],
+      "note": null,
+      "automatic": false,
+      "failure_type": null,
+      "failure_label": null,
+      "evidence": [],
+      "review_reason": "acceptance criterion 3 disputed twice",
+      "cleanup_warning": null,
+      "has_human_review_choices": true,
+      "dispute_count": null,
+      "judge_heartbeat_secs": null,
+      "reason": "acceptance criterion 3 disputed twice",
+      "acceptance": [],
+      "failing_criteria": [],
+      "terminal_history": false
+    },
+    {
+      "id": "merge-gate",
+      "name": "Merge Gate",
+      "label": "MERGE BLOCKED",
+      "status": "merge-blocked",
+      "command": null,
+      "command_when": null,
+      "alternatives": [],
+      "note": "the target branch moved while the merge was being prepared; it will be retried; loom retries the merge automatically once that changes",
+      "automatic": true,
+      "failure_type": null,
+      "failure_label": null,
+      "evidence": [],
+      "review_reason": null,
+      "cleanup_warning": null,
+      "has_human_review_choices": false,
+      "dispute_count": null,
+      "judge_heartbeat_secs": null,
+      "reason": null,
+      "acceptance": [],
+      "failing_criteria": [],
+      "terminal_history": false
+    },
+    {
+      "id": "local-runtime",
+      "name": "Local runtime",
+      "label": "BLOCKED",
+      "status": "blocked",
+      "command": "loom stage retry local-runtime --context \"<what you did and what it showed>\"",
+      "command_when": "you have done what the reason asks, retry with your answer (the next session receives it)",
+      "alternatives": [
+        {
+          "when": "criterion 4 cannot pass where the stage runs, drop it before retrying",
+          "command": "loom stage amend local-runtime --field acceptance --op delete --index 4"
+        },
+        {
+          "when": "criterion 4 should run another way, replace it before retrying",
+          "command": "loom stage amend local-runtime --field acceptance --op replace --index 4 --value \"<new command>\""
+        },
+        {
+          "when": "you give up on the stage (its dependents stay blocked)",
+          "command": "loom stage skip local-runtime"
+        }
+      ],
+      "note": "blocked by the stage agent: Adjudicator needs an unsandboxed run only the operator can do. From the worktree root run: TROOFOO_STACK=ephemeral bun run stack:ephemeral --with objectstore -- bun test packages/storage packages/db/src/ephemeral-services; report exit code, test summary, and .stack/objectstore.log on failure. Criterion 5 (stack:ephemeral --with objectstore) cannot pass in this sandbox: it denies AF_UNIX socket creation everywhere.\nOr allow AF_UNIX for this stage. All work committed; 0 open findings.",
+      "automatic": false,
+      "failure_type": null,
+      "failure_label": null,
+      "evidence": [],
+      "review_reason": null,
+      "cleanup_warning": null,
+      "has_human_review_choices": false,
+      "dispute_count": null,
+      "judge_heartbeat_secs": null,
+      "reason": "Adjudicator needs an unsandboxed run only the operator can do. From the worktree root run: TROOFOO_STACK=ephemeral bun run stack:ephemeral --with objectstore -- bun test packages/storage packages/db/src/ephemeral-services; report exit code, test summary, and .stack/objectstore.log on failure. Criterion 5 (stack:ephemeral --with objectstore) cannot pass in this sandbox: it denies AF_UNIX socket creation everywhere.\nOr allow AF_UNIX for this stage. All work committed; 0 open findings.",
+      "acceptance": [
+        "cargo build",
+        "cargo test",
+        "bun run typecheck",
+        "bun test packages/storage",
+        "TROOFOO_STACK=ephemeral bun run stack:ephemeral --with objectstore -- bun test packages/db/src/ephemeral-services"
+      ],
+      "failing_criteria": [
+        {
+          "index": 4,
+          "command": "TROOFOO_STACK=ephemeral bun run stack:ephemeral --with objectstore -- bun test packages/db/src/ephemeral-services",
+          "diagnostic": "FAILED [criterion 4]: stack:ephemeral cannot create AF_UNIX sockets"
+        }
+      ],
+      "terminal_history": true,
+      "terminal_history_kind": "last_screen"
+    }
+  ],
+  "alerts": [
+    {
+      "severity": "info",
+      "text": "1 stage waiting on a free slot"
+    },
+    {
+      "severity": "warning",
+      "text": "client failed acceptance; retrying in 30s"
+    },
+    {
+      "severity": "critical",
+      "text": "orchestrator loop stalled 75s"
+    }
+  ],
+  "daemon": "running",
+  "tick_age_secs": 4,
+  "busy": null,
+  "source": "daemon",
+  "terminals": false,
+  "generated_at": "2026-09-04T12:00:00Z",
+  "version": "0.0.0-fixture"
+}

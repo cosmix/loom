@@ -233,6 +233,7 @@ fn build_stage_summary(stage: &Stage, sessions: &[Session], work_dir: &WorkDir) 
         history: super::history::stage_history(stage, work_dir),
         contract_testing: contract_testing_for(stage, facts.session_type, work_dir, now),
         verdict_completing: super::verdict_completion::verdict_completing_for(stage, work_dir.root(), now),
+        phases: stage.phases.clone(), completed_at: stage.completed_at,
     }
 }
 

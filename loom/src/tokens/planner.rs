@@ -8,7 +8,7 @@ use super::flow_build::build_flow;
 use super::model::{AgentFlow, BUCKET_SECS, STAGE_SERIES_LEN};
 use super::pass_memo::PassMemo;
 use super::tracker::{
-    ensure_dir, guarded, log_change, read_sources, sleep_unless_shutdown, TRACKER,
+    ensure_dir, guarded, log_change, read_sources, sleep_unless_shutdown, LastLine, TRACKER,
     TRACKER_INTERVAL_SECS,
 };
 use anyhow::Result;
@@ -69,7 +69,7 @@ fn run_planner_pass(
     let (mut checkpoint, load_note) = memo.take_checkpoint(&dir);
     checkpoint.retain_stages(|id| groups.iter().any(|group| group.id == id));
     let mut problems: Vec<String> = load_note.into_iter().collect();
-    let (advanced, read_failure) = read_sources(&mut checkpoint, &sources, stop);
+    let (advanced, read_failure) = read_sources(&mut checkpoint, &sources, stop, LastLine::Wait);
     problems.extend(read_failure);
     checkpoint.prune(now.div_euclid(BUCKET_SECS) - (STAGE_SERIES_LEN as i64 - 1));
     let flow = build_flow(&checkpoint.stages, now);

@@ -276,6 +276,7 @@ mod tests {
             },
             tokens: None,
             activity: Vec::new(),
+            plan_stats: None,
         }
     }
 

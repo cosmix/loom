@@ -6,6 +6,8 @@ use chrono::TimeZone;
 
 #[path = "model_tests_busy.rs"]
 mod busy;
+#[path = "model_tests_plan_stats.rs"]
+mod plan_stats;
 #[path = "model_tests_stages.rs"]
 mod stages;
 #[path = "model_tests_tokens.rs"]
@@ -100,6 +102,7 @@ fn fixture_status(stages: Vec<StageSummary>) -> StatusData {
             }),
         },
         tokens: Some(tokens::fixture_tokens()),
+        plan_stats: None,
     }
 }
 
@@ -122,7 +125,8 @@ fn fixture_alerts() -> Vec<WebAlert> {
 }
 
 fn fixture_snapshot() -> WebSnapshot {
-    let stages = stages::fixture_stages();
+    let mut stages = stages::fixture_stages();
+    plan_stats::complete_with_phases(&mut stages[2]);
     let attention = crate::commands::status::render::attention_entries(&stages)
         .iter()
         .map(WebAttention::from)

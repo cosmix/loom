@@ -195,14 +195,12 @@ pub fn initialize_with_plan(
         doc.decor_mut().set_prefix(header);
     }
 
-    let mut plan_table = Table::new();
-    plan_table["source_path"] = value(require_utf8_plan_path(relative_source_path)?.to_string());
-    plan_table["plan_id"] = value(parsed_plan.id.clone());
-    plan_table["plan_name"] = value(parsed_plan.name.clone());
-    plan_table["base_branch"] = value(base_branch.clone());
+    let plan_table = plan_table(parsed_plan, relative_source_path, &base_branch)?;
     doc.insert("plan", Item::Table(plan_table));
 
     work_dir::write_config(work_dir.root(), &doc).context("Failed to write config.toml")?;
+    // The finished-plan record of an earlier run is not this run's.
+    crate::plan_stats::remove_current(work_dir.root())?;
 
     // Snapshot the plan-level sandbox and provision entries; the daemon reads
     // these, never the plan file, which a stage can edit.
@@ -304,6 +302,19 @@ pub fn initialize_with_plan(
 /// wraps so `initialize_with_plan` never writes a ceiling it wasn't told to.
 fn write_ceiling_key(doc: &mut toml_edit::DocumentMut, field: &str, value: u32) -> Result<()> {
     work_dir::insert_key(doc, "context", field, toml_edit::Value::from(value as i64))
+}
+
+/// The `[plan]` table of a new run: the plan's identity and base branch, and the stats run
+/// identity (`plan_stats::stamp_new_run`) that names the finished-plan archive.
+fn plan_table(parsed_plan: &ParsedPlan, source_path: &Path, base_branch: &str) -> Result<Table> {
+    let source_path = require_utf8_plan_path(source_path)?;
+    let mut table = Table::new();
+    table["source_path"] = value(source_path.to_string());
+    table["plan_id"] = value(parsed_plan.id.clone());
+    table["plan_name"] = value(parsed_plan.name.clone());
+    table["base_branch"] = value(base_branch.to_string());
+    crate::plan_stats::stamp_new_run(&mut table, source_path);
+    Ok(table)
 }
 
 fn require_utf8_plan_path(path: &Path) -> Result<&str> {

@@ -65,6 +65,8 @@ macro_rules! stage {
             history: Vec::new(),
             contract_testing: None,
             verdict_completing: None,
+            phases: Vec::new(),
+            completed_at: None,
         }
     };
 }
