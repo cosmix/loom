@@ -6,6 +6,8 @@ on:
       - main
       - master
   pull_request:
+  # A manual run skips the path filter and runs every job.
+  workflow_dispatch:
 
 # A newer push to the same branch or pull request supersedes the running one.
 concurrency:
@@ -29,15 +31,16 @@ jobs:
       contents: read
       pull-requests: read
     outputs:
-      rust: ${{ steps.filter.outputs.rust }}
-      web: ${{ steps.filter.outputs.web }}
-      shell: ${{ steps.filter.outputs.shell }}
+      rust: ${{ github.event_name == 'workflow_dispatch' && 'true' || steps.filter.outputs.rust }}
+      web: ${{ github.event_name == 'workflow_dispatch' && 'true' || steps.filter.outputs.web }}
+      shell: ${{ github.event_name == 'workflow_dispatch' && 'true' || steps.filter.outputs.shell }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
 
       - name: Filter changed paths
         id: filter
+        if: github.event_name != 'workflow_dispatch'
         uses: dorny/paths-filter@v4
         with:
           filters: |
