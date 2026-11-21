@@ -33,7 +33,7 @@ No command inherits a boundary: a confined command never reuses a session's sand
 | `Confined` | `confined` (default) | Rebuild the allowlisted environment and apply the host OS boundary (Seatbelt or bubblewrap).        |
 | `Inherit`  | `inherit`            | Explicitly retain the invoking environment; no OS boundary is added (`verify/criteria/confine.rs`). |
 
-The plan sets `command_confinement`; a stage may override it. `resolve_confinement` and `plan_confinement` centralize precedence.
+The plan sets `command_confinement`; a stage may override it. `resolve_confinement` and `plan_confinement` centralize precedence. The macOS Seatbelt profile is described in [Seatbelt Completion Profile](seatbelt-completion-profile.md).
 
 ## What Goes Through `spawn_confined`
 

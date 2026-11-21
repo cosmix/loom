@@ -135,3 +135,13 @@ Open gaps: re-blocking a crash-blocked stage (a legal Blocked to Blocked) archiv
 ## Concurrent Daemon-Absence Probes Read Each Other as a Running Daemon
 
 `inspect_lock` (`loom/src/fs/daemon_state.rs::inspect_lock`) proves no daemon runs by taking `flock(LOCK_EX|LOCK_NB)` on `orchestrator.lock`. Two probers at once (threads, or two `loom hook review-harvest` processes with no daemon) can each see the other's probe as a held lock, and `fingerprint::compute` then fails with `DaemonUnreachable`. The window is microseconds, and inside a stage the daemon answers on the socket so the probe never runs. Candidate fix: probe with `LOCK_SH|LOCK_NB` so probers share while the daemon's `LOCK_EX` still excludes them; check every `inspect_lock` caller and a daemon starting mid-probe first.
+
+## Terminal History and Wheel Review Suggestions
+
+Reviewer findings of the fullscreen-sampling and gesture-wheel work nobody implemented ([Terminal History](../architecture/terminal-backends.md#terminal-history), [Viewer wheel sensitivity](../architecture/web-terminal.md#viewer-wheel-sensitivity)).
+
+- `loom/src/orchestrator/terminal/tmux/fullscreen.rs`: the worst case per poll is `SAMPLE_BUDGET` (2 s) plus `TMUX_PROBE_TIMEOUT` (5 s), and a wedged tmux server is reached on every poll. Skip a session for a few polls after a probe timeout.
+- `tmux/history.rs`: a narrow race between processes: a teardown that loaded `fullscreen_seen = false` can write `Full` scrollback after a sampler recorded the flag and wrote a frame, leaving scrollback labelled `last_screen`; re-read the flag just before the `Full` write. `save_last_screen` also rewrites the session file under the sessions-dir lock with an fsync on every poll even when `fullscreen_seen` is already set.
+- `loom/src/status/data/collector.rs`: the doc comment on `build_stage_summary` wraps mid-sentence.
+- `web/src/routes/stage.tsx` repeats the labels-or-"open terminal"/"Terminal" fallback that `stage-modal.tsx` has; one helper beside `historyLabels` would own it.
+- `web/src/components/terminal/viewer-wheel.ts`: the pager never calls `reset()` on the normal buffer, so a terminal that flips from normal to alternate within 250 ms seeds the gesture with the leftover sub-line remainder (a fraction of a line).

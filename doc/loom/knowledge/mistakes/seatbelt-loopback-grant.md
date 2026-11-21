@@ -10,4 +10,6 @@
 
 **Prevention:** accept a Seatbelt network rule only with a kernel test run outside the host job (an unconfined shell or CI) that shows the denied case failing, and read this file and `concerns/sandbox-and-confinement-gaps.md` before re-adding a grant that was removed. A skipped kernel test proves nothing.
 
+**Plan drift:** decision 5 of the plan and the `completion-sandbox` stage contract (`a_confined_command_may_bind_only_localhost`) named a default loopback grant; the tree grants loopback only on the `allow_local_binding` opt-in (`confine_levels.rs`, `seatbelt_grant_contract_tests.rs`). A plan that asks for a default loopback grant asks for this mistake again.
+
 **Fix:** no IP networking by default; a stage that sets `sandbox.network.allow_local_binding` gets one loopback grant, with its residual written next to it (`confine_seatbelt.rs::LOOPBACK_NETWORK`) and kernel tests for both modes (`confine_seatbelt_loopback_tests.rs`).

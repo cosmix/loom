@@ -281,3 +281,23 @@ sandbox cannot reproduce), from the daemon's host run.
   the freeze refused until `signals/mod.rs` declared the `#[cfg(test)] mod`
   (`allocation_contract_tests`). Declare a contract test file in its parent `mod.rs` first
   ([code-quality-and-hook-debt](../concerns/code-quality-and-hook-debt.md)).
+
+## A Clean Textual Merge Left a Re-export Imported Twice on macOS
+
+**What happened:** merging `loom/native-macos-boundary` left `NetworkAccess` imported twice in `loom/src/verify/criteria/mod.rs` on macOS: one side had added an unconditional `pub(crate) use confine::host::NetworkAccess`, the other had added it to the `cfg(target_os = "macos")` block. The merged lib failed with E0252 and clippy and the tests failed at integration-verify.
+
+**Why:** each side compiled alone and the textual merge was clean.
+
+**Prevention:** after a stage merge that touches a re-export or `use` block, run `cargo check` on the merge commit before the next stage starts.
+
+**Fix:** the macOS duplicate was dropped.
+
+## A Fix Round Compiled on macOS Broke Both Linux Builds
+
+**What happened:** the integration-verify fix round's opus worker added `private_root_rollouts.rs` importing a `cfg(any(macos, test))` constant, and a `StandIn::session_leader` used only from a macOS test module. Both compiled on macOS and macOS test builds and broke Linux non-test and Linux test clippy. Neither the worker nor the macOS gate could see it; the re-review caught it by reading the `cfg`s (F-1-1, F-1-2).
+
+**Why:** no usable Linux target on the host (the rustup Linux target lacks `core` for the active toolchain, so `cargo clippy --target x86_64-unknown-linux-gnu` fails with E0463).
+
+**Prevention:** a brief for cross-platform Rust requires a reachability table per `cfg` (macOS, macOS test, Linux, Linux test) for every new or moved item whenever Linux cannot be compiled locally; the hosted Linux jobs are the first compile of those paths.
+
+**Fix:** the re-review round named both items and the worker gated them to the builds that use them.

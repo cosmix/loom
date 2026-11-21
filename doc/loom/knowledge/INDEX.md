@@ -11,8 +11,8 @@
 | [architecture.md](architecture.md) | High-level component relationships, data flow, module dependencies | 250 |
 | [entry-points.md](entry-points.md) | Key files agents should read first | 86 |
 | [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 200 |
-| [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 254 |
-| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 262 |
+| [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 230 |
+| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 274 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 116 |
 | [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 250 |
 
@@ -34,7 +34,7 @@
 | [context-retrieval-state](architecture/context-retrieval-state.md) | Layers | 179 |
 | [contract-collection](architecture/contract-collection.md) |  | 70 |
 | [contract-phase](architecture/contract-phase.md) | Freeze | 282 |
-| [contract-trial](architecture/contract-trial.md) | loom check --contracts, replacement trial receipt, overlay undo, env-red refusal | 22 |
+| [contract-trial](architecture/contract-trial.md) | loom check --contracts, replacement trial receipt, overlay undo, env-red refusal | 24 |
 | [core-abstractions](architecture/core-abstractions.md) | Graph | 135 |
 | [criterion-narrowing-evidence](architecture/criterion-narrowing-evidence.md) | base-run evidence, leaves_out narrowing rules, hand-offs | 36 |
 | [daemon-launch](architecture/daemon-launch.md) |  | 71 |
@@ -49,11 +49,12 @@
 | [memory-spool](architecture/memory-spool.md) |  | 211 |
 | [merge-checkout-state](architecture/merge-checkout-state.md) | FF | 32 |
 | [merge-flow](architecture/merge-flow.md) |  | 133 |
-| [native-codex-workers](architecture/native-codex-workers.md) |  | 74 |
+| [native-codex-workers](architecture/native-codex-workers.md) |  | 85 |
 | [orchestrator-loop](architecture/orchestrator-loop.md) | Ticks | 80 |
 | [owned-waits](architecture/owned-waits.md) | Waits | 72 |
 | [plan-lifecycle-and-fields](architecture/plan-lifecycle-and-fields.md) |  | 284 |
 | [plan-server](architecture/plan-server.md) | Chat | 293 |
+| [plan-stats-overview](architecture/plan-stats-overview.md) | Finished-plan record, archive, phases, TUI and web plan overview | 21 |
 | [planner-feature-screens](architecture/planner-feature-screens.md) | Spine | 48 |
 | [planner-uploads-and-drafts](architecture/planner-uploads-and-drafts.md) |  | 37 |
 | [planner-web-shell](architecture/planner-web-shell.md) | Shell | 147 |
@@ -67,6 +68,7 @@
 | [read-gate](architecture/read-gate.md) |  | 153 |
 | [remote-control](architecture/remote-control.md) |  | 81 |
 | [run-handoff](architecture/run-handoff.md) |  | 52 |
+| [seatbelt-completion-profile](architecture/seatbelt-completion-profile.md) | macOS completion Seatbelt profile: pure builder, shared file rules, residuals | 9 |
 | [security-and-isolation](architecture/security-and-isolation.md) | Deny | 202 |
 | [signal-generation](architecture/signal-generation.md) |  | 261 |
 | [skill-catalog](architecture/skill-catalog.md) |  | 158 |
@@ -76,13 +78,13 @@
 | [source-graph-resolution](architecture/source-graph-resolution.md) |  | 125 |
 | [source-graph-view](architecture/source-graph-view.md) |  | 78 |
 | [stage-build-cache](architecture/stage-build-cache.md) | Per-stage cache root: env, seeds, sockets, read roots, xcrun bypass | 50 |
-| [status-data-model](architecture/status-data-model.md) | Fields | 270 |
+| [status-data-model](architecture/status-data-model.md) | Fields | 272 |
 | [summary-store](architecture/summary-store.md) |  | 352 |
 | [target-guard](architecture/target-guard.md) | Tip | 127 |
-| [terminal-backends](architecture/terminal-backends.md) |  | 280 |
+| [terminal-backends](architecture/terminal-backends.md) |  | 282 |
 | [test-runner-adapters](architecture/test-runner-adapters.md) |  | 56 |
 | [token-accounting-and-receipts](architecture/token-accounting-and-receipts.md) | Ledger | 355 |
-| [token-flow-sources](architecture/token-flow-sources.md) |  | 84 |
+| [token-flow-sources](architecture/token-flow-sources.md) |  | 85 |
 | [usage-evidence](architecture/usage-evidence.md) |  | 136 |
 | [verification-v2-gates](architecture/verification-v2-gates.md) | Gates | 265 |
 | [web-dashboard](architecture/web-dashboard.md) | Web | 133 |
@@ -139,8 +141,9 @@
 | [adjudication-autonomy-deadlock](mistakes/adjudication-autonomy-deadlock.md) |  | 238 |
 | [ambient-filesystem-trust](mistakes/ambient-filesystem-trust.md) |  | 186 |
 | [briefs-and-bug-reports](mistakes/briefs-and-bug-reports.md) |  | 396 |
-| [cargo-under-confinement](mistakes/cargo-under-confinement.md) | Cargo in sandboxes and confined runs: audit fetches, cold builds, Seatbelt | 83 |
-| [ci-toolchain-and-cargo](mistakes/ci-toolchain-and-cargo.md) |  | 420 |
+| [cargo-under-confinement](mistakes/cargo-under-confinement.md) | Cargo in sandboxes and confined runs: audit fetches, cold builds, Seatbelt | 93 |
+| [ci-gate-rollout](mistakes/ci-gate-rollout.md) | CI gate rollout slips: untested strict gates, shared index, known-red runs | 43 |
+| [ci-toolchain-and-cargo](mistakes/ci-toolchain-and-cargo.md) |  | 380 |
 | [codex-direct-mode-invisible](mistakes/codex-direct-mode-invisible.md) |  | 23 |
 | [codex-lane-rogue-wrapper](mistakes/codex-lane-rogue-wrapper.md) |  | 187 |
 | [codex-navigation](mistakes/codex-navigation.md) | Reader | 202 |
@@ -169,6 +172,7 @@
 | [memory-relay-drain-gap](mistakes/memory-relay-drain-gap.md) |  | 51 |
 | [merge-cleanup-boundary](mistakes/merge-cleanup-boundary.md) |  | 237 |
 | [merge-in-operator-checkout](mistakes/merge-in-operator-checkout.md) |  | 70 |
+| [native-macos-delivery](mistakes/native-macos-delivery.md) | macOS boundary delivery slips: lint scope, pinned fields, shared TMPDIR | 24 |
 | [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Shared | 351 |
 | [phantom-merges](mistakes/phantom-merges.md) | Merges | 347 |
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Pins | 332 |
@@ -186,7 +190,7 @@
 | [refactor-stragglers](mistakes/refactor-stragglers.md) |  | 335 |
 | [review-continuation-verification](mistakes/review-continuation-verification.md) | Repair | 331 |
 | [review-final-wave](mistakes/review-final-wave.md) |  | 200 |
-| [review-integration-verification](mistakes/review-integration-verification.md) |  | 283 |
+| [review-integration-verification](mistakes/review-integration-verification.md) |  | 303 |
 | [review-tracker](mistakes/review-tracker.md) |  | 353 |
 | [sandbox-and-settings](mistakes/sandbox-and-settings.md) |  | 391 |
 | [sandbox-hook-preflight](mistakes/sandbox-hook-preflight.md) | Check 5 hook preflight: why extending its program denylist fails | 13 |
@@ -195,7 +199,7 @@
 | [sandbox-tooling-and-network](mistakes/sandbox-tooling-and-network.md) |  | 397 |
 | [sandbox-write-rules-inert](mistakes/sandbox-write-rules-inert.md) |  | 67 |
 | [schema-reuse-and-silent-skips](mistakes/schema-reuse-and-silent-skips.md) |  | 130 |
-| [seatbelt-loopback-grant](mistakes/seatbelt-loopback-grant.md) | Seatbelt localhost listener re-added as if it held binds to loopback | 13 |
+| [seatbelt-loopback-grant](mistakes/seatbelt-loopback-grant.md) | Seatbelt localhost listener re-added as if it held binds to loopback | 15 |
 | [session-identity-env](mistakes/session-identity-env.md) | Env | 126 |
 | [sessions-and-liveness](mistakes/sessions-and-liveness.md) |  | 399 |
 | [shell-command-matchers](mistakes/shell-command-matchers.md) |  | 295 |
@@ -230,7 +234,7 @@
 | [agent-rule-bending-hardening](concerns/agent-rule-bending-hardening.md) |  | 375 |
 | [automatic-knowledge-source-graph-followups](concerns/automatic-knowledge-source-graph-followups.md) | Gap | 69 |
 | [ci-macos-test-build-time](concerns/ci-macos-test-build-time.md) | macOS lib test build swaps on the 7 GB runner; nightly split and open options | 16 |
-| [code-quality-and-hook-debt](concerns/code-quality-and-hook-debt.md) | Debt | 323 |
+| [code-quality-and-hook-debt](concerns/code-quality-and-hook-debt.md) | Debt | 330 |
 | [codex-heartbeat-starvation](concerns/codex-heartbeat-starvation.md) |  | 22 |
 | [consolidation-followups](concerns/consolidation-followups.md) |  | 148 |
 | [contract-autonomy-followups](concerns/contract-autonomy-followups.md) |  | 70 |
@@ -238,9 +242,9 @@
 | [handoff-followups](concerns/handoff-followups.md) |  | 57 |
 | [knowledge-cli-gaps](concerns/knowledge-cli-gaps.md) |  | 108 |
 | [loom-ask-and-read-gate](concerns/loom-ask-and-read-gate.md) |  | 108 |
-| [macos-confined-networking](concerns/macos-confined-networking.md) | macOS confined IP networking: off by default, loopback opt-in, residual | 11 |
+| [macos-confined-networking](concerns/macos-confined-networking.md) | macOS confined IP networking: off by default, loopback opt-in, residual | 15 |
 | [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Edges | 105 |
-| [native-codex-qualification](concerns/native-codex-qualification.md) |  | 95 |
+| [native-codex-qualification](concerns/native-codex-qualification.md) |  | 120 |
 | [plan-chat-followups](concerns/plan-chat-followups.md) | Chat | 41 |
 | [planner-follow-ups-followups](concerns/planner-follow-ups-followups.md) |  | 91 |
 | [planner-kickoff-fixes-followups](concerns/planner-kickoff-fixes-followups.md) | Kickoff-fixes open items: web/dist hook, gate env, reviewer suggestions | 31 |
@@ -249,14 +253,14 @@
 | [planning-guidance-followups](concerns/planning-guidance-followups.md) |  | 43 |
 | [planning-session-sandbox-limits](concerns/planning-session-sandbox-limits.md) |  | 238 |
 | [platform-and-commit-gaps](concerns/platform-and-commit-gaps.md) |  | 249 |
-| [runtime-and-session-safety](concerns/runtime-and-session-safety.md) |  | 137 |
+| [runtime-and-session-safety](concerns/runtime-and-session-safety.md) |  | 147 |
 | [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) |  | 400 |
 | [source-graph-known-gaps](concerns/source-graph-known-gaps.md) | Limits | 94 |
 | [source-graph-review-backlog](concerns/source-graph-review-backlog.md) | Todo | 295 |
-| [stage-build-cache-gaps](concerns/stage-build-cache-gaps.md) | Open reviewer suggestions and residuals of the stage build cache | 29 |
+| [stage-build-cache-gaps](concerns/stage-build-cache-gaps.md) | Open reviewer suggestions and residuals of the stage build cache | 33 |
 | [state-confinement-gaps](concerns/state-confinement-gaps.md) | Caches | 21 |
 | [token-accounting-and-proof-defects](concerns/token-accounting-and-proof-defects.md) |  | 333 |
 | [typed-config-values](concerns/typed-config-values.md) | Gap | 22 |
-| [verification-v2-followups](concerns/verification-v2-followups.md) |  | 234 |
+| [verification-v2-followups](concerns/verification-v2-followups.md) |  | 251 |
 | [web-dashboard-latent-issues](concerns/web-dashboard-latent-issues.md) | UI | 96 |
 | [worktree-build-cold-start](concerns/worktree-build-cold-start.md) | Cold | 108 |
