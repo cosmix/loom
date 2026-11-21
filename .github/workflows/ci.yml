@@ -109,11 +109,22 @@ jobs:
           RUSTDOCFLAGS: "-D warnings"
         run: cargo doc --workspace --all-features --no-deps
 
+  # The suites run as parallel jobs: one job running the lib and the
+  # integration targets back to back set the wall-clock length of CI. Each
+  # job builds only its own targets.
   test:
-    name: Test (linux)
+    name: Test (linux, ${{ matrix.suite }})
     runs-on: ubuntu-latest
     needs: changes
     if: needs.changes.outputs.rust == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - suite: lib
+            cargo-args: --lib --bins
+          - suite: integration
+            cargo-args: --test '*'
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -121,10 +132,13 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      # One dependency cache for every test and flake-check job on this OS: a
+      # job that passes refreshes it for the jobs that failed.
       - name: Cache Cargo dependencies
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: loom
+          shared-key: tests
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Set up Go
@@ -190,6 +204,7 @@ jobs:
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
 
       - name: Run the bubblewrap capsule probe
+        if: matrix.suite == 'lib'
         working-directory: loom
         run: "cargo test --lib tests_capsule_denies::bwrap::"
         env:
@@ -271,7 +286,7 @@ jobs:
       # toolchain probe whose seed variable is not yet in GITHUB_ENV.
       - name: Run tests
         working-directory: loom
-        run: cargo test --all-targets --no-fail-fast
+        run: cargo test ${{ matrix.cargo-args }} --no-fail-fast
         env:
           LOOM_E2E_REQUIRE_TMUX: "1"
           LOOM_TEST_REQUIRE_SANDBOX_FREE: "1"
@@ -281,6 +296,7 @@ jobs:
       # LOOM_TEST_REQUIRE_SANDBOX_FREE turns every skip into a failure, so a
       # missing toolchain or launcher on either runner is a red build.
       - name: Run the confined toolchain probes
+        if: matrix.suite == 'lib'
         working-directory: loom
         run: "cargo test --lib -- stage_cache:: verify::criteria::confine::host::stage_cache_tests::"
         env:
@@ -288,31 +304,43 @@ jobs:
 
       - name: Build the loom binary
         id: build
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && matrix.suite == 'integration' }}
         working-directory: loom
         run: cargo build --bin loom
 
       # The smoke scripts need the binary and the rg the tools step installs;
       # without them they only repeat an earlier step's failure.
       - name: Run the web dashboard smoke test
-        if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.tools.outcome == 'success' }}
+        if: ${{ !cancelled() && matrix.suite == 'integration' && steps.build.outcome == 'success' && steps.tools.outcome == 'success' }}
         run: ./scripts/smoke-web-dashboard.sh loom/target/debug/loom
 
       - name: Run the web terminal smoke test
-        if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.tools.outcome == 'success' }}
+        if: ${{ !cancelled() && matrix.suite == 'integration' && steps.build.outcome == 'success' && steps.tools.outcome == 'success' }}
         run: ./scripts/smoke-web-terminal.sh loom/target/debug/loom
 
   # The Linux jobs never see Darwin's sockets, sandbox, BSD userland or path
   # layout (/var/folders temp dirs that resolve under /private), and most
   # contributors have no Mac to run the suite on. --no-fail-fast reports every
   # failing target in one run.
+  # The host-job lane gets its own job: it reruns the whole lib suite
+  # confined, for up to 30 minutes. Its "Run tests" step only builds the lib
+  # test binary the lane runs.
   test-macos:
-    name: Test (macos)
+    name: Test (macos, ${{ matrix.suite }})
     runs-on: macos-latest
     needs: changes
     if: needs.changes.outputs.rust == 'true'
-    # The host-job lane adds up to 30 minutes to the strict suite.
-    timeout-minutes: 120
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - suite: lib
+            cargo-args: --lib --bins
+          - suite: integration
+            cargo-args: --test '*'
+          - suite: host-lane
+            cargo-args: --lib --no-run
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -324,6 +352,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: loom
+          shared-key: tests
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Set up Go
@@ -460,7 +489,7 @@ jobs:
       # toolchain probe whose seed variable is not yet in GITHUB_ENV.
       - name: Run tests
         working-directory: loom
-        run: cargo test --all-targets --no-fail-fast
+        run: cargo test ${{ matrix.cargo-args }} --no-fail-fast
         env:
           LOOM_E2E_REQUIRE_TMUX: "1"
           LOOM_TEST_REQUIRE_SANDBOX_FREE: "1"
@@ -470,6 +499,7 @@ jobs:
       # LOOM_TEST_REQUIRE_SANDBOX_FREE turns every skip into a failure, so a
       # missing toolchain or launcher on either runner is a red build.
       - name: Run the confined toolchain probes
+        if: matrix.suite == 'lib'
         working-directory: loom
         run: "cargo test --lib -- stage_cache:: verify::criteria::confine::host::stage_cache_tests::"
         env:
@@ -487,7 +517,7 @@ jobs:
       # no test, and the step fails unless the lane itself ran and passed: a
       # filter that matches nothing makes libtest report success on zero tests.
       - name: Run the lib tests under host-job confinement
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && matrix.suite == 'host-lane' }}
         working-directory: loom
         timeout-minutes: 30
         run: |
@@ -498,18 +528,18 @@ jobs:
 
       - name: Build the loom binary
         id: build
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && matrix.suite == 'integration' }}
         working-directory: loom
         run: cargo build --bin loom
 
       # The smoke scripts need the binary and the rg the tools step installs;
       # without them they only repeat an earlier step's failure.
       - name: Run the web dashboard smoke test
-        if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.tools.outcome == 'success' }}
+        if: ${{ !cancelled() && matrix.suite == 'integration' && steps.build.outcome == 'success' && steps.tools.outcome == 'success' }}
         run: ./scripts/smoke-web-dashboard.sh loom/target/debug/loom
 
       - name: Run the web terminal smoke test
-        if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.tools.outcome == 'success' }}
+        if: ${{ !cancelled() && matrix.suite == 'integration' && steps.build.outcome == 'success' && steps.tools.outcome == 'success' }}
         run: ./scripts/smoke-web-terminal.sh loom/target/debug/loom
 
   flake-check:
@@ -528,6 +558,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: loom
+          shared-key: tests
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Re-run the timing-sensitive tests under load
@@ -552,6 +583,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: loom
+          shared-key: tests
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Re-run the timing-sensitive tests under load
