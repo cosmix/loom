@@ -16,15 +16,9 @@ function show({ pathname = "/", tabs }: { pathname?: string; tabs?: PlanTab[] } 
 }
 
 describe("Tabs", () => {
-  it("keeps Home available without registered tabs", () => {
+  it("omits the navigation when there are no registered views", () => {
     show({ tabs: [] });
-    const nav = screen.getByRole("navigation", { name: "Views" });
-    expect(nav.className).toBe("view-switch plan-view-switch");
-    expect(screen.getAllByRole("link")).toHaveLength(1);
-    const home = screen.getByRole("link", { name: /Home/ });
-    expect(home.getAttribute("href")).toBe("/");
-    expect(home.getAttribute("aria-current")).toBe("page");
-    expect(home.classList.contains("is-active")).toBe(true);
+    expect(screen.queryByRole("navigation", { name: "Views" })).toBeNull();
   });
 
   it("links each registered tab and marks the current route", () => {
@@ -38,40 +32,20 @@ describe("Tabs", () => {
     });
     const files = screen.getByRole("link", { name: /Files/ });
     const notes = screen.getByRole("link", { name: /Notes/ });
-    const home = screen.getByRole("link", { name: /Home/ });
     expect(files.getAttribute("href")).toBe("/files");
     expect(notes.getAttribute("href")).toBe("/notes");
     expect(files.getAttribute("aria-current")).toBe("page");
     expect(notes.getAttribute("aria-current")).toBeNull();
-    expect(home.getAttribute("aria-current")).toBeNull();
     expect(files.className).toBe("view-tab is-active");
     expect(notes.className).toBe("view-tab");
-    expect(home.className).toBe("view-tab");
   });
 
-  it("renders Home and Files with icons and accessible labels on narrow screens", () => {
-    show();
-    expect(screen.getByRole("navigation", { name: "Views" }).className).toBe(
-      "view-switch plan-view-switch",
-    );
-    const links = screen.getAllByRole("link");
-    expect(links.map((link) => link.getAttribute("href"))).toEqual(["/", "/files"]);
-    const glyphs = ["lucide-house", "lucide-folder-tree"];
-    for (const [index, link] of links.entries()) {
-      const icon = link.querySelector("svg");
-      expect(icon?.classList.contains(glyphs[index]!)).toBe(true);
-      expect(icon?.classList.contains("size-3.5")).toBe(true);
-      expect(icon?.getAttribute("aria-hidden")).toBe("true");
-      const labels = link.querySelectorAll("span");
-      expect(labels).toHaveLength(1);
-      expect(labels[0]?.className).toBe("max-sm:sr-only");
-    }
-  });
-
-  it("keeps a view active on nested routes while Home stays inactive", () => {
+  it("keeps Files labeled and active on nested file routes", () => {
     show({ pathname: "/files/docs/intro.md" });
-    expect(screen.getByRole("link", { name: /Files/ }).className).toBe("view-tab is-active");
-    expect(screen.getByRole("link", { name: /Home/ }).className).toBe("view-tab");
+    const files = screen.getByRole("link", { name: "Files" });
+    expect(files.getAttribute("aria-current")).toBe("page");
+    expect(files.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
+    expect(screen.queryByRole("link", { name: "Home" })).toBeNull();
   });
 
   it.each(["/f/demo/product", "/f/demo/metaplan", "/plans/standalone"])(

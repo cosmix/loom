@@ -63,8 +63,22 @@ export function PlanHeader({
     <header className="plan-header">
       <div className="mx-auto w-full max-w-[1920px]">
         <div className="plan-appbar">
-          <Link to="/" className="plan-logo-link" aria-label="Loom planner home">
+          <Link
+            to="/"
+            className="plan-logo-link"
+            aria-label="Loom planner home"
+            aria-description="Feature Planner beta"
+          >
             <Logo className="plan-logo" />
+            <span className="plan-product-mark">
+              <span className="plan-product-name">
+                <span>Feature</span>
+                <strong>Planner</strong>
+              </span>
+              <span className="plan-beta" aria-hidden="true">
+                β
+              </span>
+            </span>
           </Link>
           <Identity />
           <HeaderControls

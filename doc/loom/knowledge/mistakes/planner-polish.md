@@ -125,3 +125,31 @@
 **Prevention:** use the existing Aurora hazard primitives for substantial failure or warning surfaces, preserving alert semantics and recovery actions; keep ordinary loading and empty states on the established LoadState convention.
 
 **Fix:** apply the frontend-skill workflow to the relevant planner components.
+
+## Beta belongs to the Feature Planner
+
+**What happened**: A rotated Georgia badge beside Loom implied the whole product was in beta. The first Feature Planner wordmark then read like a small interface label.
+**Why**: The badge lacked a product name and the revised name used body-text sizing.
+**Prevention**: Associate beta with the planner name, keep its default typography, and give the wordmark a distinct hierarchy at desktop and phone widths.
+**Fix**: Pair a display-sized Feature Planner wordmark with a compact upright β badge.
+
+## Feature selector repeats its context
+
+**What happened**: The selector carried a redundant Planning • Feature eyebrow.
+**Why**: The planner name and selected feature already identify the context.
+**Prevention**: Let these two elements identify the product and current feature.
+**Fix**: Remove the eyebrow above the feature selector.
+
+## Planner navigation repeats Home and route context
+
+**What happened**: A separate Home button duplicated the logo destination, and other routes still showed Planning labels.
+**Why**: The earlier revision changed only feature routes.
+**Prevention**: Check the selector on Home, Files, kickoff and feature routes when changing its purpose.
+**Fix**: Make the selector list Home and features, and expose Files as a menu action.
+
+## Selector resized with its label
+
+**What happened**: Short feature names and Home made the selector look small.
+**Why**: The header let the selector size to its text.
+**Prevention**: Allocate the control a responsive width and keep its chevron aligned regardless of label length.
+**Fix**: Give the selector a wider, fixed-height surface with truncation for long names.

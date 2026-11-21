@@ -279,7 +279,7 @@ it("the header has no rail or view tabs", () => {
 
   const wide = renderHeader(gapsChecklist());
   const links = within(wide);
-  expect(links.getByRole("link", { name: "Home" })).toBeTruthy();
+  expect(links.queryByRole("link", { name: "Home" })).toBeNull();
   expect(links.getByRole("link", { name: "Files" })).toBeTruthy();
   expect(links.queryByRole("link", { name: /\b(Product|Engineering)\b/ })).toBeNull();
   for (const name of SPINE_ROWS) expect(links.queryByRole("link", { name })).toBeNull();

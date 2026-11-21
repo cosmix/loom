@@ -37,7 +37,7 @@ export function Overflow({ onOpenSettings, onOpenHelp }: OverflowActions) {
       </PopoverTrigger>
       {/* Portaled out of the header, so it carries the planner root and touch-size class itself. */}
       <PopoverContent data-loom-plan aria-label="More" className="header-controls plan-overflow">
-        <Tabs />
+        <Tabs onSelect={() => setOpen(false)} />
         <div className="plan-overflow-row">
           <Presence />
           <Share />

@@ -246,16 +246,15 @@ it("renders the invitation followed by feature cards and the standalone shelf", 
   expect(shelf.querySelector("details")?.open).toBe(false);
 });
 
-it("one feature and a standalone plan opens the feature", async () => {
+it("one feature and a standalone plan keeps the chooser open", async () => {
   const { router } = mount({
     checklists: [feature("search")],
     standalone: [standalone],
     moves: [],
   });
 
-  expect(await screen.findByRole("heading", { name: "Feature screen" })).toBeTruthy();
-  expect(router.state.location.pathname).toBe("/f/search");
-  expect(router.state.historyAction).toBe("REPLACE");
+  expect(await screen.findByRole("region", { name: "Standalone plans" })).toBeTruthy();
+  expect(router.state.location.pathname).toBe("/");
 });
 
 it("navigating back to Home does not redirect", async () => {
@@ -264,6 +263,7 @@ it("navigating back to Home does not redirect", async () => {
     standalone: [standalone],
     moves: [],
   });
+  fireEvent.click(await screen.findByRole("link", { name: "search" }));
   await screen.findByRole("heading", { name: "Feature screen" });
 
   fireEvent.click(screen.getByRole("link", { name: "Home" }));

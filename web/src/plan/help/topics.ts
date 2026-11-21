@@ -51,7 +51,7 @@ export const PLANNER_HELP_TOPICS: readonly PlannerHelpTopic[] = [
         notes: [
           {
             target: ['[aria-label="Loom planner home"]', ".plan-identity"],
-            text: "The Loom logo returns to the planner home, and the feature switcher shows the current feature and switches to another.",
+            text: "The Loom logo returns to the planner home, and the selector opens Home or a feature. Choose Home to browse features and standalone plans.",
           },
           {
             target: 'nav[aria-label="Feature documents"]',
@@ -63,7 +63,7 @@ export const PLANNER_HELP_TOPICS: readonly PlannerHelpTopic[] = [
           },
           {
             target: "nav.view-switch",
-            text: "Switch between the project home and the file view.",
+            text: "Open Files to browse project documents.",
           },
           {
             target: ['[aria-label="Settings"]', '[aria-label="Help"]'],

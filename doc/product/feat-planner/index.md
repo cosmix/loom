@@ -101,8 +101,8 @@ Logo  feat-planner ▾                     Idle   Home   Files   Settings
 
 A feature page has one header row above three columns:
 
-- **Header**: one row. Loom's logo, then the identity (the eyebrow "Planning · feature" above a
-  feature switcher that shows the slug), the activity pill, Home, Files, presence, Share,
+- **Header**: one row. Loom's logo, and Feature Planner wordmark, then a selector for Home and features,
+  the activity pill, Files, presence, Share,
   ThemeToggle, Settings and Help. File mode uses `/files/...`, with the file's feature named in
   the header breadcrumb.
 - **Spine**, on the left of every `/f/<feature>` page: a navigation named "Feature documents"

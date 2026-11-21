@@ -5,18 +5,9 @@ import { MemoryRouter } from "react-router";
 import { afterEach, expect, it } from "vitest";
 
 import checklistFixture from "@/plan/api/fixtures/checklist.json";
-import serverInfoFixture from "@/plan/api/fixtures/server-info.json";
-import { checklistViewSchema, serverInfoSchema } from "@/plan/api/schema";
-import type { SessionView } from "@/plan/api/schema-chat";
-import { snapshotAtom } from "@/plan/chat/model";
+import { checklistViewSchema } from "@/plan/api/schema";
 import { FeatureSwitcher } from "@/plan/header/feature-switcher";
-import {
-  activeFeatureAtom,
-  kickoffAtom,
-  kickoffDraftsAtom,
-  projectAtom,
-  serverInfoAtom,
-} from "@/plan/state/atoms";
+import { activeFeatureAtom, projectAtom } from "@/plan/state/atoms";
 
 afterEach(cleanup);
 
@@ -36,57 +27,14 @@ function linkTo(dialog: HTMLElement, href: string): HTMLElement {
 
 function show({
   activeFeature = "demo",
-  project = "Example repository",
   features = ["demo", "Feature / one"],
   pathname = activeFeature === null ? "/" : `/f/${encodeURIComponent(activeFeature)}`,
-  kickoff = null,
-  kickoffSize = "feature",
-  offer = null,
-  drafts = [],
 }: {
   activeFeature?: string | null;
-  project?: string | null;
   features?: string[];
   pathname?: string;
-  kickoff?: string | null;
-  kickoffSize?: "feature" | "plan" | null;
-  offer?: string | null;
-  drafts?: { session: string; name: string | null; size: "feature" | "plan" }[];
 } = {}) {
   const store = createStore();
-  if (offer !== null) {
-    store.set(snapshotAtom, {
-      session: { id: "kickoff", offer } as SessionView,
-      turns: [],
-      queue: [],
-      previous: null,
-    });
-  }
-  if (kickoff !== null) {
-    store.set(kickoffAtom, {
-      session: "kickoff",
-      target: null,
-      shape: {
-        size: kickoffSize,
-        name: kickoff,
-        proposal: false,
-        problem: "",
-        decisions: [],
-        questions: [],
-        sections: [],
-      },
-    });
-  }
-  store.set(
-    kickoffDraftsAtom,
-    drafts.map((draft) => ({
-      ...draft,
-      problem: null,
-      started_at: "2026-01-01T00:00:00Z",
-      updated_at: "2026-01-01T00:00:00Z",
-      live: false,
-    })),
-  );
   const checklist = checklistViewSchema.parse(checklistFixture.checklists[0]);
   store.set(activeFeatureAtom, activeFeature);
   store.set(projectAtom, {
@@ -94,10 +42,6 @@ function show({
     standalone: [],
     moves: [],
   });
-  store.set(
-    serverInfoAtom,
-    project === null ? null : { ...serverInfoSchema.parse(serverInfoFixture), project },
-  );
   render(
     <Provider store={store}>
       <MemoryRouter initialEntries={[pathname]}>
@@ -121,91 +65,26 @@ it("shows the active feature's slug instead of the repository name", () => {
   ).toBe("false");
 });
 
-it("shows the repository name when no feature is active", () => {
-  show({ activeFeature: null });
-
-  expect(titleOf(screen.getByRole("button", { name: "Example repository, switch feature" }))).toBe(
-    "Example repository",
-  );
-});
-
-it("shows an empty kickoff form as Untitled new work, even with a live kickoff", () => {
-  show({ pathname: "/new", kickoff: "planner-search" });
-
-  const button = screen.getByRole("button", { name: "Untitled, switch feature" });
-  expect(titleOf(button)).toBe("Untitled");
-  expect(button.querySelector(".plan-eyebrow")?.textContent).toBe("Planning · new work");
-});
-
-it("shows the live kickoff's name on /new?session= its id", () => {
-  show({ pathname: "/new?session=kickoff", kickoff: "planner-search" });
-
-  const button = screen.getByRole("button", { name: "planner-search, switch feature" });
-  expect(titleOf(button)).toBe("planner-search");
-  expect(button.querySelector(".plan-eyebrow")?.textContent).toBe("Planning · new feature");
-});
-
-it("falls back to the start offer for the size until the conversation settles one", () => {
-  show({
-    pathname: "/new?session=kickoff",
-    kickoff: "planner-search",
-    kickoffSize: null,
-    offer: "kickoff-small",
-  });
-
-  const button = screen.getByRole("button", { name: "planner-search, switch feature" });
-  expect(button.querySelector(".plan-eyebrow")?.textContent).toBe("Planning · new plan");
-});
-
-it("keeps the offer's size when the conversation's shape says the other", () => {
-  show({
-    pathname: "/new?session=kickoff",
-    kickoff: "planner-search",
-    kickoffSize: "plan",
-    offer: "kickoff",
-  });
-
-  const button = screen.getByRole("button", { name: "planner-search, switch feature" });
-  expect(button.querySelector(".plan-eyebrow")?.textContent).toBe("Planning · new feature");
-});
-
-it("shows a draft's name and size on /new?session= its id", () => {
-  show({
-    pathname: "/new?session=d1",
-    kickoff: "planner-search",
-    drafts: [{ session: "d1", name: "fix-login", size: "plan" }],
-  });
-
-  const button = screen.getByRole("button", { name: "fix-login, switch feature" });
-  expect(titleOf(button)).toBe("fix-login");
-  expect(button.querySelector(".plan-eyebrow")?.textContent).toBe("Planning · new plan");
-});
-
-it("shows Untitled new work for a session no kickoff or draft has", () => {
-  show({ pathname: "/new?session=gone" });
-
-  const button = screen.getByRole("button", { name: "Untitled, switch feature" });
-  expect(button.querySelector(".plan-eyebrow")?.textContent).toBe("Planning · new work");
-});
-
-it("holds the eyebrow and the title in the one switcher button", () => {
+it("shows the selected feature without an eyebrow", () => {
   show();
 
   const button = screen.getByRole("button", { name: "Switch feature, current: demo" });
-  expect(button.querySelector(".plan-eyebrow")?.textContent).toBe("Planning · feature");
+  expect(button.querySelector(".plan-eyebrow")).toBeNull();
   expect(titleOf(button)).toBe("demo");
 });
 
-it.each(["/", "/files", "/files/product/demo/index.md", "/plans/example"])(
-  "shows the project on %s despite a previously active feature",
-  (pathname) => {
-    show({ pathname });
+it.each([
+  "/",
+  "/new",
+  "/new?session=d1",
+  "/files",
+  "/files/product/demo/index.md",
+  "/plans/example",
+])("shows Home on %s despite a previously active feature", (pathname) => {
+  show({ pathname });
 
-    expect(
-      titleOf(screen.getByRole("button", { name: "Example repository, switch feature" })),
-    ).toBe("Example repository");
-  },
-);
+  expect(titleOf(screen.getByRole("button", { name: "Home, switch feature" }))).toBe("Home");
+});
 
 it.each([
   "/f/Feature%20%2F%20one",
@@ -217,12 +96,6 @@ it.each([
   expect(
     screen.getByRole("button", { name: "Switch feature, current: Feature / one" }),
   ).toBeTruthy();
-});
-
-it("uses Project before server info arrives when no feature is active", () => {
-  show({ activeFeature: null, project: null });
-
-  expect(titleOf(screen.getByRole("button", { name: "Project, switch feature" }))).toBe("Project");
 });
 
 it("opens the feature list and marks only the active feature", async () => {
@@ -242,7 +115,7 @@ it("opens the feature list and marks only the active feature", async () => {
   expect(other.querySelector("svg")).toBeNull();
 });
 
-it("lists features only, at encoded feature routes", async () => {
+it("lists Home followed by features at encoded routes", async () => {
   show();
 
   fireEvent.click(screen.getByRole("button", { name: "Switch feature, current: demo" }));
@@ -254,8 +127,8 @@ it("lists features only, at encoded feature routes", async () => {
     within(dialog)
       .getAllByRole("link")
       .map((link) => link.getAttribute("href")),
-  ).toEqual(["/f/demo", "/f/Feature%20%2F%20one"]);
-  expect(within(dialog).queryByRole("link", { name: "Home" })).toBeNull();
+  ).toEqual(["/", "/f/demo", "/f/Feature%20%2F%20one"]);
+  expect(linkTo(dialog, "/").textContent).toBe("Home");
   expect(within(dialog).queryByRole("link", { name: /New work/ })).toBeNull();
   expect(within(dialog).queryByRole("separator")).toBeNull();
 });
@@ -274,11 +147,10 @@ it("lists each feature by its slug in mono", async () => {
 
 it.each(["/", "/files"])("marks no feature current on the project route %s", async (pathname) => {
   show({ pathname });
-  fireEvent.click(screen.getByRole("button", { name: "Example repository, switch feature" }));
+  fireEvent.click(screen.getByRole("button", { name: "Home, switch feature" }));
 
   const dialog = await screen.findByRole("dialog", { name: "Switch feature" });
-  expect(dialog.querySelector("[aria-current]")).toBeNull();
-  expect(dialog.querySelector("a svg")).toBeNull();
+  expect(linkTo(dialog, "/").getAttribute("aria-current")).toBe(pathname === "/" ? "page" : null);
 });
 
 it("marks the route's feature current despite a different active feature", async () => {
@@ -308,11 +180,12 @@ it("moves focus through the feature links with arrow keys", async () => {
   fireEvent.keyDown(other, { key: "ArrowDown" });
   expect(document.activeElement).toBe(third);
   fireEvent.keyDown(third, { key: "ArrowDown" });
-  expect(document.activeElement).toBe(active);
-  fireEvent.keyDown(active, { key: "ArrowUp" });
+  const home = linkTo(dialog, "/");
+  expect(document.activeElement).toBe(home);
+  fireEvent.keyDown(home, { key: "ArrowUp" });
   expect(document.activeElement).toBe(third);
   fireEvent.keyDown(third, { key: "Home" });
-  expect(document.activeElement).toBe(active);
+  expect(document.activeElement).toBe(home);
 });
 
 it("closes on Escape and returns focus to the title button", async () => {
@@ -332,6 +205,7 @@ it("closes on Escape and returns focus to the title button", async () => {
 });
 
 it.each([
+  ["Home", "/"],
   ["demo", "/f/demo"],
   ["Feature / one", "/f/Feature%20%2F%20one"],
 ])("closes after selecting %s", async (_name, href) => {
@@ -349,19 +223,11 @@ it.each([
 it("says there are no features in an empty project", async () => {
   show({ activeFeature: null, features: [] });
 
-  fireEvent.click(screen.getByRole("button", { name: "Example repository, switch feature" }));
+  fireEvent.click(screen.getByRole("button", { name: "Home, switch feature" }));
 
   const dialog = await screen.findByRole("dialog", { name: "Switch feature" });
-  expect(within(dialog).queryAllByRole("link")).toEqual([]);
+  expect(within(dialog).getAllByRole("link")).toEqual([linkTo(dialog, "/")]);
   expect(dialog.textContent).toContain("No features yet.");
-});
-
-it("includes the visible project name in the trigger name with control characters escaped", () => {
-  show({ pathname: "/files", project: "Example\u202e repository" });
-
-  expect(
-    titleOf(screen.getByRole("button", { name: "Example⟨U+202E⟩ repository, switch feature" })),
-  ).toBe("Example⟨U+202E⟩ repository");
 });
 
 it("renders control characters visibly in server names", async () => {

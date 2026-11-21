@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { Provider } from "jotai/react";
 import { createStore } from "jotai/vanilla";
 import { MemoryRouter, useLocation } from "react-router";
@@ -8,7 +8,7 @@ import checklistFixture from "@/plan/api/fixtures/checklist.json";
 import serverInfoFixture from "@/plan/api/fixtures/server-info.json";
 import { checklistViewSchema, serverInfoSchema } from "@/plan/api/schema";
 import { PlanHeader } from "@/plan/header/header";
-import { activeFeatureAtom, checklistAtom, kickoffAtom, serverInfoAtom } from "@/plan/state/atoms";
+import { activeFeatureAtom, checklistAtom, serverInfoAtom } from "@/plan/state/atoms";
 
 const NEXT_STEP = "Section 05 is the next product spec document to write.";
 const OFFER_LABEL = checklistFixture.checklists[0]!.primary!.label;
@@ -75,48 +75,22 @@ it("links the Loom logo to the planner home", () => {
   expect(link.querySelector("svg")).not.toBeNull();
 });
 
-it("shows the route feature's slug under the Planning eyebrow", () => {
+it("shows the route feature's slug in the switcher", () => {
   show("/f/demo");
 
-  expect(screen.getByText("Planning · feature")).toBeTruthy();
   const switcher = screen.getByRole("button", { name: "Switch feature, current: demo" });
   expect(switcher.querySelector(".plan-switcher-title")?.textContent).toBe("demo");
 });
 
-it.each([
-  ["/", "Planning · project", "Example project"],
-  ["/new", "Planning · new work", "Untitled"],
-  ["/files", "Planning · files", "Example project"],
-  ["/plans/standalone", "Planning · files", "Example project"],
-])("names %s with the eyebrow %s over %s", (pathname, eyebrow, title) => {
-  show(pathname);
-
-  expect(screen.getByText(eyebrow)).toBeTruthy();
-  const switcher = screen.getByRole("button", { name: `${title}, switch feature` });
-  expect(switcher.querySelector(".plan-switcher-title")?.textContent).toBe(title);
-});
-
-it("names /new by the live kickoff's name once it has one", () => {
-  const { store } = show("/new?session=kickoff");
-  act(() =>
-    store.set(kickoffAtom, {
-      session: "kickoff",
-      target: null,
-      shape: {
-        size: "feature",
-        name: "planner-search",
-        proposal: false,
-        problem: "",
-        decisions: [],
-        questions: [],
-        sections: [],
-      },
-    }),
-  );
-
-  expect(screen.getByText("Planning · new feature")).toBeTruthy();
-  expect(screen.getByRole("button", { name: "planner-search, switch feature" })).toBeTruthy();
-});
+it.each(["/", "/new", "/files", "/plans/standalone"])(
+  "shows only Home in the selector on %s",
+  (pathname) => {
+    show(pathname);
+    const switcher = screen.getByRole("button", { name: "Home, switch feature" });
+    expect(switcher.textContent).toBe("Home");
+    expect(screen.queryByRole("link", { name: "Home" })).toBeNull();
+  },
+);
 
 it("keeps the route feature name before the server info arrives", () => {
   show("/f/demo", true, null);
