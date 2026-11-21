@@ -56,8 +56,12 @@ fn render(layout: &Layout, network: NetworkAccess) -> String {
     profile(&original, &layout.tree, &scratch, network, &grants).unwrap()
 }
 
+// The cache bases come from the process's HOME and XDG_CACHE_HOME, which a
+// confined completion run exports as its stage cache: pin them.
 #[test]
+#[serial_test::serial]
 fn the_process_cache_bases_are_the_stage_cache_and_base_run_parents() {
+    let _env = crate::test_cache_env::CacheEnv::pin();
     let cache = StageCache::resolve_from_process(Path::new("/repo"), "stage").unwrap();
     let stage_caches = cache.root().parent().unwrap();
     let base_runs = stage_caches.parent().unwrap().join("stage-base");
@@ -72,7 +76,9 @@ fn the_process_cache_bases_are_the_stage_cache_and_base_run_parents() {
 }
 
 #[test]
+#[serial_test::serial]
 fn provisioning_with_a_base_cache_denies_every_process_cache_base_before_its_own_socket() {
+    let _env = crate::test_cache_env::CacheEnv::pin();
     let layout = layout();
     let profile = render(&layout, NetworkAccess::Provision);
     let allow = profile
@@ -91,7 +97,9 @@ fn provisioning_with_a_base_cache_denies_every_process_cache_base_before_its_own
 }
 
 #[test]
+#[serial_test::serial]
 fn a_denied_network_renders_no_provisioning_rules() {
+    let _env = crate::test_cache_env::CacheEnv::pin();
     let layout = layout();
     let profile = render(&layout, NetworkAccess::Denied);
     assert!(
