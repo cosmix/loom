@@ -80,7 +80,7 @@ check read_secret
 # Denied, the write fails or lands in bubblewrap's private /tmp; the caller
 # proves the host file untouched either way.
 write_secret || [[ $mode == denied ]] || exit 3
-[[ $port == none ]] || check connect_network
+check connect_network
 printf 'HOST_CANARY_%s\n' "$mode"
 "#;
 
@@ -126,14 +126,7 @@ fn run_canary(
         CommandConfinement::Inherit => "control",
         CommandConfinement::Confined => "denied",
     };
-    // Seatbelt lets a confined command reach host loopback (Gradle needs
-    // it), so on macOS the canary skips the network check;
-    // `confine_seatbelt_network_tests.rs` proves other hosts stay refused.
-    let port = if cfg!(target_os = "macos") {
-        "none".to_string()
-    } else {
-        port.to_string()
-    };
+    let port = port.to_string();
     let spec = CommandSpec::program(
         "/bin/bash",
         [

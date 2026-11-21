@@ -56,6 +56,11 @@ fn maven_resolves_from_the_host_seed_offline() {
 
 /// `gradle --offline --no-daemon compileJava` succeeds on a project depending
 /// on the seed, resolving it from the host's read-only dependency cache.
+/// Linux only: confined Gradle is unsupported on macOS, where Seatbelt denies
+/// the network Gradle needs even in-process (a UDP bind per cache lock and
+/// loopback TCP to its compiler and test workers); see
+/// `concerns/stage-build-cache-gaps.md`.
+#[cfg(target_os = "linux")]
 #[test]
 #[serial_test::serial]
 fn gradle_resolves_from_the_read_only_cache_offline() {

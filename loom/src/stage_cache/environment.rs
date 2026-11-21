@@ -136,16 +136,9 @@ fn go_flags(consumer: Consumer, host_env: &BTreeMap<String, OsString>) -> OsStri
 /// exactly. So this raises only the client heap (it follows the script's
 /// `-Xmx64m`) and never sets `org.gradle.jvmargs`. The host's own `GRADLE_OPTS`
 /// is never read: it can carry proxy passwords, like `MAVEN_OPTS`. A project
-/// `gradle.properties` that sets `org.gradle.jvmargs` still forks.
-///
-/// In-process Gradle still needs IP sockets. Every file lock reserves a port
-/// (`DefaultFileLockManager::lock`), which makes `FileLockCommunicator` bind a
-/// UDP socket on the wildcard address and ping lock owners over loopback, and
-/// Gradle (8.10.2 and its master branch) has no setting that turns this off.
-/// Test and compiler worker processes connect to the build over loopback TCP
-/// (`TcpIncomingConnector`). Bubblewrap gives the command its own loopback;
-/// Seatbelt allows binds and loopback traffic (`confine_seatbelt.rs`,
-/// `NETWORK_RULES`).
+/// `gradle.properties` that sets `org.gradle.jvmargs` still forks. Under
+/// Seatbelt even the in-process build fails (a UDP bind per cache lock,
+/// loopback TCP to workers), so confined Gradle is unsupported on macOS.
 const GRADLE_IN_PROCESS_OPTS: &str = "-Xmx1g";
 
 /// Variables whose whole value is a directory below the root.
