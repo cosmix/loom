@@ -268,4 +268,33 @@ base_branch = \"main\"\n";
         app.handle_key(KeyCode::Esc, KeyModifiers::NONE);
         assert!(app.exiting);
     }
+
+    #[test]
+    fn the_report_opens_at_its_top_whatever_the_ledger_scrolled_to() {
+        let home = TempDir::new().unwrap();
+        let _redirect = redirect_user_config(home.path().join("config.toml"));
+        let root = TempDir::new().unwrap();
+        let (work_dir, record) = finished_run(root.path());
+        let mut app = TuiApp::headless();
+        app.graph_state.scroll_y = 7;
+        app.handle_response(Response::StatusUpdate {
+            data: Box::new(StatusData {
+                plan_stats: Some(record),
+                ..StatusData::default()
+            }),
+        });
+        assert_eq!(app.graph_state.scroll_y, 0, "a status update opens it");
+
+        let mut app = TuiApp::headless();
+        app.graph_state.scroll_y = 7;
+        app.load_report(&work_dir);
+        assert!(app.plan_report.is_some());
+        assert_eq!(app.graph_state.scroll_y, 0, "the saved report opens it");
+        app.graph_state.scroll_y = 3;
+        app.load_report(&work_dir);
+        assert_eq!(
+            app.graph_state.scroll_y, 3,
+            "an open report keeps its place"
+        );
+    }
 }

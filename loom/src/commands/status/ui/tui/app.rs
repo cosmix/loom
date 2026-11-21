@@ -225,7 +225,7 @@ impl TuiApp {
     /// Show the run's saved report, if there is one.
     fn load_report(&mut self, work_path: &Path) {
         if let Some(record) = read_current(work_path) {
-            self.plan_report = Some(record);
+            self.show_report(record);
         }
     }
 
