@@ -11,7 +11,7 @@ file src/commands/graph/tests.rs 425
 file src/fs/work_dir.rs 429
 file src/fs/work_dir/tests.rs 869
 file src/models/stage/methods.rs 492
-file src/models/stage/types.rs 591
+file src/models/stage/types.rs 567
 file src/orchestrator/signals/cache.rs 508
 file src/orchestrator/signals/format/sections.rs 554
 file src/orchestrator/signals/tests.rs 551
@@ -32,7 +32,7 @@ function src/commands/clean/worktrees.rs clean_worktrees 109
 function src/commands/graph/display.rs build_graph_display 52
 function src/commands/graph/tests.rs test_build_graph_display_shows_all_deps 70
 function src/commands/graph/tree.rs build_tree_display 57
-function src/commands/init/plan_setup.rs initialize_with_plan 184
+function src/commands/init/plan_setup.rs initialize_with_plan 182
 function src/commands/knowledge/tests.rs test_knowledge_update_in_worktree_writes_to_worktree 74
 function src/commands/knowledge/tests.rs test_parse_file_type 70
 function src/commands/repair.rs execute 99
@@ -47,7 +47,7 @@ function src/commands/status/ui/tui/renderer.rs render_completion 119
 function src/completions/dynamic/mod.rs complete_after_subcommand 56
 function src/completions/install.rs install 52
 function src/context/refresh/tests_source_graph/enumeration.rs an_unreadable_file_survives_as_a_reported_lexical_only_entry 62
-function src/daemon/server/lifecycle.rs run_server 94
+function src/daemon/server/lifecycle.rs run_server 82
 function src/daemon/server/tests.rs test_collect_status_with_stages 77
 function src/fs/knowledge/templates.rs default_content 62
 function src/fs/memory/export.rs format_memory_for_handoff 70

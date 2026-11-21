@@ -1,0 +1,185 @@
+/* The timeline drawing and the models table of the plan overview. Colours come from the theme
+ * tokens and the `--phase-*` tokens `plan-overview.css` sets on the dialog. */
+.po-scroll {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card);
+}
+/* The drawing is 960 units wide and scales with the dialog; under 880px it stops shrinking and
+ * the frame scrolls instead, which keeps its 12-unit labels at 11px or more. */
+.po-tl svg {
+  display: block;
+  width: 100%;
+  min-width: 880px;
+  height: auto;
+}
+.po-tl text {
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+}
+.po-tl .po-tl-id {
+  fill: var(--foreground);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+}
+.po-tl [data-skipped] .po-tl-id {
+  fill: var(--muted-foreground);
+}
+.po-tl-sub,
+.po-tl-tick {
+  fill: var(--muted-foreground);
+  font-size: 12px;
+}
+.po-tl-dur {
+  fill: var(--foreground);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+.po-tl-tick.po-tl-end {
+  fill: var(--phase-executing);
+  font-weight: 500;
+}
+.po-tl-band {
+  fill: var(--muted);
+  opacity: 0.55;
+}
+.po-grid {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+.po-grid-end {
+  stroke: var(--phase-executing);
+  stroke-width: 1.5;
+  stroke-dasharray: 3 3;
+}
+.po-tl-skip {
+  stroke: var(--muted-foreground);
+  stroke-width: 2;
+  stroke-dasharray: 2 3;
+}
+.po-hatch-bg {
+  fill: var(--muted);
+}
+.po-hatch-line {
+  fill: var(--phase-executing);
+}
+
+.po-phase-contract {
+  fill: var(--phase-contract);
+  background: var(--phase-contract);
+}
+.po-phase-executing {
+  fill: var(--phase-executing);
+  background: var(--phase-executing);
+}
+.po-phase-adjudication {
+  fill: var(--phase-adjudication);
+  background: var(--phase-adjudication);
+}
+.po-phase-retry {
+  fill: var(--phase-retry);
+  background: var(--phase-retry);
+}
+.po-sw {
+  display: inline-block;
+  flex: none;
+  width: 18px;
+  height: 9px;
+  border-radius: 2px;
+}
+.po-sw.po-phase-waiting {
+  background: repeating-linear-gradient(
+    135deg,
+    var(--muted) 0 2.5px,
+    var(--phase-executing) 2.5px 4px
+  );
+}
+.po-sw-skip {
+  height: 0;
+  border-top: 2px dashed var(--muted-foreground);
+  border-radius: 0;
+}
+
+.po-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.po-table th {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+  color: var(--muted-foreground);
+}
+.po-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid color-mix(in oklch, var(--border) 60%, transparent);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.po-table tr:last-child td {
+  border-bottom: 0;
+}
+/* The model stays in view while the figures scroll under it on a narrow dialog. */
+.po-table th:first-child,
+.po-table td:first-child {
+  position: sticky;
+  left: 0;
+  background: var(--card);
+}
+.po-table .po-r {
+  text-align: right;
+}
+.po-table .po-table-empty {
+  padding: 18px 12px;
+  white-space: normal;
+  color: var(--muted-foreground);
+}
+.po-mono {
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+}
+.po-lane {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--muted-foreground);
+}
+/* Every row has the same track, so the fills compare as one bar chart and the percentages line
+ * up in a column. */
+.po-share {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 170px;
+}
+.po-share-bar {
+  flex: 1;
+  height: 7px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: var(--muted);
+}
+.po-share-fill {
+  display: flex;
+  height: 100%;
+}
+.po-share-fill span {
+  display: block;
+  height: 100%;
+}
+.po-share-pct {
+  flex: none;
+  min-width: 4ch;
+  text-align: right;
+}

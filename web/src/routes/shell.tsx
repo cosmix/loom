@@ -8,6 +8,8 @@ import { isTyping } from "@/lib/is-typing";
 import { Header } from "@/components/header";
 import { useNow } from "@/components/hooks/use-now";
 import { HelpDialog } from "@/components/help-dialog";
+import { PlanOverviewDialog } from "@/components/plan-overview/plan-overview-dialog";
+import { planStatsAtom } from "@/components/plan-overview/plan-stats-atom";
 import { QuotaMeters } from "@/components/quota-meters";
 import { SettingsDialog } from "@/components/settings-dialog";
 import { StageModal } from "@/components/stage-modal";
@@ -17,14 +19,24 @@ import { snapshotAtom } from "@/state/atoms";
 
 /// Header, routed body, footer, the stage dialog (`?stage=<id>` on any
 /// route), the settings dialog (`?settings=1`), and the help dialog
-/// with its `?` shortcut. Each route sets its
+/// with its `?` shortcut. A finished plan's locked overview replaces all
+/// three while the daemon reports one. Each route sets its
 /// own width: the overview runs wide, the ledger and stage pages are bounded.
 export function Shell() {
   const [helpOpen, setHelpOpen] = useState(false);
   const { pathname } = useLocation();
+  const planStats = useAtomValue(planStatsAtom);
+  const locked = planStats !== null;
+
+  // A finished plan's overview owns the screen: the help dialog closes, and neither the
+  // header's help button nor the `?` shortcut opens another modal over it.
+  useEffect(() => {
+    if (locked) setHelpOpen(false);
+  }, [locked]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (locked) return;
       if (event.key !== "?" || event.altKey || event.ctrlKey || event.metaKey) return;
       if (isTyping(event.target)) return;
       event.preventDefault();
@@ -32,21 +44,27 @@ export function Shell() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [locked]);
 
   return (
     <TooltipProvider delayDuration={250}>
-      <div className="flex h-dvh flex-col">
-        <Header onOpenHelp={() => setHelpOpen(true)} />
+      <div className="flex h-dvh flex-col" inert={locked}>
+        <Header onOpenHelp={() => !locked && setHelpOpen(true)} />
         <main className="flex min-h-0 w-full flex-1 flex-col overflow-y-auto">
           <ErrorBoundary resetKey={pathname}>
             <Outlet />
           </ErrorBoundary>
         </main>
         <Footer />
-        <StageModal />
-        <SettingsDialog />
-        <HelpDialog open={helpOpen} onOpenChange={setHelpOpen} />
+        {planStats ? (
+          <PlanOverviewDialog record={planStats} />
+        ) : (
+          <>
+            <StageModal />
+            <SettingsDialog />
+            <HelpDialog open={helpOpen} onOpenChange={setHelpOpen} />
+          </>
+        )}
       </div>
     </TooltipProvider>
   );

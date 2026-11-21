@@ -8,13 +8,12 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
-use chrono::Utc;
-use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::{backend::CrosstermBackend, Terminal};
 
 use super::daemon_client::{connect, is_socket_disconnected, subscribe};
 use super::event_handler::{handle_key_event, handle_mouse_event, is_scroll_key, KeyEventResult};
 use super::ledger::{self, LedgerView};
+use super::plan_overview::{render_plan_overview, scroll_alias};
 use super::renderer::render_completion;
 use super::state::{GraphState, LiveStatus, TuiActivityLog};
 use crate::commands::status::render::attention_model::attention_entries;
@@ -25,6 +24,7 @@ use crate::daemon::{
 use crate::orchestrator::busy;
 use crate::orchestrator::scheduling_report::{self, Alert};
 use crate::orchestrator::tick::{self, Tick};
+use crate::plan_stats::{read_current, PlanStatsRecord};
 
 #[cfg(test)]
 #[path = "app_tests.rs"]
@@ -33,6 +33,11 @@ mod tests;
 #[path = "app_terminal.rs"]
 mod app_terminal;
 use app_terminal::TerminalGuard;
+
+#[path = "app_input.rs"]
+mod app_input;
+#[path = "app_view.rs"]
+mod app_view;
 
 /// Poll timeout for event loop (100ms for responsive UI).
 const POLL_TIMEOUT: Duration = Duration::from_millis(100);
@@ -51,7 +56,8 @@ const RECONNECT_BACKOFF: Duration = Duration::from_millis(80);
 
 /// TUI application state.
 pub struct TuiApp {
-    terminal: Terminal<CrosstermBackend<Stdout>>,
+    /// `None` only for the headless test app, which is never drawn to a terminal.
+    terminal: Option<Terminal<CrosstermBackend<Stdout>>>,
     running: Arc<AtomicBool>,
     status: LiveStatus,
     spinner_frame: usize,
@@ -70,6 +76,11 @@ pub struct TuiApp {
     cleaned_up: bool,
     alerts: Vec<Alert>,
     alerts_refreshed_at: Option<Instant>,
+    /// The finished plan's report; while set it replaces the ledger and the
+    /// legacy completion view.
+    plan_report: Option<PlanStatsRecord>,
+    /// The daemon closed the socket; nothing more will arrive on it.
+    socket_closed: bool,
 }
 
 impl TuiApp {
@@ -81,7 +92,7 @@ impl TuiApp {
         })?;
 
         Ok(Self {
-            terminal,
+            terminal: Some(terminal),
             running: Arc::new(AtomicBool::new(true)),
             status: LiveStatus::default(),
             spinner_frame: 0,
@@ -98,6 +109,8 @@ impl TuiApp {
             cleaned_up: false,
             alerts: Vec::new(),
             alerts_refreshed_at: None,
+            plan_report: None,
+            socket_closed: false,
         })
     }
 
@@ -165,17 +178,11 @@ impl TuiApp {
     fn run_event_loop(&mut self, stream: &mut UnixStream, work_path: &Path) -> Result<()> {
         let mut reader = ResponseFrameReader::new(Duration::from_secs(30));
         while self.running.load(Ordering::SeqCst) {
-            self.refresh_alerts(work_path);
-
-            if self.exiting {
-                self.last_error = Some("Exiting...".to_string());
-                self.render()?;
-                break;
-            }
-
-            if self.completion_delay_elapsed()
-                || self.receive_response(stream, work_path, &mut reader)?
-            {
+            if !self.advance(stream, work_path, &mut reader)? {
+                if self.exiting {
+                    self.last_error = Some("Exiting...".to_string());
+                    self.render()?;
+                }
                 break;
             }
             self.handle_input()?;
@@ -188,9 +195,45 @@ impl TuiApp {
         Ok(())
     }
 
+    /// One event-loop iteration without input polling or drawing; `false`
+    /// ends the session: the user quit, the legacy completion view ran its
+    /// delay, or the daemon is gone and there is no report to keep showing.
+    pub(super) fn advance(
+        &mut self,
+        stream: &mut UnixStream,
+        work_path: &Path,
+        reader: &mut ResponseFrameReader,
+    ) -> Result<bool> {
+        self.refresh_alerts(work_path);
+        if self.exiting || self.completion_delay_elapsed() {
+            return Ok(false);
+        }
+        if self.socket_closed {
+            return Ok(true);
+        }
+        Ok(!self.receive_response(stream, work_path, reader)?)
+    }
+
+    /// The legacy completion view leaves on its own; the report stays until `q`.
     fn completion_delay_elapsed(&self) -> bool {
-        self.completion_received_at
-            .is_some_and(|received_at| received_at.elapsed() >= COMPLETION_EXIT_DELAY)
+        self.plan_report.is_none()
+            && self
+                .completion_received_at
+                .is_some_and(|received_at| received_at.elapsed() >= COMPLETION_EXIT_DELAY)
+    }
+
+    /// Show the run's saved report, if there is one.
+    fn load_report(&mut self, work_path: &Path) {
+        if let Some(record) = read_current(work_path) {
+            self.plan_report = Some(record);
+        }
+    }
+
+    /// Whether the plan ended in failure, which keeps the legacy completion view.
+    fn completed_with_failures(&self) -> bool {
+        self.completion_summary
+            .as_ref()
+            .is_some_and(|summary| summary.failure_count > 0)
     }
 
     /// Read one complete daemon response while preserving partial frames over idle polls.
@@ -201,9 +244,26 @@ impl TuiApp {
         reader: &mut ResponseFrameReader,
     ) -> Result<bool> {
         match reader.poll(stream) {
-            Ok(Some(response)) => self.handle_response(response),
+            Ok(Some(response)) => {
+                // The daemon may send only the completion, never a final status.
+                let succeeded = matches!(
+                    &response,
+                    Response::OrchestrationComplete { summary } if summary.failure_count == 0
+                );
+                self.handle_response(response);
+                if succeeded {
+                    self.load_report(work_path);
+                }
+            }
             Ok(None) => {}
             Err(error) if is_socket_disconnected(&error) => {
+                self.socket_closed = true;
+                if self.plan_report.is_none() && !self.completed_with_failures() {
+                    self.load_report(work_path);
+                }
+                if self.plan_report.is_some() {
+                    return Ok(false);
+                }
                 if self.completion_summary.is_some() {
                     return Ok(true);
                 }
@@ -245,68 +305,6 @@ impl TuiApp {
         Ok(true)
     }
 
-    fn handle_input(&mut self) -> Result<()> {
-        if !event::poll(POLL_TIMEOUT)? {
-            return Ok(());
-        }
-        match event::read()? {
-            Event::Key(key) if key.kind == KeyEventKind::Press => {
-                self.handle_key(key.code, key.modifiers);
-            }
-            Event::Mouse(mouse) if !self.legend_open => {
-                handle_mouse_event(mouse.kind, &mut self.graph_state)
-            }
-            _ => {}
-        }
-        Ok(())
-    }
-
-    fn handle_key(&mut self, code: KeyCode, modifiers: KeyModifiers) {
-        let result = if self.legend_open && is_scroll_key(code) {
-            KeyEventResult::Continue
-        } else {
-            handle_key_event(code, modifiers, &mut self.graph_state)
-        };
-        match result {
-            KeyEventResult::Exit => self.exiting = true,
-            KeyEventResult::ToggleLegend => self.legend_open = !self.legend_open,
-            KeyEventResult::ToggleTokens => self.show_tokens = !self.show_tokens,
-            KeyEventResult::CloseLegend if self.legend_open => self.legend_open = false,
-            KeyEventResult::CloseLegend => self.exiting = true,
-            KeyEventResult::Continue => {}
-        }
-    }
-
-    /// Handle a response from the daemon.
-    fn handle_response(&mut self, response: Response) {
-        match response {
-            Response::StatusUpdate { data } => {
-                self.status = LiveStatus { data: *data };
-                let all_stages = self.status.all_stages();
-                self.activity_log.update(&all_stages);
-                if self.completion_summary.is_none()
-                    && !self
-                        .last_error
-                        .as_deref()
-                        .is_some_and(|message| message.starts_with("Orchestration: "))
-                {
-                    self.last_error = None;
-                }
-            }
-            Response::OrchestrationComplete { summary } => {
-                if summary.failure_count == 0 {
-                    self.last_error = None;
-                }
-                self.completion_summary = Some(summary);
-                self.completion_received_at = Some(Instant::now());
-            }
-            Response::Error { message } => {
-                self.last_error = Some(message);
-            }
-            _ => {}
-        }
-    }
-
     /// Cleanup terminal state (leave alternate screen, disable raw mode).
     /// Sets cleaned_up flag to prevent double cleanup in Drop.
     fn cleanup_terminal(&mut self) {
@@ -316,64 +314,9 @@ impl TuiApp {
         self.cleaned_up = true;
 
         self.terminal_guard.cleanup();
-        let _ = self.terminal.show_cursor();
-    }
-
-    /// Render the UI.
-    fn render(&mut self) -> Result<()> {
-        // If orchestration completed, render completion screen
-        if let Some(ref summary) = self.completion_summary {
-            let summary_clone = summary.clone();
-            let last_error = self.last_error.clone();
-            self.terminal.draw(|frame| {
-                render_completion(frame, frame.area(), &summary_clone);
-                if let Some(ref error) = last_error {
-                    let area = frame.area();
-                    let line =
-                        ratatui::layout::Rect::new(area.x, area.y.saturating_add(2), area.width, 1);
-                    frame.render_widget(ratatui::widgets::Paragraph::new(error.as_str()), line);
-                }
-            })?;
-            return Ok(());
+        if let Some(terminal) = self.terminal.as_mut() {
+            let _ = terminal.show_cursor();
         }
-
-        let levels = self.status.compute_levels();
-        let ordered = self.status.all_stages_with_levels(&levels);
-        let attention = attention_entries(&self.status.data.stages);
-        let view = LedgerView {
-            data: &self.status.data,
-            levels: &levels,
-            ordered: &ordered,
-            attention: &attention,
-            activity: &self.activity_log,
-            alerts: &self.alerts,
-            spinner: self.spinner_char(),
-            scroll_y: self.graph_state.scroll_y,
-            legend_open: self.legend_open,
-            show_tokens: self.show_tokens,
-            // Per frame, so the elapsed time advances between alert refreshes.
-            loop_state: busy::loop_state(self.tick.as_ref(), Utc::now()),
-            last_error: self.last_error.as_deref(),
-            now_epoch: Utc::now().timestamp(),
-            // The previous frame's viewport; one frame of lag is fine.
-            scrollable: ordered.len() > usize::from(self.graph_state.viewport_height),
-        };
-        let mut outcome = ledger::RenderOutcome::default();
-        self.terminal
-            .draw(|frame| outcome = ledger::render(frame, &view))?;
-        self.graph_state.total_lines = ordered.len().min(u16::MAX as usize) as u16;
-        self.graph_state.viewport_height = outcome.table_viewport_rows;
-
-        Ok(())
-    }
-
-    /// Get spinner character for current frame.
-    fn spinner_char(&self) -> char {
-        const SPINNER: [char; 10] = [
-            '\u{280B}', '\u{2819}', '\u{2839}', '\u{2838}', '\u{283C}', '\u{2834}', '\u{2826}',
-            '\u{2827}', '\u{2807}', '\u{280F}',
-        ];
-        SPINNER[self.spinner_frame % SPINNER.len()]
     }
 }
 

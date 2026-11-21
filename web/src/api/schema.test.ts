@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import planStatsJson from "@/api/fixtures/plan-stats-snapshot.json";
 import fixtureJson from "@/api/fixtures/snapshot.json";
 import { parseSnapshot, snapshotSchema, stageStatusSchema } from "@/api/schema";
 
@@ -361,5 +362,38 @@ describe("snapshot schema", () => {
       failing_criteria: [{ index: -1, command: "x", diagnostic: null }],
     };
     expect(snapshotSchema.safeParse(malformed).success).toBe(false);
+  });
+});
+
+describe("plan report overlay", () => {
+  it("parseSnapshot drops a plan_stats block with an out-of-enum lane and keeps the frame", () => {
+    const invalid = structuredClone(planStatsJson);
+    invalid.status.plan_stats.models[0].lane = "x";
+
+    const result = parseSnapshot(invalid);
+
+    expect(result.success).toBe(true);
+    expect(result.data?.status.plan_stats).toBeUndefined();
+    expect(result.data?.status.stages).toHaveLength(planStatsJson.status.stages.length);
+  });
+
+  it("parseSnapshot drops bad plan_stats and bad tokens together", () => {
+    const invalid = structuredClone(planStatsJson);
+    invalid.status.plan_stats.stages[0].status = "bogus";
+    invalid.status.tokens.plan.rate.cache_write = -1;
+
+    const result = parseSnapshot(invalid);
+
+    expect(result.success).toBe(true);
+    expect(result.data?.status.plan_stats).toBeUndefined();
+    expect(result.data?.status.tokens).toBeUndefined();
+  });
+
+  it("parseSnapshot still fails when plan_stats and another field are both invalid", () => {
+    const invalid = structuredClone(planStatsJson);
+    invalid.status.plan_stats.models[0].lane = "x";
+    invalid.status.stages[0].status = "bogus";
+
+    expect(parseSnapshot(invalid).success).toBe(false);
   });
 });

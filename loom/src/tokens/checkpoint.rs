@@ -71,7 +71,7 @@ impl Checkpoint {
     }
 
     /// The checkpoint, `None` when there is none yet, or why it is unusable.
-    fn try_load(tokens_dir: &Path) -> Result<Option<Self>, String> {
+    pub(super) fn try_load(tokens_dir: &Path) -> Result<Option<Self>, String> {
         let file = Path::new(CHECKPOINT_FILE);
         let bytes = match read_bounded(tokens_dir, file, MAX_CHECKPOINT_BYTES) {
             Ok(bytes) => bytes,

@@ -82,7 +82,7 @@ impl Default for Stage {
             contracts: Vec::new(),
             harness: Vec::new(),
             reachable: Vec::new(), consumer_deferred: None,
-            ratchet_files: Vec::new(),
+            ratchet_files: Vec::new(), phases: Vec::new(),
         }
     }
 }

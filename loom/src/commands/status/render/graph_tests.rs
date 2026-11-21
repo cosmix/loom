@@ -34,6 +34,7 @@ fn make_status_data(stages: Vec<StageSummary>) -> StatusData {
         quota: crate::quota::QuotaSnapshot::default(),
         tokens: None,
         activity: Vec::new(),
+        plan_stats: None,
     }
 }
 

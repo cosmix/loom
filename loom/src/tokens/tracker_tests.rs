@@ -1,5 +1,6 @@
 use super::{
-    log_change, read_sources, scan_until, spawn_token_tracker, write_flow, Pass, CHECKPOINT_FILE,
+    log_change, read_sources, scan_until, spawn_token_tracker, write_flow, LastLine::Wait, Pass,
+    CHECKPOINT_FILE,
 };
 use crate::tokens::accumulate::{AgentState, MESSAGE_TABLE_CAP};
 use crate::tokens::checkpoint::{Checkpoint, MAX_CHECKPOINT_BYTES};
@@ -8,7 +9,7 @@ use crate::tokens::flow_build::build_flow;
 use crate::tokens::model::{flow_path, read_flow, AgentKind, TokenUsage, BUCKET_SECS, FLOW_FILE};
 use crate::tokens::tail::{self, MAX_LINE_BYTES};
 use crate::tokens::tests_fixture::{
-    agents_of, append, body, claude_line, stage, unix_now, usage, Fixture, SESSION_UUID,
+    agents_of, append, body, bulky_body, claude_line, stage, unix_now, usage, Fixture, SESSION_UUID,
 };
 use std::collections::BTreeMap;
 use std::fs;
@@ -219,7 +220,13 @@ fn stopped_pass_reads_nothing_yet_still_publishes() {
     fx.add_session("alpha", SESSION_UUID, &body(&[line("m1", now - 90, 100)]));
     let codex = fx.codex_sessions();
 
-    let stopped = scan_until(&fx.work_root, Some(&codex), now, &AtomicBool::new(true));
+    let stopped = scan_until(
+        &fx.work_root,
+        Some(&codex),
+        now,
+        &AtomicBool::new(true),
+        Wait,
+    );
 
     assert!(stopped.expect("pass").flow.stages.is_empty());
     assert!(flow_path(&fx.work_root).is_file());
@@ -259,19 +266,16 @@ fn tracker_thread_exits_within_a_second_of_shutdown() {
     assert!(stopped_at.elapsed() < Duration::from_secs(1));
 }
 
-/// A transcript of [`MESSAGE_TABLE_CAP`] lines with distinct 1200-character
-/// message ids: its agent's checkpointed table is about 5 MB of JSON, so one
-/// fits [`MAX_CHECKPOINT_BYTES`] and two do not.
-fn bulky_body(tag: &str, now: i64) -> String {
-    let lines: Vec<String> = (0..MESSAGE_TABLE_CAP)
-        .map(|n| line(&format!("{tag}{n:0>1200}"), now - 60, 1))
-        .collect();
-    body(&lines)
-}
-
 fn pass_at(fx: &Fixture, now: i64) -> Pass {
     let codex = fx.codex_sessions();
-    scan_until(&fx.work_root, Some(&codex), now, &AtomicBool::new(false)).expect("pass")
+    scan_until(
+        &fx.work_root,
+        Some(&codex),
+        now,
+        &AtomicBool::new(false),
+        Wait,
+    )
+    .expect("pass")
 }
 
 fn saved_table_len(fx: &Fixture, agent_key: &str) -> usize {
@@ -378,6 +382,7 @@ fn unreadable_file_warning_flattens_the_untrusted_path() {
         &mut Checkpoint::empty(),
         std::slice::from_ref(&source),
         &AtomicBool::new(false),
+        Wait,
     );
 
     let failure = failure.expect("the open is refused");

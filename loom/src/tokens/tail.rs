@@ -71,6 +71,27 @@ pub(crate) fn read_lines(
     Ok(())
 }
 
+/// The unfinished last line between `offset` and `len`: `None` when there is
+/// none, it is over [`MAX_LINE_BYTES`], or the bytes there hold a `\n` (the
+/// file changed under the caller). Opens as [`read_lines`] does.
+pub(crate) fn read_fragment(path: &Path, offset: u64, len: u64) -> io::Result<Option<String>> {
+    let size = len.saturating_sub(offset);
+    if size == 0 || size > MAX_LINE_BYTES as u64 {
+        return Ok(None);
+    }
+    let mut file = OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(path)?;
+    file.seek(SeekFrom::Start(offset))?;
+    let mut bytes = Vec::new();
+    file.take(size).read_to_end(&mut bytes)?;
+    if bytes.len() as u64 != size || bytes.contains(&b'\n') {
+        return Ok(None);
+    }
+    Ok(Some(String::from_utf8_lossy(&bytes).into_owned()))
+}
+
 /// Reads the next `\n`-terminated line into `line` (without the `\n`), keeping
 /// at most `max` bytes of it and consuming the rest unbuffered. Returns the
 /// bytes consumed, newline included, and whether the line was cut at `max`;

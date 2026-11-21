@@ -2,6 +2,7 @@
 //! lines every stage's transcripts gained, update the checkpoint, and publish
 //! `.loom/work/tokens/flow.json` for the status collector.
 
+use super::accumulate::AgentState;
 use super::checkpoint::Checkpoint;
 use super::discover::{discover, Source};
 use super::flow_build::{build_flow, fit_flow};
@@ -66,9 +67,31 @@ pub fn scan_pass(
     let stop = TRACKER.with_borrow(|tracker| tracker.stop.clone());
     let never = AtomicBool::new(false);
     let stop = stop.as_deref().unwrap_or(&never);
-    let pass = scan_until(work_root, codex_sessions_root, now, stop)?;
+    let pass = scan_until(work_root, codex_sessions_root, now, stop, LastLine::Wait)?;
     TRACKER.with_borrow_mut(|tracker| tracker.warning = pass.warning);
     Ok(pass.flow)
+}
+
+/// The pass that ends a run, on the thread that finished it, after the
+/// tracker thread was joined: [`scan_pass`] that no shutdown flag stops, which
+/// also counts an unfinished last line that is a whole JSON value (a writer
+/// that never added the `\n`), and keeps every stage's agent totals in memory
+/// for [`super::plan_totals::plan_tokens`] with this `work_root`, also when the
+/// checkpoint is too big to write. Its warning is logged.
+pub fn final_scan(work_root: &Path, codex_sessions_root: Option<&Path>, now: i64) -> Result<()> {
+    let never = AtomicBool::new(false);
+    let pass = scan_until(work_root, codex_sessions_root, now, &never, LastLine::Count)?;
+    log_change(&mut None, pass.warning);
+    Ok(())
+}
+
+/// What a pass does with an unfinished last line of a file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum LastLine {
+    /// Leave it for a later pass, which reads it once its `\n` is written.
+    Wait,
+    /// Count it when it is a whole JSON value, and move the offset past it.
+    Count,
 }
 
 /// Starts the `tokens-tracker` thread: a pass now, then one every
@@ -100,30 +123,44 @@ fn scan_until(
     codex_sessions_root: Option<&Path>,
     now: i64,
     stop: &AtomicBool,
+    last_line: LastLine,
 ) -> Result<Pass> {
     let mut memo = TRACKER
         .with_borrow_mut(|tracker| tracker.memo.take())
         .filter(|memo| memo.is_for(work_root))
         .unwrap_or_else(|| PassMemo::new(work_root));
-    let pass = run_pass(&mut memo, work_root, codex_sessions_root, now, stop);
+    let pass = run_pass(
+        &mut memo,
+        work_root,
+        codex_sessions_root,
+        now,
+        stop,
+        last_line,
+    );
     TRACKER.with_borrow_mut(|tracker| tracker.memo = Some(memo));
     pass
 }
 
-/// [`scan_until`]'s pass with `memo`, which it reads and updates.
+/// [`scan_until`]'s pass with `memo`, which it reads and updates. A final
+/// pass ([`LastLine::Count`]) registers the agent totals it read before
+/// anything is written, so a write that fails or is over its cap loses none.
 fn run_pass(
     memo: &mut PassMemo,
     work_root: &Path,
     codex_sessions_root: Option<&Path>,
     now: i64,
     stop: &AtomicBool,
+    last_line: LastLine,
 ) -> Result<Pass> {
     let dir = ensure_tokens_dir(work_root)?;
     let (mut checkpoint, load_note) = memo.take_checkpoint(&dir);
     let sources = discover(work_root, codex_sessions_root, &mut checkpoint.threads, now)?;
     let mut problems: Vec<String> = load_note.into_iter().collect();
-    let (advanced, read_failure) = read_sources(&mut checkpoint, &sources, stop);
+    let (advanced, read_failure) = read_sources(&mut checkpoint, &sources, stop, last_line);
     problems.extend(read_failure);
+    if last_line == LastLine::Count {
+        super::plan_totals::register(work_root, &checkpoint.stages);
+    }
     checkpoint.prune(now.div_euclid(BUCKET_SECS) - (STAGE_SERIES_LEN as i64 - 1));
     let mut flow = build_flow(&checkpoint.stages, now);
     flow.quota_left = memo.quota_left(work_root, now);
@@ -140,6 +177,7 @@ pub(super) fn read_sources<'a>(
     checkpoint: &mut Checkpoint,
     sources: &'a [Source],
     stop: &AtomicBool,
+    last_line: LastLine,
 ) -> (HashSet<(&'a str, &'a str)>, Option<String>) {
     let mut advanced = HashSet::new();
     let mut failure = None;
@@ -147,7 +185,7 @@ pub(super) fn read_sources<'a>(
         if stop.load(Ordering::SeqCst) {
             break;
         }
-        match read_source(checkpoint, source, stop) {
+        match read_source(checkpoint, source, stop, last_line) {
             Ok(false) => continue,
             Ok(true) => {}
             // A read that failed part way may still have moved the offset.
@@ -166,11 +204,13 @@ pub(super) fn read_sources<'a>(
 /// whether there were any. A missing file is skipped and its agent keeps its
 /// totals; a new inode, a shrink below the saved offset, or a different path
 /// restarts the agent from offset 0. A line over [`tail::MAX_LINE_BYTES`] is
-/// skipped and counted as unreadable.
+/// skipped and counted as unreadable. An unfinished last line is handled as
+/// `last_line` says.
 fn read_source(
     checkpoint: &mut Checkpoint,
     source: &Source,
     stop: &AtomicBool,
+    last_line: LastLine,
 ) -> std::io::Result<bool> {
     let path = Path::new(&source.path);
     let Some(stat) = tail::stat(path) else {
@@ -199,7 +239,25 @@ fn read_source(
         Line::TooLong => agent.count_unreadable(),
     });
     agent.file.offset = offset;
-    read.map(|()| true)
+    read?;
+    if last_line == LastLine::Count && !stop.load(Ordering::SeqCst) {
+        count_last_line(agent, path, stat.len)?;
+    }
+    Ok(true)
+}
+
+/// Ingests the unfinished line between the agent's offset and `len` when it
+/// is a whole JSON value, and moves the offset past it. A fragment that does
+/// not parse is a line still being written: it is left for a later pass.
+fn count_last_line(agent: &mut AgentState, path: &Path, len: u64) -> std::io::Result<()> {
+    let Some(fragment) = tail::read_fragment(path, agent.file.offset, len)? else {
+        return Ok(());
+    };
+    if serde_json::from_str::<serde::de::IgnoredAny>(&fragment).is_ok() {
+        agent.ingest(&fragment);
+        agent.file.offset = len;
+    }
+    Ok(())
 }
 
 /// The warnings of the two writes, or their errors: both when both failed, so

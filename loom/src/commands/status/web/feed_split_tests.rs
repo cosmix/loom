@@ -12,6 +12,14 @@ fn fixture() -> WebSnapshot {
     .expect("snapshot fixture parses")
 }
 
+/// The fixture snapshot with the finished plan's report in `status.plan_stats`.
+fn with_report() -> WebSnapshot {
+    serde_json::from_str(include_str!(
+        "../../../../../web/src/api/fixtures/plan-stats-snapshot.json"
+    ))
+    .expect("plan stats snapshot fixture parses")
+}
+
 fn stage_mut<'a>(snapshot: &'a mut WebSnapshot, id: &str) -> &'a mut StageSummary {
     snapshot
         .status
@@ -71,6 +79,66 @@ fn every_snapshot_key_is_classified() {
 }
 
 #[test]
+fn the_plan_report_is_a_full_only_status_key() {
+    let snapshot = with_report();
+    let Value::Object(root) = serde_json::to_value(&snapshot).unwrap() else {
+        panic!("snapshot is not an object");
+    };
+    let Value::Object(status) = &root["status"] else {
+        panic!("status is not an object");
+    };
+    assert_eq!(
+        key_set(status),
+        names(&[
+            &STATE_STATUS_KEYS,
+            &FULL_ONLY_STATUS_KEYS,
+            &["stages", "tokens"]
+        ]),
+        "a status key is missing from feed_split.rs"
+    );
+    let expected: BTreeSet<String> = FULL_ONLY_KEYS
+        .iter()
+        .map(|key| (*key).to_owned())
+        .chain(
+            FULL_ONLY_STATUS_KEYS
+                .iter()
+                .map(|key| format!("status.{key}")),
+        )
+        .collect();
+    assert_eq!(key_set(&split(&snapshot).full_only), expected);
+}
+
+#[test]
+fn the_plan_report_appearing_or_going_away_needs_a_full() {
+    let (without, with) = (fixture(), with_report());
+    assert!(needs_full(&split(&without), &split(&with)));
+    assert!(needs_full(&split(&with), &split(&without)));
+    assert!(!needs_full(&split(&with), &split(&with_report())));
+    let mut edited = with_report();
+    edited.status.plan_stats.as_mut().unwrap().wall_secs += 1;
+    assert!(needs_full(&split(&with), &split(&edited)));
+}
+
+#[test]
+fn stage_phases_stay_out_of_every_state_message() {
+    let prev = fixture();
+    let phases = stage_mut(&mut fixture(), "client").phases.clone();
+    assert_eq!(phases.len(), 2, "the fixture stage carries two spans");
+
+    let mut next = fixture();
+    stage_mut(&mut next, "client").phases.pop();
+    let (stages, _, _) = state_changes(&split(&prev), &split(&next));
+    assert!(stages.is_empty(), "phases alone are not a state change");
+    assert!(!needs_full(&split(&prev), &split(&next)));
+
+    stage_mut(&mut next, "client").retry_count += 1;
+    let (stages, _, _) = state_changes(&split(&prev), &split(&next));
+    assert_eq!(key_set(&stages), names(&[&["client"]]));
+    assert!(stages["client"].get("phases").is_none());
+    assert!(stages["client"].get("completed_at").is_some());
+}
+
+#[test]
 fn immutable_and_clock_keys_exist_on_stage_summary() {
     let stage = StageSummary {
         contract_testing: Some(ContractTesting {
@@ -91,6 +159,20 @@ fn immutable_and_clock_keys_exist_on_stage_summary() {
         assert!(object.contains_key(key), "no stage key {key}");
     }
     assert!(object["contract_testing"].get("running_secs").is_some());
+    let spans = StageSummary {
+        phases: vec![crate::models::stage::phases::PhaseSpan {
+            phase: crate::models::stage::phases::Phase::Waiting,
+            started_at: chrono::Utc::now(),
+            ended_at: None,
+        }],
+        ..StageSummary::default()
+    };
+    let Value::Object(object) = serde_json::to_value(spans).unwrap() else {
+        panic!("stage is not an object");
+    };
+    for key in REPORT_ONLY_STAGE_KEYS {
+        assert!(object.contains_key(key), "no stage key {key}");
+    }
 }
 
 #[test]

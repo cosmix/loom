@@ -1,4 +1,5 @@
 use super::*;
+use crate::plan_stats::read_current;
 
 fn collect_merge_summary(stages: &[Stage], work_dir: &WorkDir) -> Result<MergeSummary> {
     // Get merge point for merge report
@@ -54,6 +55,7 @@ pub fn collect_status_data(work_dir: &WorkDir) -> Result<StatusData> {
             work_dir.root(),
             crate::fs::stage_events::RECENT_LIMIT,
         ),
+        plan_stats: read_current(work_dir.root()),
     })
 }
 
@@ -65,4 +67,36 @@ fn fresh_flow(work_dir: &WorkDir) -> Option<crate::tokens::TokenFlow> {
         .filter(|flow| flow_is_fresh(flow.observed_at, now))?;
     sanitize_token_flow(&mut flow);
     Some(flow)
+}
+
+#[cfg(test)]
+mod plan_overview_tests {
+    use super::super::tests::{make_test_stage, temp_work_dir};
+    use super::*;
+    use crate::models::stage::phases::{Phase, PhaseSpan};
+
+    #[test]
+    fn a_summary_carries_the_stage_phases_and_completion_time() {
+        let (_tmp, work_dir) = temp_work_dir();
+        let started = Utc::now() - chrono::Duration::seconds(120);
+        let mut stage = make_test_stage("done", StageStatus::Completed);
+        stage.completed_at = Some(started + chrono::Duration::seconds(90));
+        stage.phases = vec![PhaseSpan {
+            phase: Phase::Executing,
+            started_at: started,
+            ended_at: stage.completed_at,
+        }];
+
+        let summary = build_stage_summary(&stage, &[], &work_dir);
+
+        assert_eq!(summary.completed_at, stage.completed_at);
+        assert_eq!(summary.phases, stage.phases);
+    }
+
+    #[test]
+    fn a_work_dir_without_a_finished_plan_report_has_no_plan_stats() {
+        let (_tmp, work_dir) = temp_work_dir();
+
+        assert!(collect_status_data(&work_dir).unwrap().plan_stats.is_none());
+    }
 }

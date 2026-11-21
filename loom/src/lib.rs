@@ -25,6 +25,7 @@ pub mod parser;
 pub mod plan;
 pub mod plan_server;
 pub mod plan_session;
+mod plan_stats;
 pub mod planning;
 pub mod pressure;
 pub mod process;

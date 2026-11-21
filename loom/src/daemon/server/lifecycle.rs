@@ -18,6 +18,7 @@ use crate::daemon::{socket_path_fits, SOCKET_FILE, SUN_PATH_MAX};
 use crate::orchestrator::core::{
     abort_foreign_state, check_lock_identity, LockCheck, LockIdentity,
 };
+use crate::tokens::TokenTracker;
 
 use anyhow::{Context, Result};
 use nix::unistd::setsid;
@@ -170,16 +171,29 @@ impl DaemonServer {
             .set_nonblocking(true)
             .context("Failed to set socket to non-blocking")?;
 
-        // Spawn the orchestrator thread to actually run stages
-        let orchestrator_handle = spawn_orchestrator(self, lock_identity)?;
+        // The token tracker runs before the scheduler is ready: the scheduler
+        // owns its end, stopping and joining it before the run's final scan.
+        let token_tracker = TokenTracker::spawn(self.work_dir.clone());
+        let orchestrator_handle =
+            match spawn_orchestrator(self, lock_identity, Arc::clone(&token_tracker)) {
+                Ok(handle) => handle,
+                Err(error) => {
+                    token_tracker.stop_and_join();
+                    return Err(error);
+                }
+            };
 
         // Announce readiness only after both the socket and scheduler initialize.
         let _ = nix::unistd::write(&ready, &[READY_BYTE]);
         drop(ready);
 
-        let log_tail_handle = spawn_log_tailer(self);
-        let status_broadcast_handle = spawn_status_broadcaster(self);
-        let producers = spawn_producers(self);
+        let threads = ServerThreads {
+            orchestrator: orchestrator_handle,
+            log_tail: spawn_log_tailer(self),
+            status_broadcast: spawn_status_broadcaster(self),
+            quota_poller: spawn_quota_poller(self),
+            token_tracker,
+        };
         let client_pool = WorkerPool::new(CLIENT_WORKERS, CLIENT_QUEUE_CAPACITY);
         let byte_budget = ByteBudget::new(MAX_IN_FLIGHT_REQUEST_BYTES);
 
@@ -188,34 +202,9 @@ impl DaemonServer {
         // Stop queued clients and wait for active handlers before releasing the
         // singleton: a stage-control handler may still be changing state.
         self.shutdown_flag.store(true, Ordering::SeqCst);
+        threads.token_tracker.stop();
         client_pool.shutdown();
-
-        // Wait for threads to finish with timeout (5 seconds)
-        let join_timeout = Duration::from_secs(5);
-        let join_check_interval = Duration::from_millis(50);
-
-        // Helper closure to wait for a thread with timeout
-        let wait_with_timeout = |handle: thread::JoinHandle<()>, name: &str| {
-            let start = std::time::Instant::now();
-            while !handle.is_finished() && start.elapsed() < join_timeout {
-                thread::sleep(join_check_interval);
-            }
-            if handle.is_finished() {
-                let _ = handle.join();
-            } else {
-                eprintln!("Warning: {} thread did not terminate within timeout", name);
-                // Thread will be abandoned but the process is exiting anyway
-            }
-        };
-
-        if let Some(handle) = orchestrator_handle {
-            wait_with_timeout(handle, "orchestrator");
-        }
-        if let Some(handle) = log_tail_handle {
-            wait_with_timeout(handle, "log_tail");
-        }
-        wait_with_timeout(status_broadcast_handle, "status_broadcast");
-        join_producers(producers, wait_with_timeout);
+        threads.join();
 
         self.cleanup()?;
         Ok(())
@@ -293,27 +282,51 @@ impl DaemonServer {
     }
 }
 
-/// Background threads that publish status inputs on their own cadence.
-struct Producers {
+/// The daemon's background threads, joined at shutdown.
+struct ServerThreads {
+    orchestrator: Option<thread::JoinHandle<()>>,
+    log_tail: Option<thread::JoinHandle<()>>,
+    status_broadcast: thread::JoinHandle<()>,
     quota_poller: thread::JoinHandle<()>,
-    token_tracker: thread::JoinHandle<()>,
+    /// Shared with the scheduler, which joins it first when the run ends.
+    token_tracker: Arc<TokenTracker>,
 }
 
-/// Start the quota poller and the token tracker.
-fn spawn_producers(server: &DaemonServer) -> Producers {
-    Producers {
-        quota_poller: spawn_quota_poller(server),
-        token_tracker: crate::tokens::tracker::spawn_token_tracker(
-            server.work_dir.clone(),
-            Arc::clone(&server.shutdown_flag),
-        ),
+impl ServerThreads {
+    /// Waits for each thread in turn, the orchestrator first, giving each at
+    /// most five seconds; one still running then is abandoned, as the process
+    /// is exiting.
+    fn join(self) {
+        let threads = [
+            (self.orchestrator, "orchestrator"),
+            (self.log_tail, "log_tail"),
+            (Some(self.status_broadcast), "status_broadcast"),
+            (Some(self.quota_poller), "quota_poller"),
+        ];
+        for (handle, name) in threads {
+            if let Some(handle) = handle {
+                wait_with_timeout(handle, name);
+            }
+        }
+        // Taken only after the orchestrator was waited for: a scheduler that
+        // is ending the tracker takes it first and joins it itself.
+        if let Some(handle) = self.token_tracker.take_thread() {
+            wait_with_timeout(handle, "token_tracker");
+        }
     }
 }
 
-/// Wait for the producer threads one after the other through `wait`.
-fn join_producers(producers: Producers, wait: impl Fn(thread::JoinHandle<()>, &str)) {
-    wait(producers.quota_poller, "quota_poller");
-    wait(producers.token_tracker, "token_tracker");
+fn wait_with_timeout(handle: thread::JoinHandle<()>, name: &str) {
+    let join_timeout = Duration::from_secs(5);
+    let start = Instant::now();
+    while !handle.is_finished() && start.elapsed() < join_timeout {
+        thread::sleep(Duration::from_millis(50));
+    }
+    if handle.is_finished() {
+        let _ = handle.join();
+    } else {
+        eprintln!("Warning: {name} thread did not terminate within timeout");
+    }
 }
 
 /// Move the existing daemon log aside to `<log>.prev`, keeping exactly one

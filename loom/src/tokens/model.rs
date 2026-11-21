@@ -47,6 +47,27 @@ impl TokenUsage {
         self.cache_read = self.cache_read.saturating_add(other.cache_read);
         self.output = self.output.saturating_add(other.output);
     }
+
+    /// The ledger's cache hit: the share of `cache_read` in `cache_read + input +
+    /// cache_write`, rounded half up; `None` when the input side is empty.
+    pub fn cache_hit_percent(&self) -> Option<u8> {
+        let input_side = self
+            .cache_read
+            .saturating_add(self.input)
+            .saturating_add(self.cache_write);
+        share_percent(self.cache_read, input_side)
+    }
+}
+
+/// `part / whole` as a whole percent, rounded half up and capped at 100; `None` for an
+/// empty whole.
+pub fn share_percent(part: u64, whole: u64) -> Option<u8> {
+    if whole == 0 {
+        return None;
+    }
+    let doubled = part.saturating_mul(200).saturating_add(whole);
+    let percent = (doubled / whole.saturating_mul(2)).min(100);
+    Some(percent as u8)
 }
 
 /// A token count a source line may leave out: an absent field and a JSON
