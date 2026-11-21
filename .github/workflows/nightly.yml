@@ -7,6 +7,15 @@ on:
   schedule:
     - cron: "30 3 * * *"
   workflow_dispatch:
+    inputs:
+      jobs:
+        description: "Which jobs to run"
+        type: choice
+        default: all
+        options:
+          - all
+          - linux-probes
+          - macos
   pull_request:
 
 concurrency:
@@ -59,7 +68,8 @@ jobs:
   toolchain-probes:
     name: Toolchain probes (linux)
     needs: changes
-    if: needs.changes.outputs.run == 'true'
+    # inputs.jobs is empty on schedule and pull_request runs.
+    if: needs.changes.outputs.run == 'true' && inputs.jobs != 'macos'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -232,7 +242,7 @@ jobs:
   test-macos:
     name: Test (macos, ${{ matrix.suite }})
     needs: changes
-    if: needs.changes.outputs.run == 'true'
+    if: needs.changes.outputs.run == 'true' && inputs.jobs != 'linux-probes'
     runs-on: macos-latest
     timeout-minutes: 90
     strategy:
