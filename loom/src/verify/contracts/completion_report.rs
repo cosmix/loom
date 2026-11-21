@@ -12,7 +12,7 @@ pub struct ContractCheck {
 }
 
 /// One contract's failures, none when it passes, and the environment marker
-/// (`criteria::environment::environment_marker`) its failing run printed.
+/// (`environment::environment_marker`) its failing run printed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContractVerdict {
     pub id: String,

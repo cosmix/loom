@@ -6,9 +6,11 @@ use anyhow::anyhow;
 use tempfile::TempDir;
 
 use super::child_complete::{observe_impact, record_failed_impact};
+use crate::testrun::TestTarget;
 use crate::verify::completion::IMPACT_TESTS_LABEL;
 use crate::verify::impact_tests::{
-    load_observed, record_observed, FailureKind, ImpactFailure, ImpactTestsFailed, ObservedImpact,
+    load_observed, record_observed, selection_digest, FailureKind, ImpactFailure,
+    ImpactTestsFailed, ObservedImpact,
 };
 
 const STAGE: &str = "stage-a";
@@ -18,6 +20,10 @@ fn failures() -> Vec<ImpactFailure> {
         id: "IT-cargo-test:.".to_string(),
         command: "cargo test -- a".to_string(),
         tests: vec!["a".to_string()],
+        selection_digest: selection_digest(&[TestTarget {
+            file: "src/lib.rs".to_string(),
+            name: Some("a".to_string()),
+        }]),
         kind: FailureKind::Fails { failed: Some(2) },
         base: "it passes at the stage's base 0123abcd".to_string(),
         accepted: None,

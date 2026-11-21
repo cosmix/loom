@@ -1,11 +1,21 @@
-//! The macOS boundary: a Seatbelt profile run through `sandbox-exec`.
+//! The macOS boundary: a Seatbelt profile run through `sandbox-exec`. The
+//! profile renders on any host ([`profile`]), so its policy contracts run on
+//! Linux too; only macOS applies it.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use crate::stage_cache::base_checkout::BASE_CHECKOUT_PARENTS;
+use crate::stage_cache::StageCache;
+
 use super::{ancestors, protected, read_roots_beside, writable_roots, CargoScratch};
 use super::{environment_path, Grants, NetworkAccess};
+
+#[path = "confine_seatbelt_files.rs"]
+mod files;
+use files::{hidden_rules, host_cargo_home_rules, readable_file_rules};
+use files::{HIDDEN_IN_M2, READABLE_IN_GIT_CONFIG};
 
 /// `path` as an SBPL string literal. JSON escapes each character below
 /// U+0020 (`\u0001`, `\b`), and SBPL's string reader does not document those
@@ -79,8 +89,9 @@ fn seatbelt_path_rules(
 }
 
 /// Rules naming single paths, after the root rules they refine: the tree's
-/// protected paths, files hidden above it and in the host's Cargo and Maven
-/// homes, and the stage cache's host-job sccache socket.
+/// protected paths, the directories above it listed and the Cargo files there
+/// hidden, files hidden in the host's Cargo and Maven homes, and the stage
+/// cache's host-job sccache socket.
 fn named_rules(
     original: &Command,
     tree: &Path,
@@ -88,17 +99,14 @@ fn named_rules(
     grants: &Grants<'_>,
     readable: &[PathBuf],
 ) -> Result<String> {
-    let mut profile = String::new();
-    let paths = protected::protected(tree);
-    let named = [&paths.read_only, &paths.hidden_files, &paths.hidden_dirs];
-    let named: Vec<PathBuf> = named.into_iter().flatten().cloned().collect();
-    profile.push_str(&protected::seatbelt_rules(&paths, quote_checked(&named)?));
-    if let Some(journals) = grants.memory_journals {
-        profile.push_str(&protected::memory_journals_rule(&quote(&journals.dir)?));
-    }
+    let mut profile = protected_rules(tree, grants)?;
+    // The listings precede the Cargo file denies, so a deny still wins for a
+    // hidden file whatever spelling names it.
+    let listed = ancestors::listed_above(tree);
+    profile.push_str(&ancestors::listing_rules(&listed, quote_checked(&listed)?));
     let hidden = ancestors::hidden_above(tree, readable);
     profile.push_str(&ancestors::seatbelt_rules(&hidden, quote_checked(&hidden)?));
-    if let Some(home) = scratch.host_cargo_home() {
+    if let Some(home) = host_cargo_home(scratch) {
         profile.push_str(&host_cargo_home_rules(home)?);
     }
     if let Some(home) = environment_path(original, "HOME") {
@@ -115,6 +123,45 @@ fn named_rules(
     }
     profile.push_str(&scratch_socket_rule(scratch.path())?);
     Ok(profile)
+}
+
+/// The tree's protected paths and the memory journals' read-only grant.
+#[cfg(target_os = "macos")]
+fn protected_rules(tree: &Path, grants: &Grants<'_>) -> Result<String> {
+    let paths = protected::protected(tree);
+    let named = [&paths.read_only, &paths.hidden_files, &paths.hidden_dirs];
+    let named: Vec<PathBuf> = named.into_iter().flatten().cloned().collect();
+    let mut rules = protected::seatbelt_rules(&paths, quote_checked(&named)?);
+    if let Some(journals) = grants.memory_journals {
+        rules.push_str(&protected::memory_journals_rule(&quote(&journals.dir)?));
+    }
+    Ok(rules)
+}
+
+/// Off macOS the profile renders only for contract tests, and the protected
+/// paths' Seatbelt rules are not built there: a tree that has some, or a
+/// journals grant, is refused instead of rendered without them.
+#[cfg(not(target_os = "macos"))]
+fn protected_rules(tree: &Path, grants: &Grants<'_>) -> Result<String> {
+    let none = protected::protected(tree) == protected::Protected::default();
+    anyhow::ensure!(
+        none && grants.memory_journals.is_none(),
+        "the Seatbelt profile renders protected paths only on macOS"
+    );
+    Ok(String::new())
+}
+
+/// The host Cargo home the command reads in place.
+#[cfg(target_os = "macos")]
+fn host_cargo_home(scratch: &CargoScratch) -> Option<&Path> {
+    scratch.host_cargo_home()
+}
+
+/// Off macOS a scratch names no home read in place (bubblewrap mounts a
+/// private one), so a contract-test profile carries no Cargo home rules.
+#[cfg(not(target_os = "macos"))]
+fn host_cargo_home(_: &CargoScratch) -> Option<&Path> {
+    None
 }
 
 /// Unix sockets below the command's own scratch directory (its `TMPDIR`),
@@ -144,38 +191,6 @@ fn scratch_socket_rule(scratch: &Path) -> Result<String> {
     Ok(rules)
 }
 
-/// Maven files that never reach a confined command: the user's settings, which
-/// can hold repository credentials, and the JDK toolchains file that
-/// `actions/setup-java` writes. Maven fails on a file it can see but not read
-/// (`Non-readable toolchains`), so they are hidden like the Cargo config files.
-const HIDDEN_IN_M2: [&str; 3] = ["settings.xml", "settings-security.xml", "toolchains.xml"];
-
-/// Git's per-user ignore and attributes files, which it and Cargo's Git
-/// library read by default when no config names others (the user's config is
-/// already out: `GIT_CONFIG_GLOBAL=/dev/null` in `apply_environment`). The
-/// stage environment carries no `XDG_CONFIG_HOME`, so they sit under
-/// `$HOME/.config/git`. Unreadable, the ignore file failed every Cargo build
-/// script's first fingerprint with "Could not read repository exclude", and
-/// hiding it does not help: the library fails on any open error other than
-/// `ENOENT`, and Seatbelt denies with `EPERM`. They hold path patterns, no
-/// credentials, so they are readable.
-const READABLE_IN_GIT_CONFIG: [&str; 2] = ["ignore", "attributes"];
-
-/// Rules letting a confined command read each existing file of `paths`, at its
-/// path and at its symlink target.
-fn readable_file_rules(paths: &[PathBuf]) -> Result<String> {
-    let mut rules = String::new();
-    for path in paths {
-        let Ok(target) = path.canonicalize() else {
-            continue;
-        };
-        for file in std::iter::once(path.clone()).chain((target != *path).then_some(target)) {
-            rules.push_str(&format!("(allow file-read* (literal {}))", quote(&file)?));
-        }
-    }
-    Ok(rules)
-}
-
 /// The host-job sccache server socket in the stage cache root
 /// (`SCCACHE_SERVER_UDS`), the only Unix socket a confined command may bind or
 /// connect to: the session's and the workers' servers run compilers outside
@@ -194,21 +209,42 @@ fn sccache_socket_rule(root: &Path) -> Result<String> {
     Ok(rules)
 }
 
+/// The directories below this process's cache base holding other consumers'
+/// sccache servers: `<cache base>/loom/stage-cache`, every stage's cache root,
+/// and `<cache base>/loom/stage-base`, every base run's cache. Derived as
+/// `StageCache::resolve_from_process` derives a root; the repository and stage
+/// named here only pick a root whose parent is wanted. A missing `HOME` fails
+/// the profile: provisioning without these denials would reach those servers.
+fn process_cache_bases() -> Result<Vec<PathBuf>> {
+    let cache = StageCache::resolve_from_process(Path::new("/"), "provision")?;
+    let stage_caches = cache
+        .root()
+        .parent()
+        .context("a stage cache root has a parent")?;
+    let base_runs = stage_caches.with_file_name(BASE_CHECKOUT_PARENTS[1]);
+    Ok(vec![stage_caches.to_path_buf(), base_runs])
+}
+
 /// Provisioning reaches the network, DNS included (the resolver's
-/// `mDNSResponder` socket), but no stage's cache root and no session's scratch
-/// directory, where the stage cache's and the sessions' sccache servers
-/// listen: they run compilers outside this boundary. These denials precede
-/// the path rules, so [`sccache_socket_rule`]'s later grant of the host-job
-/// socket still wins.
+/// `mDNSResponder` socket), but no Unix socket below [`process_cache_bases`],
+/// the granted cache root's parent or the session scratch base, where the
+/// stage caches', base runs' and sessions' sccache servers listen: they run
+/// compilers outside this boundary. The granted root's parent alone would miss
+/// them for a cache outside `<cache base>/loom/stage-cache` (a base run's, or
+/// the impact base comparison's temporary one). These denials precede the
+/// path rules, so [`sccache_socket_rule`]'s later grant of the granted root's
+/// own `h.sock` still wins.
 fn provision_network_rules(grants: &Grants<'_>) -> Result<String> {
     let mut rules = String::from("(allow network-outbound)");
-    let stage_roots = grants.cache_root.and_then(Path::parent);
+    let mut bases = process_cache_bases()?;
+    let granted = grants.cache_root.and_then(Path::parent);
     let scratch = crate::relay::scratch_root_from_env().ok();
-    for base in stage_roots
-        .map(Path::to_path_buf)
-        .into_iter()
-        .chain(scratch)
-    {
+    for base in granted.map(Path::to_path_buf).into_iter().chain(scratch) {
+        if !bases.contains(&base) {
+            bases.push(base);
+        }
+    }
+    for base in bases {
         let canonical = base.canonicalize().ok().filter(|path| *path != base);
         for spelling in std::iter::once(base).chain(canonical) {
             for path in ancestors::seatbelt_spellings(&spelling) {
@@ -245,46 +281,62 @@ fn regex_prefix(directory: &Path) -> Result<String> {
     Ok(regex)
 }
 
-/// Files in a Cargo home that never reach a confined command, as Bubblewrap's
-/// private home keeps them out: the user's config and registry credentials.
-const HIDDEN_IN_CARGO_HOME: [&str; 4] =
-    ["config", "config.toml", "credentials", "credentials.toml"];
+/// The rules every profile starts with. dyld opens the root directory while
+/// discovering the system Cryptex cache, hence the literal `/`.
+const BASE_RULES: &str = "(version 1)(deny default)(allow process*)(allow sysctl-read)(allow mach-lookup)(allow file-read-metadata)(allow file-read* (literal \"/\"))";
 
-/// Rules for the host Cargo home read in place. Its lock and last-use files are
-/// readable, so Cargo opens them and only warns when it cannot write them;
-/// nothing in the home is writable. Its config and credentials files are
-/// hidden by name, metadata included: Cargo fails on a config file it can see
-/// but not read. Each existing file is hidden at its path and its target.
-fn host_cargo_home_rules(home: &Path) -> Result<String> {
-    let home = home.canonicalize().unwrap_or_else(|_| home.to_path_buf());
-    let mut rules = String::new();
-    for name in super::super::scratch::linked_home::STATE_FILES {
-        let state = quote(&home.join(name))?;
-        rules.push_str(&format!("(allow file-read* (literal {state}))"));
+/// `process*` grants no signals. `same-sandbox` lets a command stop its own
+/// children and process groups; an unqualified `(allow signal)` would let it
+/// signal the daemon, the operator's shell and every other process of the
+/// same user.
+const SIGNAL_RULE: &str = "(allow signal (target same-sandbox))";
+
+/// Test servers and dev tools listen on `127.0.0.1:0`. Only a loopback
+/// address may be bound or accept: a wildcard or interface bind would serve
+/// the command's listener to every network the host is on. Connecting stays
+/// an outbound operation, denied in [`NetworkAccess::Denied`]: a remote
+/// `localhost` grant would also reach every unrelated listener on the host's
+/// loopback, so the command can listen but not dial even its own socket.
+///
+/// Residual: Seatbelt's loopback is the host's (bubblewrap gives each command
+/// a private network namespace with its own), so a confined command accepts
+/// connections from unconfined host processes. Taking a well-known port, such
+/// as sccache's default TCP 4226 or an OAuth callback port, it can answer a
+/// host client meant for another server. Revisit if Seatbelt gains a
+/// per-sandbox loopback or a port-range filter for `local ip`.
+const LOCALHOST_LISTENER: &str = "(allow network-bind network-inbound (local ip \"localhost:*\"))";
+
+/// The Seatbelt profile confining `original` to the canonical `tree` with
+/// `scratch` and `grants`. It starts nothing and needs no launcher, so tests
+/// on every host render the profile [`platform_command`] applies.
+pub(super) fn profile(
+    original: &Command,
+    tree: &Path,
+    scratch: &CargoScratch,
+    network: NetworkAccess,
+    grants: &Grants<'_>,
+) -> Result<String> {
+    let mut profile = format!("{BASE_RULES}{SIGNAL_RULE}{LOCALHOST_LISTENER}");
+    if network == NetworkAccess::Provision {
+        profile.push_str(&provision_network_rules(grants)?);
     }
-    rules.push_str(&hidden_rules(
-        &HIDDEN_IN_CARGO_HOME.map(|name| home.join(name)),
-    )?);
-    Ok(rules)
+    profile.push_str(&seatbelt_path_rules(original, tree, scratch, grants)?);
+    Ok(profile)
 }
 
-/// Rules hiding each existing file of `paths`, metadata included, at its path
-/// and at its symlink target.
-fn hidden_rules(paths: &[PathBuf]) -> Result<String> {
-    let mut hidden = Vec::new();
-    for path in paths {
-        if path.symlink_metadata().is_err() {
-            continue;
-        }
-        match path.canonicalize() {
-            Ok(target) if &target != path => hidden.push(target),
-            _ => {}
-        }
-        hidden.push(path.clone());
-    }
-    Ok(ancestors::seatbelt_rules(&hidden, quote_checked(&hidden)?))
+/// The profile a confined `original` in the canonical `tree` runs under with
+/// no grant beyond its own scratch, for contract tests on any host.
+#[cfg(test)]
+pub(crate) fn seatbelt_profile(
+    original: &Command,
+    tree: &Path,
+    network: NetworkAccess,
+) -> Result<String> {
+    let scratch = CargoScratch::prepare(original, tree, false, false)?;
+    profile(original, tree, &scratch, network, &Grants::default())
 }
 
+#[cfg(target_os = "macos")]
 pub(super) fn platform_command(
     original: &Command,
     tree: &Path,
@@ -299,14 +351,7 @@ pub(super) fn platform_command(
     if !launcher.is_file() {
         anyhow::bail!("confined verification requires sandbox-exec");
     }
-    // dyld opens the root directory while discovering the system Cryptex cache.
-    // `process*` grants no signals: `same-sandbox` lets the command stop its own
-    // children and groups, and nothing started outside this sandbox instance.
-    let mut profile = String::from("(version 1)(deny default)(allow process*)(allow signal (target same-sandbox))(allow sysctl-read)(allow mach-lookup)(allow file-read-metadata)(allow file-read* (literal \"/\"))");
-    if network == NetworkAccess::Provision {
-        profile.push_str(&provision_network_rules(grants)?);
-    }
-    profile.push_str(&seatbelt_path_rules(original, tree, scratch, grants)?);
+    let profile = profile(original, tree, scratch, network, grants)?;
     let mut command = Command::new(launcher);
     command
         .arg("-p")
@@ -317,17 +362,21 @@ pub(super) fn platform_command(
 }
 
 #[cfg(test)]
+#[path = "confine_seatbelt_network_tests.rs"]
+mod network_tests;
+
+#[cfg(all(test, target_os = "macos"))]
 #[path = "confine_seatbelt_tests.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "macos"))]
 #[path = "confine_provision_tests.rs"]
 mod provision_tests;
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "macos"))]
 #[path = "confine_seatbelt_signal_tests.rs"]
 mod signal_tests;
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "macos"))]
 #[path = "confine_git_config_tests.rs"]
 mod git_config_tests;

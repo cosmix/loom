@@ -13,7 +13,8 @@ use crate::models::dispute::{
     Citation, ContractRulingKind, DisputeKind, DisputeVerdict, FindingSnapshot, PlanPatch,
 };
 use crate::models::stage::{Stage, StageStatus};
-use crate::verify::impact_tests::{FailureKind, ImpactFailure};
+use crate::testrun::TestTarget;
+use crate::verify::impact_tests::{selection_digest, FailureKind, ImpactFailure};
 use crate::verify::integrity::{EventKind, IntegrityEvent};
 use crate::verify::transitions::load_stage;
 
@@ -64,6 +65,10 @@ fn impact() -> DisputeKind {
         id: "IT-pytest:deps/kit".to_string(),
         command: "uv run pytest tests/test_kit.py".to_string(),
         tests: vec!["tests/test_kit.py".to_string()],
+        selection_digest: selection_digest(&[TestTarget {
+            file: "tests/test_kit.py".to_string(),
+            name: None,
+        }]),
         kind: FailureKind::DoesNotBuild,
         base: "the stage's base 0123abcd proved nothing".to_string(),
         accepted: None,

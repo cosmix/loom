@@ -3,16 +3,19 @@
 //!
 //! A selection is one runner's tests in one package, so a failure is judged
 //! per selection: the adapters read counts from a run's output, never which
-//! test failed.
+//! test failed. A record lists at most `MAX_RECORDED_TESTS` names for display;
+//! what identifies the whole selection is its digest (`selection_digest`).
 
 use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
 use std::path::Path;
 
 use crate::models::dispute::{
     strip_control, tail_to_byte_limit, truncate_to_byte_limit, FAILURE_OUTPUT_MAX_BYTES,
 };
-use crate::testrun::registry;
+use crate::testrun::{registry, TestTarget};
+use crate::utils::sha256_hex;
 use crate::verify::criteria::ProbeRun;
 
 /// How a selection failed.
@@ -77,6 +80,10 @@ pub struct ImpactFailure {
     /// The selected tests: libtest paths, or files for a runner selecting by
     /// file.
     pub tests: Vec<String>,
+    /// `selection_digest` of every selected test, whatever `tests` keeps.
+    /// A record without one loads empty and matches no selection.
+    #[serde(default)]
+    pub selection_digest: String,
     pub kind: FailureKind,
     /// What the same selection did at the stage's base.
     pub base: String,
@@ -109,8 +116,8 @@ impl ImpactFailure {
     /// The failure with every field cut to its bound and stripped of control
     /// characters (the output keeps its line breaks and tabs): what loom
     /// records and a dispute carries. A selection of more than
-    /// `MAX_RECORDED_TESTS` tests keeps the first ones, so an accepted record
-    /// of it never matches the whole selection and judges it again.
+    /// `MAX_RECORDED_TESTS` tests lists the first ones for display; the digest
+    /// still identifies all of them.
     pub fn bounded(&self) -> Self {
         let text = |s: &str| truncate_to_byte_limit(&strip_control(s, &[]), MAX_TEXT_BYTES);
         Self {
@@ -122,6 +129,7 @@ impl ImpactFailure {
                 .take(MAX_RECORDED_TESTS)
                 .map(|test| truncate_to_byte_limit(&strip_control(test, &[]), MAX_TEST_BYTES))
                 .collect(),
+            selection_digest: self.selection_digest.clone(),
             kind: self.kind.clone(),
             base: text(&self.base),
             accepted: self.accepted.as_deref().map(text),
@@ -138,8 +146,33 @@ impl ImpactFailure {
 const MAX_ID_BYTES: usize = 512;
 const MAX_TEST_BYTES: usize = 512;
 const MAX_TEXT_BYTES: usize = 1024;
-/// Most selected tests a recorded failure keeps.
+/// Most selected test names a recorded failure lists for display.
 const MAX_RECORDED_TESTS: usize = 64;
+
+/// Lowercase hex SHA-256 identifying a selection: its distinct targets, each
+/// as its package-relative file and optional test name, in sorted order, every
+/// field length-prefixed. The file is part of the identity because scoped Rust
+/// binaries may share a libtest name; order and repeats are not.
+pub(crate) fn selection_digest(targets: &[TestTarget]) -> String {
+    let distinct: BTreeSet<(&str, Option<&str>)> = targets
+        .iter()
+        .map(|target| (target.file.as_str(), target.name.as_deref()))
+        .collect();
+    let mut bytes = Vec::new();
+    let mut field = |tag: &[u8], text: &str| {
+        bytes.extend_from_slice(tag);
+        bytes.extend_from_slice(&(text.len() as u64).to_le_bytes());
+        bytes.extend_from_slice(text.as_bytes());
+    };
+    for (file, name) in distinct {
+        field(b"f", file);
+        match name {
+            Some(name) => field(b"n", name),
+            None => field(b"-", ""),
+        }
+    }
+    sha256_hex(&bytes)
+}
 
 /// What starts every id; the runner name follows it up to [`ID_SEPARATOR`].
 const ID_PREFIX: &str = "IT-";
@@ -161,10 +194,7 @@ pub fn failure_id(runner: &str, package: &Path) -> String {
 /// and a package path of printable characters, at most `MAX_ID_BYTES` long.
 pub fn check_failure_id(id: &str) -> Result<()> {
     let shape = "IT-<runner>:<package>, as `loom stage complete` lists it";
-    let Some((runner, package)) = id
-        .strip_prefix(ID_PREFIX)
-        .and_then(|rest| rest.split_once(ID_SEPARATOR))
-    else {
+    let Some((runner, package)) = split_failure_id(id) else {
         bail!("'{id}' is not an impact-test id ({shape})");
     };
     if registry::by_name(runner).is_none() {
@@ -174,6 +204,11 @@ pub fn check_failure_id(id: &str) -> Result<()> {
         bail!("'{id}' is not an impact-test id ({shape})");
     }
     Ok(())
+}
+
+/// The runner name and package label of an id of the shape `failure_id` gives.
+pub(super) fn split_failure_id(id: &str) -> Option<(&str, &str)> {
+    id.strip_prefix(ID_PREFIX)?.split_once(ID_SEPARATOR)
 }
 
 /// The package as a note names it: its checkout-relative path, `.` for the root.

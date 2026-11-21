@@ -138,7 +138,9 @@ fn a_passed_record_without_a_result_queues_nothing() {
 #[test]
 #[serial_test::serial]
 fn a_plan_v1_or_knowledge_stage_queues_nothing() {
-    for fx in [held(StageType::Standard, 1), held(StageType::Knowledge, 2)] {
+    // One fixture at a time: each pins HOME, so fixtures must drop in reverse order.
+    for (stage_type, plan_version) in [(StageType::Standard, 1), (StageType::Knowledge, 2)] {
+        let fx = held(stage_type, plan_version);
         fx.passed();
         assert_ineligible(&fx);
     }

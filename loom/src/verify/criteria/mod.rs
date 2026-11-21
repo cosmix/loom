@@ -55,7 +55,8 @@ mod cache_ignore;
 mod config;
 mod confine;
 mod criterion_eval;
-pub(crate) mod environment;
+#[cfg(test)]
+mod environment;
 #[cfg(test)]
 mod environment_contract_tests;
 mod escapees;
@@ -70,6 +71,8 @@ mod process_table;
 mod result;
 mod runner;
 mod runner_results;
+#[cfg(test)]
+mod seatbelt_grant_contract_tests;
 mod spawn_observer;
 mod zero_tests;
 

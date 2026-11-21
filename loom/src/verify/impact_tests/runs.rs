@@ -1,6 +1,7 @@
 //! Running each runner's selection and judging what it printed.
 
 use std::collections::BTreeSet;
+use std::fmt;
 use std::path::{Path, PathBuf};
 
 use super::failure::{failure_id, output_tail, package_label, FailureKind};
@@ -8,6 +9,7 @@ use super::scoped;
 use super::{FULL_SUITE, IMPACT_TIMEOUT};
 use crate::testrun::{classify, RunOutcome, RunOutput, TestRunnerAdapter, TestTarget};
 use crate::verify::criteria::{ProbeRun, ProbeRunner};
+use crate::verify::environment::run_output_denial;
 
 /// A command longer than this many bytes displays shortened.
 const COMMAND_DISPLAY_CHARS: usize = 200;
@@ -30,8 +32,60 @@ pub(super) enum Run {
         note: Option<String>,
     },
     /// It was not run, or proved nothing: why.
-    Inconclusive(String),
+    Inconclusive(Inconclusive),
     Failed(Failure),
+}
+
+/// Why a run proved nothing.
+pub(super) struct Inconclusive {
+    why: String,
+    environment: bool,
+}
+
+impl Inconclusive {
+    /// The sandbox refused the run: `denial` is the line it printed
+    /// (`environment::sandbox_denial`).
+    pub(super) fn environment(denial: &str) -> Self {
+        Self::unrunnable(format!("environment failure (sandbox denial: {denial})"))
+    }
+
+    /// The checkout lacks an installed environment the runner needs: `why`
+    /// says which.
+    pub(super) fn missing_dependency(why: String) -> Self {
+        Self::unrunnable(why)
+    }
+
+    /// A run the checkout's environment cannot do, not a verdict on the code:
+    /// a refused sandbox or a missing dependency. [`Self::is_environment`] is
+    /// true for it, so a caller can tell it from a run that proved nothing for
+    /// another reason.
+    fn unrunnable(why: String) -> Self {
+        Self {
+            why,
+            environment: true,
+        }
+    }
+
+    /// Whether the run could not happen for want of its environment: a refused
+    /// sandbox or a missing dependency.
+    pub(super) fn is_environment(&self) -> bool {
+        self.environment
+    }
+}
+
+impl From<String> for Inconclusive {
+    fn from(why: String) -> Self {
+        Self {
+            why,
+            environment: false,
+        }
+    }
+}
+
+impl fmt::Display for Inconclusive {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.why)
+    }
 }
 
 /// A selection run that failed.
@@ -48,7 +102,7 @@ impl Site<'_> {
     /// (`scoped`). A selection that cannot be run (the command does not
     /// spawn, for one too long for the OS to exec) is inconclusive, never a
     /// failure.
-    pub(super) fn run(
+    pub(super) fn run_selection(
         &self,
         package: &Path,
         adapter: &dyn TestRunnerAdapter,
@@ -58,11 +112,12 @@ impl Site<'_> {
         if let Some(missing) = missing_environment(&package_dir, self.root, adapter) {
             let name = package_label(package);
             let place = self.place;
-            return Run::Inconclusive(format!("`{name}` has no {missing} in {place}"));
+            let why = format!("`{name}` has no {missing} in {place}");
+            return Run::Inconclusive(Inconclusive::missing_dependency(why));
         }
         let Some(command) = scoped::select_command(self.root, package, adapter, targets) else {
             let runner = adapter.name();
-            return Run::Inconclusive(format!("{runner} cannot select tests by file"));
+            return Run::Inconclusive(format!("{runner} cannot select tests by file").into());
         };
         let shown = shown_command(&command, targets.len());
         // Only the root cause is shown: the context chain repeats the whole command.
@@ -70,12 +125,12 @@ impl Site<'_> {
             Ok(run) => run,
             Err(error) => {
                 let cause = error.root_cause();
-                return Run::Inconclusive(format!("`{shown}` could not be run ({cause})"));
+                return Run::Inconclusive(format!("`{shown}` could not be run ({cause})").into());
             }
         };
         if run.timed_out {
             let secs = IMPACT_TIMEOUT.as_secs();
-            return Run::Inconclusive(format!("`{shown}` timed out after {secs} s"));
+            return Run::Inconclusive(format!("`{shown}` timed out after {secs} s").into());
         }
         judge(shown, adapter, &run)
     }
@@ -84,7 +139,7 @@ impl Site<'_> {
 /// A finished run, shown as `command`: passed, inconclusive, or how it failed.
 fn judge(command: String, adapter: &dyn TestRunnerAdapter, run: &ProbeRun) -> Run {
     if run.exit_code == Some(127) {
-        return Run::Inconclusive(format!("`{command}` could not start (exit 127)"));
+        return Run::Inconclusive(format!("`{command}` could not start (exit 127)").into());
     }
     if !run.output_complete {
         return judge_incomplete_capture(command, run);
@@ -93,6 +148,13 @@ fn judge(command: String, adapter: &dyn TestRunnerAdapter, run: &ProbeRun) -> Ru
     if let Some(verdict) = judge_cached(&command, adapter, run) {
         return verdict;
     }
+    judge_parsed(command, adapter, run)
+}
+
+/// A finished, completely captured run judged by what the adapter parses from
+/// its output. A run the adapter reads nothing from that failed and printed a
+/// sandbox denial is inconclusive: the sandbox, not the tests, ended it.
+fn judge_parsed(command: String, adapter: &dyn TestRunnerAdapter, run: &ProbeRun) -> Run {
     let output = RunOutput {
         stdout: &run.stdout,
         stderr: &run.stderr,
@@ -107,7 +169,7 @@ fn judge(command: String, adapter: &dyn TestRunnerAdapter, run: &ProbeRun) -> Ru
             }
         }
         RunOutcome::NotSelected => {
-            return Run::Inconclusive(format!("`{command}` selected no test"));
+            return Run::Inconclusive(format!("`{command}` selected no test").into());
         }
         RunOutcome::Unparsed if run.exit_code == Some(0) => {
             let note = exit_code_note(&command, adapter);
@@ -120,9 +182,14 @@ fn judge(command: String, adapter: &dyn TestRunnerAdapter, run: &ProbeRun) -> Ru
             failed: summary.failed,
         },
         RunOutcome::BuildFailed => FailureKind::DoesNotBuild,
-        RunOutcome::Unparsed => FailureKind::Unparsed {
-            exit_code: run.exit_code,
-        },
+        RunOutcome::Unparsed => {
+            if let Some(denial) = run_output_denial(&run.stdout, &run.stderr) {
+                return Run::Inconclusive(Inconclusive::environment(&denial));
+            }
+            FailureKind::Unparsed {
+                exit_code: run.exit_code,
+            }
+        }
     };
     Run::Failed(Failure {
         command,
@@ -132,10 +199,12 @@ fn judge(command: String, adapter: &dyn TestRunnerAdapter, run: &ProbeRun) -> Ru
 }
 
 /// A run whose capture lost output. Only a passing exit needs the output its
-/// count would come from. A failing exit fails whatever the capture lost.
+/// count would come from. A failing exit fails whatever the capture lost, even
+/// when the kept tail prints a denial marker: a truncated tail cannot tell a
+/// refused sandbox from a test's own assertion text.
 fn judge_incomplete_capture(command: String, run: &ProbeRun) -> Run {
     if run.exit_code == Some(0) {
-        return Run::Inconclusive(format!("`{command}` output capture was incomplete"));
+        return Run::Inconclusive(format!("`{command}` output capture was incomplete").into());
     }
     Run::Failed(Failure {
         command,
@@ -151,7 +220,9 @@ fn judge_incomplete_capture(command: String, run: &ProbeRun) -> Run {
 fn judge_cached(command: &str, adapter: &dyn TestRunnerAdapter, run: &ProbeRun) -> Option<Run> {
     let cached = run.cached.as_ref()?;
     match (cached.tests_executed, run.exit_code) {
-        (Some(0), _) => Some(Run::Inconclusive(format!("`{command}` selected no test"))),
+        (Some(0), _) => Some(Run::Inconclusive(
+            format!("`{command}` selected no test").into(),
+        )),
         (Some(_), Some(0)) => Some(Run::Passed {
             command: command.to_string(),
             note: None,
@@ -171,7 +242,7 @@ fn exit_code_note(command: &str, adapter: &dyn TestRunnerAdapter) -> String {
 }
 
 /// A selection that failed in the worktree, with what re-running it needs.
-pub(super) struct Failed {
+pub(in crate::verify) struct Failed {
     pub(super) id: String,
     pub(super) package: PathBuf,
     pub(super) adapter: &'static dyn TestRunnerAdapter,
@@ -189,16 +260,16 @@ impl Failed {
 }
 
 /// The selections of one completion check and what they left.
-pub(super) struct Selection<'a> {
+pub(in crate::verify) struct Selection<'a> {
     site: Site<'a>,
-    pub(super) ran: Vec<String>,
-    pub(super) notes: BTreeSet<String>,
-    pub(super) failed: Vec<Failed>,
+    pub(in crate::verify) ran: Vec<String>,
+    pub(in crate::verify) notes: BTreeSet<String>,
+    pub(in crate::verify) failed: Vec<Failed>,
 }
 
 impl<'a> Selection<'a> {
     /// Selections run in the worktree checked out at `root`.
-    pub(super) fn new(
+    pub(in crate::verify) fn new(
         root: &'a Path,
         runner: &'a dyn ProbeRunner,
         notes: BTreeSet<String>,
@@ -217,13 +288,13 @@ impl<'a> Selection<'a> {
 
     /// Run `adapter`'s selection of `targets` in `package`, recording it as
     /// passed, a note, or a failure.
-    pub(super) fn run_group(
+    pub(in crate::verify) fn run_group(
         &mut self,
         package: &Path,
         adapter: &'static dyn TestRunnerAdapter,
         targets: &[TestTarget],
     ) {
-        match self.site.run(package, adapter, targets) {
+        match self.site.run_selection(package, adapter, targets) {
             Run::Passed { command, note } => {
                 self.notes.extend(note);
                 self.ran.push(command);

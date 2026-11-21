@@ -18,7 +18,7 @@ use crate::verify::contracts::format_gate::{format_problems, static_problems};
 use crate::verify::contracts::site::ContractSite;
 use crate::verify::contracts::{is_contract_or_harness, normalize};
 use crate::verify::criteria::confined_stage_cache;
-use crate::verify::criteria::environment::environment_marker;
+use crate::verify::environment::environment_marker;
 
 /// How long one contract test may run.
 const CONTRACT_TIMEOUT: Duration = Duration::from_secs(300);

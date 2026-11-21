@@ -1,8 +1,9 @@
 //! Applying the verdict on an impact-test dispute (DESIGN D14, D15).
 //!
 //! `accept` records each disputed failure in `reviews/<stage>/impact.json` as
-//! the dispute's evidence showed it, so the gate notes it while it gets no
-//! worse; `reject` tells the agent the failures stand. Both re-queue the stage
+//! the dispute's evidence showed it, selection digest included, so the gate
+//! notes it while it fails exactly as accepted over the same selection;
+//! `reject` tells the agent the failures stand. Both re-queue the stage
 //! like the other plan v2 kinds (`apply_kinds.rs`). The evidence is the
 //! daemon's copy of loom's observed record (`stage_service/dispute_kinds.rs`),
 //! so nothing the filing agent wrote reaches `impact.json`.

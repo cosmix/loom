@@ -37,7 +37,7 @@ impl Report {
         } = selection;
         let mut unsettled = Vec::new();
         for mut failed in failed {
-            match accepted.standing(&failed.id, &failed.failure.kind, &failed.tests()) {
+            match accepted.standing(&failed.id, &failed.failure.kind, &failed.targets) {
                 Standing::Covered(note) => {
                     notes.insert(format!("{note}; {FULL_SUITE}"));
                 }
@@ -135,6 +135,9 @@ fn beyond_note(beyond: &[ImpactFailure]) -> String {
     )
 }
 
+#[cfg(test)]
+#[path = "report_digest_tests.rs"]
+mod digest_tests;
 #[cfg(test)]
 #[path = "report_tests.rs"]
 mod tests;

@@ -354,3 +354,37 @@ fn temporary_directories_are_private_and_writable() {
         assert!(!std::path::Path::new(root).join(&name).exists(), "{root}");
     }
 }
+
+/// Bubblewrap's private network namespace has its own loopback: a confined
+/// command listens on `127.0.0.1` and connects to itself. Seatbelt's localhost
+/// listener grant on macOS allows the listen but not the dial, which stays an
+/// outbound connect the denied network refuses. Skips where the boundary has
+/// no `perl`.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_confined_command_binds_and_connects_on_its_own_loopback() {
+    if !crate::process::sandbox_probe::confined_commands_runnable() {
+        return;
+    }
+    let cwd = tempfile::tempdir().unwrap();
+    let line = "command -v perl >/dev/null || { echo NO_PERL; exit 0; }; \
+        perl -MIO::Socket::INET -e '$s = IO::Socket::INET->new(LocalAddr => \
+        \"127.0.0.1\", LocalPort => 0, Proto => \"tcp\", Listen => 1) or die \"listen\\n\"; \
+        IO::Socket::INET->new(PeerAddr => \"127.0.0.1\", PeerPort => $s->sockport, \
+        Proto => \"tcp\") or die \"connect\\n\"; print \"LOOPBACK_OK\\n\"'";
+    let result = run_spec_with_timeout(
+        &CommandSpec::shell(line),
+        Some(cwd.path()),
+        Duration::from_secs(15),
+        CommandConfinement::Confined,
+    )
+    .unwrap();
+    if result.stdout.contains("NO_PERL") {
+        eprintln!("SKIP a_confined_command_binds_and_connects_on_its_own_loopback: no perl");
+        return;
+    }
+    assert!(
+        result.success && result.stdout.contains("LOOPBACK_OK"),
+        "the confined loopback listener takes a connect: {result:?}"
+    );
+}

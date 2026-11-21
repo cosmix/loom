@@ -25,11 +25,11 @@ mod report;
 pub use report::{guidance, ContractCheck, ContractVerdict};
 
 use super::trial::TrialFile;
-use crate::verify::criteria::environment::environment_marker;
 use crate::verify::criteria::{
     confined_stage_cache, plan_confinement, resolve_confinement, CachePolicy, CachedRun,
     CriteriaConfig, CriteriaProbe, ProbeRun, ProbeRunner,
 };
+use crate::verify::environment::environment_marker;
 
 /// Fail unless every frozen file is unchanged and every contract passes.
 pub fn check(

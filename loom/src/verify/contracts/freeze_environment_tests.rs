@@ -67,3 +67,26 @@ fn a_build_failure_stays_an_accepted_red_even_with_a_marker_in_its_output() {
 
     assert_eq!(report.expect("a build failure").outcome, BUILD_FAILED);
 }
+
+#[test]
+fn a_counted_assertion_naming_eperm_keeps_its_verdict() {
+    let counted = "running 1 test\ntest signals::kills_child ... FAILED\n\nfailures:\n\n\
+                   ---- signals::kills_child stdout ----\nassertion `left == right` failed\n  \
+                   left: \"EPERM\"\n right: \"ESRCH\"\n\nfailures:\n    signals::kills_child\n\n\
+                   test result: FAILED. 0 passed; 1 failed; 0 ignored\n";
+
+    let report = judge(red(), counted, "");
+
+    assert_eq!(
+        report
+            .expect("a counted failure is the test's own red")
+            .outcome,
+        "failed",
+        "a counted assertion keeps its verdict"
+    );
+    let refused = "Error: kill EPERM\nbwrap: setting up uid map: refused";
+    assert!(
+        judge(RunSummary::default(), "", refused).is_err(),
+        "a launcher refusal is still an environment red"
+    );
+}

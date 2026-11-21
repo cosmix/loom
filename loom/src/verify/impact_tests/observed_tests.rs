@@ -2,16 +2,24 @@
 
 use super::*;
 use crate::models::dispute::FAILURE_OUTPUT_MAX_BYTES;
-use crate::testrun::registry;
+use crate::testrun::{registry, TestTarget};
 use crate::verify::impact_tests::failure::failure_id;
-use crate::verify::impact_tests::FailureKind;
+use crate::verify::impact_tests::{selection_digest, FailureKind};
 use tempfile::TempDir;
+
+fn target(name: &str) -> TestTarget {
+    TestTarget {
+        file: "src/lib.rs".to_string(),
+        name: Some(name.to_string()),
+    }
+}
 
 fn failure(id: &str) -> ImpactFailure {
     ImpactFailure {
         id: id.to_string(),
         command: "cargo test -- a".to_string(),
         tests: vec!["a".to_string()],
+        selection_digest: selection_digest(&[target("a")]),
         kind: FailureKind::Fails { failed: Some(1) },
         base: "it passes at the stage's base 0123abcd".to_string(),
         accepted: None,
@@ -51,7 +59,9 @@ fn a_malformed_id_is_refused() {
 fn a_recorded_failure_is_bounded() {
     let mut huge = failure("IT-cargo-test:.");
     huge.output = format!("{}the end", "x".repeat(3 * FAILURE_OUTPUT_MAX_BYTES));
-    huge.tests = (0..500).map(|n| format!("t{n}")).collect();
+    let selected: Vec<TestTarget> = (0..500).map(|n| target(&format!("t{n}"))).collect();
+    huge.tests = selected.iter().filter_map(|t| t.name.clone()).collect();
+    huge.selection_digest = selection_digest(&selected);
     huge.base = "b".repeat(10_000);
 
     let bounded = ObservedImpact::of(&[huge]).failures.remove(0);
@@ -59,6 +69,7 @@ fn a_recorded_failure_is_bounded() {
     assert_eq!(bounded.output.len(), FAILURE_OUTPUT_MAX_BYTES);
     assert!(bounded.output.ends_with("the end"));
     assert_eq!(bounded.tests.len(), 64);
+    assert_eq!(bounded.selection_digest, selection_digest(&selected));
     assert_eq!(bounded.base.len(), 1024);
 }
 

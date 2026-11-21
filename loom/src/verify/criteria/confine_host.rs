@@ -47,9 +47,12 @@ mod developer_tools;
 #[path = "confine_ancestors.rs"]
 mod ancestors;
 
-#[cfg(target_os = "macos")]
+// Linux test builds render the profile for its policy contracts.
+#[cfg(any(target_os = "macos", all(test, target_os = "linux")))]
 #[path = "confine_seatbelt.rs"]
 mod seatbelt;
+#[cfg(all(test, any(target_os = "macos", target_os = "linux")))]
+pub(crate) use seatbelt::seatbelt_profile;
 
 #[path = "confine_paths.rs"]
 mod paths;

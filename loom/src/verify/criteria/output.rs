@@ -2,6 +2,7 @@
 
 use crate::testrun::RunningTests;
 use crate::verify::criteria::CriterionResult;
+use crate::verify::environment::run_denial;
 
 /// Number of trailing lines of stdout/stderr shown for a failed or timed-out
 /// criterion.
@@ -42,10 +43,8 @@ pub(crate) fn format_criterion_result(
 
     let mut lines = vec![label];
 
-    lines.push(match result.exit_code {
-        Some(code) => format!("    exit code: {code}"),
-        None => "    exit code: none (the process was killed or timed out)".to_string(),
-    });
+    lines.push(exit_code_line(result.exit_code));
+    lines.extend(environment_note(index, result));
 
     if !setup.is_empty() {
         lines.push(format!(
@@ -70,6 +69,35 @@ pub(crate) fn format_criterion_result(
     }
 
     lines.join("\n")
+}
+
+/// The line naming how the process ended.
+fn exit_code_line(exit_code: Option<i32>) -> String {
+    match exit_code {
+        Some(code) => format!("    exit code: {code}"),
+        None => "    exit code: none (the process was killed or timed out)".to_string(),
+    }
+}
+
+/// The two lines a failed run gets when its output shows the sandbox refused
+/// it: the denial, and how to dispute the criterion under its original
+/// `index`. A timeout, a zero exit and a run that reached a test summary or a
+/// build failure of its own get none (`environment::run_denial`).
+fn environment_note(index: usize, result: &CriterionResult) -> Option<String> {
+    if result.timed_out || result.exit_code == Some(0) {
+        return None;
+    }
+    let denial = run_denial(
+        &result.command,
+        &result.stdout,
+        &result.stderr,
+        result.exit_code,
+    )?;
+    Some(format!(
+        "    environment failure (sandbox denial: {denial})\n    \
+         the criterion still fails; if it fails only because of where completion runs, dispute it: \
+         `loom stage dispute-criteria <stage> --criterion-index {index} --reason \"<why>\"`"
+    ))
 }
 
 /// The tests a timed-out test run left running, at most [`RUNNING_NAMES`] of

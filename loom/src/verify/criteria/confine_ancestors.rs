@@ -20,6 +20,15 @@
 //! own copy first in a worktree and need no rule. Revisit when another tool
 //! that searches past its first hit fails under Seatbelt on a file above the
 //! tree.
+//!
+//! The directories above the tree are listable, as bubblewrap's empty parent
+//! directories are: Bun reads each directory above its working directory and
+//! aborts with `CouldntReadCurrentDirectory` when one is unreadable. Each gets
+//! a `file-read*` rule on its `literal` path, which matches the directory
+//! alone, so its entries' names are visible and their content is not; a
+//! `subpath` would expose every file below those ancestors, the main
+//! checkout and the home included. `/` is in the base profile already. The
+//! listings precede the Cargo file denies, which keep winning for those files.
 
 use std::path::{Path, PathBuf};
 
@@ -62,6 +71,27 @@ pub(super) fn seatbelt_rules(hidden: &[PathBuf], quote: impl Fn(&Path) -> String
             "(deny file-read* (literal {path}))\
              (deny file-read-metadata file-test-existence (literal {path}))"
         ));
+    }
+    rules
+}
+
+/// The directories above the canonical `tree`, nearest first, without `/`.
+#[cfg(any(target_os = "macos", test))]
+pub(super) fn listed_above(tree: &Path) -> Vec<PathBuf> {
+    tree.ancestors()
+        .skip(1)
+        .filter(|dir| dir.parent().is_some())
+        .map(Path::to_path_buf)
+        .collect()
+}
+
+/// Seatbelt rules letting a command list each of `dirs`, under each of
+/// [`seatbelt_spellings`], and read none of the files in them.
+#[cfg(any(target_os = "macos", test))]
+pub(super) fn listing_rules(dirs: &[PathBuf], quote: impl Fn(&Path) -> String) -> String {
+    let mut rules = String::new();
+    for dir in dirs.iter().flat_map(|dir| seatbelt_spellings(dir)) {
+        rules.push_str(&format!("(allow file-read* (literal {}))", quote(&dir)));
     }
     rules
 }
@@ -169,6 +199,28 @@ mod tests {
             seatbelt_rules(&hidden, quote),
             rules("/r/Cargo.toml") + &rules("/System/Volumes/Data/r/Cargo.toml")
         );
+    }
+
+    /// A literal per directory and spelling; never a subpath, never `/`.
+    #[test]
+    fn each_directory_above_the_tree_is_listed_by_literal_in_every_spelling() {
+        let listed = listed_above(Path::new("/private/var/t/tree"));
+        assert_eq!(
+            listed,
+            [
+                PathBuf::from("/private/var/t"),
+                PathBuf::from("/private/var"),
+                PathBuf::from("/private"),
+            ]
+        );
+        let rules = listing_rules(&listed[..1], |path: &Path| format!("<{}>", path.display()));
+        assert_eq!(
+            rules,
+            "(allow file-read* (literal </private/var/t>))\
+             (allow file-read* (literal </var/t>))\
+             (allow file-read* (literal </System/Volumes/Data/private/var/t>))"
+        );
+        assert!(listed_above(Path::new("/tree")).is_empty());
     }
 
     #[test]

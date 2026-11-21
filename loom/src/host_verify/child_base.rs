@@ -4,6 +4,8 @@
 //! tests use. The checkout and the run's build cache are kept beside the stage
 //! cache, where the stage's own code cannot write (`stage_cache::base_checkout`),
 //! so a second run reuses its build and the stage's caches never reach it.
+//! The plan's provision entries run in the checkout, with that cache, before
+//! any criterion does; a provision that fails stops the job with no evidence.
 //! Each criterion becomes an outcome `base:<index>` and one [`BaseEvidence`],
 //! naming the base, that a criterion dispute cites. The job reads the worktree
 //! only to find the base, so it is not bound to the worktree's tree digest.
@@ -12,7 +14,7 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 
-use anyhow::{bail, ensure, Context, Result};
+use anyhow::{anyhow, bail, ensure, Context, Result};
 
 use super::child::{acceptance_config, JobTree, Progress, SUMMARY_MAX_BYTES};
 use super::child_policy::requested_cache;
@@ -20,6 +22,7 @@ use super::submit::is_lower_hex;
 use super::{CriterionOutcome, JobRecord};
 use crate::models::dispute::truncate_to_byte_limit;
 use crate::models::stage::Stage;
+use crate::orchestrator::provision::read_provision_snapshot;
 use crate::stage_cache::base_checkout::{ensure_base_dirs, BaseDirs};
 use crate::stage_cache::StageCache;
 use crate::testrun::{classify, registry, RunOutcome, RunOutput, RunSummary};
@@ -30,7 +33,7 @@ use crate::verify::criteria::{
     CriterionResult,
 };
 use crate::verify::execution_paths::resolve_acceptance_dir;
-use crate::verify::impact_tests::base::BaseCheckout;
+use crate::verify::impact_tests::base::{provision_base, BaseCheckout};
 use crate::verify::review::handoffs::{save_base_evidence, BaseEvidence};
 
 /// Hex digits of the base commit an outcome shows.
@@ -62,6 +65,7 @@ pub(super) fn run(
     let checkout = BaseCheckout::kept(&dirs.checkout, worktree, &base)
         .with_context(|| format!("the stage's base {short} could not be checked out"))?;
     announce(&short, &checkout);
+    provision_kept_checkout(work_dir, &short, &checkout, &dirs.cache)?;
     let acceptance_dir =
         resolve_acceptance_dir(Some(checkout.root()), stage.working_dir.as_deref())?;
     let recorder = Arc::new(Recorder::new(
@@ -92,10 +96,28 @@ fn announce(short: &str, checkout: &BaseCheckout) {
         "made a new"
     };
     println!(
-        "at base {short}: {how} checkout {}; it holds tracked files only, so a compiled project \
-         builds once per base and is warm afterwards",
+        "at base {short}: {how} checkout {}; it holds tracked files and what the plan's \
+         provision installs, so a compiled project builds once per base and is warm afterwards",
         checkout.root().display()
     );
+}
+
+/// Run the plan's provision entries in the kept checkout, as the impact gate's
+/// scratch base is provisioned, filling the base's own cache that the criteria
+/// then read. A kept checkout is provisioned on every run: its installed
+/// environment is ignored by git, so a reused one still holds what an earlier
+/// run made, and an entry that finds it current is cheap. A failure stops the
+/// job before any criterion runs, so no evidence of it is recorded.
+fn provision_kept_checkout(
+    work_dir: &Path,
+    short: &str,
+    checkout: &BaseCheckout,
+    cache: &StageCache,
+) -> Result<()> {
+    let entries = read_provision_snapshot(work_dir)
+        .context("the plan's provision snapshot in the state directory is unreadable")?;
+    provision_base(&entries, checkout.root(), cache)
+        .map_err(|reason| anyhow!("the stage's base {short} could not be provisioned: {reason}"))
 }
 
 /// The checkout and build cache of `base` beside stage `stage_id`'s cache,
