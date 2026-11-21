@@ -2,7 +2,10 @@
 //!
 //! Surfaces checked, each whitespace-normalized, lowercased and stripped of `> ` quote prefixes:
 //! BLOCK-B, the orchestration SKILL.md copy, the plan-writer SKILL.md, the plan-writer
-//! `codex-implementers.md` reference, and the generated mixed-lane signals (native and legacy).
+//! `codex-implementers.md` reference, and the Codex Implementers section a mixed-lane stage
+//! signal embeds for the native and the legacy lane. The section is formatted for each lane
+//! directly: lane selection depends on the host (native qualifies on Linux only, legacy needs the
+//! Codex plugin installed), so a generated signal differs per machine.
 //!
 //! Every surface must license bounded exploration ("bounded explor…", tied to "owned" files or
 //! files "it owns") and keep open-ended exploration and debugging with Claude. BLOCK-B, its
@@ -11,15 +14,10 @@
 //! verification, review and planning. The reference and both signals also name the "navigation
 //! kit". No surface may keep the old blanket reservation or hand debugging to Codex.
 
-use std::fs;
-use std::path::Path;
-
-use tempfile::TempDir;
-
-use super::generate::generate_signal_with_metrics;
-use super::tests::{create_test_session, create_test_stage, create_test_worktree};
-use super::tests_codex_lane::legacy_state_dir;
+use crate::codex::CodexLane;
 use crate::models::stage::{Implementer, Implementers};
+
+use super::format::format_codex_implementers_section;
 
 const BLOCKS_SOURCE: &str = include_str!("tests_doctrine_blocks.rs");
 const ORCHESTRATION: &str = include_str!("../../../../skills/loom-orchestration/SKILL.md");
@@ -52,30 +50,13 @@ fn block_b() -> &'static str {
     &body[open..open + close]
 }
 
-/// A mixed claude+codex stage signal generated against `work_dir`'s lane configuration.
-fn mixed_signal(work_dir: &Path) -> String {
-    let mut stage = create_test_stage();
-    stage.implementers = Implementers::new(vec![Implementer::Claude, Implementer::Codex]);
-    let (path, _) = generate_signal_with_metrics(
-        &create_test_session(),
-        &stage,
-        &create_test_worktree(),
-        &[],
-        None,
-        None,
-        work_dir,
-    )
-    .unwrap();
-    fs::read_to_string(path).unwrap()
-}
-
+/// The Codex Implementers section of a mixed claude+codex stage for each lane: (native, legacy).
 fn signals() -> (String, String) {
-    let temp = TempDir::new().unwrap();
-    let native_dir = temp.path().join("native");
-    fs::create_dir_all(&native_dir).unwrap();
-    let native = mixed_signal(&native_dir);
-    let legacy = mixed_signal(&legacy_state_dir(&temp));
-    (native, legacy)
+    let mixed = Implementers::new(vec![Implementer::Claude, Implementer::Codex]);
+    (
+        format_codex_implementers_section(&mixed, &CodexLane::Native),
+        format_codex_implementers_section(&mixed, &CodexLane::Legacy),
+    )
 }
 
 fn assert_has(name: &str, text: &str, phrase: &str) {
