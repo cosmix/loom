@@ -312,9 +312,9 @@ unprivileged user namespace `bwrap` creates. With both steps the confined tests 
 
 **Why:** Catalog evidence probes invoke Git through `OwnedProcess`; its dependency installed a process-wide signal handler that panicked from a non-unwinding context when socket writes were restricted.
 
-**Prevention:** Bounded subprocess waiting must not require a notification channel that the execution environment can deny. Exercise a child that exits after waiting begins under the restricted sandbox, using an executable preserved from the intended build.
+**Prevention:** Bounded subprocess waiting must not require a notification channel that the execution environment can deny. Exercise a child that exits after waiting begins under the restricted sandbox, using an executable preserved from the intended build. Library code waits with `process::wait_with_deadline`; `wait-timeout` is a dev-dependency only.
 
-**Fix:** `OwnedProcess::wait` and retirement use deadline-bounded `Child::try_wait` polling, preserving process-group cleanup. A later apparent recurrence came from another checkout overwriting the shared debug executable; its backtrace names that checkout and the old wait implementation. The direct `wait_timeout` use in `verify/criteria/cache_ignore.rs` remains outside this fix.
+**Fix:** `OwnedProcess::wait` and retirement use deadline-bounded `Child::try_wait` polling, preserving process-group cleanup. A later apparent recurrence came from another checkout overwriting the shared debug executable; its backtrace names that checkout and the old wait implementation. This section used to say `verify/criteria/cache_ignore.rs` still called `wait_timeout` directly; it no longer does, and no library code calls it (see "A Linux-Only Module Used the Dev-Only wait-timeout Crate" in `ci-toolchain-and-cargo.md`).
 
 ## Formatter checks can fail only under the isolated test harness
 

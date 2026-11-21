@@ -361,3 +361,20 @@ This catches macOS dead code and unused imports. It cannot run tests, so macOS r
 **Prevention:** when probing or signalling a process group of our own children, treat `EPERM` like `ESRCH`. A test fixture that must produce a large output prints a file prepared in Rust (`cat`), never shell generation, when a timeout bounds the command.
 
 **Fix:** `src/pressure/codex_run.rs` `cancel_groups` drops a group on `ESRCH | EPERM`; the tmux test writes the scrollback file once and its script `exec cat`s it.
+
+## A Linux-Only Module Used the Dev-Only wait-timeout Crate
+
+**What happened:** `verify/criteria/confine_scratch/overlay.rs` (`#[cfg(target_os = "linux")]`) called `wait_timeout::ChildExt`, but `wait-timeout` is only in `[dev-dependencies]`. Every Linux build of the library failed with E0432/E0599: Lint, Test (linux) and Hook syntax went red, and both Linux web smoke steps failed because there was no binary to run. The macOS jobs and local macOS checks compiled the module out and passed.
+
+**Why:** a dev-dependency resolves under `--all-targets`, but only test code can use it. A Linux-gated library module is invisible to every macOS check, so nothing before CI compiled it. Its author also missed that `process::wait_with_deadline` exists so that library code avoids the `wait-timeout` SIGCHLD handler (see "Knowledge checks must tolerate restricted process operations" in `sandbox-tooling-and-network.md`).
+
+**Prevention:** library code waits with `crate::process::wait_with_deadline`, never `wait_timeout`. Before pushing a change to Linux-gated code from macOS, run Linux clippy in Docker, with the repo mounted read-only and a private target dir so no other checkout shares the build:
+
+```bash
+docker run --rm -v "$PWD":/src:ro -w /src/loom -e CARGO_TARGET_DIR=/tmp/target \
+  rust:1-bookworm sh -c "rustup component add clippy && cargo clippy --all-targets --locked -- -D warnings"
+```
+
+A host `cargo check --target x86_64-unknown-linux-gnu` does not replace this: aws-lc-sys needs `x86_64-linux-gnu-gcc`, and a Homebrew `cargo` ahead of rustup on `PATH` reports a missing `core` even when the target is installed.
+
+**Fix:** `overlay_supported` calls `crate::process::wait_with_deadline`. In ci.yml the web smoke steps of both Test jobs now run only when the `build` and `tools` steps succeed, so one root failure no longer shows up as extra red smoke steps.
