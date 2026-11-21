@@ -27,8 +27,7 @@ triggers:
 # Loom Orchestration
 
 The rules a session needs when it spawns subagents or runs a loom stage as its main agent, beyond what
-`~/.claude/CLAUDE.md` and the stage signal already carry, filed under the CLAUDE.md rule number they
-belong to.
+`~/.claude/CLAUDE.md` and the stage signal already carry, filed by CLAUDE.md rule number.
 
 ## Session start
 
@@ -38,13 +37,13 @@ blocks, and spawn per Rule 6; with no signal, ask the user.
 ## Rule 4 — Commit and complete
 
 The commit is legitimate only once all three hold: (1) every subagent, coordinator, team, and
-Workflow returned and was absorbed (an abandoned subagent counts as returned only if you recorded
+Workflow returned and was absorbed (an abandoned one counts only if you recorded
 why); (2) the gate is green on the complete tree (in a standard stage, your
 `loom check <stage-id>`); (3) the mini
 adversarial code review returned, every finding fixed, gate green again. In a plan version 2 stage
 `loom stage complete` enforces condition (3): it fails until a recorded review round matches the
-worktree and no finding is open. A handoff is no reason
-to commit unverified work — record uncommitted files there instead.
+worktree and no finding is open. A handoff never justifies
+committing unverified work; record uncommitted files in it.
 
 Commit with `git add <specific-files>` then `loom stage commit <stage-id> -m "type(scope):
 description"`, and wait for it with `loom request status <id> --wait 90`; never run `git commit`.
@@ -53,7 +52,7 @@ description"`, and wait for it with `loom request status <id> --wait 90`; never 
 
 | Shape | When | Cost | Who commits | Which preamble |
 | --- | --- | --- | --- | --- |
-| **Flat fan-out** (default) | Independent file changes, separate implementation areas, tests alongside implementation, exploration; ≤~6 worker tasks | 1 spawn level | Main agent | Rule 5 |
+| **Flat fan-out** (default) | Independent file changes, tests alongside implementation, exploration; ≤~6 worker tasks | 1 spawn level | Main agent | Rule 5 |
 | **2-level hierarchy** | >~6 tasks in 2-4 DISJOINT territories, 2+ tasks each, well-defined for sonnet workers; NOT for ≤~6 tasks, shared files, cross-territory iteration, or sequential work | +1 coordinator per territory | Main agent | Coordinator preamble to coordinators; Rule 5 + worker addendum |
 | **Agent teams** | Wide, exploratory work needing inter-agent messaging or dynamic task discovery; NOT for concrete assignments with clear file ownership | ~7x whole-job | Team lead, who alone runs `loom stage complete` and `loom memory` | Rule 5 |
 
@@ -97,15 +96,12 @@ Coordinators delegate too (hard stop 6), going opus only when territory integrat
 judgment. Mix lanes under ONE ownership table. On a stage listing codex in `implementers`, the
 signal's Codex Implementers section names the launch: on the forwarder lane a coordinator spawns
 `loom-codex-forwarder` BY AGENT TYPE (never the plugin's `codex:codex-rescue` directly), foreground
-only; on the native lane only the main agent runs `loom subagents start`. Codex takes
-straightforward well-specified pieces: gpt-6.1-terra for
-implementation, integration tests, boilerplate and simple unit tests; gpt-6.2-sol for substantial
-units and a failed terra unit; gpt-6-luna only when the user or the plan asks. The lane is chosen
-per piece, never per stage; the coordinator still does not verify.
+only; on the native lane only the main agent runs `loom subagents start`. Codex tiers: Rule 7 point 3. The lane is
+chosen per piece, never per stage; the coordinator still does not verify.
 
 With an `EXECUTION PLAN` block, parse ALL assignments and spawn ALL in ONE message; hierarchical
 plans spawn COORDINATORS, not workers. Every prompt carries the preamble, assignment, files
-owned/read-only, acceptance, task detail. "Sequential" means execute in order with explicit
+owned/read-only, acceptance, task detail. "Sequential" means ordered, with explicit
 dependencies.
 
 COORDINATOR PREAMBLE — start every coordinator prompt with it. Its Rule 5 opening
@@ -170,16 +166,20 @@ After each wave of workers returns, the main agent compiles the tree once before
    straightforward, well-specified implementation (one concern, pinned
    interfaces, mechanical acceptance, no git, no `.loom/`) when the stage lists
    codex in implementers, the lane is available and quota has
-   room. No lane is first or default; list order means nothing. Verification,
-   review, planning, exploration, debugging and iteration on failing tests
-   stay with Claude. gpt-6.1-terra: implementation, integration tests,
+   room. No lane is first or default; list order means nothing. Codex may take a
+   bounded exploratory piece: one that explores an unfamiliar path inside the
+   files it owns, using the navigation kit, with pinned interfaces, an equivalent
+   sandbox and mechanical acceptance. Open-ended exploration across modules,
+   unknown-cause debugging, failing-test convergence, verification, review and
+   planning stay with Claude. gpt-6.1-terra: implementation, integration tests,
    boilerplate, scaffolding and simple unit tests; gpt-6.2-sol: a substantial
    well-specified unit (about 4 to 6 file-sized changes) or a terra unit that
    failed once; gpt-6-luna only when the user or the plan asks. Otherwise
    terra- and sol-tier work goes to sonnet, and boilerplate and simple unit
-   tests to haiku. SONNET (loom-software-engineer): pieces that need exploration or the
-   initial iteration on failing tests, or are too large to brief in that
-   detail. A piece between sonnet and opus goes to sonnet.
+   tests to haiku. SONNET (loom-software-engineer): pieces that need open-ended
+   exploration across modules, debugging, or the initial iteration on failing
+   tests, or are too large to brief in that detail. A piece between sonnet and
+   opus goes to sonnet.
    OPUS (loom-senior-software-engineer, effort medium)
    implements architecture across modules, new algorithms, concurrency,
    distributed systems, security-sensitive code, bugs of unknown cause. It

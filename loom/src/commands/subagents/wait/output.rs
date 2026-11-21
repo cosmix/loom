@@ -60,6 +60,15 @@ pub fn bound_workers(lease: &WaitLease) -> String {
     worker_list(&lease.identity.worker_specs())
 }
 
+/// The line a still-running native Codex worker gets between the initial and
+/// terminal records of a human-readable wait.
+pub fn progress_line(worker: &str, age_secs: Option<u64>) -> String {
+    match age_secs {
+        Some(secs) => format!("{worker} active, progress {secs}s ago"),
+        None => format!("{worker} active, no progress yet"),
+    }
+}
+
 fn human_line(event: &WaitEvent) -> String {
     let label = outcome_label(&event.outcome);
     let workers = worker_list(&event.workers);

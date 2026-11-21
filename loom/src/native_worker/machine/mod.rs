@@ -16,6 +16,8 @@ use messages::MessageBook;
 
 mod messages;
 #[cfg(test)]
+mod startup_contract_tests;
+#[cfg(test)]
 mod test_support;
 #[cfg(test)]
 mod tests;
@@ -26,6 +28,10 @@ mod tests_messages;
 #[cfg(test)]
 mod tests_turns;
 mod turns;
+
+/// One monotonic budget, armed at `Input::Start`, for `initialize` plus `thread/start`.
+/// Revisit if a cold Codex start legitimately needs longer.
+pub const STARTUP_DEADLINE_SECS: u64 = 120;
 
 #[derive(Debug, Clone)]
 pub struct MachineConfig {
@@ -41,8 +47,12 @@ pub enum Input {
     Start,
     Frame(Incoming),
     Control(ControlMessage),
-    Cancel { reason: String },
+    Cancel {
+        reason: String,
+    },
     Deadline,
+    /// The startup deadline passed; ignored once the thread has started.
+    StartupDeadline,
     GraceElapsed,
     TransportClosed,
 }
@@ -51,10 +61,18 @@ pub enum Input {
 pub enum Action {
     Send(Value),
     Persist(NativeEvent),
-    StoreReport { text: String, complete: bool },
+    StoreReport {
+        text: String,
+        complete: bool,
+    },
+    ArmStartupDeadline,
+    /// Also ends startup: the thread started, so the startup deadline is spent.
     ArmDeadline,
     ArmGrace,
-    Teardown { outcome: Outcome, reason: String },
+    Teardown {
+        outcome: Outcome,
+        reason: String,
+    },
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -110,6 +128,7 @@ impl Machine {
             Input::Control(message) => self.on_control(message),
             Input::Cancel { reason } => self.on_cancel(reason),
             Input::Deadline => self.on_deadline(),
+            Input::StartupDeadline => self.on_startup_deadline(),
             Input::GraceElapsed => self.on_grace(),
             Input::TransportClosed => {
                 self.end(Outcome::Failed, "codex app-server closed its output")
@@ -153,7 +172,10 @@ impl Machine {
         }
         self.state = State::AwaitInit;
         let version = self.config.client_version.clone();
-        vec![self.request(Pending::Initialize, |id| wire::initialize(id, &version))]
+        vec![
+            Action::ArmStartupDeadline,
+            self.request(Pending::Initialize, |id| wire::initialize(id, &version)),
+        ]
     }
 
     fn on_frame(&mut self, frame: Incoming) -> Vec<Action> {

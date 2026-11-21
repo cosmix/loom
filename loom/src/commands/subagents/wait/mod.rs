@@ -22,19 +22,27 @@ mod native_contract_tests;
 #[cfg(test)]
 mod native_tests;
 #[cfg(test)]
+mod progress_contract_tests;
+#[cfg(test)]
 mod tests;
 
+use std::cell::Cell;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use anyhow::{bail, Result};
+use chrono::{DateTime, Utc};
 
-use engine::{wait_for_workers, EngineResult, ThreadSleeper, POLL_INTERVAL};
+use engine::{wait_for_workers, EngineResult, EvidenceSource, ThreadSleeper, POLL_INTERVAL};
 use evidence::LifecycleEvidence;
 use lease::{
     acquire, finish, prune_results, Acquired, LeaseDir, SystemBootClock, SystemOwnerProbe,
 };
-use model::{exit_code, EventOutcome, WaitLease, EXIT_UNKNOWN};
+use model::{exit_code, BoundWorker, EventOutcome, WaitLease, WorkerKind, EXIT_UNKNOWN};
+
+use crate::native_worker::ids::PROGRESS_EVENT_INTERVAL_SECS;
+use crate::subagent_lifecycle::WorkerOutcome;
 
 /// Stall budget used when neither the caller nor the stage names one.
 ///
@@ -155,6 +163,9 @@ fn own_wait(
         work_dir,
         stall_budget,
     };
+    // The JSON stream stays exactly the initial and terminal records.
+    let reporting = ProgressReporter::new(&evidence);
+    let source: &dyn EvidenceSource = if json { &evidence } else { &reporting };
     let EngineResult {
         outcome, detail, ..
     } = wait_for_workers(
@@ -162,7 +173,7 @@ fn own_wait(
         &lease.deadline,
         clock,
         &sleeper,
-        &evidence,
+        source,
         POLL_INTERVAL,
     );
     let event_outcome = output::terminal_outcome(&outcome);
@@ -174,4 +185,85 @@ fn own_wait(
         0 => Ok(()),
         code => std::process::exit(code),
     }
+}
+
+/// Reports on a human-readable wait while it runs: delegates every evidence
+/// read to `inner` and, after each poll that continues, writes progress lines
+/// for the active native Codex workers.
+struct ProgressReporter<'a> {
+    inner: &'a LifecycleEvidence,
+    last_emit: Cell<Option<DateTime<Utc>>>,
+}
+
+impl<'a> ProgressReporter<'a> {
+    fn new(inner: &'a LifecycleEvidence) -> Self {
+        Self {
+            inner,
+            last_emit: Cell::new(None),
+        }
+    }
+}
+
+impl EvidenceSource for ProgressReporter<'_> {
+    fn outcome(&self, worker: &BoundWorker) -> WorkerOutcome {
+        self.inner.outcome(worker)
+    }
+
+    fn unknown_settled(&self, worker: &BoundWorker) -> bool {
+        self.inner.unknown_settled(worker)
+    }
+
+    fn poll(&self, workers: &[BoundWorker]) -> Vec<(WorkerOutcome, bool)> {
+        self.inner.poll(workers)
+    }
+
+    fn continuing(&self, workers: &[BoundWorker]) {
+        let mut last_emit = self.last_emit.get();
+        // Progress lines are a diagnostic: a closed stdout must not end the wait,
+        // and the terminal record reports it if it persists.
+        let _ = emit_active_native_progress(
+            self.inner,
+            workers,
+            Utc::now(),
+            &mut last_emit,
+            &mut io::stdout().lock(),
+        );
+        self.last_emit.set(last_emit);
+    }
+}
+
+/// Write one line per active native Codex worker saying how long ago its
+/// provider last made progress. Writes on the first call, then at most once
+/// per [`PROGRESS_EVENT_INTERVAL_SECS`]; a call inside the interval reads and
+/// writes nothing. Claude workers and legacy Codex jobs get no line.
+fn emit_active_native_progress(
+    evidence: &LifecycleEvidence,
+    workers: &[BoundWorker],
+    now: DateTime<Utc>,
+    last_emit: &mut Option<DateTime<Utc>>,
+    out: &mut dyn Write,
+) -> io::Result<()> {
+    let interval = chrono::Duration::seconds(PROGRESS_EVENT_INTERVAL_SECS as i64);
+    if last_emit.is_some_and(|last| now - last < interval) {
+        return Ok(());
+    }
+    let mut natives = workers
+        .iter()
+        .filter(|worker| {
+            worker.worker.kind == WorkerKind::Codex && worker.native_invocation.is_some()
+        })
+        .peekable();
+    if natives.peek().is_none() {
+        return Ok(());
+    }
+    *last_emit = Some(now);
+    for worker in natives {
+        let progress =
+            native::active_progress(&evidence.work_dir, worker, now, evidence.stall_budget);
+        if let Some(progress) = progress {
+            let name = engine::worker_name(worker);
+            writeln!(out, "{}", output::progress_line(&name, progress.age_secs))?;
+        }
+    }
+    out.flush()
 }

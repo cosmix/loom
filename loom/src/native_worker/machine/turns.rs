@@ -2,7 +2,10 @@
 
 use serde_json::Value;
 
-use super::{wire, Action, Closed, Machine, NativeEvent, Outcome, Pending, RpcError, State};
+use super::{
+    wire, Action, Closed, Machine, NativeEvent, Outcome, Pending, RpcError, State,
+    STARTUP_DEADLINE_SECS,
+};
 
 impl Machine {
     pub(super) fn turn_request(&mut self, thread_id: &str, texts: &[String]) -> Action {
@@ -172,6 +175,18 @@ impl Machine {
         let mut actions = vec![Action::Persist(NativeEvent::DeadlineExpired)];
         actions.extend(self.interrupt_and_grace());
         actions
+    }
+
+    /// Before the thread starts there is no turn to interrupt, so expiry takes the
+    /// ordinary end path: a prior cancel keeps `Cancelled` and its reason.
+    pub(super) fn on_startup_deadline(&mut self) -> Vec<Action> {
+        if !matches!(self.state, State::AwaitInit | State::AwaitThread) {
+            return Vec::new();
+        }
+        self.end(
+            Outcome::TimedOut,
+            format!("startup deadline ({STARTUP_DEADLINE_SECS} s) passed before the Codex thread started"),
+        )
     }
 
     fn interrupt_and_grace(&mut self) -> Vec<Action> {

@@ -2,6 +2,8 @@
 pub mod control;
 mod io;
 mod preflight;
+#[cfg(test)]
+mod startup_tests;
 mod teardown;
 #[cfg(test)]
 mod tests;
@@ -23,7 +25,7 @@ use self::control::{ControlEvent, ControlPoller};
 use self::io::start_pipes;
 use self::teardown::{settle_exit, settle_unspawned};
 use super::boundary::{self, BoundarySpec, Quiescence, SpawnedBoundary};
-use super::machine::{Action, Input, Machine, MachineConfig};
+use super::machine::{Action, Input, Machine, MachineConfig, STARTUP_DEADLINE_SECS};
 use super::model::{
     BoundaryIdentity, NativeEvent, NativeManifest, Outcome, INTERRUPT_GRACE_SECS, MAX_BRIEF_BYTES,
     PROGRESS_EVENT_INTERVAL_SECS,
@@ -40,6 +42,7 @@ pub trait Clock {
 
 const CONTROL_POLL: Duration = Duration::from_millis(100);
 const RECV_TIMEOUT: Duration = Duration::from_millis(200);
+const STARTUP: Duration = Duration::from_secs(STARTUP_DEADLINE_SECS);
 const GRACE: Duration = Duration::from_secs(INTERRUPT_GRACE_SECS);
 const PROGRESS_INTERVAL: Duration = Duration::from_secs(PROGRESS_EVENT_INTERVAL_SECS);
 
@@ -62,6 +65,7 @@ struct Session<'a, T: Transport> {
     control: ControlPoller,
     deadline: Duration,
     deadline_at: Option<Instant>,
+    startup_at: Option<Instant>,
     grace_at: Option<Instant>,
     last_poll: Option<Instant>,
     last_event: Instant,
@@ -91,6 +95,7 @@ impl<'a, T: Transport> Session<'a, T> {
             control: ControlPoller::new(dir),
             deadline: Duration::from_secs(manifest.deadline_secs),
             deadline_at: None,
+            startup_at: None,
             grace_at: None,
             last_poll: None,
             last_event: clock.now(),
@@ -114,6 +119,14 @@ impl<'a, T: Transport> Session<'a, T> {
         if self.last_poll.is_none_or(|at| now >= at + CONTROL_POLL) {
             self.last_poll = Some(now);
             self.poll_control(now)?;
+        }
+        // Checked before the receive: a handshake frame that arrives after expiry loses.
+        if self.startup_at.is_some_and(|at| now >= at) {
+            self.startup_at = None;
+            self.feed(Input::StartupDeadline, now)?;
+        }
+        if self.machine.is_finished() {
+            return Ok(());
         }
         let arrived = self.receive(now)?;
         if self.deadline_at.is_some_and(|at| now >= at) {
@@ -194,7 +207,11 @@ impl<'a, T: Transport> Session<'a, T> {
                 };
                 self.persist(event, now)?;
             }
-            Action::ArmDeadline => self.deadline_at = Some(now + self.deadline),
+            Action::ArmStartupDeadline => self.startup_at = Some(now + STARTUP),
+            Action::ArmDeadline => {
+                self.startup_at = None;
+                self.deadline_at = Some(now + self.deadline);
+            }
             Action::ArmGrace => self.grace_at = Some(now + GRACE),
             Action::Teardown { outcome, reason } => self.teardown = Some((outcome, reason)),
         }

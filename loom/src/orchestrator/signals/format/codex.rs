@@ -71,14 +71,22 @@ fn push_codex_intro(content: &mut String, implementers: &Implementers) {
              unit tests; sol: a substantial well-specified unit or a terra unit that failed once; luna:\n\
              only when the user or plan asks); Claude takes the rest.\n\
              Codex for one file set and loom-software-engineer (sonnet) for another in one stage is\n\
-             the intended shape, not a contradiction.\n",
+             the intended shape, not a contradiction.\n\
+             Codex may take a bounded exploratory piece: one that explores an unfamiliar path inside the\n\
+             files it owns, using the navigation kit, with pinned interfaces, an equivalent sandbox and\n\
+             mechanical acceptance. Open-ended exploration across modules, unknown-cause debugging,\n\
+             failing-test convergence, verification, review and planning stay with Claude.\n",
         );
     } else {
         content.push_str(
             "Codex takes this stage's straightforward, well-specified pieces: terra implementation, integration\n\
              tests, boilerplate, scaffolding and simple unit tests; sol a substantial well-specified unit\n\
              or a terra unit that failed once; luna only when the user or plan asks. The Claude\n\
-             escalation paths below were never implementation lanes and still apply.\n",
+             escalation paths below were never implementation lanes and still apply.\n\
+             Codex may take a bounded exploratory piece: one that explores an unfamiliar path inside the\n\
+             files it owns, using the navigation kit, with pinned interfaces, an equivalent sandbox and\n\
+             mechanical acceptance. Open-ended exploration across modules, unknown-cause debugging,\n\
+             failing-test convergence, verification, review and planning stay with Claude.\n",
         );
     }
     content.push_str(

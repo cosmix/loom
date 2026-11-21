@@ -9,11 +9,11 @@ use super::lease::deadline_after;
 use super::model::{
     exit_code, BoundWorker, TerminalOutcome, WaitLease, WorkerKind, WorkerSpec, EXIT_UNKNOWN,
 };
-use super::native::NativeSet;
+use super::native::{active_progress, NativeSet};
 use super::output;
 use super::tests::{acquire_owner, fixture, identity, FakeClock, FakeSleeper};
 use crate::native_worker::ids::NATIVE_DEADLINE_SECS;
-use crate::native_worker::model::{NativeEvent, NativeManifest, Outcome};
+use crate::native_worker::model::{MessageState, NativeEvent, NativeManifest, Outcome};
 use crate::native_worker::store::{create_invocation, EventLog};
 use crate::subagent_lifecycle::WorkerOutcome;
 
@@ -240,4 +240,117 @@ fn bind_pins_the_invocation_and_rejects_another_worktree() {
     };
     let error = set.bind(&other, &spec).unwrap_err().to_string();
     assert!(error.contains("another worktree"), "{error}");
+}
+
+fn thread_started() -> NativeEvent {
+    NativeEvent::ThreadStarted {
+        thread_id: "thread-1".into(),
+    }
+}
+
+#[test]
+fn progress_age_counts_only_provider_events() {
+    let temp = tempfile::tempdir().unwrap();
+    let work = temp.path();
+    seed(
+        work,
+        work,
+        "quiet",
+        1,
+        &[
+            NativeEvent::BoundaryCreated,
+            NativeEvent::Message {
+                message_id: "msg-1".into(),
+                state: MessageState::Queued,
+                turn_id: None,
+                detail: None,
+            },
+            NativeEvent::ServerRequestRefused {
+                method: "item/tool".into(),
+            },
+        ],
+    );
+    seed(work, work, "started", 2, &[thread_started()]);
+    let budget = Duration::from_secs(600);
+    let now = chrono::Utc::now() + chrono::Duration::seconds(90);
+
+    let quiet = active_progress(work, &native_worker("quiet", 1), now, budget).unwrap();
+    assert_eq!(quiet.age_secs, None);
+    let started = active_progress(work, &native_worker("started", 2), now, budget).unwrap();
+    let age = started.age_secs.unwrap();
+    assert!((89..=91).contains(&age), "{age}");
+}
+
+#[test]
+fn progress_age_clamps_a_future_event_to_zero() {
+    let temp = tempfile::tempdir().unwrap();
+    let work = temp.path();
+    seed(work, work, "unit-a", 1, &[NativeEvent::Progress]);
+    let now = chrono::Utc::now() - chrono::Duration::seconds(3_600);
+
+    let progress = active_progress(
+        work,
+        &native_worker("unit-a", 1),
+        now,
+        Duration::from_secs(600),
+    );
+
+    assert_eq!(progress.unwrap().age_secs, Some(0));
+}
+
+#[test]
+fn only_an_active_worker_reports_progress() {
+    let temp = tempfile::tempdir().unwrap();
+    let work = temp.path();
+    seed(
+        work,
+        work,
+        "done",
+        1,
+        &[thread_started(), terminal(Outcome::Succeeded), released()],
+    );
+    seed(work, work, "stalled", 2, &[thread_started()]);
+    let now = chrono::Utc::now() + chrono::Duration::seconds(3_600);
+    let budget = Duration::from_secs(600);
+
+    assert!(active_progress(work, &native_worker("done", 1), now, budget).is_none());
+    assert!(active_progress(work, &native_worker("stalled", 2), now, budget).is_none());
+    assert!(active_progress(work, &native_worker("missing", 3), now, budget).is_none());
+}
+
+#[test]
+fn progress_line_ends_with_the_age_or_no_progress_yet() {
+    assert_eq!(
+        super::output::progress_line("codex:unit-a", Some(42)),
+        "codex:unit-a active, progress 42s ago"
+    );
+    assert_eq!(
+        super::output::progress_line("codex:unit-a", None),
+        "codex:unit-a active, no progress yet"
+    );
+}
+
+/// Claude workers and legacy Codex jobs get no line, and a wait with no native
+/// worker never starts the throttle clock.
+#[test]
+fn progress_is_silent_without_native_workers() {
+    let temp = tempfile::tempdir().unwrap();
+    let evidence = super::evidence::LifecycleEvidence {
+        work_dir: temp.path().to_path_buf(),
+        stall_budget: Duration::from_secs(600),
+    };
+    let mut last_emit = None;
+    let mut out: Vec<u8> = Vec::new();
+
+    super::emit_active_native_progress(
+        &evidence,
+        &identity().workers,
+        chrono::Utc::now(),
+        &mut last_emit,
+        &mut out,
+    )
+    .unwrap();
+
+    assert!(out.is_empty());
+    assert_eq!(last_emit, None);
 }

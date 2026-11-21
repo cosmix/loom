@@ -7,7 +7,10 @@ fn start_sends_initialize_with_id_1() {
     let mut machine = Machine::new(config());
     assert_eq!(
         machine.step(Input::Start),
-        vec![Action::Send(wire::initialize(1, "test-version"))]
+        vec![
+            Action::ArmStartupDeadline,
+            Action::Send(wire::initialize(1, "test-version"))
+        ]
     );
     assert!(machine.step(Input::Start).is_empty());
 }
@@ -280,6 +283,7 @@ fn any_input_after_teardown_yields_nothing() {
             reason: "stop".into(),
         },
         Input::Deadline,
+        Input::StartupDeadline,
         Input::GraceElapsed,
         Input::TransportClosed,
         turn_started("th-1", "t2"),
