@@ -82,13 +82,7 @@ fn synchronize_plan_index(repo: &Path, old: &Path, new: &Path) -> Result<()> {
     };
     let (old, new) = (relative(old)?, relative(new)?);
     let literal = [("GIT_LITERAL_PATHSPECS", OsStr::new("1"))];
-    index_git(
-        repo,
-        &["update-index", "--force-remove", "--", &old],
-        &literal,
-    )?;
-    index_git(repo, &["add", "--", &new], &literal)?;
-    Ok(())
+    stage_rename(repo, &old, &new, &literal)
 }
 
 fn completion_tree(work: &Path, repo: &Path, before: &str, old: &str, new: &str) -> Result<String> {
@@ -101,8 +95,42 @@ fn completion_tree(work: &Path, repo: &Path, before: &str, old: &str, new: &str)
         ("GIT_LITERAL_PATHSPECS", OsStr::new("1")),
     ];
     index_git(repo, &["read-tree", before], &env)?;
-    index_git(repo, &["add", "-A", "--", old, new], &env)?;
+    stage_rename(repo, old, new, &env)?;
     index_git(repo, &["write-tree"], &env)
+}
+
+/// Stage the plan's rename in the index `env` names: the old path's removal
+/// always, whether or not it was tracked, and the new path unless git ignores
+/// it. A project that ignores its finished plans (`doc/plans/DONE-*`) commits
+/// the removal alone; `git add` would refuse the whole command over the
+/// ignored path.
+fn stage_rename(repo: &Path, old: &str, new: &str, env: &[(&str, &OsStr)]) -> Result<()> {
+    index_git(repo, &["update-index", "--force-remove", "--", old], env)?;
+    if !is_ignored(repo, new, env)? {
+        index_git(repo, &["add", "--", new], env)?;
+    }
+    Ok(())
+}
+
+/// Whether git ignores `path`. A path the index `env` names tracks is never
+/// ignored, as `git add` treats it. `check-ignore` takes paths, never
+/// pathspecs, and refuses to run under `GIT_LITERAL_PATHSPECS`, so that
+/// variable stays out of its environment.
+fn is_ignored(repo: &Path, path: &str, env: &[(&str, &OsStr)]) -> Result<bool> {
+    let env: Vec<_> = env
+        .iter()
+        .copied()
+        .filter(|(key, _)| *key != "GIT_LITERAL_PATHSPECS")
+        .collect();
+    let output = run_git_with_env(&["check-ignore", "-q", "--", path], &env, repo)?;
+    match output.status.code() {
+        Some(0) => Ok(true),
+        Some(1) => Ok(false),
+        _ => bail!(
+            "git check-ignore -- {path} failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ),
+    }
 }
 
 fn move_completion_ref(
@@ -257,3 +285,7 @@ fn is_own(path: &str, repo_root: &Path, allowed: &[&Path]) -> bool {
 #[cfg(test)]
 #[path = "commit/tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "commit/ignored_tests.rs"]
+mod ignored_tests;
