@@ -164,6 +164,12 @@ pub enum SubagentsCommand {
     WorkerExec {
         #[arg(long)]
         proxy_socket: PathBuf,
+        /// macOS: the prebound loopback listener the supervisor hands down
+        #[arg(long, requires = "control_fd")]
+        listener_fd: Option<i32>,
+        /// macOS: the bridge's end of the supervisor's control channel
+        #[arg(long, requires = "listener_fd")]
+        control_fd: Option<i32>,
         #[arg(last = true, required = true)]
         command: Vec<std::ffi::OsString>,
     },
@@ -219,8 +225,10 @@ pub fn execute(args: SubagentsArgs) -> Result<()> {
         SubagentsCommand::Supervise { dir } => native_hidden::supervise(dir),
         SubagentsCommand::WorkerExec {
             proxy_socket,
+            listener_fd,
+            control_fd,
             command,
-        } => native_hidden::worker_exec(proxy_socket, command),
+        } => worker_exec(proxy_socket, listener_fd, control_fd, command),
         SubagentsCommand::Start(args) => finish(native_start::run_start(args)?),
         SubagentsCommand::Message(args) => finish(native_start::run_message(args)?),
         SubagentsCommand::Cancel(args) => finish(native_control::run_cancel(args)?),
@@ -228,6 +236,19 @@ pub fn execute(args: SubagentsArgs) -> Result<()> {
         SubagentsCommand::Status(args) => finish(native_view::run_status(args)?),
         SubagentsCommand::Result(args) => finish(native_view::run_result(args)?),
     }
+}
+
+/// The macOS flags pair up: clap requires `control_fd` with `listener_fd`.
+fn worker_exec(
+    proxy_socket: PathBuf,
+    listener_fd: Option<i32>,
+    control_fd: Option<i32>,
+    command: Vec<std::ffi::OsString>,
+) -> Result<()> {
+    let inherited = listener_fd
+        .zip(control_fd)
+        .map(|(listener, control)| crate::native_worker::bridge::Inherited { listener, control });
+    native_hidden::worker_exec(proxy_socket, inherited, command)
 }
 
 fn finish(code: i32) -> Result<()> {

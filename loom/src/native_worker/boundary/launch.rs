@@ -8,14 +8,13 @@ use std::time::Duration;
 
 use anyhow::{anyhow, Context, Result};
 
+pub(super) use super::stderr_tail;
 use super::{keep_scratch_unless_released, kill_namespace, Quiescence, SpawnedBoundary};
 use crate::process::{spawn_retrying_text_busy, OwnedProcess};
 use crate::verify::criteria::CargoScratch;
 
 /// How long bubblewrap may take to report its namespace.
 const INFO_TIMEOUT: Duration = Duration::from_secs(5);
-/// Bound on the stderr kept from a boundary that failed to start.
-const STDERR_TAIL_BYTES: u64 = 2048;
 
 /// A start that failed after bubblewrap was spawned. Retiring the outer
 /// process group does not reach the namespace's first process (it runs in
@@ -219,20 +218,6 @@ fn parse_info(reader: impl Read) -> Result<(i32, u64), InfoError> {
             Ok((child, namespace))
         });
     fields.map_err(InfoError::Ambiguous)
-}
-
-/// At most [`STDERR_TAIL_BYTES`] of a retired boundary's stderr, waiting at
-/// most one second.
-pub(super) fn stderr_tail(stderr: std::process::ChildStderr) -> String {
-    let (sender, receiver) = mpsc::channel();
-    std::thread::spawn(move || {
-        let mut bytes = Vec::new();
-        let _ = stderr.take(STDERR_TAIL_BYTES).read_to_end(&mut bytes);
-        let _ = sender.send(String::from_utf8_lossy(&bytes).into_owned());
-    });
-    receiver
-        .recv_timeout(Duration::from_secs(1))
-        .unwrap_or_default()
 }
 
 #[cfg(test)]

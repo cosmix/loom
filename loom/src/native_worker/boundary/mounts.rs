@@ -1,25 +1,37 @@
 //! Mount items of the worktree and the private Codex home, and the paths they
 //! expose. Each optional bind is tested first: a missing source makes
-//! bubblewrap fail.
+//! bubblewrap fail. The codex package, the auth file list, the system Codex
+//! configuration and the map store roots are shared with the macOS boundary;
+//! the map store roots also with its profile, which renders on every host.
 use std::ffi::OsStr;
+#[cfg(target_os = "linux")]
 use std::fs::Metadata;
-use std::io::{ErrorKind, Read};
+#[cfg(target_os = "linux")]
+use std::io::ErrorKind;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+use std::io::Read;
 use std::path::{Path, PathBuf};
+#[cfg(target_os = "linux")]
 use std::process::Command;
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 use anyhow::{bail, Context, Result};
 
 use crate::context::graph_store::OVERLAY_RELATIVE_DIR;
 use crate::context::store::CACHE_RELATIVE_DIR;
+#[cfg(target_os = "linux")]
 use crate::verify::criteria::{git_dirs, NetworkAccess};
 
-/// Codex home files bound writable: token refresh rewrites them.
-const AUTH_FILES: [&str; 3] = ["auth.json", "auth.json.lock", "auth.lock"];
+/// Codex home files bound writable on Linux (token refresh rewrites them)
+/// and copied into the private Codex home on macOS.
+pub(super) const AUTH_FILES: [&str; 3] = ["auth.json", "auth.json.lock", "auth.lock"];
 
 /// Marker file of a standalone codex release directory.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 const RELEASE_MARKER: &str = "codex-package.json";
 
 /// The canonical codex executable and what of it the boundary binds.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[derive(Debug)]
 pub(super) struct CodexPackage {
     pub(super) program: PathBuf,
@@ -34,6 +46,7 @@ pub(super) struct CodexPackage {
 /// (`<release>/bin/codex` beside `codex-package.json`) holds only codex
 /// and binds whole; any other layout binds the executable alone, so a
 /// codex in `~/.local/bin` exposes nothing else of `~/.local`.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 pub(super) fn codex_package(program: &Path) -> Result<CodexPackage> {
     let canonical = program
         .canonicalize()
@@ -70,6 +83,7 @@ pub(super) fn codex_package(program: &Path) -> Result<CodexPackage> {
 /// Refuse a package directory that contains a path the boundary keeps
 /// private or read-only (HOME, the Codex home, the worktree): binding it
 /// would expose that path whole.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 pub(super) fn refuse_wide_package<'a>(
     root: &Path,
     exposed: impl Iterator<Item = &'a PathBuf>,
@@ -89,6 +103,7 @@ pub(super) fn refuse_wide_package<'a>(
 
 /// Metadata of `path` without following it; `None` when absent. A
 /// symlink is refused: it could redirect a bind outside its policy.
+#[cfg(target_os = "linux")]
 fn entry(path: &Path) -> Result<Option<Metadata>> {
     match path.symlink_metadata() {
         Ok(metadata) if metadata.file_type().is_symlink() => {
@@ -100,6 +115,7 @@ fn entry(path: &Path) -> Result<Option<Metadata>> {
     }
 }
 
+#[cfg(target_os = "linux")]
 fn require_dir(path: &Path) -> Result<()> {
     match entry(path)? {
         Some(metadata) if metadata.is_dir() => Ok(()),
@@ -107,11 +123,13 @@ fn require_dir(path: &Path) -> Result<()> {
     }
 }
 
+#[cfg(target_os = "linux")]
 fn regular_file(dir: &Path, name: &str) -> Result<Option<PathBuf>> {
     let path = dir.join(name);
     Ok(entry(&path)?.filter(Metadata::is_file).map(|_| path))
 }
 
+#[cfg(target_os = "linux")]
 fn bind(command: &mut Command, flag: &str, path: &Path) {
     command.arg(flag).arg(path).arg(path);
 }
@@ -119,6 +137,7 @@ fn bind(command: &mut Command, flag: &str, path: &Path) {
 /// The writable worktree `w`, its read-only `.loom` (state root hidden),
 /// `.git`, `.codex` and (with `claude`) `.claude`, its Git metadata and the
 /// map stores. A symlinked `.loom`, `.git`, `.codex` or `.claude` is refused.
+#[cfg(target_os = "linux")]
 pub(super) fn worktree(command: &mut Command, w: &Path, claude: bool) -> Result<()> {
     bind(command, "--bind", w);
     let loom = w.join(".loom");
@@ -158,6 +177,7 @@ pub(super) fn worktree(command: &mut Command, w: &Path, claude: bool) -> Result<
 /// only `map_store_roots` binds parts; in a main checkout it is a real
 /// directory, covered here by an empty read-only tmpfs. A link resolving
 /// into `w` would expose its target through the writable bind: refused.
+#[cfg(target_os = "linux")]
 fn hide_state_root(command: &mut Command, w: &Path, work: &Path) -> Result<()> {
     let metadata = match work.symlink_metadata() {
         Ok(metadata) => metadata,
@@ -191,6 +211,7 @@ fn hide_state_root(command: &mut Command, w: &Path, work: &Path) -> Result<()> {
 /// `AGENTS.md` and the codex package bound onto it, in that order: the
 /// tmpfs first, every bind after it. `sessions/` must exist: the
 /// supervisor preflight creates it, mode 0700.
+#[cfg(target_os = "linux")]
 pub(super) fn codex_home(
     command: &mut Command,
     home: &Path,
@@ -221,11 +242,13 @@ pub(super) fn codex_home(
 }
 
 /// Codex's system configuration directory, visible through the read-only `/etc`.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 pub(super) const SYSTEM_CODEX_CONFIG: &str = "/etc/codex";
 
 /// Covers the host's system Codex configuration (`config.toml`,
 /// `managed_config.toml`, `requirements.toml`) with an empty read-only tmpfs:
 /// a worker inherits no operator Codex configuration. A symlink is refused.
+#[cfg(target_os = "linux")]
 pub(super) fn hide_system_config(command: &mut Command, dir: &Path) -> Result<()> {
     if entry(dir)?.is_some_and(|metadata| metadata.is_dir()) {
         command.arg("--tmpfs").arg(dir).arg("--remount-ro").arg(dir);

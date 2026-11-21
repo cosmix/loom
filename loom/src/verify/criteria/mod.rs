@@ -94,6 +94,11 @@ pub(crate) use confine::{
     host::{bind_read_roots, bubblewrap, read_roots, NetworkAccess},
     CargoScratch,
 };
+#[cfg(target_os = "macos")]
+pub(crate) use confine::{
+    git_dirs,
+    host::{read_roots, NetworkAccess},
+};
 pub use confine::{
     plan_confinement, resolve_confinement, spawn_confined, CommandSpec, ConfinedChild,
 };

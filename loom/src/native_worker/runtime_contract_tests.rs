@@ -207,7 +207,13 @@ fn supervisor_survives_noisy_provider_output() {
     lines.push(turn_completed("completed"));
     let mut peer = ScriptedPeer::through_turn_start(lines, End::Silent);
     let clock = SteppingClock::new(&[]);
-    let (outcome, reason) = run_session(&record.dir, &mut peer, &clock).expect("run_session");
+    let (outcome, reason) = run_session(
+        &record.dir,
+        &mut peer,
+        &clock,
+        crate::native_worker::protocol::wire::SandboxMode::WorkspaceWrite,
+    )
+    .expect("run_session");
     assert_eq!(outcome, Outcome::Succeeded, "reason: {reason}");
     let count = event_lines(&record.dir);
     assert!(count < 200, "events.jsonl holds {count} lines");
@@ -222,7 +228,13 @@ fn deadline_settles_timed_out() {
         Duration::from_secs(INTERRUPT_GRACE_SECS + 1),
     ]);
     let mut peer = ScriptedPeer::through_turn_start(Vec::new(), End::Silent).arming(&clock);
-    let (outcome, reason) = run_session(&record.dir, &mut peer, &clock).expect("run_session");
+    let (outcome, reason) = run_session(
+        &record.dir,
+        &mut peer,
+        &clock,
+        crate::native_worker::protocol::wire::SandboxMode::WorkspaceWrite,
+    )
+    .expect("run_session");
     assert_eq!(outcome, Outcome::TimedOut, "reason: {reason}");
     assert!(
         peer.sent_methods().contains(&"turn/interrupt"),
@@ -237,7 +249,13 @@ fn eof_mid_turn_is_failed_not_succeeded() {
     let lines = vec![agent_message("m1", "Finished the work.", "final_answer")];
     let mut peer = ScriptedPeer::through_turn_start(lines, End::Close);
     let clock = SteppingClock::new(&[]);
-    let (outcome, reason) = run_session(&record.dir, &mut peer, &clock).expect("run_session");
+    let (outcome, reason) = run_session(
+        &record.dir,
+        &mut peer,
+        &clock,
+        crate::native_worker::protocol::wire::SandboxMode::WorkspaceWrite,
+    )
+    .expect("run_session");
     assert_eq!(outcome, Outcome::Failed, "reason: {reason}");
 }
 

@@ -17,23 +17,9 @@ mod files;
 use files::{hidden_rules, host_cargo_home_rules, readable_file_rules};
 use files::{HIDDEN_IN_M2, READABLE_IN_GIT_CONFIG};
 
-/// `path` as an SBPL string literal. JSON escapes each character below
-/// U+0020 (`\u0001`, `\b`), and SBPL's string reader does not document those
-/// escapes, so such a path could reach the profile naming another file or fail
-/// to parse with an error that names no path. Refusing it fails the command
-/// with the path named. Skipping only the ancestor denies was the other
-/// option: Cargo would then fail on the visible file as if no rule existed,
-/// which hides the cause, and an allow rule cannot be skipped at all.
-fn quote(path: &Path) -> Result<String> {
-    let text = path.to_string_lossy();
-    if text.chars().any(|c| c < ' ') {
-        anyhow::bail!(
-            "confined verification cannot name {path:?} in a Seatbelt profile: \
-             the path holds a control character"
-        );
-    }
-    Ok(serde_json::to_string(&text)?)
-}
+// SBPL quoting is shared with the native worker's macOS boundary; it
+// refuses a control character (see its docs for why).
+use crate::native_worker::boundary::seatbelt_profile::quote;
 
 /// [`quote`] for a rule builder that takes an infallible quoter, once every
 /// path it will name has passed [`quote`].

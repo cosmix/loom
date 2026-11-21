@@ -83,6 +83,51 @@ impl OwnedProcess {
         self.child.try_wait()
     }
 
+    /// Waits up to `timeout` for the child to exit WITHOUT reaping it
+    /// (`waitid` with `WNOWAIT`): while it stays a zombie its pid, and the
+    /// id of the group it leads, cannot be reused, so [`Self::retire`] and a
+    /// group scan still name only this child's group. `None` at the timeout.
+    #[cfg(target_os = "macos")]
+    pub(crate) fn wait_unreaped(
+        &mut self,
+        timeout: Duration,
+    ) -> std::io::Result<Option<ExitStatus>> {
+        use std::os::unix::process::ExitStatusExt;
+        let deadline = Instant::now() + timeout;
+        let id = libc::id_t::from(self.child.id());
+        loop {
+            // SAFETY: an all-zero `siginfo_t` is a valid value for the call
+            // to overwrite, and `info` outlives the call.
+            let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
+            let flags = libc::WEXITED | libc::WNOHANG | libc::WNOWAIT;
+            // SAFETY: `info` is a valid, writable `siginfo_t`; WNOWAIT leaves
+            // the child waitable, so `Child` still reaps it later.
+            let result = unsafe { libc::waitid(libc::P_PID, id, &mut info, flags) };
+            if result != 0 {
+                match std::io::Error::last_os_error() {
+                    error if error.kind() == std::io::ErrorKind::Interrupted => continue,
+                    // Already reaped through `Child`, which kept the status.
+                    error if error.raw_os_error() == Some(libc::ECHILD) => {
+                        return self.child.try_wait()
+                    }
+                    error => return Err(error),
+                }
+            }
+            if info.si_pid != 0 {
+                // A wait status: the exit code in bits 8-15, or the signal.
+                let raw = match info.si_code {
+                    libc::CLD_EXITED => (info.si_status & 0xff) << 8,
+                    _ => info.si_status & 0x7f,
+                };
+                return Ok(Some(ExitStatus::from_raw(raw)));
+            }
+            if Instant::now() >= deadline {
+                return Ok(None);
+            }
+            std::thread::sleep(WAIT_POLL_INTERVAL);
+        }
+    }
+
     /// Kill descendants even when the direct child was already reaped.
     pub(crate) fn retire(&mut self) -> Instant {
         if let Some(deadline) = self.retired {
@@ -215,5 +260,33 @@ mod tests {
             "{error:#}"
         );
         assert!(!mark.exists(), "SIGKILL leaves no chance to trap");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn wait_unreaped_reports_the_exit_and_leaves_the_leader_a_zombie() {
+        use crate::process::{process_is_zombie, process_start_time};
+        use std::os::unix::process::CommandExt;
+
+        let child = Command::new("sh")
+            .args(["-c", "exit 3"])
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        let pid = child.id();
+        let mut owned = OwnedProcess::new(child);
+        let status = owned
+            .wait_unreaped(Duration::from_secs(10))
+            .unwrap()
+            .expect("the child exits within the timeout");
+        assert_eq!(status.code(), Some(3));
+        assert!(process_is_zombie(pid), "the leader was reaped");
+        assert!(process_start_time(pid).is_some(), "the pid was released");
+        let reaped = owned
+            .try_wait()
+            .unwrap()
+            .expect("the status is still there");
+        assert_eq!(reaped.code(), Some(3));
+        owned.retire();
     }
 }

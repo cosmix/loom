@@ -1,11 +1,29 @@
-//! Host qualification for native workers: bubblewrap can bound a tmpfs, a
-//! boundary with its own pid namespace starts here, and Codex's own sandbox
-//! runs inside it. The answer is measured once per process.
+//! Host qualification for native workers. Linux: bubblewrap can bound a tmpfs,
+//! a boundary with its own pid namespace starts here, and Codex's own sandbox
+//! runs inside it. macOS: `sandbox-exec` runs, the production Seatbelt launch
+//! confines a payload, and Codex honours the controlled `CODEX_HOME`. The
+//! answer is measured once per process.
 use std::sync::OnceLock;
 
 #[cfg(target_os = "linux")]
 #[path = "probe_host.rs"]
 mod host;
+
+#[cfg(any(target_os = "macos", test))]
+#[path = "probe_judge.rs"]
+mod judge;
+
+#[cfg(target_os = "macos")]
+#[path = "probe_mac.rs"]
+mod mac;
+
+#[cfg(target_os = "macos")]
+#[path = "probe_mac_fixture.rs"]
+mod mac_fixture;
+
+/// Why the lane is unavailable on a host that is neither Linux nor macOS.
+#[cfg(any(test, not(any(target_os = "linux", target_os = "macos"))))]
+const UNSUPPORTED_HOST: &str = "native Codex workers need Linux or macOS";
 
 /// Why the lane is unavailable when bubblewrap has no `--size` option.
 #[cfg(target_os = "linux")]
@@ -22,22 +40,49 @@ const SIZE_REQUIRED: &str =
 const NESTING_REQUIRED: &str =
     "Codex's command sandbox, which keeps commands off the proxy, cannot run inside the boundary";
 
-/// `Ok` when this host can run native Codex workers: Linux, bubblewrap
+/// `Ok` when this host can run native Codex workers. Linux: bubblewrap
 /// installed with `--size`, a payload boundary runs in a pid namespace of its
-/// own, and Codex's own sandbox starts inside it.
+/// own, and Codex's own sandbox starts inside it. macOS: the three
+/// `MacHostProbes` pass.
 pub fn native_backend_qualified() -> Result<(), String> {
     static QUALIFIED: OnceLock<Result<(), String>> = OnceLock::new();
+    #[cfg(target_os = "linux")]
+    let qualify = || qualify_from(&host::RealHost);
+    #[cfg(target_os = "macos")]
+    let qualify = || qualify_macos_from(&mac::RealMacHost::default());
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    let qualify = || Err(UNSUPPORTED_HOST.into());
+    // A test that points the bridge at the built loom measures afresh: an
+    // earlier answer in this process used the test harness as the bridge.
+    #[cfg(test)]
+    if super::loom_program::overridden().is_some() {
+        return qualify();
+    }
     QUALIFIED.get_or_init(qualify).clone()
 }
 
-#[cfg(not(target_os = "linux"))]
-fn qualify() -> Result<(), String> {
-    Err("native Codex workers need Linux".into())
+/// What qualification measures on a macOS host, in the order it is asked. Each
+/// failure is the complete, operator-readable reason the lane is unavailable.
+#[cfg(any(target_os = "macos", test))]
+pub(crate) trait MacHostProbes {
+    /// `/usr/bin/sandbox-exec` runs a profile here: it exists and this process
+    /// is not itself inside a sandbox that forbids nesting one.
+    fn sandbox_exec(&self) -> Result<(), String>;
+    /// The production launch confines a payload: the worktree is writable, a
+    /// host home is neither writable nor readable, and the boundary is released.
+    fn payload_boundary(&self) -> Result<(), String>;
+    /// The resolved Codex app-server, launched through the production boundary
+    /// with a controlled home, reports that home and keeps its sessions in it.
+    fn codex_home_honoured(&self) -> Result<(), String>;
 }
 
-#[cfg(target_os = "linux")]
-fn qualify() -> Result<(), String> {
-    qualify_from(&host::RealHost)
+/// Every probe, in order, over measured `probes`; the first failure is the
+/// answer and nothing after it runs.
+#[cfg(any(target_os = "macos", test))]
+pub(crate) fn qualify_macos_from(probes: &impl MacHostProbes) -> Result<(), String> {
+    probes.sandbox_exec()?;
+    probes.payload_boundary()?;
+    probes.codex_home_honoured()
 }
 
 /// What qualification measures on a host, in the order it is asked.
@@ -118,3 +163,11 @@ fn nesting_gate(nesting: &Nesting) -> Result<(), String> {
 #[cfg(all(test, target_os = "linux"))]
 #[path = "probe_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "probe_macos_tests.rs"]
+mod macos_tests;
+
+#[cfg(all(test, target_os = "macos"))]
+#[path = "probe_mac_kernel_tests.rs"]
+mod mac_kernel_tests;

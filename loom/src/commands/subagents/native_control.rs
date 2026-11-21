@@ -13,11 +13,11 @@ use crate::{
     commands::common::resolve_work_dir,
     native_worker::{
         admission::{accept_cancel, CancelRequestIn},
-        boundary::{self, Quiescence},
+        boundary::Quiescence,
         ids::validate_invocation_id,
         index,
         model::{NativeEvent, Ownership},
-        store,
+        store, supervisor,
     },
     relay::{
         emit::{mode, EnvSnapshot, StdSink},
@@ -212,16 +212,42 @@ fn release_gate(args: &ReleaseArgs, work_dir: &Path) -> Result<Result<(), String
         };
         return Ok(Err(format!("nothing to release: ownership is {ownership}")));
     }
-    match store::read_boundary(&dir) {
-        Ok(Some(identity)) => {
-            if let Quiescence::Unverified(detail) = boundary::verify_quiescent(&identity) {
-                return Ok(Err(format!("still not provably stopped: {detail}")));
-            }
-        }
-        Ok(None) => {}
+    let identity = match store::read_boundary(&dir) {
+        Ok(identity) => identity,
         Err(error) => return Ok(Err(damaged(&dir, &error))),
+    };
+    // On Linux an operator may release a spawn that recorded no identity; a
+    // macOS spawn without a macOS identity is refused (no proof can run).
+    if cfg!(target_os = "macos") {
+        if let Some(detail) = supervisor::unprovable_spawn(&dir, identity.as_ref()) {
+            return Ok(Err(unprovable(&dir, &detail)));
+        }
     }
-    Ok(Ok(()))
+    let Some(identity) = identity else {
+        return Ok(Ok(()));
+    };
+    // The same read-only proof as daemon recovery; a proven release removes
+    // the private invocation root before the record says released.
+    match supervisor::prove_and_reclaim(&identity) {
+        Ok(Quiescence::Released) => Ok(Ok(())),
+        Ok(Quiescence::Unverified(detail)) => {
+            Ok(Err(format!("still not provably stopped: {detail}")))
+        }
+        Err(detail) => Ok(Err(detail)),
+    }
+}
+
+fn unprovable(dir: &Path, detail: &str) -> String {
+    let invocation = dir
+        .file_name()
+        .map_or_else(String::new, |name| name.to_string_lossy().into_owned());
+    format!(
+        "{detail}; confirm no process of this worker still runs (look for {}={invocation} in \
+         process environments), then remove {} and the stage cache's native/{invocation} \
+         directory",
+        crate::native_worker::boundary::quiescence_scan::BOUNDARY_MARKER_VAR,
+        dir.display()
+    )
 }
 
 fn damaged(dir: &Path, error: &store::StoreError) -> String {

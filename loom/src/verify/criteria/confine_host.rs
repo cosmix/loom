@@ -30,7 +30,7 @@ pub(super) mod git_roots;
 
 #[path = "confine_read_roots.rs"]
 mod roots;
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", target_os = "macos", test))]
 pub(crate) use roots::read_roots;
 use roots::read_roots_beside;
 pub(crate) use roots::{cargo_home, environment_path};

@@ -27,14 +27,26 @@ pub fn supervise(dir: PathBuf) -> Result<()> {
     )
 }
 
-/// `loom subagents worker-exec --proxy-socket <path> -- <program> [args...]`.
+/// `loom subagents worker-exec --proxy-socket <path> [--listener-fd <fd> --control-fd <fd>]
+/// -- <program> [args...]`. With the inherited descriptors it is the macOS bridge inside the
+/// Seatbelt profile (`bridge::run_confined`); without them the Linux in-boundary bridge.
 /// The child's precise status is not forwarded: `ExitCode` has no integer view.
-pub fn worker_exec(proxy_socket: PathBuf, command: Vec<OsString>) -> Result<()> {
+pub fn worker_exec(
+    proxy_socket: PathBuf,
+    inherited: Option<crate::native_worker::bridge::Inherited>,
+    command: Vec<OsString>,
+) -> Result<()> {
     let Some((program, args)) = command.split_first() else {
         eprintln!("worker-exec: no program given");
         std::process::exit(EXIT_REFUSED);
     };
-    let result = crate::native_worker::bridge::run(&proxy_socket, Path::new(program), args);
+    let program = Path::new(program);
+    let result = match inherited {
+        Some(inherited) => {
+            crate::native_worker::bridge::run_confined(&proxy_socket, inherited, program, args)
+        }
+        None => crate::native_worker::bridge::run(&proxy_socket, program, args),
+    };
     exit_on_failure("worker-exec", result)
 }
 

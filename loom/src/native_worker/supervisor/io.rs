@@ -92,9 +92,26 @@ impl IoThreads {
         self.handles.push(handle);
     }
 
+    #[cfg(test)]
     pub fn join(self) {
         for handle in self.handles {
             let _ = handle.join();
+        }
+    }
+
+    /// Joins the threads whose pipes closed within `bound` and leaves the
+    /// rest detached: a process no census could see (an escaped one, plan
+    /// Decisions 9) may hold a pipe open forever, even when the table showed
+    /// the boundary empty. A detached thread ends with the supervisor.
+    pub fn join_within(self, bound: Duration) {
+        let deadline = Instant::now() + bound;
+        while self.handles.iter().any(|handle| !handle.is_finished()) && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(10));
+        }
+        for handle in self.handles {
+            if handle.is_finished() {
+                let _ = handle.join();
+            }
         }
     }
 }

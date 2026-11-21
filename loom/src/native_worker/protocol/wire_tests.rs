@@ -16,7 +16,13 @@ fn initialized_frame() {
 #[test]
 fn thread_start_frame_workspace_write() {
     assert_eq!(
-        thread_start(2, "model", Path::new("/work"), "instructions"),
+        thread_start(
+            2,
+            "model",
+            Path::new("/work"),
+            "instructions",
+            SandboxMode::WorkspaceWrite
+        ),
         json!({"id":2,"method":"thread/start","params":{"model":"model","cwd":"/work","approvalPolicy":"never","sandbox":"workspace-write","developerInstructions":"instructions"}})
     );
 }
@@ -24,8 +30,44 @@ fn thread_start_frame_workspace_write() {
 #[test]
 fn turn_start_frame_workspace_write_policy() {
     assert_eq!(
-        turn_start(3, "t", &["hello".into()], "high", Path::new("/work")),
+        turn_start(
+            3,
+            "t",
+            &["hello".into()],
+            "high",
+            Path::new("/work"),
+            SandboxMode::WorkspaceWrite
+        ),
         json!({"id":3,"method":"turn/start","params":{"threadId":"t","input":[{"type":"text","text":"hello"}],"effort":"high","sandboxPolicy":{"type":"workspaceWrite","writableRoots":["/work"],"networkAccess":false,"excludeSlashTmp":true,"excludeTmpdirEnvVar":false}}})
+    );
+}
+
+#[test]
+fn thread_start_frame_danger_full_access() {
+    assert_eq!(
+        thread_start(
+            2,
+            "model",
+            Path::new("/work"),
+            "instructions",
+            SandboxMode::DangerFullAccess
+        ),
+        json!({"id":2,"method":"thread/start","params":{"model":"model","cwd":"/work","approvalPolicy":"never","sandbox":"danger-full-access","developerInstructions":"instructions"}})
+    );
+}
+
+#[test]
+fn turn_start_frame_danger_full_access_policy() {
+    assert_eq!(
+        turn_start(
+            3,
+            "t",
+            &["hello".into()],
+            "high",
+            Path::new("/work"),
+            SandboxMode::DangerFullAccess
+        ),
+        json!({"id":3,"method":"turn/start","params":{"threadId":"t","input":[{"type":"text","text":"hello"}],"effort":"high","sandboxPolicy":{"type":"dangerFullAccess"}}})
     );
 }
 
@@ -37,7 +79,8 @@ fn turn_start_emits_one_text_item_per_text() {
             "t",
             &["one".into(), "two".into()],
             "medium",
-            Path::new("/w")
+            Path::new("/w"),
+            SandboxMode::WorkspaceWrite
         ),
         json!({"id":1,"method":"turn/start","params":{"threadId":"t","input":[{"type":"text","text":"one"},{"type":"text","text":"two"}],"effort":"medium","sandboxPolicy":{"type":"workspaceWrite","writableRoots":["/w"],"networkAccess":false,"excludeSlashTmp":true,"excludeTmpdirEnvVar":false}}})
     );

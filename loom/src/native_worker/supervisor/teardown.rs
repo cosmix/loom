@@ -4,8 +4,8 @@ use std::path::Path;
 use std::process::ExitCode;
 use std::time::Duration;
 
-use crate::native_worker::boundary::{Quiescence, SpawnedBoundary};
-use crate::native_worker::model::{NativeEvent, Outcome, EOF_GRACE_SECS};
+use crate::native_worker::boundary::{private_root, verify_quiescent, Quiescence, SpawnedBoundary};
+use crate::native_worker::model::{BoundaryIdentity, NativeEvent, Outcome, EOF_GRACE_SECS};
 use crate::native_worker::store::EventLog;
 use crate::process::OwnedProcess;
 
@@ -16,6 +16,50 @@ use crate::process::OwnedProcess;
 pub(crate) fn stop_process(process: &mut OwnedProcess) {
     let _ = process.wait(Duration::from_secs(EOF_GRACE_SECS));
     process.retire();
+}
+
+/// Stops the recorded boundary whose input the caller closed and proves it
+/// stopped. Linux: [`stop_process`], then the namespace scan. macOS:
+/// [`retire_mac`].
+pub(super) fn retire_recorded(
+    process: &mut OwnedProcess,
+    identity: &BoundaryIdentity,
+) -> Quiescence {
+    #[cfg(target_os = "macos")]
+    if let Some(mac) = &identity.mac {
+        return super::teardown_mac::retire_mac(process, mac);
+    }
+    stop_process(process);
+    verify_quiescent(identity)
+}
+
+/// The read-only proof that `identity`'s boundary is gone, then
+/// [`private_root::reclaim`]. The same proof serves daemon recovery and
+/// operator release.
+pub(crate) fn prove_and_reclaim(identity: &BoundaryIdentity) -> Result<Quiescence, String> {
+    private_root::reclaim(identity.mac.as_ref(), verify_quiescent(identity))
+}
+
+/// Why a record whose boundary spawn began cannot be proven stopped: no
+/// `boundary.json` names the boundary, or on macOS it holds no macOS
+/// identity (session, marker and start times). `None` when a proof can run.
+pub(crate) fn unprovable_spawn(dir: &Path, boundary: Option<&BoundaryIdentity>) -> Option<String> {
+    if !crate::native_worker::store::spawn_begun(dir) {
+        return None;
+    }
+    match boundary {
+        None => Some(
+            "boundary spawn began but boundary.json is missing: no boundary identity was \
+             recorded, so its processes cannot be proven stopped"
+                .to_string(),
+        ),
+        Some(identity) if cfg!(target_os = "macos") && identity.mac.is_none() => Some(
+            "boundary.json holds no macOS identity (session, marker and start time), so the \
+             boundary's processes cannot be proven stopped"
+                .to_string(),
+        ),
+        Some(_) => None,
+    }
 }
 
 /// Settles `boundary`, whose identity could not be recorded (`error`), once
@@ -36,13 +80,26 @@ pub(super) fn settle_unrecorded(
     settle_exit(dir, Outcome::Unknown, &reason, quiescence)
 }
 
-/// Stops `boundary`, whose identity could not be recorded, then kills its
-/// namespace by the pid and inode bubblewrap reported. The scratch goes only
-/// when that proves the namespace empty; otherwise it stays for the sweep.
+/// Stops `boundary`, whose identity could not be recorded. Linux: kills its
+/// namespace by the pid and inode bubblewrap reported; the scratch goes only
+/// when that proves the namespace empty, otherwise it stays for the sweep.
+/// macOS: [`retire_mac`] with the identity the launch reported (Codex never
+/// started: the bridge was not activated).
 fn stop_unrecorded(mut boundary: SpawnedBoundary) -> Quiescence {
+    #[cfg(target_os = "macos")]
+    let mac = boundary.mac_identity().cloned();
     // Closing the input first lets the app-server exit on EOF instead of
     // `stop_process` waiting out the whole grace.
     drop(boundary.stdin);
+    #[cfg(target_os = "macos")]
+    {
+        let Some(mac) = mac else {
+            stop_process(&mut boundary.process);
+            return Quiescence::Unverified("the macOS boundary reported no identity".into());
+        };
+        super::teardown_mac::retire_mac(&mut boundary.process, &mac)
+    }
+    #[cfg(not(target_os = "macos"))]
     stop_process(&mut boundary.process);
     #[cfg(target_os = "linux")]
     {
@@ -51,7 +108,7 @@ fn stop_unrecorded(mut boundary: SpawnedBoundary) -> Quiescence {
         keep_scratch_unless_released(&mut boundary.scratch, &quiescence);
         quiescence
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     Quiescence::Unverified("pid namespaces need Linux".into())
 }
 
@@ -88,14 +145,22 @@ pub(super) fn settle_unspawned(dir: &Path, reason: &str) -> ExitCode {
 }
 
 /// Settles a failed `boundary::spawn`. `started` (from
-/// `boundary::spawn_started`) means bubblewrap ran before the failure: its
-/// namespace may hold a process outside the retired group, and with no
-/// identity recorded nothing can prove it gone, so ownership is `Unverified`.
+/// `boundary::spawn_started`) means a boundary process ran before the failure
+/// and nothing proved it gone: on Linux bubblewrap's namespace may hold a
+/// process outside the retired group; on macOS the spawn's own cleanup did not
+/// prove the session empty. With no identity recorded ownership is
+/// `Unverified`, and a macOS private root stays for the operator.
 pub(super) fn settle_spawn_failure(dir: &Path, error: &str, started: bool) -> ExitCode {
     let reason = format!("boundary spawn failed: {error}");
     if !started {
         return settle_unspawned(dir, &reason);
     }
+    #[cfg(target_os = "macos")]
+    let detail = format!(
+        "the macOS boundary was started but its cleanup did not prove its session empty, \
+         so its processes cannot be proven stopped: {error}"
+    );
+    #[cfg(not(target_os = "macos"))]
     let detail = format!(
         "bubblewrap was started but reported no pid namespace, so its processes cannot be \
          proven stopped: {error}"

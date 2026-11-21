@@ -292,6 +292,7 @@ fn running_invocation_with_dead_supervisor(fx: &Fixture) -> PathBuf {
         boundary_pid: GONE_PID,
         pid_namespace: own_pid_namespace(),
         boot_id: crate::process::boot_id::os_boot_id().expect("boot id"),
+        mac: None,
     };
     write_boundary(&dir, &identity).expect("boundary.json");
     let supervisor = format!("{{\"pid\": {GONE_PID}, \"start\": \"0\"}}");
