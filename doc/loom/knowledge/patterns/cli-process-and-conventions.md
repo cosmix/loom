@@ -15,11 +15,11 @@ Three systems, in ascending order of permanence:
 
 | System            | Location                                                                  | Lifetime                          | Written by                                                                   |
 | ----------------- | ------------------------------------------------------------------------- | --------------------------------- | ---------------------------------------------------------------------------- |
-| **Memory**        | `.loom/work/memory/{session}.md`                                          | The run                           | `loom memory note\|decision\|change\|question`                               |
+| **Memory**        | `.loom/work/memory/{stage-id}.md`                                          | The run                           | `loom memory note\|decision\|change\|question`                               |
 | **Stage outputs** | `outputs: Vec<StageOutput>` on the stage file (key / value / description) | The run; read by dependent stages | `loom stage output set`                                                      |
 | **Knowledge**     | `doc/loom/knowledge/` (tiered)                                            | Permanent                         | `loom knowledge update` (stage execution) or direct Write/Edit (interactive) |
 
-Memory is placed in the signal's recitation section for maximum LLM attention. The promotion path from memory to knowledge is the **`knowledge-distill` stage**, which reads `loom memory show --all` and curates — there is no `loom memory promote` command.
+Journal filenames use the stage ID, not the session ID. Ordinary signals recite the stage’s own recent entries. The Dependency Findings section selects relevant entries from completed direct dependencies for ordinary and recovery signals. The promotion path from memory to knowledge is the **`knowledge-distill` stage**, which reads `loom memory show --all` and curates — there is no `loom memory promote` command.
 
 `loom knowledge update` appends; `loom knowledge replace-section <file> <heading> [content]` overwrites a `## <heading>` section's body in place — the correction path for stale knowledge — and falls back to appending, with a distinct message, when the heading is not found. `loom knowledge delete-section <file> <heading>` deletes a section and its nested subsections; no verb renames a heading in place (see concerns.md). Knowledge commands resolve through `WorkDir::project_root()` (cwd-relative), so a worktree agent writes to its own worktree rather than the main repo.
 

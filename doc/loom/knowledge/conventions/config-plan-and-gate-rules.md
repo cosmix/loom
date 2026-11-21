@@ -29,3 +29,7 @@ A stage proves its new unit is used with `reachable` (a symbol and an entry poin
 ## Plans and Fixtures Stay Out of Version Control Without Ignore Rules
 
 `doc/plans/` (plans, briefs, mockups, archive) is kept on disk but not tracked on feat-planner-ui and later branches. It is deliberately absent from `.gitignore`, because loom commits plan files during a run and an ignore rule would block that. Recorded fixtures, tests and docs never carry a real home directory, username or private project name: use `/home/username/...` and `myproject` (same length as the originals, so recorded byte offsets and column alignment hold), and tests take paths from temp dirs or synthetic literals, never the host layout.
+
+## A Fix Must Hold for Every Language and Project Loom Runs
+
+Loom drives dozens of projects in several languages and frameworks. A fix found while loom develops loom is designed and tested for any project: no Rust-only, cargo-only or repository-specific path, name or layout outside an adapter for that ecosystem. A plan or fix that covers ecosystems names them (the warm stage builds plan: Rust, bun, npm, uv, Go).

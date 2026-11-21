@@ -121,7 +121,7 @@
 | --- | --- | --- |
 | [code-style-and-structure](conventions/code-style-and-structure.md) |  | 298 |
 | [commits](conventions/commits.md) | Format | 24 |
-| [config-plan-and-gate-rules](conventions/config-plan-and-gate-rules.md) |  | 31 |
+| [config-plan-and-gate-rules](conventions/config-plan-and-gate-rules.md) |  | 35 |
 | [dispute-and-adjudication](conventions/dispute-and-adjudication.md) |  | 155 |
 | [git-and-build-workflow](conventions/git-and-build-workflow.md) |  | 237 |
 | [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) |  | 134 |
@@ -155,7 +155,7 @@
 | [daemon-singleton](mistakes/daemon-singleton.md) |  | 141 |
 | [detached-spawn-in-tests](mistakes/detached-spawn-in-tests.md) |  | 65 |
 | [dev-install](mistakes/dev-install.md) | Daemon | 58 |
-| [dispute-guards-delivery](mistakes/dispute-guards-delivery.md) | host-job hangs, parallel worker collisions, scaffold wording, hook quirks | 51 |
+| [dispute-guards-delivery](mistakes/dispute-guards-delivery.md) | host-job hangs, parallel worker collisions, scaffold wording, hook quirks | 85 |
 | [doctrine-and-acceptance](mistakes/doctrine-and-acceptance.md) |  | 392 |
 | [hooks-shell-portability](mistakes/hooks-shell-portability.md) |  | 402 |
 | [host-verify-group-containment](mistakes/host-verify-group-containment.md) |  | 47 |
@@ -246,7 +246,7 @@
 | [planning-session-sandbox-limits](concerns/planning-session-sandbox-limits.md) |  | 238 |
 | [platform-and-commit-gaps](concerns/platform-and-commit-gaps.md) |  | 247 |
 | [runtime-and-session-safety](concerns/runtime-and-session-safety.md) |  | 137 |
-| [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) |  | 392 |
+| [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) |  | 400 |
 | [source-graph-known-gaps](concerns/source-graph-known-gaps.md) | Limits | 94 |
 | [source-graph-review-backlog](concerns/source-graph-review-backlog.md) | Todo | 295 |
 | [stage-build-cache-gaps](concerns/stage-build-cache-gaps.md) | Open reviewer suggestions and residuals of the stage build cache | 25 |

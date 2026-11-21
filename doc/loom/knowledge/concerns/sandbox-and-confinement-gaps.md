@@ -390,3 +390,11 @@ Open items from the confined-test-guards work ([Tests in a Host Job](../conventi
 - **`Fixture::new` pins process-wide `HOME`** and only `test_cache_env.rs` documents that users must be `#[serial]`; a process-wide mutex in `CacheEnv::pin` would enforce it. The `tests_permission.rs` expiry bound (3 s) still races a host that stalls longer; a per-request deny-after would be deterministic.
 - **File size.** `plan_session/bridge/tests_end.rs` (397 lines) and `host_verify/verdict_complete_tests.rs` (398) are one test from the 400-line limit.
 - **Linker warning.** macOS `ld` prints `__eh_frame section too large (max 16MB) to encode dwarf unwind offsets in compact unwind table` as `warning: linker stderr` for the lib test binary, in every stage's acceptance log.
+
+## A macOS Host Job Hides the Process Table From Criteria
+
+A criterion in a macOS host job cannot find other processes through the process table. Loom's own tests that look up a stand-in that way fail there ("supervisor never appeared", "companion wait never appeared") and are guarded with `sandbox_probe::process_tree_visible()`. A project whose tests or scripts inspect processes (`ps`, `pgrep`, a process-table call) fails the same way and has no guard to reach for. The profile rule that causes it is not identified.
+
+## The One-Line Status Does Not Show Adjudication
+
+`loom status --compact` (`commands/status/render/compact.rs`) counts a stage whose dispute is with the adjudicator under `●`, the executing count, and prints `⏸` only once the stage needs human review. A watcher that reads only that line sees a stage that filed three disputes as executing. Read `.loom/work/stage-events.jsonl` or `loom status --verbose` when supervising.

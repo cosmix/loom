@@ -49,3 +49,37 @@
 **What happened:** detached `yes` CPU hogs started in one Bash call could not be killed by `pkill` at its end, because the macOS sandbox denies process listing.
 
 **Prevention:** start load generators as direct children and kill them by `$!` in the same call (`yes & pids+=($!); ...; kill ${pids[@]}`); never through `(cmd &)` subshells; report possible leftovers to the user.
+
+## Eight Confinement Tests Were Merged Failing Because No Gate Ran Them
+
+**What happened:** after integration-verify merged, seven tests in `host_verify::tests_child_contracts` and `tests_child_base::a_criterion_passing_at_the_base_records_a_pass` failed on main when run from a plain shell.
+
+**Why:** a test that starts the real confinement returns early through `confinement_unavailable` in a stage session and in a host job, where a nested `sandbox-exec` is refused. Neither the workers nor the gate executed these tests. The contract fixture's plan had no `working_dir`, which the stage schema requires, and two expectations contradicted the code merged with them: `Restore::finish` (`verify/contracts/trial.rs`) leaves a file written during the run as written, and the pytest adapter records no failed count for a passing run.
+
+**Prevention:** run a test file guarded by `confinement_unavailable` once from an unconfined shell with `LOOM_TEST_REQUIRE_SANDBOX_FREE=1` before accepting the stage that adds or changes it. CI's strict steps are the only gate that executes them.
+
+**Fix:** the fixture gained `working_dir` and the two expectations follow the code.
+
+## A Merge Watch Matched an Earlier Plan's Merge Commit
+
+**What happened:** an operator session waited for integration-verify to merge with `git log --oneline -30 | rg 'Merge loom/integration-verify into main'`. It fired at once on an earlier plan's merge commit with the same title, and work started on a tree the stage had not reached.
+
+**Why:** every plan has a stage named `integration-verify`, so the merge title repeats in history.
+
+**Prevention:** bound the range to commits after the tip seen when the watch starts (`<tip>..main`), or read the stage's `merged` state from `loom status`.
+
+## A Stage Was Reported as Executing While Its Third Dispute Was Being Judged
+
+**What happened:** an operator session reported knowledge-distill as executing from `loom status --compact` and stopped watching. The stage had filed three disputes in eleven minutes and moved to human review seconds after the last check; the operator found out from the user.
+
+**Why:** the one-line status counts a stage in adjudication as executing ([concern](../concerns/sandbox-and-confinement-gaps.md#the-one-line-status-does-not-show-adjudication)), and the session never read the stage events or the dispute directory.
+
+**Prevention:** while a plan runs, read `.loom/work/stage-events.jsonl` for transitions and list `.loom/work/disputes/<stage>/` at every check; never report a stage's state from the compact line alone.
+
+## An Operator Re-Verified a Fix the User Had Confirmed
+
+**What happened:** asked to check whether the runner fixes were on main, an operator session found the commits and then kept tracing the host-job confinement source to prove the fix covered one criterion.
+
+**Why:** it treated a request to confirm commits as a request to re-derive the fix.
+
+**Prevention:** answer the narrow question asked (are the commits on main), report it, and continue the queued work; dig further only when asked or when a gate fails again.
