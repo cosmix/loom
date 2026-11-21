@@ -275,6 +275,7 @@ fn write_boundary_roundtrip() {
         boundary_pid: 2,
         pid_namespace: 3,
         boot_id: "boot".into(),
+        mac: None,
     };
     assert_eq!(read_boundary(&dir).unwrap(), None);
     write_boundary(&dir, &identity).unwrap();

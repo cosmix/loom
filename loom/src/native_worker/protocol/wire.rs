@@ -55,10 +55,50 @@ pub fn initialized() -> Value {
     json!({"method": "initialized", "params": {}})
 }
 
-pub fn thread_start(id: u64, model: &str, cwd: &Path, developer_instructions: &str) -> Value {
+/// The Codex sandbox the protocol asks for, fixed by how the boundary was
+/// launched. Linux keeps Codex's own sandbox inside bubblewrap
+/// (`WorkspaceWrite`). macOS refuses a Seatbelt profile started inside
+/// another one, so Codex's per-command sandbox cannot run inside loom's
+/// profile: `DangerFullAccess` there means loom's profile is the only
+/// boundary, and only `SpawnedBoundary::activate` returns it, after the
+/// trusted bridge confirmed it runs inside that profile. A machine cannot be
+/// built without a mode (`MachineConfig::sandbox`), so no `thread/start` is
+/// sent for a launch that confirmed none.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SandboxMode {
+    WorkspaceWrite,
+    DangerFullAccess,
+}
+
+impl SandboxMode {
+    /// The `thread/start` `sandbox` value.
+    fn thread_sandbox(self) -> &'static str {
+        match self {
+            Self::WorkspaceWrite => "workspace-write",
+            Self::DangerFullAccess => "danger-full-access",
+        }
+    }
+}
+
+pub fn thread_start(
+    id: u64,
+    model: &str,
+    cwd: &Path,
+    developer_instructions: &str,
+    mode: SandboxMode,
+) -> Value {
+    let mut frame = bare_thread_start(id, cwd, mode);
+    frame["params"]["model"] = json!(model);
+    frame["params"]["developerInstructions"] = json!(developer_instructions);
+    frame
+}
+
+/// A `thread/start` with Codex's default model and no instructions: the
+/// session operation the macOS qualification probe sends offline.
+pub fn bare_thread_start(id: u64, cwd: &Path, mode: SandboxMode) -> Value {
     json!({"id": id, "method": "thread/start", "params": {
-        "model": model, "cwd": cwd.to_string_lossy(), "approvalPolicy": "never",
-        "sandbox": "workspace-write", "developerInstructions": developer_instructions
+        "cwd": cwd.to_string_lossy(), "approvalPolicy": "never",
+        "sandbox": mode.thread_sandbox()
     }})
 }
 
@@ -68,25 +108,38 @@ pub fn turn_start(
     texts: &[String],
     effort: &str,
     worktree: &Path,
+    mode: SandboxMode,
 ) -> Value {
     let input: Vec<Value> = texts
         .iter()
         .map(|text| json!({"type": "text", "text": text}))
         .collect();
-    // Codex's own sandbox runs every command: writes only to the worktree and
-    // `TMPDIR`. Codex adds `$TMPDIR` of its own process environment to the
-    // writable roots. The boundary sets it to `BOUNDARY_TMPDIR`, a private empty
-    // directory linkers and compilers need. `/tmp` itself stays read-only
-    // to sandboxed commands: binds below it (the Cargo scratch, a worktree
-    // under `/tmp`) must not be renamed away and replaced. Without network
-    // Codex's seccomp filter refuses AF_INET sockets and AF_UNIX
-    // `connect`, so commands reach neither the bridge's loopback port nor
-    // the proxy socket; only the app-server's own requests use the proxy.
-    let policy = json!({"type": "workspaceWrite", "writableRoots": [worktree.to_string_lossy()],
-        "networkAccess": false, "excludeSlashTmp": true, "excludeTmpdirEnvVar": false});
     json!({"id": id, "method": "turn/start", "params": {
-        "threadId": thread_id, "input": input, "effort": effort, "sandboxPolicy": policy
+        "threadId": thread_id, "input": input, "effort": effort,
+        "sandboxPolicy": turn_policy(worktree, mode)
     }})
+}
+
+/// The turn's `sandboxPolicy` for `mode`.
+fn turn_policy(worktree: &Path, mode: SandboxMode) -> Value {
+    match mode {
+        // Codex's own sandbox runs every command: writes only to the worktree and
+        // `TMPDIR`. Codex adds `$TMPDIR` of its own process environment to the
+        // writable roots. The boundary sets it to `BOUNDARY_TMPDIR`, a private empty
+        // directory linkers and compilers need. `/tmp` itself stays read-only
+        // to sandboxed commands: binds below it (the Cargo scratch, a worktree
+        // under `/tmp`) must not be renamed away and replaced. Without network
+        // Codex's seccomp filter refuses AF_INET sockets and AF_UNIX
+        // `connect`, so commands reach neither the bridge's loopback port nor
+        // the proxy socket; only the app-server's own requests use the proxy.
+        SandboxMode::WorkspaceWrite => {
+            json!({"type": "workspaceWrite", "writableRoots": [worktree.to_string_lossy()],
+                "networkAccess": false, "excludeSlashTmp": true, "excludeTmpdirEnvVar": false})
+        }
+        // Commands share loom's Seatbelt profile with the app-server: Codex
+        // cannot nest a second profile inside it.
+        SandboxMode::DangerFullAccess => json!({"type": "dangerFullAccess"}),
+    }
 }
 
 pub fn turn_steer(id: u64, thread_id: &str, expected_turn_id: &str, text: &str) -> Value {

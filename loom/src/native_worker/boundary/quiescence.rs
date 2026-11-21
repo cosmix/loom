@@ -1,7 +1,14 @@
-//! Ownership check after a boundary stopped: no process of its pid namespace
-//! may be left (`verify::criteria::pid_namespace` reads the membership).
+//! Ownership check after a boundary stopped: no process of the boundary may be
+//! left. On Linux that is its pid namespace (`verify::criteria::pid_namespace`
+//! reads the membership); on macOS its session, group, marker and their
+//! descendants (`quiescence_scan`, fed by `process::macos_procs`).
 use super::{Quiescence, SpawnedBoundary};
 use crate::native_worker::model::BoundaryIdentity;
+
+#[cfg(target_os = "macos")]
+mod mac;
+#[cfg(target_os = "macos")]
+pub(crate) use mac::kill_mac;
 
 /// The identity under which the supervisor records `boundary`.
 pub(crate) fn identity_for(boundary: &SpawnedBoundary) -> anyhow::Result<BoundaryIdentity> {
@@ -9,34 +16,71 @@ pub(crate) fn identity_for(boundary: &SpawnedBoundary) -> anyhow::Result<Boundar
     let supervisor_pid = std::process::id();
     let supervisor_start =
         start_time(supervisor_pid).context("cannot read the supervisor's process start time")?;
+    #[cfg(target_os = "macos")]
+    {
+        let mac = boundary
+            .mac_identity()
+            .context("the macOS boundary reported no identity")?
+            .clone();
+        if u32::try_from(boundary.boundary_pid).ok() != Some(mac.session) {
+            anyhow::bail!(
+                "the macOS boundary's leader pid {} is not its session {}",
+                boundary.boundary_pid,
+                mac.session
+            );
+        }
+        Ok(BoundaryIdentity {
+            supervisor_pid: supervisor_pid as i32,
+            supervisor_start,
+            boundary_pid: boundary.boundary_pid,
+            pid_namespace: boundary.pid_namespace,
+            boot_id: mac.boot_id.clone(),
+            mac: Some(mac),
+        })
+    }
+    #[cfg(not(target_os = "macos"))]
     Ok(BoundaryIdentity {
         supervisor_pid: supervisor_pid as i32,
         supervisor_start,
         boundary_pid: boundary.boundary_pid,
         pid_namespace: boundary.pid_namespace,
         boot_id: crate::process::boot_id::os_boot_id()?,
+        mac: None,
     })
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn start_time(pid: u32) -> Option<String> {
     crate::process::process_start_time(pid).map(|time| time.to_string())
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 fn start_time(_: u32) -> Option<String> {
     None
 }
 
 /// `Released` when the boot id changed (every process died with the old
-/// boot) or no live process is left in the recorded pid namespace within
-/// `REAP_GRACE_SECS`; otherwise `Unverified` with the reason.
+/// boot) or, within `REAP_GRACE_SECS`, no live process is left in the
+/// recorded pid namespace (Linux) or a conclusive census finds no process of
+/// the recorded macOS boundary; otherwise `Unverified` with the reason. It
+/// never signals anything.
 pub fn verify_quiescent(identity: &BoundaryIdentity) -> Quiescence {
     let Ok(boot_id) = crate::process::boot_id::os_boot_id() else {
         return Quiescence::Unverified("cannot read the boot id".into());
     };
     if boot_id != identity.boot_id {
         return Quiescence::Released;
+    }
+    if let Some(mac_identity) = &identity.mac {
+        #[cfg(target_os = "macos")]
+        return mac::verify(mac_identity);
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = mac_identity;
+            return Quiescence::Unverified(
+                "a macOS boundary can be proven stopped only on macOS".into(),
+            );
+        }
     }
     scan_until_empty(identity.pid_namespace)
 }
@@ -118,6 +162,6 @@ fn kill_member(pid: i32, namespace: u64) {
     }
 }
 
-#[cfg(all(test, target_os = "linux"))]
+#[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
 #[path = "quiescence_tests.rs"]
 mod tests;

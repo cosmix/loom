@@ -99,6 +99,59 @@ fn manifest_rejects_unknown_field() {
     assert!(serde_json::from_value::<NativeManifest>(manifest).is_err());
 }
 
+const LINUX_IDENTITY: &str = r#"{"supervisor_pid":7,"supervisor_start":"11","boundary_pid":8,"pid_namespace":4026531836,"boot_id":"boot-a"}"#;
+
+#[test]
+fn a_linux_identity_round_trips_byte_for_byte_without_a_mac_part() {
+    let identity: BoundaryIdentity = serde_json::from_str(LINUX_IDENTITY).unwrap();
+    assert_eq!(identity.mac, None);
+    assert_eq!(serde_json::to_string(&identity).unwrap(), LINUX_IDENTITY);
+}
+
+fn mac_identity() -> MacIdentity {
+    MacIdentity {
+        invocation: "inv-00112233445566778899aabbccddeeff".into(),
+        session: 4242,
+        leader_start: "1700000000123456".into(),
+        boot_id: "boot-b".into(),
+        scratch_root: PathBuf::from("/cache/native/inv-00112233445566778899aabbccddeeff"),
+    }
+}
+
+#[test]
+fn a_macos_identity_round_trips_and_marks_its_session_group_and_marker() {
+    let identity = BoundaryIdentity {
+        supervisor_pid: 7,
+        supervisor_start: "11".into(),
+        boundary_pid: 4242,
+        pid_namespace: 0,
+        boot_id: "boot-b".into(),
+        mac: Some(mac_identity()),
+    };
+    let text = serde_json::to_string(&identity).unwrap();
+    assert!(text.contains(r#""mac":{"invocation":"#), "{text}");
+    assert_eq!(
+        serde_json::from_str::<BoundaryIdentity>(&text).unwrap(),
+        identity
+    );
+    let mark = mac_identity().mark();
+    assert_eq!((mark.sid, mark.pgid), (4242, 4242));
+    assert_eq!(
+        mark.marker,
+        "LOOM_NATIVE_BOUNDARY=inv-00112233445566778899aabbccddeeff"
+    );
+}
+
+#[test]
+fn a_macos_identity_rejects_unknown_fields() {
+    let mut value = serde_json::to_value(mac_identity()).unwrap();
+    value
+        .as_object_mut()
+        .unwrap()
+        .insert("extra".into(), Value::Bool(true));
+    assert!(serde_json::from_value::<MacIdentity>(value).is_err());
+}
+
 #[test]
 fn phase_orders_by_declaration() {
     assert!(Phase::Admitted < Phase::Starting && Phase::Starting < Phase::Running);

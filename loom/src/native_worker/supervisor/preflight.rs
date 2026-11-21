@@ -13,8 +13,7 @@ pub(super) fn preflight(manifest: &NativeManifest) -> Result<(PathBuf, PathBuf, 
     let codex_program = crate::codex::find_codex_path()
         .and_then(|path| Ok(path.canonicalize()?))
         .map_err(|e| format!("codex executable not found: {e:#}"))?;
-    let loom_program = std::env::current_exe()
-        .and_then(|path| path.canonicalize())
+    let loom_program = boundary::loom_program::current()
         .map_err(|e| format!("cannot resolve the loom executable: {e}"))?;
     let codex_home = dirs::home_dir()
         .ok_or("cannot resolve the home directory")?
@@ -24,8 +23,10 @@ pub(super) fn preflight(manifest: &NativeManifest) -> Result<(PathBuf, PathBuf, 
     Ok((codex_home, codex_program, loom_program))
 }
 
-/// The boundary binds `<codex_home>/sessions` and the auth files from the
-/// host. This is the only place that creates `sessions/`: private, mode 0700.
+/// The Linux boundary binds `<codex_home>/sessions` and the auth files from the
+/// host; the macOS boundary copies the auth files into its private home. Either
+/// way `auth.json` must exist. This is the only place that creates the host
+/// `sessions/`: private, mode 0700.
 pub(super) fn prepare_codex_home(codex_home: &Path) -> Result<(), String> {
     ensure_real_dir(&codex_home.join("sessions"), 0o700)?;
     match fs::symlink_metadata(codex_home.join("auth.json")) {

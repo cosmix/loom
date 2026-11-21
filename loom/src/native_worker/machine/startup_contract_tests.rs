@@ -143,7 +143,13 @@ fn run(script: Script) -> Run {
         pending: Vec::new(),
         sent: Vec::new(),
     };
-    let (outcome, reason) = run_session(&record.dir, &mut peer, &clock).expect("run_session");
+    let (outcome, reason) = run_session(
+        &record.dir,
+        &mut peer,
+        &clock,
+        crate::native_worker::protocol::wire::SandboxMode::WorkspaceWrite,
+    )
+    .expect("run_session");
     Run {
         outcome,
         reason,

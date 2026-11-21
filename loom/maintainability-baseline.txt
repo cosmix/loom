@@ -20,7 +20,6 @@ file src/plan/parser/extraction.rs 410
 file src/plan/schema/tests/validation_tests.rs 826
 file src/plan/schema/validation.rs 1063
 file src/plan/tests/amendment.rs 605
-file src/process/mod.rs 402
 file src/sandbox/config.rs 708
 file src/sandbox/settings/tests.rs 1565
 file tests/adjudication_e2e.rs 490

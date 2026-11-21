@@ -40,6 +40,9 @@ pub struct MachineConfig {
     pub effort: String,
     pub task_text: String,
     pub client_version: String,
+    /// The launch-confirmed boundary mode both `thread/start` and
+    /// `turn/start` carry (`wire::SandboxMode`).
+    pub sandbox: wire::SandboxMode,
 }
 
 #[derive(Debug, Clone)]
@@ -220,7 +223,13 @@ impl Machine {
         vec![
             Action::Send(wire::initialized()),
             self.request(Pending::ThreadStart, |id| {
-                wire::thread_start(id, &config.model, &config.cwd, wire::DEVELOPER_INSTRUCTIONS)
+                wire::thread_start(
+                    id,
+                    &config.model,
+                    &config.cwd,
+                    wire::DEVELOPER_INSTRUCTIONS,
+                    config.sandbox,
+                )
             }),
         ]
     }

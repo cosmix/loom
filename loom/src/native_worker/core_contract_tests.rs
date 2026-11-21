@@ -156,6 +156,7 @@ fn machine() -> Machine {
         effort: "xhigh".to_string(),
         task_text: "do the task".to_string(),
         client_version: "0.0.0".to_string(),
+        sandbox: super::protocol::wire::SandboxMode::WorkspaceWrite,
     })
 }
 

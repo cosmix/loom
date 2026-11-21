@@ -52,7 +52,13 @@ fn a_peer_that_never_answers_initialize_times_out_at_the_startup_deadline() {
     let clock = SteppingClock::new(&[Duration::ZERO, Duration::from_secs(30)]);
     clock.arm();
     let mut peer = SilentPeer { sent: Vec::new() };
-    let (outcome, reason) = run_session(&record.dir, &mut peer, &clock).expect("run_session");
+    let (outcome, reason) = run_session(
+        &record.dir,
+        &mut peer,
+        &clock,
+        crate::native_worker::protocol::wire::SandboxMode::WorkspaceWrite,
+    )
+    .expect("run_session");
     assert_eq!((outcome, reason.as_str()), (Outcome::TimedOut, REASON));
     let methods: Vec<_> = peer
         .sent
@@ -71,7 +77,13 @@ fn a_handshake_frame_queued_past_the_deadline_is_not_accepted() {
     let clock = SteppingClock::new(&[Duration::ZERO, Duration::from_secs(130)]);
     clock.arm();
     let mut peer = ScriptedPeer::through_turn_start(Vec::new(), End::Close);
-    let (outcome, reason) = run_session(&record.dir, &mut peer, &clock).expect("run_session");
+    let (outcome, reason) = run_session(
+        &record.dir,
+        &mut peer,
+        &clock,
+        crate::native_worker::protocol::wire::SandboxMode::WorkspaceWrite,
+    )
+    .expect("run_session");
     assert_eq!((outcome, reason.as_str()), (Outcome::TimedOut, REASON));
     assert_eq!(peer.sent_methods(), ["initialize"]);
     assert!(!thread_started(&record.dir));
@@ -86,7 +98,13 @@ fn a_thread_started_in_time_disarms_the_startup_deadline() {
     let clock = SteppingClock::new(&[Duration::ZERO, Duration::from_secs(10)]);
     clock.arm();
     let mut peer = ScriptedPeer::through_turn_start(Vec::new(), End::Silent);
-    let (outcome, reason) = run_session(&record.dir, &mut peer, &clock).expect("run_session");
+    let (outcome, reason) = run_session(
+        &record.dir,
+        &mut peer,
+        &clock,
+        crate::native_worker::protocol::wire::SandboxMode::WorkspaceWrite,
+    )
+    .expect("run_session");
     assert_eq!(
         (outcome, reason.as_str()),
         (Outcome::TimedOut, "deadline expired")

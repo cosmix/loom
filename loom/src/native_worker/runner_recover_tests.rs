@@ -113,6 +113,158 @@ fn a_lost_supervisor_without_the_spawn_marker_is_released() {
     );
 }
 
+/// A macOS identity for `dir`'s invocation, its private root created below
+/// `cache` (canonical: the root is walked without following symlinks).
+fn mac_boundary(dir: &Path, cache: &Path, boot_id: &str, session: u32) -> PathBuf {
+    let invocation = dir.file_name().unwrap().to_str().unwrap().to_string();
+    let root = cache.join("native").join(&invocation);
+    fs::create_dir_all(root.join("tmp")).expect("private root");
+    fs::write(root.join("tmp").join("scratch"), b"x").expect("scratch file");
+    let mac = crate::native_worker::model::MacIdentity {
+        invocation,
+        session,
+        leader_start: "1".into(),
+        boot_id: boot_id.into(),
+        scratch_root: root.clone(),
+    };
+    let identity = crate::native_worker::model::BoundaryIdentity {
+        supervisor_pid: i32::MAX - 7,
+        supervisor_start: "0".into(),
+        boundary_pid: session as i32,
+        pid_namespace: 0,
+        boot_id: boot_id.into(),
+        mac: Some(mac),
+    };
+    store::write_boundary(dir, &identity).expect("boundary.json");
+    root
+}
+
+fn canonical_temp() -> (tempfile::TempDir, PathBuf) {
+    let tmp = tempfile::TempDir::new().expect("temp dir");
+    let path = tmp.path().canonicalize().expect("canonical temp");
+    (tmp, path)
+}
+
+#[test]
+fn a_lost_macos_supervisor_after_a_boot_change_is_released_and_its_root_removed() {
+    let (_tmp, base) = canonical_temp();
+    let dir = record(&base);
+    mark_spawn_begun(&dir).expect("marker");
+    let root = mac_boundary(&dir, &base.join("cache"), "an-earlier-boot", 4242);
+    settle_lost_supervisor(&dir).expect("settle");
+    let tail = tail(&dir);
+    assert!(
+        matches!(&tail[1], NativeEvent::OwnershipReleased { by } if by == "daemon"),
+        "{tail:?}"
+    );
+    assert!(!root.exists(), "the private root outlived a proven release");
+}
+
+#[test]
+fn a_lost_macos_supervisor_whose_session_is_ambiguous_keeps_state_and_scratch() {
+    let (_tmp, base) = canonical_temp();
+    let dir = record(&base);
+    mark_spawn_begun(&dir).expect("marker");
+    // The test process's own session: members exist or the census is uncertain.
+    let session = u32::try_from(nix::unistd::getsid(None).expect("sid").as_raw()).unwrap();
+    let boot = crate::process::boot_id::os_boot_id().expect("boot id");
+    let root = mac_boundary(&dir, &base.join("cache"), &boot, session);
+    settle_lost_supervisor(&dir).expect("settle");
+    let tail = tail(&dir);
+    assert!(
+        matches!(&tail[1], NativeEvent::OwnershipUnverified { .. }),
+        "{tail:?}"
+    );
+    assert!(
+        root.join("tmp").join("scratch").exists(),
+        "scratch removed unproven"
+    );
+}
+
+/// A stale pid names no member, so the proof releases it and removes the
+/// private root. Only a macOS census proves that; off macOS a macOS identity
+/// stays unverified with its root. On macOS the census must be conclusive,
+/// so this needs an unconfined host (skips, or fails under
+/// `LOOM_TEST_REQUIRE_SANDBOX_FREE=1`, inside a sandbox).
+#[test]
+fn a_lost_macos_supervisor_with_a_stale_session_releases_only_with_its_root() {
+    #[cfg(target_os = "macos")]
+    {
+        use crate::process::sandbox_probe::{confined_commands_runnable, skip_unless};
+        let name = "a_lost_macos_supervisor_with_a_stale_session_releases_only_with_its_root";
+        if skip_unless(
+            confined_commands_runnable(),
+            name,
+            "needs an unconfined host",
+        ) {
+            return;
+        }
+    }
+    let (_tmp, base) = canonical_temp();
+    let dir = record(&base);
+    mark_spawn_begun(&dir).expect("marker");
+    let stale = crate::test_stand_in::reaped_pid();
+    let boot = crate::process::boot_id::os_boot_id().expect("boot id");
+    let root = mac_boundary(&dir, &base.join("cache"), &boot, stale);
+    settle_lost_supervisor(&dir).expect("settle");
+    let tail = tail(&dir);
+    if cfg!(target_os = "macos") {
+        assert!(
+            matches!(&tail[1], NativeEvent::OwnershipReleased { .. }),
+            "{tail:?}"
+        );
+        assert!(!root.exists(), "the private root outlived the release");
+    } else {
+        assert!(
+            matches!(&tail[1], NativeEvent::OwnershipUnverified { .. }),
+            "{tail:?}"
+        );
+        assert!(root.exists(), "scratch removed unproven");
+    }
+}
+
+#[test]
+fn a_failed_root_removal_after_release_keeps_the_record_for_a_retry() {
+    let (_tmp, base) = canonical_temp();
+    let dir = record(&base);
+    mark_spawn_begun(&dir).expect("marker");
+    let root = mac_boundary(&dir, &base.join("cache"), "an-earlier-boot", 4242);
+    // A root that is not `native/<invocation>` is refused, as a failure would.
+    let mut identity = store::read_boundary(&dir).unwrap().unwrap();
+    identity.mac.as_mut().unwrap().scratch_root = base.join("elsewhere");
+    store::write_boundary(&dir, &identity).expect("boundary.json");
+    let error = settle_lost_supervisor(&dir).expect_err("a failed removal settles nothing");
+    assert!(
+        format!("{error:#}").contains("could not be removed"),
+        "{error:#}"
+    );
+    let events = read_events(&dir).expect("events");
+    assert!(
+        !events.iter().any(|r| matches!(
+            r.event,
+            NativeEvent::OwnershipReleased { .. } | NativeEvent::OwnershipUnverified { .. }
+        )),
+        "{events:?}"
+    );
+    assert!(root.exists());
+}
+
+#[test]
+fn a_lost_supervisor_before_identity_publication_keeps_its_scratch() {
+    let (_tmp, base) = canonical_temp();
+    let dir = record(&base);
+    mark_spawn_begun(&dir).expect("marker");
+    let invocation = dir.file_name().unwrap().to_owned();
+    let root = base.join("cache").join("native").join(invocation);
+    fs::create_dir_all(&root).expect("private root");
+    settle_lost_supervisor(&dir).expect("settle");
+    assert!(matches!(
+        &tail(&dir)[1],
+        NativeEvent::OwnershipUnverified { .. }
+    ));
+    assert!(root.exists(), "an unproven boundary lost its scratch");
+}
+
 /// `settle_spawn_failure` after bubblewrap started appended `Terminal` but not
 /// its ownership event: the daemon must not release it.
 #[test]

@@ -1,39 +1,47 @@
 //! Supervisor process for one native worker: boundary, protocol loop, teardown and settlement.
+mod claim;
 pub mod control;
 mod io;
+#[cfg(all(test, target_os = "macos"))]
+pub(crate) mod lifecycle_tests;
 mod preflight;
 #[cfg(test)]
 mod startup_tests;
 mod teardown;
+#[cfg(target_os = "macos")]
+mod teardown_mac;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_io;
 #[cfg(test)]
 mod tests_stage_cache;
 
 use std::collections::VecDeque;
-use std::os::fd::AsRawFd;
 use std::path::Path;
-use std::process::ExitCode;
+use std::process::{ChildStderr, ChildStdin, ChildStdout, ExitCode};
 use std::time::{Duration, Instant};
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{anyhow, Context, Result};
 
 pub use io::SystemClock;
 pub use teardown::settle;
+pub(crate) use teardown::{prove_and_reclaim, unprovable_spawn};
 
+use self::claim::{admitted_manifest, claim, invocation_of, stage_cache_of};
 use self::control::{ControlEvent, ControlPoller};
-use self::io::start_pipes;
+use self::io::{start_pipes, IoThreads};
 use self::teardown::{settle_exit, settle_unspawned};
 use super::boundary::{self, BoundarySpec, Quiescence, SpawnedBoundary};
 use super::machine::{Action, Input, Machine, MachineConfig, STARTUP_DEADLINE_SECS};
 use super::model::{
-    BoundaryIdentity, NativeEvent, NativeManifest, Outcome, INTERRUPT_GRACE_SECS, MAX_BRIEF_BYTES,
-    PROGRESS_EVENT_INTERVAL_SECS,
+    BoundaryIdentity, NativeEvent, Outcome, INTERRUPT_GRACE_SECS, MAX_BRIEF_BYTES,
+    PROGRESS_EVENT_INTERVAL_SECS, REAP_GRACE_SECS,
 };
 use super::protocol::frame::{classify, FrameError, Transport};
+use super::protocol::wire::SandboxMode;
 use super::store::{self, EventLog};
 use super::{prompt, proxy};
-use crate::fs::safe_fs::{safe_create_new_in_workdir, safe_open_dirfd};
 
 /// Time source of the loop; tests step it.
 pub trait Clock {
@@ -47,13 +55,16 @@ const GRACE: Duration = Duration::from_secs(INTERRUPT_GRACE_SECS);
 const PROGRESS_INTERVAL: Duration = Duration::from_secs(PROGRESS_EVENT_INTERVAL_SECS);
 
 /// Drives the reducer over `transport` until it tears down; returns the
-/// teardown's outcome and reason. Any record failure is an `Err`.
+/// teardown's outcome and reason. Any record failure is an `Err`. `mode` is
+/// the boundary mode the launch confirmed (`SpawnedBoundary::activate`);
+/// `thread/start` and `turn/start` carry it.
 pub fn run_session<T: Transport>(
     dir: &Path,
     transport: &mut T,
     clock: &dyn Clock,
+    mode: SandboxMode,
 ) -> Result<(Outcome, String)> {
-    Session::new(dir, transport, clock)?.run()
+    Session::new(dir, transport, clock, mode)?.run()
 }
 
 struct Session<'a, T: Transport> {
@@ -73,7 +84,12 @@ struct Session<'a, T: Transport> {
 }
 
 impl<'a, T: Transport> Session<'a, T> {
-    fn new(dir: &'a Path, transport: &'a mut T, clock: &'a dyn Clock) -> Result<Self> {
+    fn new(
+        dir: &'a Path,
+        transport: &'a mut T,
+        clock: &'a dyn Clock,
+        sandbox: SandboxMode,
+    ) -> Result<Self> {
         let manifest = store::read_manifest(dir).context("manifest.json")?;
         let brief = super::store_io::read_regular(dir, "brief.md", MAX_BRIEF_BYTES)
             .context("brief.md")?
@@ -85,6 +101,7 @@ impl<'a, T: Transport> Session<'a, T> {
             effort: manifest.effort.clone(),
             task_text: prompt::task_text(&manifest.brief_path, &brief),
             client_version: env!("CARGO_PKG_VERSION").into(),
+            sandbox,
         });
         Ok(Self {
             dir,
@@ -234,6 +251,10 @@ pub fn run_from_dir(dir: &Path) -> Result<ExitCode> {
     let Some(manifest) = admitted_manifest(dir)? else {
         return Ok(ExitCode::SUCCESS);
     };
+    let invocation = match invocation_of(dir) {
+        Ok(invocation) => invocation,
+        Err(e) => return Ok(settle_unspawned(dir, &format!("{e:#}"))),
+    };
     let (codex_home, codex_program, loom_program) = match preflight::preflight(&manifest) {
         Ok(tools) => tools,
         Err(reason) => return Ok(settle_unspawned(dir, &reason)),
@@ -258,9 +279,10 @@ pub fn run_from_dir(dir: &Path) -> Result<ExitCode> {
         proxy_socket,
         loom_program,
         stage_cache: Some(stage_cache),
+        invocation,
     };
-    // Durable before bubblewrap can exist: a crash between the spawn and
-    // `boundary.json` must not let the daemon release ownership unproven.
+    // Durable before a boundary process can exist: a crash between the spawn
+    // and `boundary.json` must not let the daemon release ownership unproven.
     if let Err(e) = store::mark_spawn_begun(dir) {
         return Ok(settle_unspawned(dir, &format!("spawn marker: {e}")));
     }
@@ -271,102 +293,75 @@ pub fn run_from_dir(dir: &Path) -> Result<ExitCode> {
             teardown::settle_spawn_failure(dir, &format!("{e:#}"), boundary::spawn_started(&e))
         }
     };
-    drop(proxy);
-    drop(socket_dir);
+    drop((proxy, socket_dir)); // in order: the proxy stops before its directory goes
     Ok(code)
 }
 
-/// The stage's build cache, created before the boundary binds it. `dir` is
-/// `<work_dir>/native-workers/<stage>/<invocation>` (`store::invocation_dir`).
-fn stage_cache_of(dir: &Path, stage_id: &str) -> Result<crate::stage_cache::StageCache> {
-    let work_dir = dir
-        .ancestors()
-        .nth(3)
-        .context("the invocation directory is not under a work directory")?;
-    let cache = crate::verify::criteria::stage_cache_for(work_dir, stage_id)?;
-    cache.ensure()?;
-    Ok(cache)
-}
-
-/// Creates `supervisor.json` exclusively: whoever creates it owns the
-/// invocation, so a second supervisor (or a daemon tombstone) refuses here.
-fn claim(dir: &Path) -> Result<()> {
-    let pid = std::process::id();
-    let start = crate::process::process_start_time(pid)
-        .context("cannot read the supervisor's process start time")?;
-    let body = serde_json::to_vec(&serde_json::json!({
-        "pid": pid as i32,
-        "start": start.to_string(),
-    }))?;
-    let fd = safe_open_dirfd(dir)?;
-    safe_create_new_in_workdir(fd.as_raw_fd(), Path::new("supervisor.json"), &body)
-        .context("supervisor.json already exists or cannot be created")
-}
-
-/// The manifest of a record that is exactly `[Admitted]` with no boundary;
-/// `None` when it already holds a `Terminal` event.
-fn admitted_manifest(dir: &Path) -> Result<Option<NativeManifest>> {
-    let manifest = store::read_manifest(dir).context("manifest.json")?;
-    let events = store::read_events(dir).context("events.jsonl")?;
-    if events
-        .iter()
-        .any(|record| matches!(record.event, NativeEvent::Terminal { .. }))
-    {
-        return Ok(None);
-    }
-    if events.len() != 1 || events[0].event != NativeEvent::Admitted {
-        bail!("invocation is not in the admitted state");
-    }
-    if store::read_boundary(dir)
-        .context("boundary.json")?
-        .is_some()
-    {
-        bail!("boundary.json already exists");
-    }
-    Ok(Some(manifest))
-}
-
-/// Records the boundary, runs the session, tears the boundary down and settles.
-/// Only the pipes move out of `spawned`; the rest (the process and the mounted
-/// Cargo home) lives until this function returns, after the boundary is retired.
-/// A namespace not proven empty keeps that Cargo home on disk for the sweep.
+/// Records the boundary, activates it, runs the session, tears the boundary
+/// down and settles. Only the pipes move out of `spawned`; the rest (the
+/// process, the mounted Cargo home on Linux, the control channel and reserved
+/// port on macOS) lives until this function returns, after the boundary is
+/// retired. A boundary not proven empty keeps its scratch on disk.
 fn supervise_boundary(dir: &Path, mut spawned: SpawnedBoundary) -> ExitCode {
-    use Outcome::Unknown;
     let identity = match boundary::identity_for(&spawned) {
         Ok(identity) => identity,
         Err(e) => return teardown::settle_unrecorded(dir, spawned, &e),
     };
+    // Codex starts only once `boundary.json` names the boundary; an
+    // activation error means it never started and the protocol must not.
+    let started = match record_boundary(dir, &identity) {
+        Ok(()) => spawned.activate().map_err(|e| {
+            let reason = format!("boundary activation failed: {e:#}");
+            (Outcome::Failed, reason)
+        }),
+        Err(e) => Err((
+            Outcome::Unknown,
+            format!("could not record boundary: {e:#}"),
+        )),
+    };
     let (stdin, stdout, stderr) = (spawned.stdin, spawned.stdout, spawned.stderr);
-    let (result, threads) = match record_boundary(dir, &identity) {
-        Ok(()) => match start_pipes(dir, stdin, stdout, stderr) {
-            Ok(mut transport) => {
-                let result = run_session(dir, &mut transport, &SystemClock);
-                (result, Some(transport.close_input()))
-            }
-            Err(e) => (Err(anyhow!(e).context("start the pipe threads")), None),
-        },
-        Err(e) => {
+    let (result, threads) = match started {
+        Ok(mode) => run_pipes(dir, (stdin, stdout, stderr), mode),
+        Err(settled) => {
             drop((stdin, stdout, stderr));
-            (
-                Ok((Unknown, format!("could not record boundary: {e:#}"))),
-                None,
-            )
+            (Ok(settled), None)
         }
     };
-    teardown::stop_process(&mut spawned.process);
-    let quiescence = boundary::verify_quiescent(&identity);
+    let quiescence = teardown::retire_recorded(&mut spawned.process, &identity);
     #[cfg(target_os = "linux")]
     boundary::keep_scratch_unless_released(&mut spawned.scratch, &quiescence);
     if let (Quiescence::Released, Some(threads)) = (&quiescence, threads) {
-        threads.join();
+        threads.join_within(Duration::from_secs(REAP_GRACE_SECS));
     }
-    let (outcome, reason) =
-        result.unwrap_or_else(|e| (Unknown, format!("event log or record failure: {e:#}")));
+    let (outcome, reason) = result.unwrap_or_else(|e| {
+        (
+            Outcome::Unknown,
+            format!("event log or record failure: {e:#}"),
+        )
+    });
     settle_exit(dir, outcome, &reason, quiescence)
 }
 
-/// `boundary.json` first, so a crash after this point leaves a findable namespace.
-/// Codex's own sandbox always runs: qualification requires it to nest.
+type Pipes = (ChildStdin, ChildStdout, ChildStderr);
+
+/// Runs the session over the boundary's pipes; the threads come back still
+/// running, for a bounded join once the boundary is proven empty.
+fn run_pipes(
+    dir: &Path,
+    (stdin, stdout, stderr): Pipes,
+    mode: SandboxMode,
+) -> (Result<(Outcome, String)>, Option<IoThreads>) {
+    match start_pipes(dir, stdin, stdout, stderr) {
+        Ok(mut transport) => {
+            let result = run_session(dir, &mut transport, &SystemClock, mode);
+            (result, Some(transport.close_input()))
+        }
+        Err(e) => (Err(anyhow!(e).context("start the pipe threads")), None),
+    }
+}
+
+/// `boundary.json` first, so a crash after this point leaves a findable boundary.
+/// Codex's own sandbox always runs on Linux: qualification requires it to nest.
 fn record_boundary(dir: &Path, identity: &BoundaryIdentity) -> Result<()> {
     store::write_boundary(dir, identity)?;
     EventLog::open(dir)?.append(NativeEvent::BoundaryCreated)?;

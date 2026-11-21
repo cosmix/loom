@@ -38,6 +38,45 @@ fn turn_response_without_id_tears_down_failed() {
     );
 }
 
+/// Both protocol messages carry the configured, launch-confirmed mode: a
+/// confirmed Seatbelt launch asks for no nested Codex sandbox on either.
+#[test]
+fn a_confirmed_seatbelt_launch_sends_danger_full_access_on_thread_and_turn() {
+    let mut machine = Machine::new(MachineConfig {
+        sandbox: wire::SandboxMode::DangerFullAccess,
+        ..config()
+    });
+    machine.step(Input::Start);
+    let init = machine.step(ok(1, json!({})));
+    assert_eq!(
+        sent(&init, "thread/start")["params"]["sandbox"],
+        "danger-full-access"
+    );
+    let thread = machine.step(ok(2, json!({"thread": {"id": "th-1"}})));
+    let policy = &sent(&thread, "turn/start")["params"]["sandboxPolicy"];
+    assert_eq!(policy, &json!({"type": "dangerFullAccess"}));
+}
+
+/// The Linux mode keeps Codex's own workspace sandbox on both messages.
+#[test]
+fn the_linux_mode_sends_workspace_write_on_thread_and_turn() {
+    let init = started().step(ok(1, json!({})));
+    assert_eq!(
+        sent(&init, "thread/start")["params"]["sandbox"],
+        "workspace-write"
+    );
+    let thread = thread_ready_actions();
+    let policy = &sent(&thread, "turn/start")["params"]["sandboxPolicy"];
+    assert_eq!(policy["type"], "workspaceWrite");
+    assert_eq!(policy["networkAccess"], false);
+}
+
+fn thread_ready_actions() -> Vec<Action> {
+    let mut machine = started();
+    machine.step(ok(1, json!({})));
+    machine.step(ok(2, json!({"thread": {"id": "th-1"}})))
+}
+
 #[test]
 fn malformed_notification_and_completion_for_other_turn_are_ignored() {
     let mut machine = active();

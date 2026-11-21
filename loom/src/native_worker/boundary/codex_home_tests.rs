@@ -48,6 +48,7 @@ impl RealFixture {
             proxy_socket: pkg.join("proxy/proxy.sock"),
             loom_program: pkg.join("loom"),
             stage_cache: None,
+            invocation: "inv-test".to_string(),
         };
         Self {
             _dirs: vec![home_tmp, w_tmp, pkg_tmp],

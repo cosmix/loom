@@ -46,6 +46,7 @@ fn release_appends_operator_release_when_the_boot_id_changed() {
             boundary_pid: 1,
             pid_namespace: 1,
             boot_id: "other-boot".into(),
+            mac: None,
         },
     )
     .unwrap();
@@ -90,4 +91,92 @@ fn release_refuses_inside_a_session() {
     let mut h = Harness::new();
     assert_eq!(h.run(release()), 3);
     h.refused("release is an operator command");
+}
+
+fn mark_unverified(dir: &std::path::Path) {
+    store::EventLog::open(dir)
+        .unwrap()
+        .append(NativeEvent::OwnershipUnverified {
+            detail: "lost".into(),
+        })
+        .unwrap();
+}
+
+/// Records a macOS identity from another boot whose private root is
+/// `scratch_root`.
+fn write_mac_identity(dir: &std::path::Path, scratch_root: PathBuf) {
+    let mac = MacIdentity {
+        invocation: INV.into(),
+        session: 4242,
+        leader_start: "1".into(),
+        boot_id: "other-boot".into(),
+        scratch_root,
+    };
+    let identity = BoundaryIdentity {
+        supervisor_pid: 1,
+        supervisor_start: "1".into(),
+        boundary_pid: 4242,
+        pid_namespace: 0,
+        boot_id: "other-boot".into(),
+        mac: Some(mac),
+    };
+    store::write_boundary(dir, &identity).unwrap();
+}
+
+fn ownership(h: &Harness) -> Ownership {
+    index::unit_state(&h.root(), "stage-a", "unit")
+        .unwrap()
+        .unwrap()
+        .ownership
+}
+
+#[test]
+fn release_after_proof_removes_the_macos_private_root() {
+    let mut h = Harness::new();
+    h.session = false;
+    let dir = h.record();
+    let cache = tempfile::tempdir().unwrap();
+    let root = cache
+        .path()
+        .canonicalize()
+        .unwrap()
+        .join("native")
+        .join(INV);
+    fs::create_dir_all(root.join("tmp")).unwrap();
+    fs::write(root.join("tmp").join("scratch"), "x").unwrap();
+    write_mac_identity(&dir, root.clone());
+    mark_unverified(&dir);
+    assert_eq!(h.run(release()), 0);
+    assert_eq!(ownership(&h), Ownership::Released);
+    assert!(!root.exists(), "the private root outlived the release");
+}
+
+#[test]
+fn release_keeps_the_record_unreleased_when_the_private_root_cannot_be_removed() {
+    let mut h = Harness::new();
+    h.session = false;
+    let dir = h.record();
+    let cache = tempfile::tempdir().unwrap();
+    // Not a `native/<invocation>` root: the removal refuses it.
+    let root = cache.path().canonicalize().unwrap().join("elsewhere");
+    fs::create_dir_all(&root).unwrap();
+    write_mac_identity(&dir, root.clone());
+    mark_unverified(&dir);
+    assert_eq!(h.run(release()), 3);
+    h.refused("could not be removed");
+    assert_eq!(ownership(&h), Ownership::Unverified);
+    assert!(root.exists());
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn release_refuses_a_begun_macos_spawn_without_an_identity() {
+    let mut h = Harness::new();
+    h.session = false;
+    let dir = h.record();
+    store::mark_spawn_begun(&dir).unwrap();
+    mark_unverified(&dir);
+    assert_eq!(h.run(release()), 3);
+    h.refused("no boundary identity was recorded");
+    assert_eq!(ownership(&h), Ownership::Unverified);
 }

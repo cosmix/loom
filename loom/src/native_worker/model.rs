@@ -136,6 +136,40 @@ pub struct BoundaryIdentity {
     pub boundary_pid: i32,
     pub pid_namespace: u64,
     pub boot_id: String,
+    /// The macOS boundary's identity; absent (and not serialized) on Linux,
+    /// where `pid_namespace` names the boundary.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mac: Option<MacIdentity>,
+}
+
+/// What names one macOS boundary: its leader started a fresh session, so the
+/// leader's pid is the session id and the process group id, and every process
+/// it starts inherits the invocation marker.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MacIdentity {
+    /// The validated invocation id (`ids::validate_invocation_id`).
+    pub invocation: String,
+    /// Pid of the leader, which is also its session and process group id.
+    pub session: u32,
+    /// The leader's start time as `process::process_start_time` renders it.
+    pub leader_start: String,
+    /// `process::boot_id::os_boot_id()` at launch.
+    pub boot_id: String,
+    /// The private invocation root `<stage cache>/native/<invocation>`.
+    pub scratch_root: PathBuf,
+}
+
+impl MacIdentity {
+    /// The session, group and exact marker entry the boundary's processes keep.
+    pub fn mark(&self) -> crate::native_worker::boundary::quiescence_scan::BoundaryMark {
+        use crate::native_worker::boundary::quiescence_scan::{BoundaryMark, BOUNDARY_MARKER_VAR};
+        BoundaryMark {
+            sid: self.session,
+            pgid: self.session,
+            marker: format!("{BOUNDARY_MARKER_VAR}={}", self.invocation),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -31,7 +31,7 @@ pub use levels::{plan_confinement, plan_local_binding, resolve_confinement};
 use spec::build_command;
 pub use spec::CommandSpec;
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 pub(crate) use host::git_roots::git_dirs;
 pub(super) use host::git_roots::GitDirs;
 #[cfg(target_os = "linux")]

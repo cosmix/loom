@@ -27,8 +27,13 @@ fn a_settled_worker_frees_the_stage_and_its_report_is_readable() {
         turn_completed("completed"),
     ];
     let mut peer = ScriptedPeer::through_turn_start(lines, End::Silent);
-    let (outcome, reason) =
-        run_session(&record.dir, &mut peer, &SteppingClock::new(&[])).expect("run_session");
+    let (outcome, reason) = run_session(
+        &record.dir,
+        &mut peer,
+        &SteppingClock::new(&[]),
+        crate::native_worker::protocol::wire::SandboxMode::WorkspaceWrite,
+    )
+    .expect("run_session");
     assert_eq!(outcome, Outcome::Succeeded, "reason: {reason}");
     settle(&record.dir, outcome, &reason, Quiescence::Released).expect("settle");
     assert_settled_tail(&record.dir);

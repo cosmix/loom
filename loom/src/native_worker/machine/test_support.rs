@@ -9,6 +9,7 @@ pub(super) fn config() -> MachineConfig {
         effort: "high".into(),
         task_text: "Implement the task".into(),
         client_version: "test-version".into(),
+        sandbox: wire::SandboxMode::WorkspaceWrite,
     }
 }
 

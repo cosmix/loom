@@ -6,14 +6,13 @@ use std::collections::VecDeque;
 #[cfg(target_os = "linux")]
 use std::ffi::OsString;
 use std::fs;
-use std::io::{self, Cursor, Write};
+use std::io::{self, Cursor};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use chrono::Utc;
 use serde_json::{json, Value};
 
-use super::io::{CappedLog, PipeTransport};
 use super::{run_session, settle, teardown, Clock};
 use crate::native_worker::boundary::Quiescence;
 #[cfg(target_os = "linux")]
@@ -155,7 +154,13 @@ fn cancel_file_cancels_an_active_turn() {
     let record = invocation();
     let clock = SteppingClock::new(&[Duration::from_millis(150)]);
     let mut transport = hooked(&record.dir, &clock, cancel_on_turn_start);
-    let (outcome, reason) = run_session(&record.dir, &mut transport, &clock).expect("run");
+    let (outcome, reason) = run_session(
+        &record.dir,
+        &mut transport,
+        &clock,
+        crate::native_worker::protocol::wire::SandboxMode::WorkspaceWrite,
+    )
+    .expect("run");
     assert_eq!(outcome, Outcome::Cancelled, "reason: {reason}");
     assert!(transport.peer.sent_methods().contains(&"turn/interrupt"));
     let cancelled = events(&record.dir)
@@ -192,7 +197,13 @@ fn steer_message_is_sent_with_the_active_turn_id() {
     let record = invocation();
     let clock = SteppingClock::new(&[Duration::from_millis(150)]);
     let mut transport = hooked(&record.dir, &clock, steer_on_turn_start);
-    let (outcome, reason) = run_session(&record.dir, &mut transport, &clock).expect("run");
+    let (outcome, reason) = run_session(
+        &record.dir,
+        &mut transport,
+        &clock,
+        crate::native_worker::protocol::wire::SandboxMode::WorkspaceWrite,
+    )
+    .expect("run");
     assert_eq!(outcome, Outcome::Succeeded, "reason: {reason}");
     let sent = &transport.peer.sent;
     let steer = sent
@@ -227,7 +238,13 @@ fn progress_events_are_throttled() {
         .collect();
     let clock = ListClock(RefCell::new(readings));
     let mut peer = ScriptedPeer::through_turn_start(vec![noise(1), noise(2), noise(3)], End::Close);
-    let (outcome, _) = run_session(&record.dir, &mut peer, &clock).expect("run");
+    let (outcome, _) = run_session(
+        &record.dir,
+        &mut peer,
+        &clock,
+        crate::native_worker::protocol::wire::SandboxMode::WorkspaceWrite,
+    )
+    .expect("run");
     assert_eq!(outcome, Outcome::Failed);
     let progress = events(&record.dir)
         .iter()
@@ -248,7 +265,12 @@ fn event_log_not_writable_is_an_error() {
     fs::set_permissions(&path, fs::Permissions::from_mode(0o400)).expect("chmod");
     let mut peer = ScriptedPeer::through_turn_start(Vec::new(), End::Close);
     let clock = SteppingClock::new(&[]);
-    let result = run_session(&record.dir, &mut peer, &clock);
+    let result = run_session(
+        &record.dir,
+        &mut peer,
+        &clock,
+        crate::native_worker::protocol::wire::SandboxMode::WorkspaceWrite,
+    );
     assert!(result.is_err(), "run_session returned {result:?}");
 }
 
@@ -265,7 +287,13 @@ fn unknown_and_oversized_frames_do_not_end_the_session() {
     ];
     let mut peer = ScriptedPeer::through_turn_start(lines, End::Silent);
     let clock = SteppingClock::new(&[]);
-    let (outcome, reason) = run_session(&record.dir, &mut peer, &clock).expect("run");
+    let (outcome, reason) = run_session(
+        &record.dir,
+        &mut peer,
+        &clock,
+        crate::native_worker::protocol::wire::SandboxMode::WorkspaceWrite,
+    )
+    .expect("run");
     assert_eq!(outcome, Outcome::Succeeded, "reason: {reason}");
     assert_eq!(event_lines(&record.dir), events(&record.dir).len());
 }
@@ -302,80 +330,6 @@ fn spawn_failure_before_start_settles_released() {
     assert_eq!(code, std::process::ExitCode::SUCCESS);
     let tail = &events(&record.dir)[1..];
     assert!(matches!(&tail[1], NativeEvent::OwnershipReleased { by } if by == "supervisor"));
-}
-
-#[test]
-fn capped_log_stops_at_the_cap_with_one_marker() {
-    let dir = tempfile::TempDir::new().expect("temp");
-    let mut log = CappedLog::open_with_cap(dir.path(), 100).expect("open");
-    for i in 0..20 {
-        log.write_line(&format!("{{\"frame\":{i}}}"))
-            .expect("write");
-    }
-    let text = fs::read_to_string(dir.path().join("provider.log")).expect("read");
-    let marker = r#"{"loom":"provider log capped"}"#;
-    assert_eq!(text.matches(marker).count(), 1);
-    assert!(text.ends_with(&format!("{marker}\n")));
-    assert!(text.len() <= 100 + marker.len() + 1, "{} bytes", text.len());
-}
-
-fn sink() -> io::PipeWriter {
-    let (reader, writer) = io::pipe().expect("pipe");
-    std::thread::spawn(move || io::copy(&mut { reader }, &mut io::sink()));
-    writer
-}
-
-#[test]
-fn reader_reports_oversized_and_continues() {
-    let dir = tempfile::TempDir::new().expect("temp");
-    let (output, mut provider) = io::pipe().expect("pipe");
-    let log = CappedLog::open(dir.path()).expect("log");
-    let mut transport = PipeTransport::start(output, sink(), Some(log)).expect("start");
-    let mut raw = vec![b'x'; 2 * 1024 * 1024];
-    raw.extend_from_slice(b"\n{\"method\":\"ok\"}\n");
-    let writer = std::thread::spawn(move || provider.write_all(&raw).expect("write"));
-    let wait = Duration::from_secs(10);
-    assert!(matches!(transport.recv(wait), Err(FrameError::Oversized)));
-    let frame = transport.recv(wait).expect("frame").expect("not a timeout");
-    assert_eq!(frame, json!({ "method": "ok" }));
-    writer.join().expect("writer");
-    assert!(matches!(transport.recv(wait), Err(FrameError::Eof)));
-    transport.close_input().join();
-    let logged = fs::read_to_string(dir.path().join("provider.log")).expect("log");
-    let expected = "{\"loom\":\"oversized frame\"}\n{\"method\":\"ok\"}\n";
-    assert_eq!(logged, expected);
-}
-
-#[test]
-fn recv_times_out_with_none() {
-    let (output, provider) = io::pipe().expect("pipe");
-    let mut transport = PipeTransport::start(output, sink(), None).expect("start");
-    let frame = transport.recv(Duration::from_millis(50)).expect("no error");
-    assert!(frame.is_none());
-    drop(provider);
-    transport.close_input().join();
-}
-
-#[test]
-fn send_after_the_reader_closed_is_an_error() {
-    let (output, provider) = io::pipe().expect("pipe");
-    let (stdin_reader, stdin) = io::pipe().expect("pipe");
-    drop(stdin_reader);
-    let mut transport = PipeTransport::start(output, stdin, None).expect("start");
-    let frame = json!({ "method": "initialized", "params": {} });
-    let started = Instant::now();
-    let error = loop {
-        match transport.send(&frame) {
-            Err(error) => break error,
-            Ok(()) if started.elapsed() < Duration::from_secs(10) => {
-                std::thread::sleep(Duration::from_millis(10));
-            }
-            Ok(()) => panic!("send never failed after the reader closed"),
-        }
-    };
-    assert_eq!(error.kind(), io::ErrorKind::BrokenPipe);
-    drop(provider);
-    transport.close_input().join();
 }
 
 #[cfg(target_os = "linux")]

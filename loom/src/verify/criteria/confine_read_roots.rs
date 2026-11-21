@@ -31,8 +31,9 @@ pub(crate) fn command_environment(command: &Command) -> BTreeMap<String, OsStrin
 
 /// The existing installation roots of `command`, without the host seeds and
 /// toolchain roots [`read_roots_beside`] adds: a native worker's boundary binds
-/// these beside writable roots it chooses itself.
-#[cfg(any(target_os = "linux", test))]
+/// these beside writable roots it chooses itself (Linux binds them read-only,
+/// the macOS Seatbelt profile allows reading below them).
+#[cfg(any(target_os = "linux", target_os = "macos", test))]
 pub(crate) fn read_roots(command: &Command) -> Vec<PathBuf> {
     existing(installation_roots(command))
 }

@@ -17,11 +17,12 @@ use chrono::Utc;
 use serde::Deserialize;
 
 use crate::fs::safe_fs::{safe_create_new_in_workdir, safe_open_dirfd};
-use crate::native_worker::boundary::{verify_quiescent, Quiescence};
+use crate::native_worker::boundary::Quiescence;
 use crate::native_worker::index;
 use crate::native_worker::model::{NativeEvent, NativeUnitState, Outcome, Ownership, Phase};
 use crate::native_worker::store::{self, EventLog, StoreError};
 use crate::native_worker::store_io::read_json;
+use crate::native_worker::supervisor::{prove_and_reclaim, unprovable_spawn};
 use crate::process::{verify_process_identity, IdentityStatus, ProcessIdentity};
 
 /// How long an admitted record may stay without `supervisor.json`.
@@ -135,21 +136,20 @@ pub fn settle_lost_supervisor(dir: &Path) -> Result<()> {
         .iter()
         .any(|record| matches!(record.event, NativeEvent::Terminal { .. }));
     let boundary = store::read_boundary(dir).context("boundary.json")?;
-    // bubblewrap may have run without an identity on record: nothing can prove it gone.
+    // A boundary process may have run without an identity on record: nothing
+    // can prove it gone.
     let unrecorded = boundary.is_none() && store::spawn_begun(dir);
     if !has_terminal {
         log.append(lost_terminal(unrecorded))
             .context("terminal event")?;
     }
-    let verdict = match boundary {
-        Some(identity) => verify_quiescent(&identity),
-        None if unrecorded => Quiescence::Unverified(
-            "boundary spawn began but boundary.json is missing: no boundary identity was \
-             recorded, so its processes cannot be proven stopped"
-                .to_string(),
-        ),
+    let verdict = match (unprovable_spawn(dir, boundary.as_ref()), boundary) {
+        (Some(detail), _) => Quiescence::Unverified(detail),
+        // A proven release whose private root could not be removed appends
+        // nothing: the record stays unsettled and the next pass retries.
+        (None, Some(identity)) => prove_and_reclaim(&identity).map_err(anyhow::Error::msg)?,
         // No spawn marker: no provider process was ever started.
-        None => Quiescence::Released,
+        (None, None) => Quiescence::Released,
     };
     let event = match verdict {
         Quiescence::Released => NativeEvent::OwnershipReleased {
@@ -163,10 +163,11 @@ pub fn settle_lost_supervisor(dir: &Path) -> Result<()> {
 
 fn lost_terminal(unrecorded: bool) -> NativeEvent {
     let (outcome, reason) = if unrecorded {
-        (
-            Outcome::Failed,
-            "supervisor exited after starting bubblewrap and before recording it",
-        )
+        #[cfg(target_os = "macos")]
+        let reason = "supervisor exited after starting the macOS boundary and before recording it";
+        #[cfg(not(target_os = "macos"))]
+        let reason = "supervisor exited after starting bubblewrap and before recording it";
+        (Outcome::Failed, reason)
     } else {
         (
             Outcome::Unknown,

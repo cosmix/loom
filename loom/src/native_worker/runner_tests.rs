@@ -309,6 +309,7 @@ fn a_lost_supervisor_with_live_namespace_members_is_left_unverified() {
         boundary_pid: i32::MAX - 7,
         pid_namespace: crate::native_worker::ingress_contract_tests::own_pid_namespace(),
         boot_id: crate::process::boot_id::os_boot_id().expect("boot id"),
+        mac: None,
     };
     store::write_boundary(&dir, &identity).expect("boundary.json");
     settle_lost_supervisor(&dir).expect("settle");
