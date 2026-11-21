@@ -395,3 +395,6 @@ fn a_base_refused_by_the_sandbox_is_a_note_not_a_failure() {
         "{note}"
     );
 }
+
+#[path = "base_waived_tests.rs"]
+mod waived;
