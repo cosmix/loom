@@ -154,7 +154,7 @@
 | [daemon-fork-after-threads](mistakes/daemon-fork-after-threads.md) | Fork | 38 |
 | [daemon-singleton](mistakes/daemon-singleton.md) |  | 141 |
 | [detached-spawn-in-tests](mistakes/detached-spawn-in-tests.md) |  | 65 |
-| [dev-install](mistakes/dev-install.md) | Daemon | 58 |
+| [dev-install](mistakes/dev-install.md) | Daemon | 68 |
 | [dispute-guards-delivery](mistakes/dispute-guards-delivery.md) | host-job hangs, parallel worker collisions, scaffold wording, hook quirks | 121 |
 | [doctrine-and-acceptance](mistakes/doctrine-and-acceptance.md) |  | 392 |
 | [hooks-shell-portability](mistakes/hooks-shell-portability.md) |  | 412 |

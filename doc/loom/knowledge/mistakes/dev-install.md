@@ -56,3 +56,13 @@
 **Why:** the purpose clause (installed hooks and skills must use the new ids) was taken as a request to install, the same error as the earlier unasked reinstalls in this file.
 **Prevention:** a change request ends at the tree and, when asked, a commit. Never plan, announce or run `dev-install.sh` without an explicit install request; mention the command once if installed copies stay stale.
 **Fix:** no install ran; the operator installs.
+
+## dev-install.sh Killed the Daemon Mid-Spawn; Recovery Left the Stage Session in Spawning (2026-11-21)
+
+**What happened:** `bash dev-install.sh` ran while a `loom run` daemon was starting three parallel stages. Its `pkill -x loom` stopped the daemon inside `TmuxBackend::spawn` after tmux, claude and the pid file existed but before the session record was saved with its PID and `Running`. The next daemon found the session alive through the pid file and re-registered the stale record unchanged, so `loom status` showed the executing contract session with no PID or context tokens while it worked normally.
+
+**Why:** daemon-start recovery completed a lost launch only for merge resolvers (`merge_handler/resolver_recovery.rs::publish_recovered_launch`). The stage and contract path (`recovery_sessions.rs::current_session_is_orphan` → `orphan_adoption.rs::register_live_current_session`) registered a live `Spawning` record as it was.
+
+**Prevention:** every recovery path that keeps a live session whose record is `Spawning` must finish the launch from the pid file: PID, worktree path, `Running`, saved. Restarting the daemon mid-spawn is a normal event (dev-install, `loom update`, crashes), not an edge case.
+
+**Fix:** stage and contract recovery share the resolver's launch completion and persist the completed record; regression test in `orchestrator/core/recovery_sync_tests.rs`.
