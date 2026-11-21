@@ -178,18 +178,11 @@ jobs:
 
       # Confined verification runs criteria under bubblewrap on Linux, and
       # Ubuntu's AppArmor denies the unprivileged user namespace it needs.
-      - name: Install tmux, ripgrep and bubblewrap
+      - name: Install tmux, ripgrep, bubblewrap and zsh
         id: tools
         run: |
-          sudo apt-get update && sudo apt-get install -y tmux ripgrep bubblewrap
+          sudo apt-get update && sudo apt-get install -y tmux ripgrep bubblewrap zsh
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-
-      - name: Run tests
-        working-directory: loom
-        run: cargo test --all-targets
-        env:
-          LOOM_E2E_REQUIRE_TMUX: "1"
-          LOOM_TEST_REQUIRE_SANDBOX_FREE: "1"
 
       - name: Run the bubblewrap capsule probe
         working-directory: loom
@@ -268,6 +261,15 @@ jobs:
           echo "LOOM_TEST_GO_SEED_MODULE=github.com/pkg/errors@v0.9.1" >> "$GITHUB_ENV"
           echo "LOOM_TEST_MAVEN_SEED=commons-lang:commons-lang:2.6" >> "$GITHUB_ENV"
           echo "LOOM_TEST_GRADLE_SEED=commons-lang:commons-lang:2.6" >> "$GITHUB_ENV"
+
+      # Runs after the seeding: LOOM_TEST_REQUIRE_SANDBOX_FREE fails every
+      # toolchain probe whose seed variable is not yet in GITHUB_ENV.
+      - name: Run tests
+        working-directory: loom
+        run: cargo test --all-targets
+        env:
+          LOOM_E2E_REQUIRE_TMUX: "1"
+          LOOM_TEST_REQUIRE_SANDBOX_FREE: "1"
 
       # Runs every stage_cache:: test and the confine stage-cache tests, among
       # them the confined toolchain probes in stage_cache::toolchain_tests::.
@@ -377,13 +379,6 @@ jobs:
         id: tools
         run: brew install tmux ripgrep jq
 
-      - name: Run tests
-        working-directory: loom
-        run: cargo test --all-targets --no-fail-fast
-        env:
-          LOOM_E2E_REQUIRE_TMUX: "1"
-          LOOM_TEST_REQUIRE_SANDBOX_FREE: "1"
-
       # Seeds the host caches that stage_cache::toolchain_tests:: reads, then
       # exports the coordinates the probes need through GITHUB_ENV.
       - name: Seed the toolchain caches
@@ -455,6 +450,15 @@ jobs:
           echo "LOOM_TEST_GO_SEED_MODULE=github.com/pkg/errors@v0.9.1" >> "$GITHUB_ENV"
           echo "LOOM_TEST_MAVEN_SEED=commons-lang:commons-lang:2.6" >> "$GITHUB_ENV"
           echo "LOOM_TEST_GRADLE_SEED=commons-lang:commons-lang:2.6" >> "$GITHUB_ENV"
+
+      # Runs after the seeding: LOOM_TEST_REQUIRE_SANDBOX_FREE fails every
+      # toolchain probe whose seed variable is not yet in GITHUB_ENV.
+      - name: Run tests
+        working-directory: loom
+        run: cargo test --all-targets --no-fail-fast
+        env:
+          LOOM_E2E_REQUIRE_TMUX: "1"
+          LOOM_TEST_REQUIRE_SANDBOX_FREE: "1"
 
       # Runs every stage_cache:: test and the confine stage-cache tests, among
       # them the confined toolchain probes in stage_cache::toolchain_tests::.
