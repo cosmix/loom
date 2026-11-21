@@ -15,13 +15,20 @@ fn credential_free_go_settings_are_kept_and_maven_opts_is_never_read() {
         ("GOPROXY", "https://proxy.example,direct".into()),
         ("GOFLAGS", "-mod=mod".into()),
         ("MAVEN_OPTS", "-Dhttp.proxyPassword=secret".into()),
+        ("GRADLE_OPTS", "-Dhttp.proxyPassword=secret".into()),
     ];
     let host = super::host_env_from(vars.map(|(k, v)| (k.into(), v)));
     assert!(!host.contains_key("MAVEN_OPTS"), "{host:?}");
+    assert!(!host.contains_key("GRADLE_OPTS"), "{host:?}");
     let local = format!("-Dmaven.repo.local={}", cache.root().join("m2").display());
     for consumer in [Consumer::Session, Consumer::Worker, Consumer::HostJob] {
         let env = cache.environment(consumer, &tree, &host, None);
         assert_eq!(var(&env, "MAVEN_OPTS"), Some(local.clone()), "{consumer:?}");
+        assert_eq!(
+            var(&env, "GRADLE_OPTS").as_deref(),
+            Some("-Xmx1g -Dorg.gradle.jvmargs=-Xmx1g"),
+            "{consumer:?}: the host's GRADLE_OPTS is never read"
+        );
         let (goflags, proxy) = match consumer {
             Consumer::HostJob => ("-mod=mod -count=1", "off"),
             _ => ("-mod=mod", "https://proxy.example,direct"),

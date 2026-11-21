@@ -233,19 +233,21 @@ fn maven_settings_are_hidden_inside_the_boundary() {
     let ((_r, repo), (_h, home), (_t, tree)) = (temp(), temp(), temp());
     std::fs::create_dir_all(home.join(".m2/repository")).unwrap();
     std::fs::write(home.join(".m2/repository/seed"), "SEED\n").unwrap();
-    for name in ["settings.xml", "settings-security.xml"] {
+    for name in ["settings.xml", "settings-security.xml", "toolchains.xml"] {
         std::fs::write(home.join(".m2").join(name), "<settings/>\n").unwrap();
     }
     let _home = HomeGuard::pin(&home);
     let cache = StageCache::resolve(&repo, "alpha", &home, None).unwrap();
     let script = "cat \"$HOME/.m2/repository/seed\"; \
                   test -e \"$HOME/.m2/settings.xml\" && echo VISIBLE; \
-                  test -e \"$HOME/.m2/settings-security.xml\" && echo SECURITY; echo DONE";
+                  test -e \"$HOME/.m2/settings-security.xml\" && echo SECURITY; \
+                  test -e \"$HOME/.m2/toolchains.xml\" && echo TOOLCHAINS; echo DONE";
     let result = run_in_stage(script, &tree, &cache);
     assert!(result.stdout.contains("SEED"), "{result:?}");
     assert!(result.stdout.contains("DONE"), "{result:?}");
     assert!(!result.stdout.contains("VISIBLE"), "{result:?}");
     assert!(!result.stdout.contains("SECURITY"), "{result:?}");
+    assert!(!result.stdout.contains("TOOLCHAINS"), "{result:?}");
 }
 
 /// The granted tree is its canonical parent joined with its own name: a tree

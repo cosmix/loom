@@ -126,6 +126,17 @@ fn go_flags(consumer: Consumer, host_env: &BTreeMap<String, OsString>) -> OsStri
     flags
 }
 
+/// `GRADLE_OPTS` that keep a confined Gradle build in the client JVM. Gradle
+/// forks a single-use daemon when the client JVM does not satisfy the build's
+/// requested JVM arguments (`org.gradle.jvmargs`, default `-Xmx512m
+/// -XX:MaxMetaspaceSize=384m ...`); the daemon talks to its client over
+/// loopback TCP, which the Seatbelt profile denies. Requesting exactly the
+/// client's arguments (only the mutable `-Xmx`) makes `--no-daemon` build
+/// in-process. The host's own `GRADLE_OPTS` is never read: it can carry proxy
+/// passwords, like `MAVEN_OPTS`. A project's `gradle.properties` that sets
+/// other `org.gradle.jvmargs` still forks.
+const GRADLE_IN_PROCESS_OPTS: &str = "-Xmx1g -Dorg.gradle.jvmargs=-Xmx1g";
+
 /// Variables whose whole value is a directory below the root.
 pub(super) const ROOT_DIRS: [(&str, &str); 13] = [
     ("GOCACHE", "go-build"),
@@ -193,6 +204,7 @@ impl StageCache {
         if let Some(seed) = seeds.gradle {
             vars.set("GRADLE_RO_DEP_CACHE", seed);
         }
+        vars.set("GRADLE_OPTS", GRADLE_IN_PROCESS_OPTS);
         if let Some(developer) = developer {
             developer_tools(&mut vars, developer, host_env.get("PATH"));
         }

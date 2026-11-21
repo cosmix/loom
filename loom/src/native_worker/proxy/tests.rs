@@ -154,7 +154,7 @@ fn public_address_table() {
 /// The production socket directory, holding the socket path.
 fn socket_dir() -> (TempDir, PathBuf) {
     let dir = super::socket_dir().expect("socket dir");
-    let path = dir.path().join("proxy.sock");
+    let path = dir.path().join(super::SOCKET_NAME);
     (dir, path)
 }
 

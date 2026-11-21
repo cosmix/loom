@@ -146,12 +146,16 @@ fn bind_listener(socket: &Path) -> Result<UnixListener> {
     Ok(listener)
 }
 
+/// The socket file name inside [`socket_dir`].
+pub(super) const SOCKET_NAME: &str = "p.sock";
+
 /// Creates a fresh directory for the proxy socket that passes `require_private_dir`.
 /// tempfile creates directories with 0777 less the process umask, so a umask such as 002
-/// would yield 0775; the mode is passed explicitly.
+/// would yield 0775; the mode is passed explicitly. The prefix and `SOCKET_NAME` stay short:
+/// a confined command's `TMPDIR` can already take 85 bytes of the 100 allowed for the path.
 pub(super) fn socket_dir() -> io::Result<tempfile::TempDir> {
     tempfile::Builder::new()
-        .prefix("loom-nw-")
+        .prefix("nw-")
         .permissions(Permissions::from_mode(SOCKET_DIR_MODE))
         .tempdir()
 }

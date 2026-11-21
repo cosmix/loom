@@ -125,8 +125,12 @@ fn sandbox_lookalikes_and_populated_configs_are_refused() {
     nix::unistd::mkfifo(&checkout.join(".bashrc"), nix::sys::stat::Mode::S_IRWXU).unwrap();
     assert!(committed_content(&stage, repo.path()).is_err());
     std::fs::remove_file(checkout.join(".bashrc")).unwrap();
-    let _socket = std::os::unix::net::UnixListener::bind(checkout.join(".bashrc")).unwrap();
-    assert!(committed_content(&stage, repo.path()).is_err());
+    // A socket path must fit `sun_path` (104 bytes on macOS, 108 on Linux);
+    // a long scratch TMPDIR, as under the host-job lane, cannot bind one.
+    if checkout.join(".bashrc").as_os_str().len() < 104 {
+        let _socket = std::os::unix::net::UnixListener::bind(checkout.join(".bashrc")).unwrap();
+        assert!(committed_content(&stage, repo.path()).is_err());
+    }
 }
 
 #[test]

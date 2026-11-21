@@ -225,7 +225,7 @@ pub fn run_from_dir(dir: &Path) -> Result<ExitCode> {
         Ok(socket_dir) => socket_dir,
         Err(e) => return Ok(settle_unspawned(dir, &format!("socket directory: {e}"))),
     };
-    let proxy_socket = socket_dir.path().join("proxy.sock");
+    let proxy_socket = socket_dir.path().join(proxy::SOCKET_NAME);
     let proxy = match proxy::start(&proxy_socket, &crate::codex::CODEX_SANDBOX_DOMAINS) {
         Ok(proxy) => proxy,
         Err(e) => return Ok(settle_unspawned(dir, &format!("proxy start failed: {e:#}"))),

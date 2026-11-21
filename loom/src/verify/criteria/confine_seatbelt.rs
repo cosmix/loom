@@ -145,9 +145,10 @@ fn scratch_socket_rule(scratch: &Path) -> Result<String> {
 }
 
 /// Maven files that never reach a confined command: the user's settings, which
-/// can hold repository credentials. Maven fails on a settings file it can see
-/// but not read, so they are hidden like the Cargo config files.
-const HIDDEN_IN_M2: [&str; 2] = ["settings.xml", "settings-security.xml"];
+/// can hold repository credentials, and the JDK toolchains file that
+/// `actions/setup-java` writes. Maven fails on a file it can see but not read
+/// (`Non-readable toolchains`), so they are hidden like the Cargo config files.
+const HIDDEN_IN_M2: [&str; 3] = ["settings.xml", "settings-security.xml", "toolchains.xml"];
 
 /// Git's per-user ignore and attributes files, which it and Cargo's Git
 /// library read by default when no config names others (the user's config is
