@@ -121,7 +121,7 @@
 | --- | --- | --- |
 | [code-style-and-structure](conventions/code-style-and-structure.md) |  | 298 |
 | [commits](conventions/commits.md) | Format | 24 |
-| [config-plan-and-gate-rules](conventions/config-plan-and-gate-rules.md) |  | 35 |
+| [config-plan-and-gate-rules](conventions/config-plan-and-gate-rules.md) |  | 39 |
 | [dispute-and-adjudication](conventions/dispute-and-adjudication.md) |  | 155 |
 | [git-and-build-workflow](conventions/git-and-build-workflow.md) |  | 237 |
 | [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) |  | 134 |
@@ -155,7 +155,7 @@
 | [daemon-singleton](mistakes/daemon-singleton.md) |  | 141 |
 | [detached-spawn-in-tests](mistakes/detached-spawn-in-tests.md) |  | 65 |
 | [dev-install](mistakes/dev-install.md) | Daemon | 58 |
-| [dispute-guards-delivery](mistakes/dispute-guards-delivery.md) | host-job hangs, parallel worker collisions, scaffold wording, hook quirks | 85 |
+| [dispute-guards-delivery](mistakes/dispute-guards-delivery.md) | host-job hangs, parallel worker collisions, scaffold wording, hook quirks | 101 |
 | [doctrine-and-acceptance](mistakes/doctrine-and-acceptance.md) |  | 392 |
 | [hooks-shell-portability](mistakes/hooks-shell-portability.md) |  | 402 |
 | [host-verify-group-containment](mistakes/host-verify-group-containment.md) |  | 47 |

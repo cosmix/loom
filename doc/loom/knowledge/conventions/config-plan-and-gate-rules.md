@@ -33,3 +33,7 @@ A stage proves its new unit is used with `reachable` (a symbol and an entry poin
 ## A Fix Must Hold for Every Language and Project Loom Runs
 
 Loom drives dozens of projects in several languages and frameworks. A fix found while loom develops loom is designed and tested for any project: no Rust-only, cargo-only or repository-specific path, name or layout outside an adapter for that ecosystem. A plan or fix that covers ecosystems names them (the warm stage builds plan: Rust, bun, npm, uv, Go).
+
+## Leave No Process or Scratch Copy Behind
+
+An agent ends its work with nothing of its own still running and nothing of its own left on disk. Before reporting done, and before starting a long build or test run, it lists processes by command line (`ps -Ao pid,ppid,pgid,etime,pcpu,command`) and kills what it or its subagents started: stand-ins, load generators, containers, a hung test binary (the parent, not its children one at a time). A load average far above the core count is a reason to look at once. Scratch clones, copied build directories, experiment directories, container volumes and throwaway fixtures are deleted as soon as the result they produced is saved, and every one of them is gone when the session ends. A subagent's brief says the same about what that subagent creates.

@@ -83,3 +83,19 @@
 **Why:** it treated a request to confirm commits as a request to re-derive the fix.
 
 **Prevention:** answer the narrow question asked (are the commits on main), report it, and continue the queued work; dig further only when asked or when a gate fails again.
+
+## Sixteen Load Generators Ran for Seven Hours and Nobody Looked
+
+**What happened:** the `yes` CPU hogs a stage agent left behind ([Load Generators Started in a Sandboxed Call Outlived It](#load-generators-started-in-a-sandboxed-call-outlived-it)) kept sixteen cores busy for seven and a half hours. An operator session ran builds, test runs and five workers on the same machine in that time, saw load averages above 100, and blamed slow builds. The user found the processes. The same session had left seven scratch clones and eight experiment directories on disk, about 200 GB by apparent size.
+
+**Why:** the stage agent reported "possible leftovers" in a memory note that nobody acted on, and the operator never listed processes or its own scratch directory between tasks.
+
+**Prevention:** [Leave No Process or Scratch Copy Behind](../conventions/config-plan-and-gate-rules.md#leave-no-process-or-scratch-copy-behind). A leftover an agent cannot kill itself is reported to the user in its final message, with the command that finds it, not only recorded in memory.
+
+## A Check Run in a Copied Clone Reused a Binary That Scans the Original
+
+**What happened:** to keep a reviewer from seeing mutations, a verification script copied a scratch clone with `cp -cR`, planted a violation in the copy and ran the structural guard there. The guard passed. Cargo had reused the copied integration-test binary without rebuilding, and that binary has the original clone's `CARGO_MANIFEST_DIR` compiled in, so it scanned the original tree.
+
+**Why:** a copied `target` keeps fingerprints that match the copy's unchanged sources, and `env!("CARGO_MANIFEST_DIR")` is fixed at compile time.
+
+**Prevention:** in a copied clone, touch or edit a source file of the test target before any check whose test reads files through `CARGO_MANIFEST_DIR`, and confirm `Compiling` appears in the log. A mutation that edits the crate's own source rebuilds by itself; one that only adds a file does not.
