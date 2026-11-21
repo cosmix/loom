@@ -40,13 +40,27 @@ pub(super) enum Run {
 pub(super) struct Inconclusive {
     why: String,
     environment: bool,
+    /// The command the sandbox refused, when one ran: [`Self::note`] names it,
+    /// so two selections refused alike keep a note each.
+    command: Option<String>,
 }
 
 impl Inconclusive {
-    /// The sandbox refused the run: `denial` is the line it printed
+    /// The sandbox refused `command`: `denial` is the line it printed
     /// (`environment::sandbox_denial`).
-    pub(super) fn environment(denial: &str) -> Self {
-        Self::unrunnable(format!("environment failure (sandbox denial: {denial})"))
+    pub(super) fn environment(denial: &str, command: &str) -> Self {
+        let mut refused =
+            Self::unrunnable(format!("environment failure (sandbox denial: {denial})"));
+        refused.command = Some(command.to_string());
+        refused
+    }
+
+    /// Why, naming the command the sandbox refused when there was one.
+    pub(super) fn note(&self) -> String {
+        match &self.command {
+            Some(command) => format!("{} running `{command}`", self.why),
+            None => self.why.clone(),
+        }
     }
 
     /// The checkout lacks an installed environment the runner needs: `why`
@@ -63,6 +77,7 @@ impl Inconclusive {
         Self {
             why,
             environment: true,
+            command: None,
         }
     }
 
@@ -78,6 +93,7 @@ impl From<String> for Inconclusive {
         Self {
             why,
             environment: false,
+            command: None,
         }
     }
 }
@@ -187,7 +203,7 @@ fn judge_parsed(command: String, adapter: &dyn TestRunnerAdapter, run: &ProbeRun
         RunOutcome::BuildFailed => FailureKind::DoesNotBuild,
         RunOutcome::Unparsed => {
             if let Some(denial) = run_output_denial(&run.stdout, &run.stderr) {
-                return Run::Inconclusive(Inconclusive::environment(&denial));
+                return Run::Inconclusive(Inconclusive::environment(&denial, &command));
             }
             FailureKind::Unparsed {
                 exit_code: run.exit_code,
@@ -321,7 +337,7 @@ impl<'a> Selection<'a> {
                 self.ran.push(command);
             }
             Run::Inconclusive(why) => {
-                self.notes.insert(format!("{why}; {FULL_SUITE}"));
+                self.notes.insert(format!("{}; {FULL_SUITE}", why.note()));
             }
             Run::Failed(failure) => self.failed.push(Failed {
                 id: failure_id(adapter.name(), package),

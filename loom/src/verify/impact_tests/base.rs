@@ -251,6 +251,13 @@ fn not_runnable(reason: &str) -> String {
     format!("base not runnable: {}; {FULL_SUITE}", single_line(reason))
 }
 
+/// [`not_runnable`] naming `failed`, the selection the base could not re-run
+/// and whose failure is waived for the full suite.
+fn waived(reason: &str, failed: &Failed) -> String {
+    let kind = failed.failure.kind.describe();
+    not_runnable(&format!("{reason}; `{}` {kind} is waived", failed.id))
+}
+
 /// The pre-existing note when `failed` fails at the base no better, else
 /// what the base run showed.
 ///
@@ -280,7 +287,7 @@ fn at_base(site: &Site<'_>, failed: &Failed, short: &str) -> Result<String, Stri
             base.kind.describe()
         )),
         Run::Passed { .. } => Err(format!("it passes at the stage's base {short}")),
-        Run::Inconclusive(why) if why.is_environment() => Ok(not_runnable(&why.to_string())),
+        Run::Inconclusive(why) if why.is_environment() => Ok(waived(&why.note(), failed)),
         Run::Inconclusive(why) => Err(format!("the stage's base {short} proved nothing: {why}")),
     }
 }

@@ -4,6 +4,8 @@ use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use std::time::Instant;
 
+use crate::plan_stats::PlanStatsRecord;
+
 use super::{
     handle_key_event, handle_mouse_event, is_scroll_key, scroll_alias, KeyEventResult, LiveStatus,
     Response, TuiApp, POLL_TIMEOUT,
@@ -52,13 +54,22 @@ impl TuiApp {
         }
     }
 
+    /// Show `record` in place of the ledger. Opening it starts at its top:
+    /// the ledger's scroll offset means nothing in the report.
+    pub(super) fn show_report(&mut self, record: PlanStatsRecord) {
+        if self.plan_report.is_none() {
+            self.graph_state.scroll_to_start();
+        }
+        self.plan_report = Some(record);
+    }
+
     /// Handle a response from the daemon.
     pub(super) fn handle_response(&mut self, response: Response) {
         match response {
             Response::StatusUpdate { data } => {
                 let mut data = *data;
                 if let Some(record) = data.plan_stats.take() {
-                    self.plan_report = Some(record);
+                    self.show_report(record);
                 }
                 self.status = LiveStatus { data };
                 let all_stages = self.status.all_stages();

@@ -236,3 +236,55 @@ fn plan_statistics_publish_only_on_success_and_never_change_the_outcome() {
         "a published run exposes the current copy"
     );
 }
+
+/// One assistant line of `msg_id` with `cache_write` tokens, as a Claude
+/// transcript holds it.
+fn transcript_line(msg_id: &str, cache_write: u64) -> String {
+    let at = chrono::Utc::now() - chrono::Duration::seconds(60);
+    let line = serde_json::json!({
+        "type": "assistant", "timestamp": at.to_rfc3339(), "isSidechain": false,
+        "sessionId": "01ed9f4c-608e-4e2c-8edf-05d26adcd4d6",
+        "message": {"id": msg_id, "model": "claude-opus-5-5", "usage": {
+            "input_tokens": 0, "cache_creation_input_tokens": cache_write,
+            "cache_read_input_tokens": 0, "output_tokens": 0}}
+    });
+    format!("{line}\n")
+}
+
+/// A line written after the tracker's last checkpoint reaches the published
+/// statistics only through the final scan `finish_orchestration` runs.
+#[test]
+fn published_plan_statistics_count_a_line_written_after_the_last_checkpoint() {
+    let temp = tempfile::tempdir().unwrap();
+    let (_home, _redirect) = redirect_home(temp.path());
+    let (work, _plan, result) = merged_run(temp.path());
+    let transcript = temp.path().join("transcript.jsonl");
+    fs::write(&transcript, transcript_line("m1", 100)).unwrap();
+    let mut session = crate::models::session::Session::new();
+    session.stage_id = Some("test".into());
+    session.transcript_path = Some(transcript.to_string_lossy().into_owned());
+    crate::fs::session_files::save_session(&session, work.root()).unwrap();
+    let now = chrono::Utc::now().timestamp();
+    crate::tokens::scan_pass(work.root(), None, now).unwrap();
+    let checkpoint = work
+        .root()
+        .join("tokens")
+        .join(crate::tokens::CHECKPOINT_FILE);
+    assert!(
+        checkpoint.is_file(),
+        "the tracker pass wrote its checkpoint"
+    );
+    let mut file = fs::OpenOptions::new()
+        .append(true)
+        .open(&transcript)
+        .unwrap();
+    std::io::Write::write_all(&mut file, transcript_line("m2", 7).as_bytes()).unwrap();
+
+    assert_eq!(
+        finish_orchestration(&work, &result),
+        TerminalOutcome::Success
+    );
+    let current = fs::read_to_string(work.root().join("plan-stats.json")).unwrap();
+    let record: serde_json::Value = serde_json::from_str(&current).unwrap();
+    assert_eq!(record["totals"]["cache_write"], 107, "{record}");
+}

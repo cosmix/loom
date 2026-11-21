@@ -154,6 +154,15 @@ fn run_pass(
 ) -> Result<Pass> {
     let dir = ensure_tokens_dir(work_root)?;
     let (mut checkpoint, load_note) = memo.take_checkpoint(&dir);
+    if last_line == LastLine::Count {
+        // The last pass looks every missed thread up again, however recent
+        // the miss: a macOS native worker's rollout reaches the host sessions
+        // tree only when its boundary is reclaimed, after the passes that
+        // missed it.
+        checkpoint
+            .threads
+            .retain(|_, lookup| lookup.rollout.is_some());
+    }
     let sources = discover(work_root, codex_sessions_root, &mut checkpoint.threads, now)?;
     let mut problems: Vec<String> = load_note.into_iter().collect();
     let (advanced, read_failure) = read_sources(&mut checkpoint, &sources, stop, last_line);

@@ -85,20 +85,17 @@ pub use config::{
     extended_criterion_timeout, CriteriaConfig, CriterionObserver, DEFAULT_CHECK_TIMEOUT,
     DEFAULT_COMMAND_TIMEOUT, DEFAULT_EXTENDED_CRITERION_TIMEOUT,
 };
-pub(crate) use confine::host::NetworkAccess;
+pub(crate) use confine::host::{ancestors, seatbelt_files, NetworkAccess};
 #[cfg(test)]
 pub(crate) use confine::{confined_policy, host_launcher, ConfinedPolicy};
 pub(crate) use confine::{confined_stage_cache, stage_cache_for, stage_network};
+#[cfg(target_os = "macos")]
+pub(crate) use confine::{git_dirs, host::read_roots};
 #[cfg(target_os = "linux")]
 pub(crate) use confine::{
     git_dirs,
     host::{bind_read_roots, bubblewrap, read_roots},
     CargoScratch,
-};
-#[cfg(target_os = "macos")]
-pub(crate) use confine::{
-    git_dirs,
-    host::{read_roots, NetworkAccess},
 };
 pub use confine::{
     plan_confinement, plan_local_binding, resolve_confinement, spawn_confined, CommandSpec,

@@ -53,12 +53,16 @@ function CopySummary({ record }: { record: PlanStats }) {
   );
 }
 
+/// The loom home honours `LOOM_HOME`, which the record does not carry, so the footer names
+/// the home generically and the default beside it.
 export function PlanFooter({ record }: { record: PlanStats }) {
+  const file = archiveFileName(record);
   return (
     <footer className="po-foot">
       <span className="po-foot-text">
-        Saved to <code>~/.loom/stats/plans/{archiveFileName(record)}</code> for cross-plan
-        statistics. Planner chat tokens are not counted.
+        Saved to <code>&lt;loom home&gt;/stats/plans/{file}</code> (
+        <code>~/.loom/stats/plans/{file}</code> unless <code>LOOM_HOME</code> names another home)
+        for cross-plan statistics. Planner chat tokens are not counted.
       </span>
       <CopySummary record={record} />
     </footer>

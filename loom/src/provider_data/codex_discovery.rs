@@ -46,7 +46,7 @@ pub(crate) fn codex_root(explicit_root: Option<&Path>) -> Option<PathBuf> {
 
 /// Directory levels below the walk root that are still listed. A sessions tree
 /// is `YYYY/MM/DD/<rollout>.jsonl`, three levels deep; the fourth is slack.
-const MAX_DEPTH: usize = 4;
+pub(crate) const MAX_DEPTH: usize = 4;
 
 /// Every `.jsonl` file under `directory`, descending at most [`MAX_DEPTH`]
 /// levels. A symlink to a directory is never entered, so a link back to an

@@ -164,6 +164,25 @@ export function TimelineKey() {
   );
 }
 
+/// What a screen reader hears for one row: its id, duration and phases, or that it was skipped
+/// (a skipped row has no duration).
+export function rowSummary(row: TimelineRow): string {
+  if (row.skipped) return `${row.id}: skipped`;
+  const phases = [...new Set(row.segments.map((segment) => PHASE_LABEL[segment.phase]))];
+  return `${row.id}: ${row.duration}, ${phases.length > 0 ? phases.join(", ") : "no phases recorded"}`;
+}
+
+/// The drawing's text equivalent: the svg is one labelled image, so its rows are listed here.
+function TimelineText({ layout }: { layout: TimelineLayout }) {
+  return (
+    <ul className="sr-only" aria-label="Timeline stages">
+      {layout.rows.map((row, index) => (
+        <li key={`${row.id}-${index}`}>{rowSummary(row)}</li>
+      ))}
+    </ul>
+  );
+}
+
 function TimelineChart({ record }: { record: PlanStats }) {
   const layout = timelineLayout(record);
   return (
@@ -180,6 +199,7 @@ function TimelineChart({ record }: { record: PlanStats }) {
           <StageRow key={`${row.id}-${index}`} row={row} index={index} />
         ))}
       </svg>
+      <TimelineText layout={layout} />
     </div>
   );
 }

@@ -125,3 +125,43 @@ fn unit_without_a_thread_adds_no_source() {
     let (fx, root) = setup(false);
     assert!(discover_fixture(&fx, &root).is_empty());
 }
+
+/// A macOS worker's rollout lives in its private Codex home until the
+/// boundary is reclaimed; the reclaim moves it below the host sessions tree,
+/// where the next lookup finds it.
+#[test]
+fn a_macos_workers_rollout_is_found_once_its_private_root_is_reclaimed() {
+    use crate::native_worker::boundary::{private_root, Quiescence};
+    let fx = Fixture::new().unwrap();
+    save_session(&fx.session, &fx.work_dir).unwrap();
+    seed(&fx.work_dir, STAGE, true);
+    let base = fx.workspace.canonicalize().unwrap();
+    let cache = base.join("cache");
+    fs::create_dir(&cache).unwrap();
+    let invocation = "inv-0123456789abcdef0123456789abcdef";
+    let private = private_root::create(&cache, invocation, &base.join("no-codex")).unwrap();
+    let day = private.codex_home.join("sessions/2026/09/04");
+    fs::create_dir_all(&day).unwrap();
+    fs::write(
+        day.join("rollout-2026-09-04T12-00-00-thread-n.jsonl"),
+        "{}\n",
+    )
+    .unwrap();
+    let host = base.join("host-sessions");
+    fs::create_dir(&host).unwrap();
+    assert!(discover_fixture(&fx, &host).is_empty());
+    let mac = crate::native_worker::model::MacIdentity {
+        invocation: invocation.into(),
+        session: 1,
+        leader_start: "0".into(),
+        boot_id: "boot".into(),
+        scratch_root: private.root.clone(),
+    };
+    let reclaimed = private_root::reclaim_into(Some(&mac), Quiescence::Released, Some(&host));
+    assert_eq!(reclaimed, Ok(Quiescence::Released));
+    let sources = discover_fixture(&fx, &host);
+    assert_eq!(sources.len(), 1);
+    assert_eq!(sources[0].key, "codex-thread-n");
+    assert_eq!(sources[0].unit, Some(unit()));
+    assert!(Path::new(&sources[0].path).starts_with(host.join("2026/09/04")));
+}

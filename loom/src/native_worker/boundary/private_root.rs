@@ -40,14 +40,18 @@ pub(crate) const NATIVE_DIR: &str = "native";
 /// The private temp directory below an invocation root.
 #[cfg(any(target_os = "macos", test))]
 pub(crate) const TMP_DIR: &str = "tmp";
-/// The private Codex home below an invocation root.
-#[cfg(any(target_os = "macos", test))]
+/// The private Codex home below an invocation root. Not gated: reclaiming,
+/// which reads its rollouts, compiles on every host (a record without a macOS
+/// identity reclaims nothing).
 pub(crate) const CODEX_HOME_DIR: &str = "codex-home";
 /// Deeper trees are refused rather than recursed into without bound.
 const MAX_DEPTH: usize = 64;
 /// The project-wide instructions file copied beside the auth files.
 #[cfg(any(target_os = "macos", test))]
 const AGENTS_FILE: &str = "AGENTS.md";
+
+#[path = "private_root_rollouts.rs"]
+mod rollouts;
 
 /// A created invocation root and the directories in it; all canonical.
 #[cfg(any(target_os = "macos", test))]
@@ -103,20 +107,7 @@ pub(crate) fn create(
 /// crosses onto another device. Already gone is success; an error leaves the
 /// rest for a retry.
 pub(crate) fn remove(root: &Path, invocation: &str) -> std::io::Result<()> {
-    let refused = |why: &str| {
-        let detail = format!("refusing to remove {}: {why}", root.display());
-        std::io::Error::new(std::io::ErrorKind::InvalidInput, detail)
-    };
-    if crate::native_worker::ids::validate_invocation_id(invocation).is_err() {
-        return Err(refused("not an invocation id"));
-    }
-    let parent = root.parent().filter(|_| root.is_absolute());
-    let named = root.file_name() == Some(OsStr::new(invocation))
-        && parent.and_then(Path::file_name) == Some(OsStr::new(NATIVE_DIR));
-    let Some(parent) = parent.filter(|_| named) else {
-        return Err(refused("not a native/<invocation> root"));
-    };
-    let parent = match walk(parent) {
+    let parent = match walk(invocation_parent(root, invocation)?) {
         Ok(parent) => parent,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
         Err(error) => return Err(error),
@@ -128,28 +119,70 @@ pub(crate) fn remove(root: &Path, invocation: &str) -> std::io::Result<()> {
     }
 }
 
-/// After `Released`, removes the private invocation root `mac` names (a
-/// no-op without a macOS identity or when it is already gone); any other
-/// verdict keeps it. `Err` names a failed removal after a proven release:
-/// the caller keeps the record unreleased (`Quiescence::Unverified` with this
-/// text), so a later recovery pass or operator release proves and removes
-/// again.
+/// The `native` directory holding the invocation root `root`, or why
+/// [`remove`] refuses `root`: `invocation` must be an invocation id and `root`
+/// the absolute `.../native/<invocation>`.
+fn invocation_parent<'a>(root: &'a Path, invocation: &str) -> std::io::Result<&'a Path> {
+    let refused = |why: &str| {
+        let detail = format!("refusing to remove {}: {why}", root.display());
+        std::io::Error::new(std::io::ErrorKind::InvalidInput, detail)
+    };
+    if crate::native_worker::ids::validate_invocation_id(invocation).is_err() {
+        return Err(refused("not an invocation id"));
+    }
+    let parent = root.parent().filter(|_| root.is_absolute());
+    let named = root.file_name() == Some(OsStr::new(invocation))
+        && parent.and_then(Path::file_name) == Some(OsStr::new(NATIVE_DIR));
+    parent
+        .filter(|_| named)
+        .ok_or_else(|| refused("not a native/<invocation> root"))
+}
+
+/// After `Released`, moves the Codex rollouts of the private invocation root
+/// `mac` names into the host Codex sessions tree (`rollouts`), then removes
+/// the root (a no-op without a macOS identity or when it is already gone);
+/// any other verdict keeps it. `Err` names a failed move or removal after a
+/// proven release: the caller keeps the record unreleased
+/// (`Quiescence::Unverified` with this text) and the root with every rollout
+/// not yet moved, so a later recovery pass or operator release retries.
 pub(crate) fn reclaim(
     mac: Option<&MacIdentity>,
     quiescence: Quiescence,
 ) -> Result<Quiescence, String> {
+    let host = crate::provider_data::codex_discovery::codex_root(None);
+    let host_sessions = host.map(|root| root.join("sessions"));
+    reclaim_into(mac, quiescence, host_sessions.as_deref())
+}
+
+/// [`reclaim`] moving the rollouts below `host_sessions`.
+pub(crate) fn reclaim_into(
+    mac: Option<&MacIdentity>,
+    quiescence: Quiescence,
+    host_sessions: Option<&Path>,
+) -> Result<Quiescence, String> {
     let (Quiescence::Released, Some(mac)) = (&quiescence, mac) else {
         return Ok(quiescence);
     };
+    let removal_failed = |error: std::io::Error| {
+        format!(
+            "no process of the boundary is left, but its private root {} could not be \
+             removed ({error}); a release retries the removal",
+            mac.scratch_root.display()
+        )
+    };
+    // A root `remove` refuses is never read either.
+    invocation_parent(&mac.scratch_root, &mac.invocation).map_err(removal_failed)?;
+    rollouts::move_rollouts(&mac.scratch_root, host_sessions).map_err(|error| {
+        format!(
+            "no process of the boundary is left, but the Codex rollouts in its private \
+             root {} could not be moved to the host sessions tree ({error}); the root is \
+             kept and a release retries the move",
+            mac.scratch_root.display()
+        )
+    })?;
     remove(&mac.scratch_root, &mac.invocation)
         .map(|()| Quiescence::Released)
-        .map_err(|error| {
-            format!(
-                "no process of the boundary is left, but its private root {} could not be \
-                 removed ({error}); a release retries the removal",
-                mac.scratch_root.display()
-            )
-        })
+        .map_err(removal_failed)
 }
 
 /// Opens the absolute, normalized directory `path` after proving every

@@ -354,3 +354,32 @@ fn a_runs_own_verdict_wins_over_marker_words_in_its_output() {
         Run::Passed { .. }
     ));
 }
+
+#[test]
+fn two_selections_denied_alike_keep_a_note_naming_each_command() {
+    struct Denied(std::cell::RefCell<Vec<String>>);
+    impl ProbeRunner for Denied {
+        fn run(&self, command: &str, _package_dir: &Path) -> Result<ProbeRun> {
+            self.0.borrow_mut().push(command.to_string());
+            Ok(finished(
+                "",
+                "bwrap: Creating new namespace failed\n",
+                Some(1),
+            ))
+        }
+    }
+    let root = TempDir::new().unwrap();
+    let denied = Denied(std::cell::RefCell::new(Vec::new()));
+    let mut selection = Selection::new(root.path(), &denied, BTreeSet::new());
+    selection.run_group(Path::new(""), cargo(), &named(["a".to_string()]));
+    selection.run_group(Path::new(""), cargo(), &named(["b".to_string()]));
+    let notes: Vec<_> = selection.notes.iter().collect();
+    assert_eq!(notes.len(), 2, "{notes:?}");
+    for command in denied.0.borrow().iter() {
+        let running = format!("running `{command}`; {FULL_SUITE}");
+        assert!(
+            notes.iter().any(|note| note.ends_with(&running)),
+            "no note names {command}: {notes:?}"
+        );
+    }
+}

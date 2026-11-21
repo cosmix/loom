@@ -1,10 +1,12 @@
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { createStore } from "jotai";
 import { Provider } from "jotai/react";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, describe, expect, it } from "vitest";
 
+import planStatsSnapshot from "@/api/fixtures/plan-stats-snapshot.json";
 import fixture from "@/api/fixtures/snapshot.json";
+import { parseFrame } from "@/api/frames";
 import { snapshotSchema } from "@/api/schema";
 import { sampleRecordJson } from "@/components/plan-overview/sample-record";
 import { routes } from "@/router";
@@ -74,5 +76,18 @@ describe("shell plan overview", () => {
     expect(page).not.toBeNull();
     act(() => applySnapshot(store, plain));
     expect(document.querySelector("[inert]")).toBeNull();
+  });
+
+  it("renders the Rust-pinned report fixture, parsed from a full frame, in the dialog", () => {
+    const parsed = parseFrame({ t: "full", snapshot: planStatsSnapshot });
+    if (!parsed.success || parsed.data.t !== "full") throw new Error("the fixture frame parses");
+    const store = renderShell();
+    const snapshot = parsed.data.snapshot;
+    act(() => applySnapshot(store, snapshot));
+    const dialog = screen.getByRole("alertdialog", { name: /Web Dashboard Fixture/ });
+    expect(within(dialog).getByText("1 completed · 1 skipped")).toBeTruthy();
+    const rows = within(dialog).getAllByRole("row");
+    const opus = rows.find((row) => row.textContent?.includes("opus"));
+    expect(opus?.textContent).toContain("Claude");
   });
 });

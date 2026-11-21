@@ -247,7 +247,10 @@ fn all_stage_threads(
 /// Looks the due threads of `stage_threads` up in one walk of the sessions
 /// root. A rollout is the file `rollout-<timestamp>-<thread id>.jsonl` whose
 /// whole thread id matches; a thread without one is recorded as a miss at
-/// `now`.
+/// `now`. A running macOS native worker writes its rollout in its private
+/// Codex home, which no index names, so it is a miss until the boundary's
+/// reclaim moves the rollout here (`native_worker::boundary::private_root`);
+/// the next retry, or the final pass, which retries every miss, counts it.
 fn resolve_threads(
     threads: &mut BTreeMap<String, ThreadLookup>,
     stage_threads: &[StageThread],
