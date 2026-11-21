@@ -47,6 +47,12 @@ pub struct CriteriaConfig {
     /// said nothing, which leaves the effective level at `Confined`.
     pub plan_confinement: Option<CommandConfinement>,
 
+    /// The plan's `sandbox.network.allow_local_binding`
+    /// ([`crate::verify::criteria::plan_local_binding`]); a stage's own
+    /// `network` section replaces it (`stage_network`). The
+    /// stage's confined commands get this host's loopback when it is set.
+    pub plan_local_binding: bool,
+
     /// Whether the runner may consult and update the on-disk acceptance pass
     /// cache (see `super::cache`). Read from `LOOM_ACCEPTANCE_CACHE` at
     /// construction time; a caller can still force it with
@@ -112,6 +118,7 @@ impl Default for CriteriaConfig {
         Self {
             command_timeout: DEFAULT_COMMAND_TIMEOUT,
             plan_confinement: None,
+            plan_local_binding: false,
             cache: CachePolicy::from_env(),
             cache_dir: None,
             tree_root: None,
@@ -136,6 +143,12 @@ impl CriteriaConfig {
     /// Carry the plan-level confinement default into this run.
     pub fn with_plan_confinement(mut self, plan_confinement: Option<CommandConfinement>) -> Self {
         self.plan_confinement = plan_confinement;
+        self
+    }
+
+    /// Carry the plan-level `allow_local_binding` default into this run.
+    pub fn with_plan_local_binding(mut self, plan_local_binding: bool) -> Self {
+        self.plan_local_binding = plan_local_binding;
         self
     }
 

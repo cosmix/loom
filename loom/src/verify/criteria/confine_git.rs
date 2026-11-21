@@ -46,12 +46,12 @@ pub(crate) struct GitDirs {
     pub(crate) roots: Vec<PathBuf>,
 }
 
-/// The Git directories of the canonical `tree` for a command denied the
-/// network. `None` under provisioning, whose network access could carry the
-/// repository's objects and config away, for a tree without `.git`, and for a
-/// linked worktree that fails verification.
+/// The Git directories of the canonical `tree` for a command with no network
+/// beyond this host's loopback. `None` under provisioning, whose network access
+/// could carry the repository's objects and config away, for a tree without
+/// `.git`, and for a linked worktree that fails verification.
 pub(crate) fn git_dirs(tree: &Path, network: NetworkAccess) -> Option<GitDirs> {
-    if network != NetworkAccess::Denied {
+    if network == NetworkAccess::Provision {
         return None;
     }
     let dot_git = tree.join(".git");

@@ -15,6 +15,9 @@ use crate::verify::criteria::{run_spec_with_timeout, CommandSpec};
 #[path = "confine_seatbelt_probe_tests.rs"]
 mod probe;
 
+#[path = "confine_seatbelt_loopback_tests.rs"]
+mod loopback;
+
 /// A canonical `<tmp>/worktree` whose parent holds `Cargo.toml` and
 /// `.cargo/config.toml` with the given contents.
 fn tree_below_cargo_files(manifest: &str, config: &str) -> (TempDir, PathBuf) {
@@ -104,6 +107,41 @@ fn cargo_files_above_the_tree_are_absent_inside_the_boundary() {
         result.success
             && result.stdout.contains("ABSENT_MANIFEST")
             && result.stdout.contains("ABSENT_CONFIG"),
+        "confined: {result:?}\n{}",
+        probe::report(&spec, &tree)
+    );
+}
+
+/// Node's package-scope lookup reads `package.json` in every ancestor and
+/// treats `EPERM` as fatal, so each file above the tree must read, not be hidden.
+#[test]
+fn the_profile_allows_a_literal_read_of_each_package_json_above_the_tree() {
+    let (_root, tree) = tree_below_cargo_files("[package]\n", "");
+    let above = tree.parent().unwrap().join("package.json");
+    std::fs::write(&above, "{}\n").unwrap();
+    std::fs::write(tree.join("package.json"), "{}\n").unwrap();
+    let profile = profile_for(&tree);
+    let quoted = |path: &Path| serde_json::to_string(&path.to_string_lossy()).unwrap();
+    let allow = format!("(allow file-read* (literal {}))", quoted(&above));
+    assert!(profile.contains(&allow), "{allow} missing from {profile}");
+    let own = format!("(literal {})", quoted(&tree.join("package.json")));
+    assert!(!profile.contains(&own), "{own} named in {profile}");
+    assert!(!profile.contains(&format!("(subpath {})", quoted(tree.parent().unwrap()))));
+}
+
+#[test]
+fn a_package_json_above_the_tree_is_readable_inside_the_boundary() {
+    if launcher_absent("a_package_json_above_the_tree_is_readable_inside_the_boundary") {
+        return;
+    }
+    let (_root, tree) = tree_below_cargo_files("[package]\n", "");
+    std::fs::write(tree.parent().unwrap().join("package.json"), "ABOVE\n").unwrap();
+    let spec = CommandSpec::shell("/bin/cat ../package.json; echo DONE");
+    let timeout = Duration::from_secs(15);
+    let result =
+        run_spec_with_timeout(&spec, Some(&tree), timeout, CommandConfinement::Confined).unwrap();
+    assert!(
+        result.success && result.stdout.contains("ABOVE") && result.stdout.contains("DONE"),
         "confined: {result:?}\n{}",
         probe::report(&spec, &tree)
     );
@@ -218,69 +256,17 @@ fn a_tmpdir_symlink_does_not_reach_a_host_socket() {
     assert!(ln_refused, "{result:?}");
 }
 
-/// Issue #40 in one denied-network command: a listener on `127.0.0.1` port 0
-/// starts and the parent directory lists, while a wildcard bind and reads of
-/// the Cargo files two levels up are refused. The command never dials its own
-/// listener: a denied network grants no outbound connect at all.
-#[test]
-fn open_issues_macos_completion_kernel_binds_loopback_and_keeps_ancestor_cargo_files_hidden() {
-    let name =
-        "open_issues_macos_completion_kernel_binds_loopback_and_keeps_ancestor_cargo_files_hidden";
-    if launcher_absent(name) {
-        return;
-    }
-    let (_root, beside) = tree_below_cargo_files("[workspace]\n", "[build]\n");
-    let tree = beside.parent().unwrap().join("mid/worktree");
-    std::fs::create_dir_all(&tree).unwrap();
-    let listen = |address: &str, marker: &str| {
-        format!(
-            "/usr/bin/perl -MIO::Socket::INET -e 'IO::Socket::INET->new(LocalAddr => \
-             \"{address}\", LocalPort => 0, Proto => \"tcp\", Listen => 1) \
-             and print \"{marker}\\n\"'"
-        )
-    };
-    let spec = CommandSpec::shell(format!(
-        "{}; {}; ls .. >/dev/null && echo LISTED; \
-         cat ../../Cargo.toml >/dev/null 2>&1 && echo MANIFEST_READ; \
-         cat ../../.cargo/config.toml >/dev/null 2>&1 && echo CONFIG_READ; true",
-        listen("127.0.0.1", "LOOPBACK_BOUND"),
-        listen("0.0.0.0", "WILDCARD_BOUND"),
-    ));
-    let timeout = Duration::from_secs(15);
-    let control =
-        run_spec_with_timeout(&spec, Some(&tree), timeout, CommandConfinement::Inherit).unwrap();
-    for marker in ["LOOPBACK_BOUND", "LISTED", "MANIFEST_READ", "CONFIG_READ"] {
-        assert!(
-            control.stdout.contains(marker),
-            "unconfined, the fixture shows {marker}: {control:?}"
-        );
-    }
-    let result =
-        run_spec_with_timeout(&spec, Some(&tree), timeout, CommandConfinement::Confined).unwrap();
-    assert!(
-        result.success
-            && result.stdout.contains("LOOPBACK_BOUND")
-            && result.stdout.contains("LISTED"),
-        "a confined command listens on loopback and lists its parent: {result:?}"
-    );
-    for marker in ["WILDCARD_BOUND", "MANIFEST_READ", "CONFIG_READ"] {
-        assert!(
-            !result.stdout.contains(marker),
-            "a confined command must not reach {marker}: {result:?}"
-        );
-    }
-}
-
-/// `sandbox-exec` parses both modes' whole profiles, listener and listings
-/// included. Exit 65 is a parse error; a sandbox that refuses to nest another
+/// `sandbox-exec` parses every network mode's whole profile, loopback grant and
+/// listings included. Exit 65 is a parse error; a sandbox that refuses to nest another
 /// (71) has parsed it.
 #[test]
-fn both_network_modes_render_a_profile_that_parses() {
+fn every_network_mode_renders_a_profile_that_parses() {
     let (_root, tree) = tree_below_cargo_files("[package]\n", "");
     let mut original = Command::new("/bin/sh");
     original.current_dir(&tree);
     for network in [
         super::NetworkAccess::Denied,
+        super::NetworkAccess::Loopback,
         super::NetworkAccess::Provision,
     ] {
         let profile = super::seatbelt_profile(&original, &tree, network).unwrap();

@@ -1,0 +1,11 @@
+# Macos Confined Networking
+
+> macOS confined IP networking: off by default, loopback opt-in, residual
+
+## macOS Confined IP Networking Is Off by Default
+
+A confined command on macOS gets no IP bind, listen, connect or send (`NetworkAccess::Denied`, `verify/criteria/confine_seatbelt.rs::profile`); Unix sockets follow the path rules. A plan or stage opts in with `sandbox.network.allow_local_binding: true` (a stage's own `network` section replaces the plan's whole, as `sandbox::merge_config` merges it; the field needs no author acknowledgement). `verify::criteria::stage_network` turns it into `NetworkAccess::Loopback` for criteria and impact-test runs (`CriteriaConfig::plan_local_binding`, read from the plan snapshot by `plan_local_binding`) and for contract runs (completion, and the freeze red run in `host_verify/freeze.rs`). Linux is unchanged: bubblewrap gives each command a private network namespace with its own loopback, and `allow_local_binding` there only widens the Claude Code session sandbox (`sandbox/settings/policy.rs`).
+
+Residual of the opt-in, measured on macOS 27.2.1 with real `sandbox-exec`: Seatbelt cannot hold a bind to loopback. `localhost` in a `local` filter matches every local address and `"127.0.0.1:*"` is a parse error, so a command can bind `0.0.0.0` or a LAN address and a LAN peer can reach the listener. `(remote ip "localhost:*")` reaches every host loopback listener (the loom dashboard on 7373, databases, dev servers), and a command can take a port a host client expects. A connect off the host stays denied. A `(deny network-outbound (remote tcp "localhost:4226"))` after the grant keeps a host sccache server, which runs compilers outside the boundary, unreachable; it holds on macOS 27.2.1 and is unverified on the `macos-26-arm64` CI runner.
+
+Without the opt-in a listen test fails as an ordinary test failure on macOS. `verify/environment.rs::sandbox_denial` marks `EPERM` and "operation not permitted" (Node and Python print them), but not bun's `EADDRINUSE` or `FailedToOpenSocket` for a refused bind. That gap is deliberate: `EADDRINUSE` is also a real failure text, so marking it would turn real port clashes into environment notes. The remedy for a stage that serves and dials on loopback is the opt-in.

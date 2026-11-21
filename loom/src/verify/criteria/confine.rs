@@ -15,6 +15,8 @@
 
 #[path = "confine_host.rs"]
 pub(super) mod host;
+#[path = "confine_levels.rs"]
+mod levels;
 #[cfg(test)]
 #[path = "confine_policy.rs"]
 mod policy;
@@ -24,6 +26,8 @@ mod scratch;
 mod spec;
 
 use host::wrap;
+pub(crate) use levels::stage_network;
+pub use levels::{plan_confinement, plan_local_binding, resolve_confinement};
 use spec::build_command;
 pub use spec::CommandSpec;
 
@@ -225,20 +229,22 @@ pub(super) fn prepare_confined(
     confinement: CommandConfinement,
     cache: Option<&StageCache>,
 ) -> Result<PreparedCommand> {
-    prepare_reading_journals(spec, working_dir, tree, confinement, cache, None)
+    let network = host::NetworkAccess::Denied;
+    prepare_reading_journals(spec, working_dir, tree, confinement, network, cache, None)
 }
 
 /// [`prepare_confined`] for a command that may also read `journals`, the
-/// plan's memory journals outside `tree`, read-only.
+/// plan's memory journals outside `tree`, read-only, and whose stage grants it
+/// `network` (`Denied` or `Loopback`, from [`stage_network`]).
 pub(super) fn prepare_reading_journals(
     spec: &CommandSpec,
     working_dir: Option<&Path>,
     tree: Option<&Path>,
     confinement: CommandConfinement,
+    network: host::NetworkAccess,
     cache: Option<&StageCache>,
     journals: Option<&MemoryJournals>,
 ) -> Result<PreparedCommand> {
-    let network = host::NetworkAccess::Denied;
     prepare(
         spec,
         working_dir,
@@ -370,30 +376,4 @@ pub(crate) fn confined_stage_cache(
     (confinement == CommandConfinement::Confined)
         .then(|| stage_cache_for(work_dir, stage_id))
         .transpose()
-}
-
-/// Effective confinement for one stage's plan-authored commands.
-///
-/// An explicit stage-level override wins over the plan-level default; with
-/// neither set, commands are [`CommandConfinement::Confined`]. This is the
-/// confinement-only projection of [`crate::sandbox::merge_config`]'s
-/// stage-over-plan precedence, for the callers that hold the two values
-/// without a full `SandboxConfig`.
-pub fn resolve_confinement(
-    stage_override: Option<CommandConfinement>,
-    plan_default: Option<CommandConfinement>,
-) -> CommandConfinement {
-    stage_override.or(plan_default).unwrap_or_default()
-}
-
-/// Plan-level confinement default, read from the `[plan_sandbox]` snapshot
-/// that `loom init`/`loom run` persist in `.loom/work/config.toml`.
-///
-/// A missing or unreadable snapshot yields `None`, leaving callers at the
-/// `Confined` default — ambiguity resolves toward the fail-safe level.
-pub fn plan_confinement(work_dir: &Path) -> Option<CommandConfinement> {
-    crate::fs::work_dir::read_plan_sandbox(work_dir)
-        .ok()
-        .flatten()
-        .map(|sandbox| sandbox.command_confinement)
 }

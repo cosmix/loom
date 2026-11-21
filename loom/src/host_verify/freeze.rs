@@ -54,7 +54,9 @@ use crate::verify::contracts::freeze::{
 use crate::verify::contracts::refusal::run_output_line;
 use crate::verify::contracts::site::ContractSite;
 use crate::verify::contracts::store::load_freeze;
-use crate::verify::criteria::{confined_stage_cache, plan_confinement, resolve_confinement};
+use crate::verify::criteria::{
+    confined_stage_cache, plan_confinement, plan_local_binding, resolve_confinement, stage_network,
+};
 use crate::verify::transitions::load_stage;
 
 #[path = "freeze_format.rs"]
@@ -265,6 +267,7 @@ fn run_contracts(
 ) -> Result<Vec<ContractRunReport>> {
     let mut reports = Vec::new();
     let cache = confined_stage_cache(work_dir, &stage.id, confinement)?;
+    let network = stage_network(stage, plan_local_binding(work_dir));
     run_memoized(
         &stage.contracts,
         |contract| prepare_planned(&site.worktree_root, &site.working_dir, planned, contract),
@@ -275,6 +278,7 @@ fn run_contracts(
                 contract,
                 prepared,
                 confinement,
+                network,
                 cache.as_ref(),
                 |line| println!("{line}"),
             )
@@ -292,12 +296,10 @@ fn run_contracts(
             let done = outcome(label, passed, &summary);
             // Progress is a courtesy to the waiting writer: the final result
             // carries every outcome, so a failed append is logged only.
-            if let Err(error) =
-                store::append_progress(work_dir, &record.stage_id, &record.id, &done)
-            {
-                let job = &record.id;
+            let appended = store::append_progress(work_dir, &record.stage_id, &record.id, &done);
+            if let Err(error) = appended {
                 let error = format!("{error:#}");
-                tracing::warn!(job = %job, error = %error, "cannot record contract progress");
+                tracing::warn!(job = %record.id, error = %error, "cannot record contract progress");
             }
             outcomes.push(done);
         },

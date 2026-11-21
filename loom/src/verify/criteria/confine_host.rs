@@ -2,7 +2,8 @@
 //! the command's Cargo home (see `confine_scratch.rs`) are writable, plus a
 //! private /tmp and /var/tmp under bubblewrap; runtime and compiler
 //! installation directories and a linked worktree's Git metadata
-//! (`confine_git.rs`) are readable. Verification denies network access;
+//! (`confine_git.rs`) are readable. Verification denies network access, bar
+//! this host's loopback for a stage that sets `allow_local_binding`;
 //! plan-approved provisioning can fetch dependencies. Warm uv and Bun caches are
 //! read-only lowers beneath each command's private cache (`confine_scratch.rs`).
 //! A missing or unusable OS facility fails before executing repository code.
@@ -62,7 +63,14 @@ use seatbelt::platform_command;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum NetworkAccess {
+    /// No IP networking. Under bubblewrap the command still has the loopback
+    /// of its private network namespace.
     Denied,
+    /// [`NetworkAccess::Denied`] plus this host's loopback, for a stage that
+    /// sets `sandbox.network.allow_local_binding`. Only Seatbelt renders a
+    /// rule for it (`confine_seatbelt.rs`); bubblewrap needs none.
+    Loopback,
+    /// Approved package setup: the network, DNS included.
     Provision,
 }
 

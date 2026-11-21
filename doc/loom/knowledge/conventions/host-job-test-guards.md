@@ -10,7 +10,7 @@
 
 - A nested `sandbox-exec` with a profile that differs from the outer one (`sandbox_apply: Operation not permitted`, exit 71). Provision tests, `verify::before_after`, native wrapper tests and every test that confines a command hit it. `confined_commands_runnable()` starts a trivial `sandbox-exec ... true` (the macOS branch of `confined_command_blocker`; the Linux branch starts `bwrap`) and memoizes the answer; the launcher wait is bounded (`launcher.rs` polls `try_wait` for 5 s, then kills and reaps).
 - Signals to a process outside the sandbox, and PTY allocation (`process_groups_signalable`, `pty_allocatable`); loopback and unix-socket bind (`loopback_bindable`, `unix_socket_bindable`); a socket path over SUN_LEN under the job's TMPDIR; writes to `/tmp` (plan locks live in `/tmp/loom-plan-locks-<uid>/`, `fs/locking.rs`, so amendment e2e tests fail there, and `apply_pending_verdicts` swallows the error into `tracing::warn`); `ps`, so the process tree is invisible (`process_tree_visible`: hook, relay and spawn-guard tests prove `LOOM_MAIN_AGENT_PID` is a live ancestor); `/dev/fd` process substitution; a read of an ancestor `bun.lock`; a TMUX_TMPDIR.
-- Ancestor directories above the worktree are stat-able but not listable.
+- Ancestor directories above the worktree are listable (a literal grant for each, `confine_ancestors.rs` `listing_rules`), so a tool sees the names there but reads no file except an existing ancestor `package.json` (`read_rules`); an ancestor `Cargo.toml` and `.cargo/config.toml` are hidden.
 
 ### Guard rules
 

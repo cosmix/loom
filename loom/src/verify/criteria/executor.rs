@@ -13,6 +13,7 @@ use crate::models::stage::CommandConfinement;
 use crate::stage_cache::StageCache;
 
 use super::config::DEFAULT_COMMAND_TIMEOUT;
+use super::confine::host::NetworkAccess;
 use super::confine::{self, CommandSpec, PreparedCommand};
 use super::live_output::LiveSink;
 use super::result::CriterionResult;
@@ -111,7 +112,39 @@ pub fn run_spec_in_optional_stage(
     confinement: CommandConfinement,
     cache: Option<&StageCache>,
 ) -> Result<CriterionResult> {
-    let prepared = confine::prepare_confined(spec, working_dir, tree, confinement, cache)?;
+    let network = NetworkAccess::Denied;
+    run_spec_in_stage_network(
+        spec,
+        tree,
+        working_dir,
+        timeout,
+        confinement,
+        network,
+        cache,
+    )
+}
+
+/// [`run_spec_in_optional_stage`] for a command whose stage grants it `network`
+/// ([`super::stage_network`]): the contract freeze's red run of a test that
+/// listens on loopback needs the same grant its completion run has.
+pub(crate) fn run_spec_in_stage_network(
+    spec: &CommandSpec,
+    tree: Option<&Path>,
+    working_dir: Option<&Path>,
+    timeout: Duration,
+    confinement: CommandConfinement,
+    network: NetworkAccess,
+    cache: Option<&StageCache>,
+) -> Result<CriterionResult> {
+    let prepared = confine::prepare_reading_journals(
+        spec,
+        working_dir,
+        tree,
+        confinement,
+        network,
+        cache,
+        None,
+    )?;
     run_prepared_with_timeout(prepared, timeout)
 }
 

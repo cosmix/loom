@@ -189,6 +189,8 @@ Open boundaries include native file-tool credential coverage in checkout-rooted 
 
 → [Sandbox and Confinement Gaps](concerns/sandbox-and-confinement-gaps.md), [Agent Rule-Bending Hardening](concerns/agent-rule-bending-hardening.md)
 
+A confined command on macOS has no IP networking unless its stage sets `sandbox.network.allow_local_binding`; the opt-in cannot hold binds to loopback. See [macOS Confined IP Networking](concerns/macos-confined-networking.md).
+
 ## Dependency Findings Follow-Ups
 
 The plan 4 harness printed a stop-rule FAIL on all three recorded pairs (guard-core to guard-integration gains -444 and -2,221 tokens against a 12,190 cost); the operator overrode it and the verdict is printed, not asserted. Also open: spool id validation, render and path-normalization cost bounds, evidence-matching edges, test gaps, and the finalization-guard heredoc scan.

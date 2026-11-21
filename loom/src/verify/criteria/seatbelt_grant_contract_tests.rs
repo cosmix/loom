@@ -1,4 +1,5 @@
-//! Contracts `signals-only-own-sandbox`, `binds-only-localhost` and
+//! Contracts `signals-only-own-sandbox`, `binds-only-localhost` (IP
+//! networking only with the loopback opt-in) and
 //! `ancestors-listed-not-read`: the macOS Seatbelt profile as the portable
 //! builder renders it on any host (`confine::host::seatbelt_profile`), read
 //! rule by rule. Seatbelt applies the last rule that matches an operation, so
@@ -14,7 +15,6 @@ use tempfile::TempDir;
 use super::confine::host::{seatbelt_profile, NetworkAccess};
 
 const SIGNAL_RULE: &str = "(allow signal (target same-sandbox))";
-const LOCALHOST_LISTENER: &str = "(allow network-bind network-inbound (local ip \"localhost:*\"))";
 
 /// A canonical `<tmp>/outer/mid/worktree` whose `outer` holds `Cargo.toml`
 /// and `.cargo/config.toml`; returns the guard, `outer` and the tree.
@@ -111,6 +111,21 @@ fn launched_profile(tree: &Path) -> Option<String> {
     Some(policy.args[at.expect("the launcher takes the profile after -p") + 1].clone())
 }
 
+/// The IP networking the profile grants a stage that sets
+/// `allow_local_binding`, spelled as `confine_seatbelt.rs` renders it (that
+/// module's constants are private), and the deny that must follow it.
+const LOOPBACK_BIND: &str = "(allow network-bind network-inbound (local ip \"localhost:*\"))";
+const LOOPBACK_DIAL: &str = "(allow network-outbound (remote ip \"localhost:*\"))";
+const SCCACHE_PORT_DENY: &str = "(deny network-outbound (remote tcp \"localhost:4226\"))";
+
+/// Whether `rule` is an allow that binds or accepts on an address, as opposed
+/// to a Unix socket.
+fn grants_ip_listening(rule: &str) -> bool {
+    rule.starts_with("(allow")
+        && (rule.contains("network-bind") || rule.contains("network-inbound"))
+        && !rule.contains("unix-socket")
+}
+
 #[test]
 fn a_confined_command_may_signal_only_its_own_sandbox() {
     let (_root, _outer, tree) = nested_tree();
@@ -130,29 +145,32 @@ fn a_confined_command_may_signal_only_its_own_sandbox() {
             .filter(|rule| rule.starts_with("(allow signal") || rule.starts_with("(allow default"))
             .collect();
         assert_eq!(signals, [SIGNAL_RULE], "no other signal grant exists");
+    }
+    let default = profile(&tree, NetworkAccess::Denied);
+    for rule in ["(local ip", "(remote ip"] {
         assert!(
-            rules.contains(&LOCALHOST_LISTENER),
-            "a confined command may listen on localhost"
+            !default.contains(rule),
+            "the default profile holds no {rule} rule"
         );
     }
     #[cfg(target_os = "macos")]
     if let Some(launched) = launched_profile(&tree) {
         let launched = rules(&launched);
         assert!(
-            launched.contains(&SIGNAL_RULE) && launched.contains(&LOCALHOST_LISTENER),
-            "the launcher receives the same signal and listener grants"
+            launched.contains(&SIGNAL_RULE),
+            "the launcher receives the same signal grant"
         );
     }
 }
 
 #[test]
-fn a_confined_command_may_bind_only_localhost() {
+fn a_confined_command_binds_ip_only_with_the_loopback_opt_in() {
     let (_root, _outer, tree) = nested_tree();
     let denied = profile(&tree, NetworkAccess::Denied);
     let denied = rules(&denied);
     assert!(
-        denied.contains(&LOCALHOST_LISTENER),
-        "a denied-network command may listen on localhost"
+        !denied.iter().any(|rule| rule.contains(" ip ")),
+        "denied network grants no IP networking: {denied:?}"
     );
     for rule in denied
         .iter()
@@ -160,27 +178,38 @@ fn a_confined_command_may_bind_only_localhost() {
     {
         let unix_only =
             rule.contains("unix-socket") && !rule.contains(" ip ") && !rule.contains("tcp");
-        assert!(
-            *rule == LOCALHOST_LISTENER || unix_only,
-            "denied network grants localhost listening and Unix sockets only: {rule}"
-        );
+        assert!(unix_only, "denied network grants Unix sockets only: {rule}");
     }
     let provision = profile(&tree, NetworkAccess::Provision);
     let provision = rules(&provision);
     assert!(
-        provision.contains(&LOCALHOST_LISTENER) && provision.contains(&"(allow network-outbound)"),
-        "provisioning listens on localhost and keeps its outbound access"
+        provision.contains(&"(allow network-outbound)"),
+        "provisioning keeps its outbound access"
     );
-    let listeners = provision.iter().filter(|rule| {
-        rule.starts_with("(allow")
-            && (rule.contains("network-bind") || rule.contains("network-inbound"))
-    });
-    for rule in listeners {
-        assert!(
-            *rule == LOCALHOST_LISTENER || rule.contains("unix-socket"),
-            "provisioning binds no address beyond localhost: {rule}"
-        );
-    }
+    assert!(
+        !provision.iter().any(|rule| grants_ip_listening(rule)),
+        "provisioning binds nothing but Unix sockets: {provision:?}"
+    );
+    let loopback = profile(&tree, NetworkAccess::Loopback);
+    let loopback_rules = rules(&loopback);
+    let grant = format!("{LOOPBACK_BIND}{LOOPBACK_DIAL}");
+    assert_eq!(loopback.matches(&grant).count(), 1, "{loopback}");
+    let at = loopback.find(&grant).unwrap() + grant.len();
+    assert!(
+        loopback[at..].starts_with(SCCACHE_PORT_DENY),
+        "the sccache port deny follows the loopback grant: {loopback}"
+    );
+    let listening: Vec<&str> = loopback_rules
+        .iter()
+        .copied()
+        .filter(|rule| grants_ip_listening(rule))
+        .collect();
+    assert_eq!(
+        listening,
+        [LOOPBACK_BIND],
+        "no other IP bind or inbound rule"
+    );
+    assert_eq!(loopback.matches("(local ip").count(), 1, "{loopback}");
 }
 
 /// Every Cargo file in `files` is denied for reads, metadata and existence,

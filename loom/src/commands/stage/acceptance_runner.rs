@@ -11,8 +11,8 @@ use super::criterion_output::format_criterion_result;
 use crate::git::worktree::find_repo_root_from_cwd;
 use crate::models::stage::Stage;
 use crate::verify::criteria::{
-    confined_stage_cache, memory_journals_grant, plan_confinement, resolve_confinement,
-    run_acceptance_with_config, CriteriaConfig, CriterionResult,
+    confined_stage_cache, memory_journals_grant, plan_confinement, plan_local_binding,
+    resolve_confinement, run_acceptance_with_config, CriteriaConfig, CriterionResult,
 };
 pub(crate) use crate::verify::execution_paths::{resolve_acceptance_dir, StageExecutionPaths};
 
@@ -112,6 +112,7 @@ fn acceptance_config(
     let confinement = resolve_confinement(stage.sandbox.command_confinement, plan);
     Ok(CriteriaConfig::default()
         .with_plan_confinement(plan)
+        .with_plan_local_binding(plan_local_binding(work_dir))
         .with_cache_dir(work_dir)
         .with_tree_root(paths.worktree_root.as_deref())
         .with_stage_cache(confined_stage_cache(work_dir, stage_id, confinement)?)
@@ -177,7 +178,8 @@ fn print_criterion_result(index: usize, criterion_result: &CriterionResult, setu
 
 /// The guidance for a failed acceptance, wiring or wiring-test check: fix it,
 /// or dispute a check no correct work could pass or that fails only because of
-/// where completion runs. Block is refused while the latest completion shows a failing criterion.
+/// where completion runs. Block is refused while the latest completion shows a failing criterion, frozen
+/// contract or impact-selected test.
 fn failure_guidance(stage_id: &str) -> String {
     let dispute = format!("    loom stage dispute-criteria {stage_id}");
     [
@@ -201,7 +203,8 @@ fn failure_guidance(stage_id: &str) -> String {
          blocked: name every such criterion in one filing with a repeatable \
          --criterion-index <n> flag. loom stage block is for a credential, a host install or \
          a decision only a person can make, and loom refuses it while the latest \
-         `loom stage complete` shows a failing criterion."
+         `loom stage complete` shows a failing criterion, frozen contract or impact-selected \
+         test."
             .to_string(),
     ]
     .join("\n")

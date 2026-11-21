@@ -13,6 +13,7 @@ use crate::verify::contracts::store::{
     write_freeze, FreezeRecord, FrozenContract, FrozenFile, FREEZE_RECORD_VERSION,
 };
 use crate::verify::contracts::{completion, resolve_adapter};
+use crate::verify::criteria::NetworkAccess;
 use chrono::Utc;
 use std::path::PathBuf;
 use tempfile::TempDir;
@@ -111,6 +112,7 @@ fn freeze_red(root: &Path) -> FrozenContract {
         &contract,
         &prepared,
         CommandConfinement::Confined,
+        NetworkAccess::Denied,
         None,
         |_| {},
     )

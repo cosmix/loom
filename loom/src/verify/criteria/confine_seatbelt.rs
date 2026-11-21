@@ -89,8 +89,8 @@ fn seatbelt_path_rules(
 }
 
 /// Rules naming single paths, after the root rules they refine: the tree's
-/// protected paths, the directories above it listed and the Cargo files there
-/// hidden, files hidden in the host's Cargo and Maven homes, and the stage
+/// protected paths, the directories above it listed, the Cargo files there
+/// hidden and each `package.json` there readable, files hidden in the host's Cargo and Maven homes, and the stage
 /// cache's host-job sccache socket.
 fn named_rules(
     original: &Command,
@@ -106,6 +106,11 @@ fn named_rules(
     profile.push_str(&ancestors::listing_rules(&listed, quote_checked(&listed)?));
     let hidden = ancestors::hidden_above(tree, readable);
     profile.push_str(&ancestors::seatbelt_rules(&hidden, quote_checked(&hidden)?));
+    let package_scope = ancestors::readable_above(tree, readable);
+    profile.push_str(&ancestors::read_rules(
+        &package_scope,
+        quote_checked(&package_scope)?,
+    ));
     if let Some(home) = host_cargo_home(scratch) {
         profile.push_str(&host_cargo_home_rules(home)?);
     }
@@ -291,20 +296,29 @@ const BASE_RULES: &str = "(version 1)(deny default)(allow process*)(allow sysctl
 /// same user.
 const SIGNAL_RULE: &str = "(allow signal (target same-sandbox))";
 
-/// Test servers and dev tools listen on `127.0.0.1:0`. Only a loopback
-/// address may be bound or accept: a wildcard or interface bind would serve
-/// the command's listener to every network the host is on. Connecting stays
-/// an outbound operation, denied in [`NetworkAccess::Denied`]: a remote
-/// `localhost` grant would also reach every unrelated listener on the host's
-/// loopback, so the command can listen but not dial even its own socket.
+/// IP networking of a stage that sets `sandbox.network.allow_local_binding`
+/// ([`NetworkAccess::Loopback`]): servers and tests may listen and dial on this
+/// host. Every other confined command gets no IP networking.
 ///
-/// Residual: Seatbelt's loopback is the host's (bubblewrap gives each command
-/// a private network namespace with its own), so a confined command accepts
-/// connections from unconfined host processes. Taking a well-known port, such
-/// as sccache's default TCP 4226 or an OAuth callback port, it can answer a
-/// host client meant for another server. Revisit if Seatbelt gains a
-/// per-sandbox loopback or a port-range filter for `local ip`.
-const LOCALHOST_LISTENER: &str = "(allow network-bind network-inbound (local ip \"localhost:*\"))";
+/// Measured residual (macOS 27.2.1, real `sandbox-exec`): a `local` filter
+/// cannot hold a bind to loopback, since `"localhost"` matches every local
+/// address and `"127.0.0.1:*"` is a parse error. A command can therefore
+/// bind `0.0.0.0` or a LAN address, and a peer on the network can then reach
+/// its listener. `(remote ip "localhost:*")` also reaches every listener on the
+/// host's loopback (the loom dashboard, databases, dev servers), and a command
+/// can take a port a host client expects, such as an OAuth callback. A connect
+/// to an address off this host stays denied (1.1.1.1:443). Bubblewrap's private
+/// network namespace needs no such rule. Revisit if Seatbelt gains a
+/// loopback-only bind filter.
+const LOOPBACK_NETWORK: &str = "(allow network-bind network-inbound (local ip \"localhost:*\"))\
+     (allow network-outbound (remote ip \"localhost:*\"))";
+
+/// sccache's default TCP port. A host sccache server there runs compilers
+/// outside this boundary, and a confined sccache client falls back to it
+/// whenever `SCCACHE_SERVER_UDS` is unset, so a loopback grant must not reach
+/// it. The deny follows [`LOOPBACK_NETWORK`]: Seatbelt applies the last matching
+/// rule (measured: a host listener on 4226 is refused, another port succeeds).
+const SCCACHE_PORT_DENY: &str = "(deny network-outbound (remote tcp \"localhost:4226\"))";
 
 /// The Seatbelt profile confining `original` to the canonical `tree` with
 /// `scratch` and `grants`. It starts nothing and needs no launcher, so tests
@@ -316,9 +330,13 @@ pub(super) fn profile(
     network: NetworkAccess,
     grants: &Grants<'_>,
 ) -> Result<String> {
-    let mut profile = format!("{BASE_RULES}{SIGNAL_RULE}{LOCALHOST_LISTENER}");
-    if network == NetworkAccess::Provision {
-        profile.push_str(&provision_network_rules(grants)?);
+    let mut profile = format!("{BASE_RULES}{SIGNAL_RULE}");
+    match network {
+        NetworkAccess::Denied => {}
+        NetworkAccess::Loopback => {
+            profile.push_str(&format!("{LOOPBACK_NETWORK}{SCCACHE_PORT_DENY}"))
+        }
+        NetworkAccess::Provision => profile.push_str(&provision_network_rules(grants)?),
     }
     profile.push_str(&seatbelt_path_rules(original, tree, scratch, grants)?);
     Ok(profile)

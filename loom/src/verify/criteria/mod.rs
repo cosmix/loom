@@ -85,20 +85,22 @@ pub use config::{
     extended_criterion_timeout, CriteriaConfig, CriterionObserver, DEFAULT_CHECK_TIMEOUT,
     DEFAULT_COMMAND_TIMEOUT, DEFAULT_EXTENDED_CRITERION_TIMEOUT,
 };
+pub(crate) use confine::host::NetworkAccess;
 #[cfg(test)]
 pub(crate) use confine::{confined_policy, host_launcher, ConfinedPolicy};
-pub(crate) use confine::{confined_stage_cache, stage_cache_for};
+pub(crate) use confine::{confined_stage_cache, stage_cache_for, stage_network};
 #[cfg(target_os = "linux")]
 pub(crate) use confine::{
     git_dirs,
-    host::{bind_read_roots, bubblewrap, read_roots, NetworkAccess},
+    host::{bind_read_roots, bubblewrap, read_roots},
     CargoScratch,
 };
 pub use confine::{
-    plan_confinement, resolve_confinement, spawn_confined, CommandSpec, ConfinedChild,
+    plan_confinement, plan_local_binding, resolve_confinement, spawn_confined, CommandSpec,
+    ConfinedChild,
 };
 pub(crate) use escapees::lead_own_session;
-pub(crate) use executor::run_provision_with_timeout;
+pub(crate) use executor::{run_provision_with_timeout, run_spec_in_stage_network};
 pub use executor::{
     run_single_criterion, run_single_criterion_with_timeout, run_spec_in_optional_stage,
     run_spec_in_optional_tree, run_spec_in_stage, run_spec_with_timeout,

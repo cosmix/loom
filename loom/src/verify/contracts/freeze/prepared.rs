@@ -16,7 +16,9 @@ use crate::verify::contracts::failed_builds::BuildKey;
 use crate::verify::contracts::refusal::run_output_line;
 use crate::verify::contracts::resolve_adapter;
 use crate::verify::contracts::run_dir::{resolve_run, ContractRun};
-use crate::verify::criteria::{run_spec_in_optional_stage, CommandSpec, CriterionResult};
+use crate::verify::criteria::{
+    run_spec_in_stage_network, CommandSpec, CriterionResult, NetworkAccess,
+};
 
 /// A contract resolved to its adapter and run directory, ready to run.
 pub(crate) struct PreparedContract {
@@ -60,12 +62,14 @@ pub(crate) struct JudgedRun {
 /// Run one contract resolved by [`prepare_contract`] from its run directory with
 /// the criteria executor and judge the run. The outer `Err` means the command
 /// could not be run at all; the inner one is a problem the agent must fix.
-/// A confined run also uses `cache`, the stage's build caches.
+/// A confined run also uses `cache`, the stage's build caches, and has the
+/// `network` its stage grants ([`crate::verify::criteria::stage_network`]).
 pub(crate) fn run_prepared(
     worktree_root: &Path,
     contract: &ContractSpec,
     prepared: &PreparedContract,
     confinement: CommandConfinement,
+    network: NetworkAccess,
     cache: Option<&StageCache>,
     emit: fn(&str),
 ) -> Result<JudgedRun> {
@@ -75,12 +79,13 @@ pub(crate) fn run_prepared(
         "Running contract `{}` in {}: {}",
         contract.id, resolved.cwd, resolved.command
     ));
-    let run = run_spec_in_optional_stage(
+    let run = run_spec_in_stage_network(
         &CommandSpec::shell(resolved.command.clone()),
         Some(worktree_root),
         Some(&resolved.dir),
         CONTRACT_TIMEOUT,
         confinement,
+        network,
         cache,
     )?;
     Ok(judge_prepared_result(contract, adapter, &run, emit))

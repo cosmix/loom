@@ -45,6 +45,7 @@ pub(super) fn run(path: &Path, report: &mut VerifyReport) -> Result<()> {
     };
     let loom = &metadata.loom;
     let plan_confinement = loom.sandbox.command_confinement;
+    let local_binding = loom.sandbox.network.allow_local_binding;
     let stages = stages_of(path, loom);
     let confined = !loom.provision.is_empty()
         || stages.iter().any(|stage| {
@@ -67,7 +68,7 @@ pub(super) fn run(path: &Path, report: &mut VerifyReport) -> Result<()> {
         .map(|(definition, stage)| (definition.id.as_str(), (definition, stage)))
         .collect();
     run_dry_run_with(path, report, &mut |command: &DryCommand| {
-        execute(command, &table, plan_confinement)
+        execute(command, &table, plan_confinement, local_binding)
     })
 }
 
@@ -77,10 +78,11 @@ fn execute(
     command: &DryCommand,
     stages: &StageTable<'_>,
     plan_confinement: CommandConfinement,
+    local_binding: bool,
 ) -> (CriterionResult, Vec<String>) {
     let ran = match stages.get(command.stage_id.as_str()) {
         Some((_, stage)) if command.field == "acceptance" => {
-            acceptance(command, stage, plan_confinement)
+            acceptance(command, stage, plan_confinement, local_binding)
         }
         Some((definition, _)) => assertion_check(command, definition),
         None => Err(anyhow::anyhow!(
@@ -105,11 +107,17 @@ fn execute(
 }
 
 /// One acceptance criterion through the acceptance runner, cache off.
-fn acceptance(command: &DryCommand, stage: &Stage, plan_confinement: CommandConfinement) -> Ran {
+fn acceptance(
+    command: &DryCommand,
+    stage: &Stage,
+    plan_confinement: CommandConfinement,
+    local_binding: bool,
+) -> Ran {
     let config = CriteriaConfig::default()
         .with_tree_root(Some(&command.tree_root))
         .with_only(Some(BTreeSet::from([command.index])))
-        .with_plan_confinement(Some(plan_confinement));
+        .with_plan_confinement(Some(plan_confinement))
+        .with_plan_local_binding(local_binding);
     let (results, failures) = match run_acceptance_with_config(stage, Some(&command.dir), &config)?
     {
         AcceptanceResult::AllPassed { results } => (results, Vec::new()),

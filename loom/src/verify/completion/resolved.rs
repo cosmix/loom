@@ -9,8 +9,8 @@ use crate::models::stage::{Stage, StageStatus};
 use crate::utils::truncate_for_display;
 use crate::verify::criteria::output::format_criterion_result;
 use crate::verify::criteria::{
-    confined_stage_cache, memory_journals_grant, plan_confinement, resolve_confinement,
-    run_acceptance_with_config, CriteriaConfig, CriterionResult,
+    confined_stage_cache, memory_journals_grant, plan_confinement, plan_local_binding,
+    resolve_confinement, run_acceptance_with_config, CriteriaConfig, CriterionResult,
 };
 use crate::verify::execution_paths::resolve_acceptance_dir;
 use crate::verify::transitions::update_stage;
@@ -139,6 +139,7 @@ fn acceptance_config(stage: &Stage, work_dir: &Path, root: &Path) -> Result<Crit
     let confinement = resolve_confinement(stage.sandbox.command_confinement, plan);
     Ok(CriteriaConfig::default()
         .with_plan_confinement(plan)
+        .with_plan_local_binding(plan_local_binding(work_dir))
         .with_tree_root(Some(root))
         .with_stage_cache(confined_stage_cache(work_dir, &stage.id, confinement)?)
         .with_memory_journals(memory_journals_grant(stage, work_dir)?))

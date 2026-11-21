@@ -26,8 +26,8 @@ pub use report::{guidance, ContractCheck, ContractVerdict};
 
 use super::trial::TrialFile;
 use crate::verify::criteria::{
-    confined_stage_cache, plan_confinement, resolve_confinement, CachePolicy, CachedRun,
-    CriteriaConfig, CriteriaProbe, ProbeRun, ProbeRunner,
+    confined_stage_cache, plan_confinement, plan_local_binding, resolve_confinement, CachePolicy,
+    CachedRun, CriteriaConfig, CriteriaProbe, ProbeRun, ProbeRunner,
 };
 use crate::verify::environment::environment_marker;
 
@@ -68,6 +68,7 @@ pub fn run(
         stage,
         config: CriteriaConfig::default()
             .with_plan_confinement(plan)
+            .with_plan_local_binding(plan_local_binding(work_dir))
             .with_cache_dir(work_dir)
             .with_tree_root(Some(worktree_root))
             .with_stage_cache(confined_stage_cache(work_dir, &stage.id, confinement)?),

@@ -356,10 +356,10 @@ fn temporary_directories_are_private_and_writable() {
 }
 
 /// Bubblewrap's private network namespace has its own loopback: a confined
-/// command listens on `127.0.0.1` and connects to itself. Seatbelt's localhost
-/// listener grant on macOS allows the listen but not the dial, which stays an
-/// outbound connect the denied network refuses. Skips where the boundary has
-/// no `perl`.
+/// command listens on `127.0.0.1` and connects to itself. Seatbelt grants that
+/// only to a stage that sets `allow_local_binding`
+/// (`confine_seatbelt_loopback_tests.rs`). Skips where the boundary has no
+/// `perl`.
 #[cfg(target_os = "linux")]
 #[test]
 fn a_confined_command_binds_and_connects_on_its_own_loopback() {

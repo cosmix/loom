@@ -8,7 +8,10 @@ use super::cache;
 use super::cache_contract::{AssertionVerdict, CachedCriterionPass, CriterionContract};
 use super::cache_fingerprint::{self, ExecutionIdentity, InputFingerprint};
 use super::config::{extended_criterion_timeout, CriteriaConfig};
-use super::confine::{prepare_reading_journals, resolve_confinement, CommandSpec, PreparedCommand};
+use super::confine::host::NetworkAccess;
+use super::confine::{
+    prepare_reading_journals, resolve_confinement, stage_network, CommandSpec, PreparedCommand,
+};
 use super::criterion_eval::{evaluate, CriterionCommand};
 use super::executor::run_prepared_live;
 use super::live_output::LiveSink;
@@ -35,6 +38,7 @@ pub fn run_acceptance_with_config(
     }
     let confinement =
         resolve_confinement(stage.sandbox.command_confinement, config.plan_confinement);
+    let network = stage_network(stage, config.plan_local_binding);
     let default_dir = PathBuf::from(".");
     let context = CriteriaContext::with_stage_id(working_dir.unwrap_or(&default_dir), &stage.id);
     let setup = expanded_setup(stage, &context);
@@ -52,7 +56,7 @@ pub fn run_acceptance_with_config(
             confinement,
             zero_test_guard,
         );
-        let evaluated = run_criterion(prepared, working_dir, confinement, config)
+        let evaluated = run_criterion(prepared, working_dir, (confinement, network), config)
             .with_context(|| format!("Failed to execute criterion: {}", criterion.command()))?;
         if let Some(observer) = &config.observer {
             observer.notify(index, &evaluated.result);
@@ -120,10 +124,10 @@ fn prepare_criterion<'a>(
 fn run_criterion(
     prepared: PreparedCriterion<'_>,
     working_dir: Option<&Path>,
-    confinement: CommandConfinement,
+    level: (CommandConfinement, NetworkAccess),
     config: &CriteriaConfig,
 ) -> Result<EvaluatedCriterion> {
-    let mut outcome = run_with_cache(&prepared, working_dir, confinement, config)?;
+    let mut outcome = run_with_cache(&prepared, working_dir, level, config)?;
     outcome.result.command = prepared.original_command.to_string();
     if outcome.result.cached {
         return Ok(EvaluatedCriterion {
@@ -176,7 +180,7 @@ struct CacheCandidate {
 fn run_with_cache(
     criterion: &PreparedCriterion<'_>,
     working_dir: Option<&Path>,
-    confinement: CommandConfinement,
+    (confinement, network): (CommandConfinement, NetworkAccess),
     config: &CriteriaConfig,
 ) -> Result<RunOutcome> {
     let (contract, spec) = (&criterion.contract, &criterion.spec);
@@ -188,10 +192,15 @@ fn run_with_cache(
             .and_then(|live| live.open(criterion.index));
         execute(prepared, criterion.timeout, started, candidate, live)
     };
-    let tree = config.tree_root.as_deref();
-    let cache = config.stage_cache.as_ref();
-    let journals = config.memory_journals.as_ref();
-    let prepared = prepare_reading_journals(spec, working_dir, tree, confinement, cache, journals)?;
+    let prepared = prepare_reading_journals(
+        spec,
+        working_dir,
+        config.tree_root.as_deref(),
+        confinement,
+        network,
+        config.stage_cache.as_ref(),
+        config.memory_journals.as_ref(),
+    )?;
     let Some(work_dir) = enabled_cache_dir(config) else {
         return run(prepared, None);
     };

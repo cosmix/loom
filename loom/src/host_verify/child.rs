@@ -22,9 +22,10 @@ use crate::git::worktree::WorktreeGit;
 use crate::models::dispute::truncate_to_byte_limit;
 use crate::models::stage::{Stage, StageType};
 use crate::verify::criteria::{
-    confined_stage_cache, memory_journals_grant, plan_confinement, resolve_confinement,
-    run_acceptance_with_config, set_spawn_observer, CachePolicy, CriteriaConfig, CriterionObserver,
-    CriterionResult, MemoryJournals, SpawnObserver, SpawnObserverGuard,
+    confined_stage_cache, memory_journals_grant, plan_confinement, plan_local_binding,
+    resolve_confinement, run_acceptance_with_config, set_spawn_observer, CachePolicy,
+    CriteriaConfig, CriterionObserver, CriterionResult, MemoryJournals, SpawnObserver,
+    SpawnObserverGuard,
 };
 use crate::verify::execution_paths::{resolve_acceptance_dir, StageExecutionPaths};
 use crate::verify::goal_backward::plan::{self, LoadedGoal};
@@ -170,6 +171,7 @@ pub(super) fn acceptance_config(
     let stage_cache = confined_stage_cache(work_dir, &stage.id, confinement)?;
     Ok(CriteriaConfig::default()
         .with_plan_confinement(plan)
+        .with_plan_local_binding(plan_local_binding(work_dir))
         .with_tree_root(tree_root)
         .with_stage_cache(stage_cache)
         .with_observer(observer)

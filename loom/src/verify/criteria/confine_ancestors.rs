@@ -1,25 +1,34 @@
-//! Cargo files in the directories above a confined tree. Cargo looks in every
-//! ancestor of its package, past the first hit, for a manifest whose
-//! `[workspace]` might claim the package and for `.cargo/config.toml` files it
-//! merges. Under bubblewrap such a file outside the boundary is not mounted, so
-//! it is absent. Seatbelt allows metadata reads everywhere and denies only the
-//! content: `exists()` holds, the read fails, and Cargo stops with an error
-//! naming the file. A stage worktree under `<repo>/.worktrees/` meets this on
-//! every Cargo command, since the main checkout above it holds the project's
-//! own `Cargo.toml`; so does a tree below a home with `~/.cargo/config.toml`.
+//! Files that toolchains read in the directories above a confined tree. Cargo
+//! looks in every ancestor of its package, past the first hit, for a manifest
+//! whose `[workspace]` might claim the package and for `.cargo/config.toml`
+//! files it merges. Under bubblewrap such a file outside the boundary is not
+//! mounted, so it is absent. Seatbelt allows metadata reads everywhere and
+//! denies only the content: `exists()` holds, the read fails, and Cargo stops
+//! with an error naming the file. A stage worktree under `<repo>/.worktrees/`
+//! meets this on every Cargo command, since the main checkout above it holds
+//! the project's own `Cargo.toml`; so does a tree below a home with
+//! `~/.cargo/config.toml`.
 //!
 //! Hiding each such file's metadata too makes it absent, as on Linux. A
 //! `file-read*` deny does not do it: a rule naming `file-read-metadata`
 //! outranks the wildcard, so the profile's global metadata allowance keeps
 //! `stat` working, and `access(F_OK)` is its own `file-test-existence`
-//! operation; each must be denied by name. Only
-//! files that exist get a rule: Seatbelt denies with `EPERM`, and a tool that
-//! reads any error other than `ENOENT` as fatal (rustfmt's config search) would
-//! otherwise fail where no file is. Tools that stop at the first file they find
-//! (rustup's `rust-toolchain.toml`, rustfmt's `rustfmt.toml`) find the tree's
-//! own copy first in a worktree and need no rule. Revisit when another tool
-//! that searches past its first hit fails under Seatbelt on a file above the
-//! tree.
+//! operation; each must be denied by name. Only files that exist get a rule:
+//! Seatbelt denies with `EPERM`, and a tool that reads any error other than
+//! `ENOENT` as fatal (rustfmt's config search) would otherwise fail where no
+//! file is. Tools that stop at the first file they find (rustup's
+//! `rust-toolchain.toml`, rustfmt's `rustfmt.toml`) find the tree's own copy
+//! first in a worktree and need no rule. Revisit when another tool that
+//! searches past its first hit fails under Seatbelt on a file above the tree.
+//!
+//! Hiding does not serve a tool that fails on `EPERM`, which a denied open or
+//! stat returns. Node's package-scope lookup reads `package.json` in every
+//! directory above a module and is such a tool: vitest's dependency check
+//! (`getPackageScopeConfig`) exits 1 on the file above the tree even when every
+//! test passes. Those files are readable instead, each existing one by
+//! `literal` path: a `package.json` is project metadata, and a `subpath` would
+//! expose the rest of the directory. Bubblewrap does not mount them, so there
+//! they are absent.
 //!
 //! The directories above the tree are listable, as bubblewrap's empty parent
 //! directories are: Bun reads each directory above its working directory and
@@ -28,20 +37,35 @@
 //! alone, so its entries' names are visible and their content is not; a
 //! `subpath` would expose every file below those ancestors, the main
 //! checkout and the home included. `/` is in the base profile already. The
-//! listings precede the Cargo file denies, which keep winning for those files.
+//! listings precede the file denies, which keep winning for those files.
 
 use std::path::{Path, PathBuf};
 
-/// Files Cargo looks for in every directory above its package.
-const SEARCHED_ABOVE: [&str; 2] = ["Cargo.toml", ".cargo/config.toml"];
+/// Files Cargo looks for in every directory above its package; they are hidden.
+const HIDDEN_ABOVE: [&str; 2] = ["Cargo.toml", ".cargo/config.toml"];
 
-/// The existing [`SEARCHED_ABOVE`] files in the directories above the
-/// canonical `tree` whose canonical path no root in `readable` (canonical)
-/// covers: each path, then its canonical form when that differs (a symlink).
+/// Files Node's package-scope lookup reads in every directory above a module;
+/// they are readable, since Node fails on the `EPERM` a denied read returns.
+const READABLE_ABOVE: [&str; 1] = ["package.json"];
+
+/// The existing [`HIDDEN_ABOVE`] files in the directories above the canonical
+/// `tree` whose canonical path no root in `readable` (canonical) covers: each
+/// path, then its canonical form when that differs (a symlink).
 pub(super) fn hidden_above(tree: &Path, readable: &[PathBuf]) -> Vec<PathBuf> {
+    existing_above(tree, readable, &HIDDEN_ABOVE)
+}
+
+/// The existing [`READABLE_ABOVE`] files above `tree`, selected as
+/// [`hidden_above`] selects its files.
+#[cfg(any(target_os = "macos", test))]
+pub(super) fn readable_above(tree: &Path, readable: &[PathBuf]) -> Vec<PathBuf> {
+    existing_above(tree, readable, &READABLE_ABOVE)
+}
+
+fn existing_above(tree: &Path, readable: &[PathBuf], names: &[&str]) -> Vec<PathBuf> {
     let mut hidden = Vec::new();
     for dir in tree.ancestors().skip(1) {
-        for name in SEARCHED_ABOVE {
+        for name in names {
             let path = dir.join(name);
             // A missing or dangling file reads as absent already.
             let Ok(canonical) = path.canonicalize() else {
@@ -71,6 +95,17 @@ pub(super) fn seatbelt_rules(hidden: &[PathBuf], quote: impl Fn(&Path) -> String
             "(deny file-read* (literal {path}))\
              (deny file-read-metadata file-test-existence (literal {path}))"
         ));
+    }
+    rules
+}
+
+/// Seatbelt rules letting a command read each of `files` by `literal` path,
+/// under each of [`seatbelt_spellings`].
+#[cfg(any(target_os = "macos", test))]
+pub(super) fn read_rules(files: &[PathBuf], quote: impl Fn(&Path) -> String) -> String {
+    let mut rules = String::new();
+    for path in files.iter().flat_map(|path| seatbelt_spellings(path)) {
+        rules.push_str(&format!("(allow file-read* (literal {}))", quote(&path)));
     }
     rules
 }
@@ -132,7 +167,7 @@ mod tests {
     }
 
     /// What [`hidden_above`] reports at or below `base`: a host may keep its
-    /// own Cargo files above the fixture (`/tmp/Cargo.toml`, a `TMPDIR` inside
+    /// own such files above the fixture (`/tmp/Cargo.toml`, a `TMPDIR` inside
     /// a project), and those are no part of the case under test.
     fn hidden_below(base: &Path, tree: &Path, readable: &[PathBuf]) -> Vec<PathBuf> {
         let mut hidden = hidden_above(tree, readable);
@@ -154,6 +189,44 @@ mod tests {
             hidden_below(&base, &tree, &[]),
             [repo.join("Cargo.toml"), repo.join(".cargo/config.toml")]
         );
+    }
+
+    #[test]
+    fn an_existing_package_json_above_the_tree_is_readable_not_hidden() {
+        let root = tempfile::tempdir().unwrap();
+        let base = root.path().canonicalize().unwrap();
+        let repo = base.join("repo");
+        let tree = repo.join("web");
+        write(&repo.join("package.json"));
+        write(&tree.join("package.json"));
+        let above = |files: Vec<PathBuf>| {
+            files
+                .into_iter()
+                .filter(|path| path.starts_with(&base))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            above(readable_above(&tree, &[])),
+            [repo.join("package.json")]
+        );
+        assert!(hidden_below(&base, &tree, &[]).is_empty());
+        assert!(above(readable_above(&tree, std::slice::from_ref(&repo))).is_empty());
+        std::fs::remove_file(repo.join("package.json")).unwrap();
+        assert!(above(readable_above(&tree, &[])).is_empty());
+    }
+
+    /// A literal allow per spelling; never a subpath, never the tree's own file.
+    #[test]
+    fn each_spelling_of_a_readable_file_gets_a_literal_read_allow() {
+        let files = [PathBuf::from("/private/var/r/package.json")];
+        let rules = read_rules(&files, |path: &Path| format!("<{}>", path.display()));
+        assert_eq!(
+            rules,
+            "(allow file-read* (literal </private/var/r/package.json>))\
+             (allow file-read* (literal </var/r/package.json>))\
+             (allow file-read* (literal </System/Volumes/Data/private/var/r/package.json>))"
+        );
+        assert!(!rules.contains("subpath"));
     }
 
     #[test]

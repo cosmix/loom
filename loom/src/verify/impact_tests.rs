@@ -52,7 +52,7 @@ use crate::models::stage::{CommandConfinement, Stage};
 use crate::skills::project::ProjectProfile;
 use crate::testrun::{registry, SelectionNames, TestRunnerAdapter, TestTarget};
 use crate::verify::contracts::{normalize, owning_package};
-use crate::verify::criteria::{CriteriaConfig, CriteriaProbe, ProbeRunner};
+use crate::verify::criteria::{plan_local_binding, CriteriaConfig, CriteriaProbe, ProbeRunner};
 use crate::verify::review::fingerprint::{checkout_git, local_git};
 
 pub(in crate::verify) use accepted::ACCEPTED_FILE;
@@ -103,6 +103,7 @@ pub fn criteria_config(
 ) -> CriteriaConfig {
     CriteriaConfig::default()
         .with_plan_confinement(plan_confinement)
+        .with_plan_local_binding(plan_local_binding(work_dir))
         .with_cache_dir(work_dir)
         .with_tree_root(tree_root)
 }
