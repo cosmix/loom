@@ -166,7 +166,7 @@ it("pins the header's logo, switcher, activity pill, settings and help once each
   const [around] = PLANNER_HELP_TOPICS;
   const notes = around!.scenes[0]!.notes;
   expect(notes).toHaveLength(5);
-  expect(notes[0]!.text).toContain("feature switcher");
+  expect(notes[0]!.text).toContain("the selector opens Home or a feature");
   const { container } = render(<GettingAroundScene />);
 
   const pill = notes.find((note) => note.text.startsWith("The activity pill"));
