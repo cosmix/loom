@@ -36,6 +36,10 @@ pub trait EvidenceSource {
         false
     }
 
+    /// Called after every poll that does not end the wait, before the engine
+    /// sleeps. Lets a reader report on a wait that is still running.
+    fn continuing(&self, _workers: &[BoundWorker]) {}
+
     /// Acquire all evidence for one poll. Implementations may share a snapshot.
     fn poll(&self, workers: &[BoundWorker]) -> Vec<(WorkerOutcome, bool)> {
         workers
@@ -79,6 +83,7 @@ pub fn wait_for_workers(
         }
         match deadline_state(deadline, clock) {
             Ok(DeadlineState::Remaining(remaining)) => {
+                evidence.continuing(&identity.workers);
                 sleeper.sleep(interval.min(remaining));
                 polls = polls.saturating_add(1);
             }

@@ -1,6 +1,6 @@
 ---
 name: loom-software-engineer
-description: Implementation agent for pieces that need exploration or the initial iteration on failing tests, or are too large to brief in full detail - features, bug fixes, integration tests, data pipelines, infrastructure code, documentation, UI components, and queries.
+description: Implementation agent for pieces that need open-ended exploration or the initial iteration on failing tests, or are too large to brief in full detail - features, bug fixes, integration tests, data pipelines, infrastructure code, documentation, UI components, and queries.
 tools: Read, Edit, Write, Glob, Grep, Bash, Skill, WebFetch, WebSearch, TodoWrite
 model: sonnet
 maxTurns: 1000

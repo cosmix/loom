@@ -29,6 +29,8 @@ mod allocation_contract_tests;
 mod budget_contract_tests;
 
 #[cfg(test)]
+mod exploration_doctrine_contract_tests;
+#[cfg(test)]
 mod handoffs_contract_tests;
 
 #[cfg(test)]

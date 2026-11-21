@@ -97,7 +97,7 @@ Subagents code and report; the main agent fixes and owns git (hard stop 3). They
 
 ### 6. SUBAGENTS
 
-Load the `loom-orchestration` skill before spawning: it holds the shapes table, the file-ownership table, the coordinator and worker preambles, and the waiting protocol. Four rules bind every spawn:
+Load the `loom-orchestration` skill before spawning: it holds the shapes table, file-ownership table, coordinator and worker preambles, and waiting protocol. Four rules bind every spawn:
 
 - Group small tasks into ONE subagent, never one per task or file; two subagents never write one file.
 - Subagents are ONE-SHOT: brief completely, wait, harvest once, let it end. A follow-up is a fresh spawn of the same type.
@@ -111,7 +111,7 @@ Check skills and agents before implementing; the prompt-submit hook surfaces mat
 | Agent | Model | Use for |
 | --- | --- | --- |
 | `loom-software-developer` | Haiku (effort high) | Extremely simple pieces, or ones with a highly detailed brief |
-| `loom-software-engineer` | Sonnet | Work needing exploration or iteration on failing tests; refactors to spec |
+| `loom-software-engineer` | Sonnet | Work needing open-ended exploration or iteration on failing tests; refactors to spec |
 | `loom-senior-software-engineer` | Opus (effort medium) | Architecture across modules, new algorithms, concurrency and distributed systems, security-sensitive code, bugs of unknown cause; never visual or CSS fixes, fixes for review findings in code sonnet, haiku or codex wrote, or mainstream feature code; a failed attempt is respawned at `effort: high`, then `loom-advisor` |
 | `loom-code-reviewer` | — | Read-only code/security/architecture review |
 | `Explore` | — | Codebase exploration; `model: haiku` for locate-only sweeps |
@@ -120,7 +120,7 @@ Check skills and agents before implementing; the prompt-submit hook surfaces mat
 
 Fable-tier work has no pinned agent type; pass the model override at spawn.
 
-Outside a loom stage `loom-codex-forwarder` is blocked; when the Codex plugin is installed (the `codex:codex-rescue` agent type is listed), delegate codex work to that agent or `/codex:rescue`. Pick the lane per piece: codex for straightforward, well-specified implementation when the stage licenses it and quota allows. A signal's `Routing:` line directs the choice, never overriding `implementers`, the codex-unavailable instruction or this rule's tier.
+Outside a loom stage `loom-codex-forwarder` is blocked; when the Codex plugin is installed (the `codex:codex-rescue` agent type is listed), delegate codex work to that agent or `/codex:rescue`. Pick the lane per piece: codex for straightforward, well-specified implementation when licensed and quota allows. A signal's `Routing:` line directs the choice, never overriding `implementers`, the codex-unavailable instruction or this rule's tier.
 
 Model allocation, in full in the `loom-orchestration` skill. Delegation is a cost decision, tokens times model tier: the main agent makes a change itself only when it is at most 20 lines in at most 2 files already read, proven by one command, and a fable main session delegates even those. Everything else goes to as few subagents as the work allows at the cheapest capable tier, escalating one tier only after a failed attempt.
 

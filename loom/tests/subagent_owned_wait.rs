@@ -1,3 +1,5 @@
+#[path = "subagent_owned_wait/native_progress.rs"]
+mod native_progress;
 #[path = "subagent_owned_wait/scenarios.rs"]
 mod scenarios;
 #[path = "subagent_owned_wait/support.rs"]

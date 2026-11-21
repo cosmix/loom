@@ -174,7 +174,7 @@ timeout against its partial tree. Each job costs orchestrator turns. Every turn 
 which justifies cohesive bundles; never bundle unrelated concerns to fill a job. Up to 6 jobs run
 at once; waves follow real dependencies, never that cap. Hand each unit an absolute brief path; without a committed brief, write it under the
 worktree scratch directory first. Quote applicable skill rules there: declared skills are for Claude
-workers, and Codex opens no skill files. Codex runs no fixture-backed tests and touches no git or `.loom/`. Claude fits exploration, fixture-backed test convergence, UI design and debugging.
+workers, and Codex opens no skill files. Codex runs no fixture-backed tests and touches no git or `.loom/`. Codex also fits a bounded exploratory piece inside the files it owns, using the navigation kit. Claude fits open-ended exploration, fixture-backed test convergence, UI design and debugging.
 Mixed stages list both lanes (order is informational); list codex on a stage with a straightforward, well-specified piece, `["claude"]` otherwise. Run `loom usage --quota` before choosing lanes. Check availability and ask the user ONCE to confirm
 a per-stage lane recommendation with one-line reasons; if unavailable, say so and plan on Claude. A plan names `codex` as the implementer and never the mechanism: descriptions say "start N codex units" and wave tables say `codex`, with no agent type, plugin command or Bash timeout. The `codex.backend` setting (default `native`) picks the launch and the stage signal carries its commands.
 Model selection, anchors, brief-path restrictions and checks: `references/codex-implementers.md`.

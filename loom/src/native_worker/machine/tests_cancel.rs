@@ -220,6 +220,42 @@ fn deadline_before_first_turn_is_ignored() {
 }
 
 #[test]
+fn startup_deadline_before_thread_start_times_out_with_the_reason() {
+    let mut awaiting_thread = started();
+    awaiting_thread.step(ok(1, json!({})));
+    for mut machine in [started(), awaiting_thread] {
+        assert_eq!(
+            teardown(&machine.step(Input::StartupDeadline)),
+            Some((
+                Outcome::TimedOut,
+                "startup deadline (120 s) passed before the Codex thread started".into()
+            ))
+        );
+        assert!(machine.is_finished());
+    }
+}
+
+#[test]
+fn startup_deadline_after_thread_start_or_before_start_is_ignored() {
+    for mut machine in [Machine::new(config()), thread_ready(), active()] {
+        assert!(machine.step(Input::StartupDeadline).is_empty());
+        assert!(!machine.is_finished());
+    }
+}
+
+#[test]
+fn startup_deadline_after_cancel_keeps_cancelled() {
+    let mut machine = started();
+    machine.step(Input::Cancel {
+        reason: "stop".into(),
+    });
+    assert_eq!(
+        teardown(&machine.step(Input::StartupDeadline)),
+        Some((Outcome::Cancelled, "stop".into()))
+    );
+}
+
+#[test]
 fn grace_elapsed_after_cancel_tears_down_cancelled_and_settles_messages() {
     let mut machine = active();
     machine.step(steer("s1", "adjust"));

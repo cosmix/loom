@@ -12,8 +12,10 @@ use std::time::Duration;
 use anyhow::{bail, ensure, Result};
 use chrono::{DateTime, Utc};
 
-use crate::native_worker::index::unit_state;
-use crate::native_worker::model::{NativeUnitState, Outcome, Ownership, Phase};
+use crate::native_worker::index::{unit_snapshot, unit_state};
+use crate::native_worker::model::{
+    EventRecord, NativeEvent, NativeUnitState, Outcome, Ownership, Phase,
+};
 use crate::native_worker::store::invocation_dir;
 use crate::subagent_lifecycle::WorkerOutcome;
 
@@ -77,6 +79,14 @@ fn locator(stage_id: &str, invocation_id: &str) -> String {
 /// up as a different invocation id and ends the wait instead of silently
 /// following the new run.
 pub(super) fn state_of(work_dir: &Path, worker: &BoundWorker) -> Result<NativeUnitState, String> {
+    snapshot_of(work_dir, worker).map(|(state, _)| state)
+}
+
+/// [`state_of`] with the events the state was folded from, from one index read.
+pub(super) fn snapshot_of(
+    work_dir: &Path,
+    worker: &BoundWorker,
+) -> Result<(NativeUnitState, Vec<EventRecord>), String> {
     let Some((stage, invocation)) = worker
         .native_invocation
         .as_deref()
@@ -85,7 +95,7 @@ pub(super) fn state_of(work_dir: &Path, worker: &BoundWorker) -> Result<NativeUn
         return Err("native worker has no bound invocation".into());
     };
     let unit = &worker.worker.id;
-    let state = unit_state(work_dir, stage, unit)
+    let (state, events) = unit_snapshot(work_dir, stage, unit)
         .map_err(|error| format!("native worker record is unreadable: {error:?}"))?
         .ok_or_else(|| "native worker record is missing".to_owned())?;
     if state.manifest.invocation_id != invocation {
@@ -94,7 +104,49 @@ pub(super) fn state_of(work_dir: &Path, worker: &BoundWorker) -> Result<NativeUn
             state.manifest.invocation_id
         ));
     }
-    Ok(state)
+    Ok((state, events))
+}
+
+/// Progress of a native worker the wait still considers `Active`.
+pub(super) struct ActiveProgress {
+    /// Seconds since the newest provider event; `None` before the first one.
+    pub(super) age_secs: Option<u64>,
+}
+
+/// The newest thread, turn or progress event. Admission, boundary and control
+/// events are loom's own bookkeeping, so they never count as provider progress.
+fn provider_progress_at(events: &[EventRecord]) -> Option<DateTime<Utc>> {
+    events
+        .iter()
+        .filter(|record| {
+            matches!(
+                record.event,
+                NativeEvent::ThreadStarted { .. }
+                    | NativeEvent::TurnStarted { .. }
+                    | NativeEvent::Progress
+            )
+        })
+        .map(|record| record.at)
+        .max()
+}
+
+/// Whole seconds from `at` to `now`; a time in the future reads as 0.
+fn age_secs(at: DateTime<Utc>, now: DateTime<Utc>) -> u64 {
+    u64::try_from((now - at).num_seconds()).unwrap_or(0)
+}
+
+/// Read the worker's record once and report its provider progress when its
+/// outcome is `Active`; any other state or unreadable record yields `None`.
+pub(super) fn active_progress(
+    work_dir: &Path,
+    worker: &BoundWorker,
+    now: DateTime<Utc>,
+    stall_budget: Duration,
+) -> Option<ActiveProgress> {
+    let (state, events) = snapshot_of(work_dir, worker).ok()?;
+    (outcome_for(&state, now, stall_budget) == WorkerOutcome::Active).then(|| ActiveProgress {
+        age_secs: provider_progress_at(&events).map(|at| age_secs(at, now)),
+    })
 }
 
 /// The codex units of a wait set that have a native record. Worker ids are

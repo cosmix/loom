@@ -3,10 +3,12 @@
 Read when: choosing each stage's implementation lanes, or a stage lists codex in `implementers`.
 
 Two lanes implement a stage's work. Codex takes implementation that is straightforward and well
-specified, when the stage licenses it, codex is available and the subscription has quota room. Claude
-takes the rest, and always does verification, review, planning, exploration, debugging and iteration
-on failing tests. No lane is first or default: judge each piece by its nature and by quota, and
-license accordingly; the stage's orchestrator picks the lane per piece at spawn time.
+specified, when the stage licenses it, codex is available and the subscription has quota room. Codex
+also takes a bounded exploratory piece inside the files it owns, using the navigation kit. Claude
+takes the rest: open-ended exploration across modules, unknown-cause debugging, failing-test
+convergence, verification, review and planning. No lane is first or default: judge each piece by its
+nature and by quota, and license accordingly; the stage's orchestrator picks the lane per piece at
+spawn time.
 
 - **Codex lane:** one codex unit per job, running gpt-6.1-terra (implementation, integration
   tests, boilerplate, scaffolding, simple unit tests), gpt-6.2-sol (a substantial well-specified unit
@@ -54,10 +56,11 @@ usually pass, and they make up a large share of implementation work.
 
 **Claude** when any of these holds:
 
-- the change is unknown until someone explores the code, or the design is unsettled;
+- the change needs open-ended exploration across modules, or the design is unsettled (a bounded
+  exploratory piece inside the files a unit owns, using the navigation kit, stays with codex);
 - the piece converges only by running fixture-backed tests, which a codex unit cannot run;
 - visual or UI design (fable, per orchestration Rule 7);
-- debugging, or a fix that already failed on sol (a terra unit that failed once goes to sol first);
+- unknown-cause debugging, or a fix that already failed on sol (a terra unit that failed once goes to sol first);
 - architecture, new algorithms, concurrency or security-sensitive code (opus, whatever the list says).
 
 Then write the stage's list. The order carries no routing meaning:
@@ -198,7 +201,7 @@ The `codex.backend` setting (`loom config -k codex.backend`, or the project's `.
 
 ```text
 □ Codex availability checked; if available, ONE AskUserQuestion confirmed a per-stage lane recommendation with a one-line reason each, and every `implementers:` list matches the answer; if unavailable, the user was told and no stage lists codex
-□ Lanes follow the per-stage rule: straightforward, well-specified concerns (code, consumers and tests together, pinned interfaces, mechanical acceptance) license codex; exploration, fixture-backed test convergence, UI design, and debugging license Claude; codex never on bookend stages; every list is a non-empty YAML sequence with no repeated lane
+□ Lanes follow the per-stage rule: straightforward, well-specified concerns (code, consumers and tests together, pinned interfaces, mechanical acceptance) license codex; a bounded exploratory piece inside the owned files, using the navigation kit, licenses codex; open-ended exploration across modules, fixture-backed test convergence, UI design, and debugging license Claude; codex never on bookend stages; every list is a non-empty YAML sequence with no repeated lane
 □ Every codex job is one concern, possibly several files, sized by measured model rates for at most about 250,000 tokens of peak context and well inside 1500000 ms; xhigh budgets twice the high-effort time. Its brief names files owned/read, entry symbols, done condition, proof command and traps; two jobs never write one file
 □ Every codex unit names an absolute brief path inside the stage worktree, with no apostrophe, complete substring or loom stage phrase; declared skill rules are quoted in the brief; each unit states its tier — `gpt-6.1-terra` (implementation, integration tests, boilerplate, scaffolding, simple unit tests), `gpt-6.2-sol` (a substantial well-specified unit or a terra unit that failed once) or, only on explicit request, `gpt-6-luna` — always effort xhigh; an overrun of the 1500000 ms deadline is re-split against its partial tree
 □ The plan names `codex` as the implementer and no launch mechanism: no `loom-codex-forwarder`, `codex:codex-rescue`, `codex-forward.sh` or Bash timeout in any description, wave table or ownership table

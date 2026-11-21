@@ -11,9 +11,9 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "kebab-case")]
 pub enum Implementer {
     /// The Claude subagent lane (haiku for extremely simple or highly detailed pieces,
-    /// sonnet for pieces that need exploration or test iteration, opus for architecture and
-    /// algorithm implementation (effort medium; high after a failed attempt), fable only for
-    /// visual/UI design or very hard algorithmic design).
+    /// sonnet for pieces that need open-ended exploration or test iteration, opus for
+    /// architecture and algorithm implementation (effort medium; high after a failed
+    /// attempt), fable only for visual/UI design or very hard algorithmic design).
     #[default]
     Claude,
     /// The codex implementation lane: spawned as `loom-codex-forwarder`, a
@@ -35,8 +35,9 @@ impl std::fmt::Display for Implementer {
 /// The set of agent lanes a stage is licensed to spawn subagents from.
 ///
 /// A stage mixes lanes freely: straightforward, well-specified pieces may go to
-/// codex while exploration goes to sonnet and an architectural call stays with
-/// opus. Order carries no routing meaning — [`Implementers::first_listed`]
+/// codex (including a bounded exploratory piece inside the files it owns) while
+/// open-ended exploration goes to sonnet and an architectural call stays with opus.
+/// Order carries no routing meaning — [`Implementers::first_listed`]
 /// reports the first-listed lane and nothing more — and routing is per piece:
 /// every listed lane is available for the parts of the stage that call for it.
 ///

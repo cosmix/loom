@@ -1,8 +1,8 @@
 use std::time::Duration;
 
-use super::engine::{wait_for_workers, POLL_INTERVAL};
+use super::engine::{wait_for_workers, EvidenceSource, POLL_INTERVAL};
 use super::lease::deadline_after;
-use super::model::{TerminalOutcome, WaitIdentity};
+use super::model::{BoundWorker, TerminalOutcome, WaitIdentity};
 use super::tests::{identity, FakeClock, FakeEvidence, FakeSleeper};
 use crate::subagent_lifecycle::WorkerOutcome;
 
@@ -270,4 +270,47 @@ fn boot_change_mid_wait_interrupts() {
 
     assert_eq!(result.outcome, TerminalOutcome::Interrupted);
     assert_eq!(result.polls, 1);
+}
+
+/// Records how often the engine reports a continuing poll.
+struct Observed {
+    inner: FakeEvidence,
+    continued: std::cell::Cell<u64>,
+}
+
+impl EvidenceSource for Observed {
+    fn outcome(&self, worker: &BoundWorker) -> WorkerOutcome {
+        self.inner.outcome(worker)
+    }
+
+    fn continuing(&self, _workers: &[BoundWorker]) {
+        self.continued.set(self.continued.get() + 1);
+    }
+}
+
+#[test]
+fn continuing_fires_once_per_poll_that_sleeps() {
+    let identity = identity();
+    let clock = FakeClock::new();
+    let sleeper = FakeSleeper::new(clock.clone());
+    let mut script = vec![WorkerOutcome::Active; 3];
+    script.push(WorkerOutcome::Succeeded);
+    let observed = Observed {
+        inner: evidence(&identity, vec![script.clone(), script]),
+        continued: std::cell::Cell::new(0),
+    };
+    let deadline = deadline_after(&clock, Duration::from_secs(3_600)).unwrap();
+
+    let result = wait_for_workers(
+        &identity,
+        &deadline,
+        &clock,
+        &sleeper,
+        &observed,
+        POLL_INTERVAL,
+    );
+
+    assert_eq!(result.outcome, TerminalOutcome::Succeeded);
+    assert_eq!(observed.continued.get(), 3);
+    assert_eq!(sleeper.sleeps(), 3);
 }

@@ -53,16 +53,20 @@ pub(super) const BLOCK_B: &str = r#"1. DELEGATION IS A COST DECISION: TOKENS TIM
    straightforward, well-specified implementation (one concern, pinned
    interfaces, mechanical acceptance, no git, no `.loom/`) when the stage lists
    codex in implementers, the lane is available and quota has
-   room. No lane is first or default; list order means nothing. Verification,
-   review, planning, exploration, debugging and iteration on failing tests
-   stay with Claude. gpt-6.1-terra: implementation, integration tests,
+   room. No lane is first or default; list order means nothing. Codex may take a
+   bounded exploratory piece: one that explores an unfamiliar path inside the
+   files it owns, using the navigation kit, with pinned interfaces, an equivalent
+   sandbox and mechanical acceptance. Open-ended exploration across modules,
+   unknown-cause debugging, failing-test convergence, verification, review and
+   planning stay with Claude. gpt-6.1-terra: implementation, integration tests,
    boilerplate, scaffolding and simple unit tests; gpt-6.2-sol: a substantial
    well-specified unit (about 4 to 6 file-sized changes) or a terra unit that
    failed once; gpt-6-luna only when the user or the plan asks. Otherwise
    terra- and sol-tier work goes to sonnet, and boilerplate and simple unit
-   tests to haiku. SONNET (loom-software-engineer): pieces that need exploration or the
-   initial iteration on failing tests, or are too large to brief in that
-   detail. A piece between sonnet and opus goes to sonnet.
+   tests to haiku. SONNET (loom-software-engineer): pieces that need open-ended
+   exploration across modules, debugging, or the initial iteration on failing
+   tests, or are too large to brief in that detail. A piece between sonnet and
+   opus goes to sonnet.
    OPUS (loom-senior-software-engineer, effort medium)
    implements architecture across modules, new algorithms, concurrency,
    distributed systems, security-sensitive code, bugs of unknown cause. It

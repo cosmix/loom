@@ -179,10 +179,6 @@ fn list_invocations(dir: &Path) -> Vec<Result<fs::DirEntry, StoreError>> {
     }
 }
 
-fn load_one(entry: fs::DirEntry, stage_id: &str) -> Result<LoadedUnit, StoreError> {
-    load_named(&entry.path(), &entry.file_name(), stage_id)
-}
-
 fn load_named(path: &Path, name: &OsStr, stage_id: &str) -> Result<LoadedUnit, StoreError> {
     let load = || {
         let id = name
@@ -255,7 +251,7 @@ fn load_all(work_dir: &Path, stage_id: &str) -> Vec<Result<LoadedUnit, StoreErro
     }
     let mut units: Vec<_> = list_invocations(&stage_dir(work_dir, stage_id))
         .into_iter()
-        .map(|entry| entry.and_then(|entry| load_one(entry, stage_id)))
+        .map(|entry| entry.and_then(|e| load_named(&e.path(), &e.file_name(), stage_id)))
         .collect();
     sort_units(&mut units);
     units
@@ -273,13 +269,22 @@ pub fn unit_state(
     stage_id: &str,
     unit_id: &str,
 ) -> Result<Option<NativeUnitState>, StoreError> {
+    Ok(unit_snapshot(work_dir, stage_id, unit_id)?.map(|(state, _)| state))
+}
+
+/// The newest invocation of a unit with its events: state and events from one read.
+pub fn unit_snapshot(
+    work_dir: &Path,
+    stage_id: &str,
+    unit_id: &str,
+) -> Result<Option<LoadedUnit>, StoreError> {
     // Inspect every record before returning a match: corrupt siblings cannot be attributed.
-    let units: Vec<_> = stage_units(work_dir, stage_id)
+    let units: Vec<_> = load_all(work_dir, stage_id)
         .into_iter()
         .collect::<Result<_, _>>()?;
     Ok(units
         .into_iter()
-        .find(|unit| unit.manifest.unit_id == unit_id))
+        .find(|(state, _)| state.manifest.unit_id == unit_id))
 }
 
 pub fn stage_disposition(work_dir: &Path, stage_id: &str) -> NativeDisposition {
