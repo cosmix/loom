@@ -63,7 +63,7 @@ allow() {
 block() {
     local first
     run_hook "$1" "$2"
-    first=$(printf '%s\n' "$ERR" | awk 'NF { print; exit }')
+    first=$(awk 'NF { print; exit }' <<<"$ERR")
     if [[ $CODE -ne 2 ]]; then
         fail "expected a block from $1: $2 (exit $CODE) $OUT $ERR"
     elif [[ "$first" != "[worktree-isolation/path-traversal]"* ]]; then

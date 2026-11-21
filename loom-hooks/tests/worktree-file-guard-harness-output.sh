@@ -85,7 +85,7 @@ expect_blocked() {
 	local rule=$1 first
 	shift
 	run_hook "$@"
-	first=$(printf '%s\n' "$OUTPUT" | grep -m1 -v '^[[:space:]]*$' || true)
+	first=$(grep -m1 -v '^[[:space:]]*$' <<<"$OUTPUT" || true)
 	[[ "$RC" == 2 ]] || fail "$1 $2 was not blocked (rc $RC): $OUTPUT"
 	[[ "$first" == "[worktree-file-guard/$rule]"* ]] || fail "$1 $2: first line lacks [$rule]: $OUTPUT"
 }

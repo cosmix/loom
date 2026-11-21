@@ -64,7 +64,7 @@ allow() {
 block() {
     local first
     run_hook "$@"
-    first=$(printf '%s\n' "$ERR" | awk 'NF { print; exit }')
+    first=$(awk 'NF { print; exit }' <<<"$ERR")
     if [[ $CODE -ne 2 ]]; then
         fail "expected a block from $1: $2 (exit $CODE) $OUT"
     elif [[ "$first" != "[worktree-isolation/$RULE]"* ]]; then
