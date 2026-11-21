@@ -114,6 +114,22 @@ impl StandIn {
         Self::spawn(command.process_group(0), Reach::Group)
     }
 
+    /// Spawn `command` as the leader of a new session, and so of a new process
+    /// group, as a boundary's agent runs. Cleanup kills the group as
+    /// [`StandIn::group_leader`]'s does. Only the macOS boundary tests start
+    /// one, so other platforms do not compile it.
+    #[cfg(target_os = "macos")]
+    pub(crate) fn session_leader(command: &mut Command) -> Self {
+        // SAFETY: `setsid` is async-signal-safe and touches no parent memory.
+        unsafe {
+            command.pre_exec(|| match libc::setsid() {
+                -1 => Err(std::io::Error::last_os_error()),
+                _ => Ok(()),
+            })
+        };
+        Self::spawn(command, Reach::Group)
+    }
+
     /// Spawn `command` as a direct child in the test's own process group.
     /// Cleanup kills the child alone.
     pub(crate) fn direct(command: &mut Command) -> Self {

@@ -32,8 +32,7 @@ fn killing_a_namespace_spares_a_host_process_outside_it() {
 
 #[cfg(target_os = "macos")]
 mod macos {
-    use std::os::unix::process::CommandExt;
-    use std::process::{Child, Command};
+    use std::process::Command;
     use std::time::{Duration, Instant};
 
     use super::super::{kill_mac, verify_quiescent};
@@ -44,7 +43,8 @@ mod macos {
     use crate::native_worker::model::{BoundaryIdentity, MacIdentity};
     use crate::process::macos_procs::{census, EnvRead};
     use crate::process::sandbox_probe::{confined_commands_runnable, skip_unless};
-    use crate::process::{process_is_zombie, process_start_time, signal_group_id};
+    use crate::process::{process_is_zombie, process_start_time};
+    use crate::test_stand_in::StandIn;
 
     /// Runs unconfined only, like every `native_macos_*` kernel test: a
     /// sandboxed host hides other processes' environments, so its census is
@@ -63,15 +63,15 @@ mod macos {
         }
         crate::test_stand_in::require_signals!();
         let invocation = format!("quiescence-test-{}", std::process::id());
-        let mut child = SessionChild::spawn(&invocation);
+        let child = session_child(&invocation);
         if census_refused(
             name,
             &format!("{BOUNDARY_MARKER_VAR}={invocation}"),
-            &child.0,
+            child.id(),
         ) {
             return;
         }
-        let mac = identity_of(&child.0, invocation);
+        let mac = identity_of(child.id(), invocation);
         let members = members_within(&mac.mark(), Duration::from_secs(5));
         assert!(members.len() >= 2, "the scan found {members:?}");
         assert!(members.contains(&mac.session), "the leader is not a member");
@@ -92,21 +92,20 @@ mod macos {
             let runs = process_start_time(pid).is_some() && !process_is_zombie(pid);
             assert!(!runs, "member {pid} still runs");
         }
-        child.reap();
+        drop(child);
     }
 
     /// Whether the census cannot read the environment of `leader`, a
     /// process of this test; a confined host refuses it (`EINVAL`).
-    fn census_refused(name: &str, marker: &str, leader: &Child) -> bool {
+    fn census_refused(name: &str, marker: &str, leader: u32) -> bool {
         let refused = census(marker)
             .records
             .iter()
-            .any(|record| record.pid == leader.id() && matches!(record.env, EnvRead::Denied(_)));
+            .any(|record| record.pid == leader && matches!(record.env, EnvRead::Denied(_)));
         skip_unless(!refused, name, "the process census is refused on this host")
     }
 
-    fn identity_of(leader: &Child, invocation: String) -> MacIdentity {
-        let session = leader.id();
+    fn identity_of(session: u32, invocation: String) -> MacIdentity {
         MacIdentity {
             invocation,
             session,
@@ -145,41 +144,14 @@ mod macos {
         }
     }
 
-    /// `sh -c 'sleep 30 & sleep 30'` in a new session with the marker. Dropping
-    /// it kills its group while the leader is unreaped, so the number names no
-    /// other group.
-    struct SessionChild(Child);
-
-    impl SessionChild {
-        fn spawn(invocation: &str) -> Self {
-            let mut command = Command::new("/bin/sh");
-            command
-                .args(["-c", "sleep 30 & sleep 30"])
-                .env(BOUNDARY_MARKER_VAR, invocation);
-            // SAFETY: `setsid` is async-signal-safe and touches no parent memory.
-            unsafe {
-                command.pre_exec(|| match libc::setsid() {
-                    -1 => Err(std::io::Error::last_os_error()),
-                    _ => Ok(()),
-                })
-            };
-            Self(command.spawn().expect("spawn the session"))
-        }
-
-        fn reap(&mut self) {
-            let _ = crate::process::wait_with_deadline(&mut self.0, Duration::from_secs(5));
-        }
-    }
-
-    impl Drop for SessionChild {
-        fn drop(&mut self) {
-            if matches!(self.0.try_wait(), Ok(None)) {
-                if let Ok(group) = i32::try_from(self.0.id()) {
-                    signal_group_id(group, nix::sys::signal::Signal::SIGKILL);
-                }
-            }
-            let _ = self.0.kill();
-            self.reap();
-        }
+    /// `sh -c 'sleep 30 & sleep 30'` in a new session with the marker. The
+    /// stand-in kills its group on drop while the leader is unreaped, so the
+    /// number names no other group, and bounds the reap.
+    fn session_child(invocation: &str) -> StandIn {
+        let mut command = Command::new("/bin/sh");
+        command
+            .args(["-c", "sleep 30 & sleep 30"])
+            .env(BOUNDARY_MARKER_VAR, invocation);
+        StandIn::session_leader(&mut command)
     }
 }
