@@ -378,3 +378,22 @@ docker run --rm -v "$PWD":/src:ro -w /src/loom -e CARGO_TARGET_DIR=/tmp/target \
 A host `cargo check --target x86_64-unknown-linux-gnu` does not replace this: aws-lc-sys needs `x86_64-linux-gnu-gcc`, and a Homebrew `cargo` ahead of rustup on `PATH` reports a missing `core` even when the target is installed.
 
 **Fix:** `overlay_supported` calls `crate::process::wait_with_deadline`. In ci.yml the web smoke steps of both Test jobs now run only when the `build` and `tools` steps succeed, so one root failure no longer shows up as extra red smoke steps.
+
+## A Field Added on macOS Left a Linux-Gated Initializer Stale, and macOS-Only Test Helpers Went Dead on Linux (2026-11-22)
+
+**What happened:** the open-github-issues plan added `mac` to `native_worker::model::BoundaryIdentity`. The `identity()` helper in `native_worker/boundary/tests.rs` builds one inside Linux-gated test code and kept the old field list, so every Linux `lib test` build failed with E0063: Lint, Test (linux, lib) and Flake check went red on the push that marked the plan complete, while the macOS jobs passed. Behind that error sat three `dead_code` errors: `TestOverride`, `TestOverride::set` and `built_loom` in `native_worker/boundary/loom_program.rs` were `#[cfg(test)]`, but every caller is a macOS-only test.
+
+**Why:** the plan's stages, their gates and integration-verify all ran on a macOS host, which compiles Linux-gated code out. rustc stops at the first error class, so the dead-code errors would have needed a second push to surface. The Docker Linux clippy that "A Linux-Only Module Used the Dev-Only wait-timeout Crate" prescribes was not run, because no stage edited a Linux-gated file: the break came from a shared struct that Linux-gated code initializes.
+
+**Prevention:** a change to a struct, enum or function signature is a change to every cfg-gated user of it. `rg` the type's initializers and callers across all `cfg(target_os)` gates before pushing, and gate a test helper to the platform of its callers. Before pushing a plan developed on macOS, run Linux clippy from the macOS host. The stub recipe from "Linux-Gated Test Helpers Break the macOS Test Build" works in this direction too and needs no Docker; use the rustup toolchain's `cargo` (a Homebrew `cargo` ignores rustup targets):
+
+```bash
+rustup target add x86_64-unknown-linux-gnu
+CC_x86_64_unknown_linux_gnu=<dir>/cc AR_x86_64_unknown_linux_gnu=<dir>/ar \
+  CARGO_TARGET_DIR=<scratch>/linux-target \
+  cargo clippy --target x86_64-unknown-linux-gnu --all-targets -- -D warnings
+```
+
+Rerun it after each fix until it exits 0, since each error class hides the next.
+
+**Fix:** `identity()` sets `mac: None`, the value the Linux production path in `quiescence.rs` writes (`pid_namespace` names the boundary there). `TestOverride` and `built_loom` are `#[cfg(all(test, target_os = "macos"))]`; `overridden()` stays `#[cfg(test)]` because `probe.rs` reads it on every platform.
