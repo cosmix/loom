@@ -1,7 +1,7 @@
 use std::ffi::OsString;
 use std::fs;
 use std::io::{Read, Write};
-use std::net::TcpStream;
+use std::net::{Shutdown, TcpStream};
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::UnixListener;
 use std::path::Path;
@@ -66,6 +66,36 @@ fn listener_forwards_both_ways() {
     let mut echoed = [0u8; 10];
     stream.read_exact(&mut echoed).expect("echo");
     assert_eq!(&echoed, b"round trip");
+}
+
+/// A client that half-closes after its request (`printf ping | nc`) still gets the reply the
+/// proxy sends after seeing that end; tearing the tunnel down on the half-close loses it.
+#[test]
+fn a_half_closed_client_still_receives_the_reply() {
+    let dir = TempDir::new().expect("tempdir");
+    fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o700)).expect("chmod");
+    let socket = dir.path().join("proxy.sock");
+    require_unix_socket_and_loopback!("a_half_closed_client_still_receives_the_reply", &socket);
+    let upstream = UnixListener::bind(&socket).expect("bind unix stand-in");
+    thread::spawn(move || {
+        if let Ok((mut stream, _)) = upstream.accept() {
+            let mut request = Vec::new();
+            if stream.read_to_end(&mut request).is_ok() {
+                thread::sleep(Duration::from_millis(100));
+                let _ = stream.write_all(&request);
+            }
+        }
+    });
+    let port = listen(&socket).expect("listen");
+    let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("connect bridge");
+    stream
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .expect("timeout");
+    stream.write_all(b"ping").expect("send");
+    stream.shutdown(Shutdown::Write).expect("half-close");
+    let mut reply = Vec::new();
+    stream.read_to_end(&mut reply).expect("the reply");
+    assert_eq!(reply, b"ping");
 }
 
 #[test]

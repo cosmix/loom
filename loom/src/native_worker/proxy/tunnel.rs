@@ -231,6 +231,8 @@ pub(crate) trait Socket: Read + Write + Send + Sized + 'static {
     fn duplicate(&self) -> io::Result<Self>;
     fn set_timeouts(&self, timeout: Option<Duration>) -> io::Result<()>;
     fn close(&self);
+    /// Ends this side's writes only, so the peer reads end of stream while replies still flow.
+    fn close_write(&self);
 }
 
 impl Socket for TcpStream {
@@ -243,6 +245,9 @@ impl Socket for TcpStream {
     }
     fn close(&self) {
         let _ = self.shutdown(Shutdown::Both);
+    }
+    fn close_write(&self) {
+        let _ = self.shutdown(Shutdown::Write);
     }
 }
 
@@ -257,11 +262,18 @@ impl Socket for UnixStream {
     fn close(&self) {
         let _ = self.shutdown(Shutdown::Both);
     }
+    fn close_write(&self) {
+        let _ = self.shutdown(Shutdown::Write);
+    }
 }
 
-/// Copies `a` to `b` on this thread and `b` to `a` on a helper thread until either direction
-/// ends, then shuts both sockets down so the other direction ends too. With `idle` set, the
-/// tunnel closes once neither direction has moved a byte for that long.
+/// Copies `a` to `b` on this thread and `b` to `a` on a helper thread. `a` is the side that
+/// opened the connection: when it ends its writes cleanly (a half-close, as `nc` does at the end
+/// of its input) the end is passed on to `b` and `b`'s reply keeps flowing to `a`. Any other end
+/// of `a`, and any end of `b`, shuts both sockets down so the other direction ends too. A
+/// half-closed tunnel waits on `b`, which bounds it: the proxy's client side drops the stream
+/// after its head timeout or a refusal, and its upstream side runs with `idle` set. With `idle`
+/// set, the tunnel closes once neither direction has moved a byte for that long.
 pub(crate) fn splice<A: Socket, B: Socket>(mut a: A, mut b: B, idle: Option<Duration>) {
     let activity = Arc::new(Activity::new());
     let reverse = a
@@ -278,14 +290,26 @@ pub(crate) fn splice<A: Socket, B: Socket>(mut a: A, mut b: B, idle: Option<Dura
                     b2.close();
                 })
         });
-    if reverse.is_ok() {
-        copy_until_closed(&mut a, &mut b, idle, &activity);
+    if reverse.is_ok() && copy_until_closed(&mut a, &mut b, idle, &activity) == End::Finished {
+        b.close_write();
+    } else {
+        a.close();
+        b.close();
     }
-    a.close();
-    b.close();
     if let Ok(handle) = reverse {
         let _ = handle.join();
     }
+    a.close();
+    b.close();
+}
+
+/// How one copy direction ended.
+#[derive(Debug, PartialEq, Eq)]
+enum End {
+    /// The source reached end of stream.
+    Finished,
+    /// A read or write failed, or the tunnel sat idle past its limit.
+    Broken,
 }
 
 fn copy_until_closed<R: Read, W: Write>(
@@ -293,14 +317,14 @@ fn copy_until_closed<R: Read, W: Write>(
     to: &mut W,
     idle: Option<Duration>,
     activity: &Activity,
-) {
+) -> End {
     let mut buf = vec![0u8; COPY_BUFFER_BYTES];
     loop {
         match from.read(&mut buf) {
-            Ok(0) => return,
+            Ok(0) => return End::Finished,
             Ok(n) => {
                 if to.write_all(&buf[..n]).is_err() {
-                    return;
+                    return End::Broken;
                 }
                 activity.touch();
             }
@@ -308,7 +332,7 @@ fn copy_until_closed<R: Read, W: Write>(
             Err(e)
                 if matches!(e.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut)
                     && idle.is_some_and(|limit| activity.idle_for() < limit) => {}
-            Err(_) => return,
+            Err(_) => return End::Broken,
         }
     }
 }
