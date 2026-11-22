@@ -162,3 +162,13 @@ tmux spawn test for reasons unrelated to the code under test unless two RAII gua
 **Why:** the state stays `Idle` from the previous Stop (or the startup `SessionStart`) until the new message's `UserPromptSubmit`, and `Idle` is visible under the bridge lock before `finish_turn` flushes its `TurnEnded`.
 
 **Prevention:** wait for evidence of the round's own turn first (its user item `Delivered`, a `TurnEnded` count above the count read before the send, or the round's own notice), reading `before` ahead of the send, then wait for `Idle`.
+
+## A Test Recorded Its Own Pid as the Session Pid, and `kill_session` Terminated the Test Binary (2026-11-22)
+
+**What happened:** `persist_running` in `orchestrator/terminal/tmux/tests_history.rs` stored `std::process::id()` as the session pid and wrote a matching pid identity. Two tests then called `TmuxBackend::kill_session`, which verified that identity as alive and sent SIGTERM to it through `native::pid_only_terminate` and `process::terminate`: the test binary signalled itself. Run alone, the module dies with `signal: 15`. In the Linux CI lib run the binary exited with status 130 after 8755 of 14731 tests, with no FAILED line and no panic, and the job cleanup reported orphan `claude` and `sleep` processes.
+
+**Why:** the fixture needed a live pid with a valid identity and took the nearest one. The 130 comes from a `ctrlc` handler: `dry_run_cleanup::retire_on_signal`, `pressure/terminal.rs` and `plan_server/shutdown.rs` each install one that calls `std::process::exit(130)`, a handler is installed once per process and stays for the rest of the lib run, and `ctrlc` routes SIGTERM to it. Which earlier test installed it in the CI run is not identified. The failure reached `main` behind a Linux-only compile error that stopped the lib tests from building (see "A Field Added on macOS Left a Linux-Gated Initializer Stale" in `ci-toolchain-and-cargo.md`).
+
+**Prevention:** a test session that any teardown path can reach (`kill_session`, `pid_only_terminate`, `terminate_verified`) records the pid of a child the test spawned and reaps, never `std::process::id()`. Own-pid fixtures are safe only where no terminate path runs, as in `tmux/fullscreen.rs` and `tmux/history_contract_tests.rs`. A lib test run that exits 130 with no failing test means a test signalled its own process; diff the `ok` lines against `cargo test --lib -- --list` to find the first test that never finished.
+
+**Fix:** `persist_running`, now in `tmux/tests_history_support.rs`, spawns a `sleep 300` child, records its pid, and returns an `AgentProcess` guard that kills and reaps it on drop.

@@ -216,7 +216,7 @@
 | [test-sweep-and-fixture-discipline](mistakes/test-sweep-and-fixture-discipline.md) |  | 398 |
 | [testing-and-lint](mistakes/testing-and-lint.md) |  | 408 |
 | [tests-that-cannot-fail](mistakes/tests-that-cannot-fail.md) |  | 392 |
-| [tmux-backend](mistakes/tmux-backend.md) | tmux | 164 |
+| [tmux-backend](mistakes/tmux-backend.md) | tmux | 174 |
 | [typed-config-values-process](mistakes/typed-config-values-process.md) | Dev | 86 |
 | [untrusted-value-boundaries](mistakes/untrusted-value-boundaries.md) | Trust | 252 |
 | [verification-harness](mistakes/verification-harness.md) |  | 399 |
