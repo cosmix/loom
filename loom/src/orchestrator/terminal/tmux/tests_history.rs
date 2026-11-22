@@ -7,6 +7,7 @@ use super::socket::tests::{server_socket_dir, TmuxServerGuard, TmuxTmpDirGuard};
 use super::tests_history_support::persist_running;
 use super::*;
 use crate::process::sandbox_probe::{skip_unless, unix_socket_bindable};
+use crate::test_stand_in::require_signals;
 use serial_test::serial;
 use std::os::unix::fs::PermissionsExt;
 use std::time::{Duration, Instant};
@@ -240,6 +241,7 @@ fn a_pane_that_returns_to_its_main_screen_keeps_its_last_alternate_frame() {
     ) {
         return;
     }
+    require_signals!();
     let work = tempfile::TempDir::new().unwrap();
     let mut session = staged_session();
     let _agent = persist_running(work.path(), &mut session);
@@ -249,7 +251,6 @@ fn a_pane_that_returns_to_its_main_screen_keeps_its_last_alternate_frame() {
     let release = work.path().join("release");
     let agent = write_fullscreen_agent(work.path(), &release, true);
     spawn_in_tmux(&socket, &name, work.path(), &agent).unwrap();
-
     wait_until("the pane's alternate screen", || {
         matches!(
             capture::TmuxPane.alternate_screen(&session),
@@ -293,6 +294,7 @@ fn a_pane_first_seen_fullscreen_at_teardown_saves_its_screen() {
     ) {
         return;
     }
+    require_signals!();
     let work = tempfile::TempDir::new().unwrap();
     let mut session = staged_session();
     let _agent = persist_running(work.path(), &mut session);
