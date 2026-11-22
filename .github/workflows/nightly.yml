@@ -403,6 +403,15 @@ jobs:
           echo "LOOM_TEST_MAVEN_SEED=commons-lang:commons-lang:2.6" >> "$GITHUB_ENV"
           echo "LOOM_TEST_GRADLE_SEED=commons-lang:commons-lang:2.6" >> "$GITHUB_ENV"
 
+      # The native-worker boundary kernel tests start target/debug/loom as the
+      # Seatbelt bridge (native_worker::boundary::loom_program::built_loom);
+      # `cargo test --lib --bins` builds only test harnesses, so without this
+      # step the strict run fails them as skips.
+      - name: Build the loom binary for the boundary kernel tests
+        if: ${{ matrix.suite == 'lib' }}
+        working-directory: loom
+        run: cargo build --bin loom
+
       # Runs after the seeding: LOOM_TEST_REQUIRE_SANDBOX_FREE fails every
       # toolchain probe whose seed variable is not yet in GITHUB_ENV.
       - name: Run tests

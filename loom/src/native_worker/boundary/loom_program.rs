@@ -51,11 +51,18 @@ impl Drop for TestOverride {
     }
 }
 
-/// The loom binary cargo built beside the test harness
-/// (`target/<profile>/loom`), when there is one.
+/// The loom binary cargo built for the test harness's profile
+/// (`target/<profile>/loom`), when there is one. Cargo puts the harness at
+/// `target/<profile>/deps/loom-<hash>` or, since cargo 1.100, at
+/// `target/<profile>/build/loom/<hash>/out/loom-<hash>`, so this takes the
+/// nearest ancestor holding a `loom` file. A `build-dir` configured apart from
+/// the target directory leaves none, and the caller skips.
 #[cfg(all(test, target_os = "macos"))]
 pub(crate) fn built_loom() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?.canonicalize().ok()?;
-    let loom = exe.parent()?.parent()?.join("loom");
-    loom.is_file().then_some(loom)
+    exe.ancestors()
+        .skip(1)
+        .take(5)
+        .map(|dir| dir.join("loom"))
+        .find(|loom| loom.is_file())
 }
