@@ -178,7 +178,7 @@
 | [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Shared | 351 |
 | [phantom-merges](mistakes/phantom-merges.md) | Merges | 347 |
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Pins | 332 |
-| [plan-authoring](mistakes/plan-authoring.md) |  | 298 |
+| [plan-authoring](mistakes/plan-authoring.md) |  | 305 |
 | [plan-server-delivery](mistakes/plan-server-delivery.md) | Slips | 376 |
 | [planner-design-brainstorm](mistakes/planner-design-brainstorm.md) | Stubs | 134 |
 | [planner-follow-ups-delivery](mistakes/planner-follow-ups-delivery.md) | Slips | 196 |

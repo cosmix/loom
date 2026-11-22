@@ -296,3 +296,10 @@ knowledge-distill the rewrite, or the stage changes it. Raise a cap to the measu
 **Prevention:** For plan exploration, brief haiku Explore agents (effort high) with exact files, symbols and questions, one seam each. Before licensing codex in a plan, check `loom hook codex-backend` and whether the native lane qualifies on the host; on macOS without a working lane, plan `implementers: ["claude"]`. Keep integration-verify and code review on opus.
 
 **Fix:** Stopped the sonnet explorers and respawned six haiku explorers at effort high; rewrote the plan's lanes to Claude only.
+
+## Recommended ignoring doc/plans/ in .gitignore
+
+**What happened:** after commit 2dc504b98 stopped tracking doc/plans/ for a GitHub merge, the agent recommended adding doc/plans/ to .gitignore so the plans would stay local.
+**Why:** it treated plans as scratch files. Loom stage worktrees are created from committed history, so a plan or brief that is not committed never reaches a stage.
+**Prevention:** plans and briefs under doc/plans/ stay committed on the local branch that loom runs from. To keep them off the remote, leave them out of the branch that gets pushed. Never ignore doc/plans/ as a whole, in .gitignore or in .git/info/exclude.
+**Fix:** the recommendation was withdrawn before anything was written.
