@@ -358,4 +358,6 @@ mod tests;
 #[cfg(test)]
 mod tests_history;
 #[cfg(test)]
+mod tests_history_support;
+#[cfg(test)]
 mod tests_spawn;

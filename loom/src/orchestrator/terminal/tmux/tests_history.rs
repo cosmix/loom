@@ -4,6 +4,7 @@
 
 use super::capture::PaneReads;
 use super::socket::tests::{server_socket_dir, TmuxServerGuard, TmuxTmpDirGuard};
+use super::tests_history_support::persist_running;
 use super::*;
 use crate::process::sandbox_probe::{skip_unless, unix_socket_bindable};
 use serial_test::serial;
@@ -221,20 +222,6 @@ fn write_fullscreen_agent(dir: &Path, release: &Path, restore: bool) -> std::pat
     write_script(dir, "fullscreen.sh", &body)
 }
 
-/// A tmux session of `session` persisted as running, so the monitor samples it.
-fn persist_running(work: &Path, session: &mut Session) {
-    session.backend = crate::models::session::SessionBackendKind::Tmux;
-    session.status = crate::models::session::SessionStatus::Running;
-    session.pid = Some(std::process::id());
-    crate::orchestrator::terminal::native::write_test_pid_identity(
-        work,
-        session,
-        std::process::id(),
-    )
-    .unwrap();
-    crate::fs::session_files::save_session(session, work).unwrap();
-}
-
 fn persisted_fullscreen(work: &Path, session: &Session) -> bool {
     crate::fs::session_files::load_session_exact(work, &session.id)
         .unwrap()
@@ -255,7 +242,7 @@ fn a_pane_that_returns_to_its_main_screen_keeps_its_last_alternate_frame() {
     }
     let work = tempfile::TempDir::new().unwrap();
     let mut session = staged_session();
-    persist_running(work.path(), &mut session);
+    let _agent = persist_running(work.path(), &mut session);
     let socket = socket_name(&session);
     let _server = TmuxServerGuard::new(&socket);
     let name = viewer::tmux_session_name(&session).unwrap();
@@ -308,7 +295,7 @@ fn a_pane_first_seen_fullscreen_at_teardown_saves_its_screen() {
     }
     let work = tempfile::TempDir::new().unwrap();
     let mut session = staged_session();
-    persist_running(work.path(), &mut session);
+    let _agent = persist_running(work.path(), &mut session);
     let socket = socket_name(&session);
     let _server = TmuxServerGuard::new(&socket);
     let name = viewer::tmux_session_name(&session).unwrap();
