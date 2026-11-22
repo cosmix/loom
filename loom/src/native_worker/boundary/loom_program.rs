@@ -28,11 +28,11 @@ pub(crate) fn overridden() -> Option<PathBuf> {
 
 /// Makes [`current`] answer a given program until dropped, then restores
 /// what was set before. Process-wide: callers are `#[serial_test::serial]`.
-#[cfg(test)]
+#[cfg(all(test, target_os = "macos"))]
 #[must_use = "the override ends when the guard drops"]
 pub(crate) struct TestOverride(Option<PathBuf>);
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "macos"))]
 impl TestOverride {
     pub(crate) fn set(program: PathBuf) -> Self {
         let mut slot = OVERRIDE
@@ -42,7 +42,7 @@ impl TestOverride {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "macos"))]
 impl Drop for TestOverride {
     fn drop(&mut self) {
         *OVERRIDE
@@ -53,7 +53,7 @@ impl Drop for TestOverride {
 
 /// The loom binary cargo built beside the test harness
 /// (`target/<profile>/loom`), when there is one.
-#[cfg(test)]
+#[cfg(all(test, target_os = "macos"))]
 pub(crate) fn built_loom() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?.canonicalize().ok()?;
     let loom = exe.parent()?.parent()?.join("loom");

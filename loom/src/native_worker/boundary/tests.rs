@@ -263,6 +263,7 @@ fn identity(pid_namespace: u64, boot_id: String) -> BoundaryIdentity {
         boundary_pid: 0,
         pid_namespace,
         boot_id,
+        mac: None,
     }
 }
 
