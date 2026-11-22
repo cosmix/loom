@@ -152,7 +152,13 @@ fn a_loopback_network_grants_this_host_only_and_keeps_sccache_unreachable() {
         "the later deny wins over the grant: {profile}"
     );
     assert_eq!(profile.matches("(local ip").count(), 1, "{profile}");
-    assert_eq!(profile.matches("(remote ip").count(), 1, "{profile}");
+    // macOS 26 honours no port deny after a `(remote ip ...)` allow, so the
+    // grant names `tcp` and `udp` separately (`LOOPBACK_NETWORK`).
+    assert_eq!(profile.matches("(remote ip").count(), 0, "{profile}");
+    for protocol in ["tcp", "udp"] {
+        let rule = format!("(allow network-outbound (remote {protocol} \"localhost:*\"))");
+        assert_eq!(profile.matches(&rule).count(), 1, "{profile}");
+    }
     for rule in ["\"*:*\"", "(allow network-outbound)"] {
         assert!(
             !profile.contains(rule),

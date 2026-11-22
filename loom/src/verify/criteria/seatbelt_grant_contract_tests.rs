@@ -115,7 +115,8 @@ fn launched_profile(tree: &Path) -> Option<String> {
 /// `allow_local_binding`, spelled as `confine_seatbelt.rs` renders it (that
 /// module's constants are private), and the deny that must follow it.
 const LOOPBACK_BIND: &str = "(allow network-bind network-inbound (local ip \"localhost:*\"))";
-const LOOPBACK_DIAL: &str = "(allow network-outbound (remote ip \"localhost:*\"))";
+const LOOPBACK_DIAL: &str = "(allow network-outbound (remote tcp \"localhost:*\"))\
+     (allow network-outbound (remote udp \"localhost:*\"))";
 const SCCACHE_PORT_DENY: &str = "(deny network-outbound (remote tcp \"localhost:4226\"))";
 
 /// Whether `rule` is an allow that binds or accepts on an address, as opposed

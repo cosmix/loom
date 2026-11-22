@@ -272,14 +272,21 @@ const SIGNAL_RULE: &str = "(allow signal (target same-sandbox))";
 /// cannot hold a bind to loopback, since `"localhost"` matches every local
 /// address and `"127.0.0.1:*"` is a parse error. A command can therefore
 /// bind `0.0.0.0` or a LAN address, and a peer on the network can then reach
-/// its listener. `(remote ip "localhost:*")` also reaches every listener on the
+/// its listener. The `localhost:*` outbound grant also reaches every listener on the
 /// host's loopback (the loom dashboard, databases, dev servers), and a command
 /// can take a port a host client expects, such as an OAuth callback. A connect
 /// to an address off this host stays denied (1.1.1.1:443). Bubblewrap's private
 /// network namespace needs no such rule. Revisit if Seatbelt gains a
 /// loopback-only bind filter.
+///
+/// The outbound grant is two rules, `tcp` then `udp`, so [`SCCACHE_PORT_DENY`]
+/// can override it. Measured with real `sandbox-exec`: after a single
+/// `(remote ip "localhost:*")` allow, no port deny holds on macOS 26.7 (the
+/// `macos-26-arm64` CI image) in any spelling or order; after the split pair a
+/// `tcp` deny refuses its port on 26.7 and on 27.2.1, over IPv4 and IPv6.
 const LOOPBACK_NETWORK: &str = "(allow network-bind network-inbound (local ip \"localhost:*\"))\
-     (allow network-outbound (remote ip \"localhost:*\"))";
+     (allow network-outbound (remote tcp \"localhost:*\"))\
+     (allow network-outbound (remote udp \"localhost:*\"))";
 
 /// sccache's default TCP port. A host sccache server there runs compilers
 /// outside this boundary, and a confined sccache client falls back to it
