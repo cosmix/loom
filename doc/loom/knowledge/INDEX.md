@@ -141,6 +141,7 @@
 | [adjudication-autonomy-deadlock](mistakes/adjudication-autonomy-deadlock.md) |  | 238 |
 | [ambient-filesystem-trust](mistakes/ambient-filesystem-trust.md) |  | 186 |
 | [briefs-and-bug-reports](mistakes/briefs-and-bug-reports.md) |  | 396 |
+| [cargo-test-harness-layout](mistakes/cargo-test-harness-layout.md) | Test harness binary lookup missed cargo 1.100 build/<hash>/out layout | 13 |
 | [cargo-under-confinement](mistakes/cargo-under-confinement.md) | Cargo in sandboxes and confined runs: audit fetches, cold builds, Seatbelt | 93 |
 | [ci-gate-rollout](mistakes/ci-gate-rollout.md) | CI gate rollout slips: untested strict gates, shared index, known-red runs | 43 |
 | [ci-toolchain-and-cargo](mistakes/ci-toolchain-and-cargo.md) |  | 399 |
@@ -173,6 +174,7 @@
 | [merge-cleanup-boundary](mistakes/merge-cleanup-boundary.md) |  | 237 |
 | [merge-in-operator-checkout](mistakes/merge-in-operator-checkout.md) |  | 70 |
 | [native-macos-delivery](mistakes/native-macos-delivery.md) | macOS boundary delivery slips: lint scope, pinned fields, shared TMPDIR | 25 |
+| [native-worker-tunnel-half-close](mistakes/native-worker-tunnel-half-close.md) | Tunnel splice cut replies when a client half-closed after its request | 13 |
 | [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Shared | 351 |
 | [phantom-merges](mistakes/phantom-merges.md) | Merges | 347 |
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Pins | 332 |
@@ -199,7 +201,7 @@
 | [sandbox-tooling-and-network](mistakes/sandbox-tooling-and-network.md) |  | 397 |
 | [sandbox-write-rules-inert](mistakes/sandbox-write-rules-inert.md) |  | 67 |
 | [schema-reuse-and-silent-skips](mistakes/schema-reuse-and-silent-skips.md) |  | 130 |
-| [seatbelt-loopback-grant](mistakes/seatbelt-loopback-grant.md) | Seatbelt localhost listener re-added as if it held binds to loopback | 15 |
+| [seatbelt-loopback-grant](mistakes/seatbelt-loopback-grant.md) | Seatbelt localhost listener re-added as if it held binds to loopback | 25 |
 | [session-identity-env](mistakes/session-identity-env.md) | Env | 126 |
 | [sessions-and-liveness](mistakes/sessions-and-liveness.md) |  | 399 |
 | [shell-command-matchers](mistakes/shell-command-matchers.md) |  | 295 |
