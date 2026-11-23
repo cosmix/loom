@@ -5,7 +5,7 @@ use std::path::Path;
 use crate::codex::{configured_backend, CodexBackend};
 use crate::fs::stage_admission::lock_for_daemon;
 use crate::models::session::Session;
-use crate::models::stage::Stage;
+use crate::models::stage::{Stage, StageStatus};
 use crate::native_worker::admission::{
     accept_cancel, accept_message, admit_start, AdmissionOutcome, CancelRequestIn, MessageRequest,
     StartRequest,
@@ -37,10 +37,9 @@ pub(super) fn apply_with_backend(
     backend: fn(&Path) -> CodexBackend,
 ) -> Settle {
     let work_dir = host.work_dir();
-    let stage = match require_owner(work_dir, stage_id, record) {
-        Ok(stage) => stage,
-        Err(reason) => return Settle::Refused(reason),
-    };
+    if let Err(reason) = checked_stage(work_dir, stage_id, record, &payload) {
+        return Settle::Refused(reason);
+    }
     let _lock = match lock_for_daemon(work_dir, stage_id) {
         Ok(fd) => fd,
         Err(_) => {
@@ -48,6 +47,12 @@ pub(super) fn apply_with_backend(
                 "another loom command is changing stage '{stage_id}'; repeat the command in a moment"
             ));
         }
+    };
+    // Reload under the lock: a `loom stage reset` holds this lock while it
+    // rewrites the status, so only a stage read here is still Executing.
+    let stage = match checked_stage(work_dir, stage_id, record, &payload) {
+        Ok(stage) => stage,
+        Err(reason) => return Settle::Refused(reason),
     };
     settle(match payload {
         WorkerControlPayload::Start {
@@ -71,6 +76,26 @@ pub(super) fn apply_with_backend(
         ),
         other => apply_running(work_dir, stage_id, record, other),
     })
+}
+
+/// The stage as loaded now, once `record` owns it; a Start also needs it
+/// Executing. Message and Cancel apply in every status.
+fn checked_stage(
+    work_dir: &Path,
+    stage_id: &str,
+    record: &Session,
+    payload: &WorkerControlPayload,
+) -> Result<Stage, String> {
+    let stage = require_owner(work_dir, stage_id, record)?;
+    if matches!(payload, WorkerControlPayload::Start { .. })
+        && stage.status != StageStatus::Executing
+    {
+        return Err(format!(
+            "stage '{stage_id}' is {:?}, not Executing; a native worker starts only while its stage runs",
+            stage.status
+        ));
+    }
+    Ok(stage)
 }
 
 fn settle(result: Result<String, String>) -> Settle {

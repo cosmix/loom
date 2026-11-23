@@ -21,9 +21,6 @@
 
 use std::path::Path;
 
-use chrono::Utc;
-
-use crate::models::session::Session;
 use crate::models::stage::Stage;
 
 use super::{abort_foreign_state, Orchestrator};
@@ -105,8 +102,12 @@ pub(super) use crate::orchestrator::session_registry::{
 /// requeuing now would spawn a duplicate session into the same worktree. The
 /// window also runs from the launch's wrapper script, which a slow launch writes
 /// well after the record.
-pub(super) fn skip_too_young_orphan(work_dir: &Path, session: &Session) -> bool {
-    let now = Utc::now();
+#[cfg(test)]
+pub(super) fn skip_too_young_orphan(
+    work_dir: &Path,
+    session: &crate::models::session::Session,
+) -> bool {
+    let now = chrono::Utc::now();
     if !launch_too_young_to_judge(work_dir, session, now) {
         return false;
     }

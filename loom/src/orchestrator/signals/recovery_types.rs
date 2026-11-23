@@ -106,7 +106,13 @@ impl RecoverySignalContent {
 
         if let Some(ref hb) = last_heartbeat {
             if let Some(ref tool) = hb.last_tool {
-                recovery_actions.insert(0, format!("Previous session was using: {tool}"));
+                recovery_actions.insert(
+                    0,
+                    format!(
+                        "Previous session was using: {}",
+                        crate::context::untrusted::inline_safe(tool)
+                    ),
+                );
             }
         }
 
@@ -175,16 +181,5 @@ impl RecoverySignalContent {
             ],
             recovery_attempt,
         }
-    }
-
-    /// Set custom recovery actions
-    pub fn with_recovery_actions(mut self, actions: Vec<String>) -> Self {
-        self.recovery_actions = actions;
-        self
-    }
-
-    /// Add a recovery action
-    pub fn add_recovery_action(&mut self, action: String) {
-        self.recovery_actions.push(action);
     }
 }

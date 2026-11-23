@@ -4,12 +4,12 @@ use crate::models::stage::Stage;
 
 use super::cache::stable_prefix_for;
 use super::format::budget::push_model_budget;
-use super::format::{
-    format_codex_implementers_section, format_stage_brief, format_subagent_timeout_section,
-};
+use super::format::format_recitation_section;
+use super::recovery_sections::{push_recovery_assignment, push_semi_stable};
 use super::recovery_types::{LastHeartbeatInfo, RecoverySignalContent};
-use super::retrieval::STAGE_QUERY_INPUTS;
 use super::types::EmbeddedContext;
+use super::wrap::wrap_untrusted;
+use crate::context::untrusted::inline_safe;
 
 /// Render the "### Last Known State" block from the previous session's last
 /// heartbeat.
@@ -23,10 +23,10 @@ fn format_last_known_state(hb: &LastHeartbeatInfo) -> String {
         section.push_str(&format!("- **Context Tokens**: {tokens} tokens\n"));
     }
     if let Some(ref tool) = hb.last_tool {
-        section.push_str(&format!("- **Last Tool**: {tool}\n"));
+        section.push_str(&format!("- **Last Tool**: {}\n", inline_safe(tool)));
     }
     if let Some(ref activity) = hb.activity {
-        section.push_str(&format!("- **Activity**: {activity}\n"));
+        section.push_str(&format!("- **Activity**: {}\n", inline_safe(activity)));
     }
     section.push('\n');
     section
@@ -56,7 +56,10 @@ fn format_recovery_header(content: &RecoverySignalContent) -> String {
     ));
 
     if let Some(ref crash_path) = content.crash_report_path {
-        header.push_str(&format!("- **Crash Report**: {}\n", crash_path.display()));
+        header.push_str(&format!(
+            "- **Crash Report**: {}\n",
+            inline_safe(&crash_path.display().to_string())
+        ));
     }
 
     header.push('\n');
@@ -66,6 +69,9 @@ fn format_recovery_header(content: &RecoverySignalContent) -> String {
     }
 
     header.push_str("### Recovery Actions\n\n");
+    // Actions are written by loom or typed by the operator (multi-line answers
+    // reach the signal verbatim); heartbeat text is made inline-safe where an
+    // action is built from it (`RecoverySignalContent::for_hung`).
     for (i, action) in content.recovery_actions.iter().enumerate() {
         header.push_str(&format!("{}. {action}\n", i + 1));
     }
@@ -94,77 +100,29 @@ pub fn format_recovery_signal(
     // the KV-cache path, so without this a resumed stage would miss all of that guidance.
     signal.push_str(&stable_prefix_for(stage.stage_type));
 
-    // The codex lane's rules are SEMI-STABLE and per-stage (which lanes THIS stage
-    // licenses), so they are never part of the stable prefix and this signal does
-    // not embed them elsewhere. Emit the gated block here too, or a resumed codex
-    // stage loses foreground-only fan-out, the concurrency cap, and "verification
-    // never goes to codex" for its licensed lanes.
-    if stage.implementers.includes_codex() {
-        signal.push_str(&format_codex_implementers_section(
-            &stage.implementers,
-            &embedded_context.codex_lane,
-        ));
-    }
-
-    // Same reasoning for the response budget: it is a gated SEMI-STABLE block, so
-    // a resumed stage would otherwise be held to a budget it was never told about
-    // while the orchestrator keeps measuring it against exactly that budget.
-    if let Some(timeout_secs) = stage.subagent_timeout_secs {
-        signal.push_str(&format_subagent_timeout_section(timeout_secs));
-    }
-
-    // The `## Knowledge Brief` section is also SEMI-STABLE and this signal does
-    // not embed it either — without this a resumed stage silently loses the
-    // brief it was spawned with, even though the SAME retrieval ran again to
-    // build `embedded_context`.
-    if let Some(pack) = &embedded_context.context_pack {
-        signal.push_str(&format_stage_brief(pack, &stage.id, STAGE_QUERY_INPUTS));
-    }
+    // Semi-stable per-stage blocks (brief, memory reminder, codex lane, response
+    // budget, ultracode, sandbox): this signal embeds them nowhere else, so a
+    // resumed stage would lose what its fresh signal carried.
+    push_semi_stable(&mut signal, stage, embedded_context);
 
     push_model_budget(embedded_context.model_budget.as_deref(), &mut signal);
     append_target_information(&mut signal, content, stage);
 
-    // Assignment from stage
-    signal.push_str("## Assignment\n\n");
-    signal.push_str(&format!("{}\n\n", stage.name));
-    if let Some(ref desc) = stage.description {
-        signal.push_str(&format!("{desc}\n\n"));
-    }
-
-    // Acceptance criteria
-    if !stage.acceptance.is_empty() {
-        signal.push_str("## Acceptance Criteria\n\n");
-        for criterion in &stage.acceptance {
-            signal.push_str(&super::format::format_criterion(criterion));
-        }
-        signal.push('\n');
-    }
-
-    // Files to modify
-    if !stage.files.is_empty() {
-        signal.push_str("## Files to Modify\n\n");
-        for file in &stage.files {
-            signal.push_str(&format!("- {file}\n"));
-        }
-        signal.push('\n');
-    }
+    push_recovery_assignment(&mut signal, stage);
 
     // Embedded context - handoff
     if let Some(ref handoff) = embedded_context.handoff_content {
         signal.push_str("## Previous Session Handoff\n\n");
-        signal.push_str("<handoff>\n");
-        signal.push_str(handoff);
-        signal.push_str("\n</handoff>\n\n");
+        signal.push_str(&wrap_untrusted("handoff", handoff));
     }
 
     // Embedded context - plan overview
     if let Some(ref overview) = embedded_context.plan_overview {
         signal.push_str("## Plan Overview\n\n");
-        signal.push_str("<plan-overview>\n");
-        signal.push_str(overview);
-        signal.push_str("\n</plan-overview>\n\n");
+        signal.push_str(&wrap_untrusted("plan-overview", overview));
     }
 
+    signal.push_str(&format_recitation_section(stage, embedded_context));
     signal
 }
 

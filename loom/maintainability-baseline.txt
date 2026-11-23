@@ -13,7 +13,7 @@ file src/fs/work_dir/tests.rs 869
 file src/models/stage/methods.rs 492
 file src/models/stage/types.rs 567
 file src/orchestrator/signals/cache.rs 508
-file src/orchestrator/signals/format/sections.rs 554
+file src/orchestrator/signals/format/sections.rs 533
 file src/orchestrator/signals/tests.rs 551
 file src/orchestrator/signals/tests_cache.rs 629
 file src/plan/parser/extraction.rs 409
@@ -71,12 +71,11 @@ function src/orchestrator/retry.rs test_classify_failure 85
 function src/orchestrator/signals/cache.rs generate_knowledge_distill_stable_prefix 74
 function src/orchestrator/signals/crud.rs update_signal 69
 function src/orchestrator/signals/format/helpers.rs format_structured_handoff 107
-function src/orchestrator/signals/format/sections.rs format_dynamic_section 189
+function src/orchestrator/signals/format/sections.rs format_dynamic_section 169
 function src/orchestrator/signals/format/sections.rs format_recitation_section 57
 function src/orchestrator/signals/format/sections.rs format_semi_stable_section 276
-function src/orchestrator/signals/knowledge.rs format_knowledge_signal_content 77
+function src/orchestrator/signals/knowledge.rs format_knowledge_signal_content 75
 function src/orchestrator/signals/parse.rs parse_signal_content 113
-function src/orchestrator/signals/recovery_format.rs format_recovery_signal 92
 function src/orchestrator/signals/recovery_parsing.rs read_recovery_signal 61
 function src/orchestrator/signals/tests_cache.rs test_recovery_signal_carries_codex_implementers_section 56
 function src/orchestrator/signals/tests_cache.rs test_signal_codex_implementers_section_gated 116

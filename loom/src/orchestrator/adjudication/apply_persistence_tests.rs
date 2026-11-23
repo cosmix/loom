@@ -18,7 +18,7 @@ fn cached_verdict_preserves_newer_policy_and_amendment_tally() {
     fresh.tally.amendments_applied = 2;
     crate::verify::transitions::save_stage(&fresh, work).unwrap();
     let marker = work.join("applied.marker");
-    persist_verdict_result(work, "a", 1, &cached, None, cached.updated_at, &marker).unwrap();
+    persist_verdict_result(work, "a", 1, &cached, None, cached.dispute_count, &marker).unwrap();
     let persisted = load_stage("a", work).unwrap();
     assert_eq!(persisted.acceptance, fresh.acceptance);
     assert_eq!(persisted.tally.amendments_applied, 2);
@@ -51,7 +51,7 @@ fn a_verdict_keeps_a_review_reason_written_after_it_loaded_the_stage() {
         1,
         &cached,
         Some("first dispute"),
-        cached.updated_at,
+        cached.dispute_count,
         &marker,
     )
     .unwrap();
@@ -93,7 +93,7 @@ fn a_verdicts_own_reason_replaces_a_newer_one_and_archives_it() {
         1,
         &cached,
         Some("first dispute"),
-        cached.updated_at,
+        cached.dispute_count,
         &marker,
     )
     .unwrap();
@@ -140,7 +140,7 @@ fn a_verdict_that_cleared_its_loaded_reason_retires_it_from_disk() {
         1,
         &cached,
         Some("first dispute"),
-        cached.updated_at,
+        cached.dispute_count,
         &marker,
     )
     .unwrap();
@@ -170,11 +170,57 @@ fn a_reset_after_prepare_refuses_the_old_verdict_commit() {
     crate::verify::transitions::save_stage(&reset, work).unwrap();
     let marker = work.join("applied.marker");
 
-    let error = persist_verdict_result(work, "a", 1, &cached, None, cached.updated_at, &marker)
+    let error = persist_verdict_result(work, "a", 1, &cached, None, cached.dispute_count, &marker)
         .unwrap_err();
     assert!(format!("{error:#}").contains("lifecycle changed"));
     let actual = load_stage("a", work).unwrap();
     assert_eq!(actual.status, StageStatus::WaitingForDeps);
+    assert!(actual.tally.request_receipts.is_empty());
+    assert!(!marker.exists());
+}
+
+#[test]
+fn a_concurrent_hold_does_not_refuse_the_verdict() {
+    let temp = tempfile::tempdir().unwrap();
+    let work = temp.path();
+    let cached = Stage {
+        id: "a".into(),
+        status: StageStatus::NeedsAdjudication,
+        ..Stage::default()
+    };
+    let mut fresh = cached.clone();
+    fresh.held = true;
+    fresh.updated_at += chrono::Duration::seconds(1);
+    crate::verify::transitions::save_stage(&fresh, work).unwrap();
+    let marker = work.join("applied.marker");
+
+    persist_verdict_result(work, "a", 1, &cached, None, cached.dispute_count, &marker).unwrap();
+
+    let actual = load_stage("a", work).unwrap();
+    assert!(!actual.tally.request_receipts.is_empty());
+    assert!(actual.held);
+    assert!(marker.exists());
+}
+
+#[test]
+fn a_new_dispute_round_refuses_the_old_verdict() {
+    let temp = tempfile::tempdir().unwrap();
+    let work = temp.path();
+    let cached = Stage {
+        id: "a".into(),
+        status: StageStatus::NeedsAdjudication,
+        ..Stage::default()
+    };
+    let mut fresh = cached.clone();
+    fresh.dispute_count += 1;
+    crate::verify::transitions::save_stage(&fresh, work).unwrap();
+    let marker = work.join("applied.marker");
+
+    let error = persist_verdict_result(work, "a", 1, &cached, None, cached.dispute_count, &marker)
+        .unwrap_err();
+    assert!(format!("{error:#}")
+        .contains("stage lifecycle changed while applying dispute 1; refusing stale verdict"));
+    let actual = load_stage("a", work).unwrap();
     assert!(actual.tally.request_receipts.is_empty());
     assert!(!marker.exists());
 }

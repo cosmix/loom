@@ -84,9 +84,7 @@ fn format_knowledge_signal_content(
     // Plan overview if available
     if let Some(plan_overview) = &embedded_context.plan_overview {
         content.push_str("## Plan Overview\n\n");
-        content.push_str("<plan-overview>\n");
-        content.push_str(plan_overview);
-        content.push_str("\n</plan-overview>\n\n");
+        content.push_str(&super::wrap::wrap_untrusted("plan-overview", plan_overview));
     }
 
     // Assignment section

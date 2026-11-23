@@ -9,6 +9,7 @@ use super::types::{DependencyStatus, EmbeddedContext};
 mod brief;
 pub(crate) mod budget;
 mod codex;
+mod dependency_section;
 mod helpers;
 mod sandbox_section;
 mod section_boxes;
@@ -18,18 +19,22 @@ mod skills;
 // Re-export public functions
 pub use helpers::format_dependency_table;
 pub use skills::format_skill_recommendations;
-// The recovery signal is built outside the semi-stable path but still needs the
-// codex lane's rules, the stage's response budget, and the knowledge brief; see
-// recovery_format.rs.
+// The recovery signal is built outside the fresh-signal path and reuses its
+// semi-stable, goal-backward, dependency and recitation sections; see
+// recovery_sections.rs.
 pub(crate) use brief::{format_knowledge_brief, format_stage_brief, REFERENCE_DATA_SENTENCE};
+#[cfg(test)]
 pub(crate) use codex::format_codex_implementers_section;
-pub(crate) use helpers::format_subagent_timeout_section;
 
 // Re-export for external use
+pub(super) use dependency_section::format_dependency_sections;
 #[allow(unused_imports)]
 pub use helpers::extract_tasks_from_description;
 pub(super) use helpers::extract_tasks_from_stage;
-pub(super) use sections::format_criterion;
+pub(super) use sections::{
+    format_criterion, format_goal_backward_verification_section, format_recitation_section,
+    format_semi_stable_section,
+};
 
 /// Result of formatting a signal with structured sections
 pub struct FormattedSignal {

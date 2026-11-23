@@ -58,6 +58,7 @@ mod verdict_apply;
 mod verdict_completion;
 
 pub(crate) use crash_classification::spawn_failure_type;
+pub(crate) use event_handler::MAX_STALL_RECOVERIES;
 pub(crate) use merge_handler::resolver_attempts::{
     merge_resolver_attempts, MAX_MERGE_RESOLVER_ATTEMPTS,
 };
@@ -350,4 +351,8 @@ name: Test Stage
 #[cfg(test)]
 mod block_contract_tests;
 #[cfg(test)]
+mod dead_worker_contract_tests;
+#[cfg(test)]
 mod lifecycle_regression_tests;
+#[cfg(test)]
+mod spawn_publication_contract_tests;

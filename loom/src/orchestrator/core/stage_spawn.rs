@@ -9,7 +9,6 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 use chrono::Utc;
 
-use crate::git;
 use crate::models::failure::FailureType;
 use crate::models::session::Session;
 use crate::models::stage::{Stage, StageStatus, StageType};
@@ -21,6 +20,7 @@ use crate::verify::contracts::store::load_freeze;
 
 use super::crash_classification::spawn_failure_type;
 use super::persistence::Persistence;
+use super::session_lifecycle::HeldAtLaunch;
 use super::Orchestrator;
 
 /// Which agent a stage spawn starts.
@@ -80,7 +80,6 @@ impl Orchestrator {
         kind: AgentKind,
     ) -> Result<super::stage_executor::StartDisposition> {
         let stage_id = stage.id.clone();
-        let handover = stage.status == StageStatus::Executing;
         let outgoing_session_id = stage.session.clone();
         let Some((session, recovery_signal)) = self.write_ahead_agent_session(&stage, kind) else {
             return Ok(super::stage_executor::StartDisposition::Deferred);
@@ -111,7 +110,7 @@ impl Orchestrator {
         // Stale recovery signals from earlier attempts must not accumulate.
         self.cleanup_stale_recovery_signals(&stage_id, &session.id);
 
-        let launched = self.launch_agent(&stage, &worktree, session, &signal_path, kind, handover);
+        let launched = self.launch_agent(&stage, &worktree, session, &signal_path, kind);
         if let Some(spawned) = launched {
             self.record_spawned_agent(&stage, worktree, base, spawned);
             return Ok(super::stage_executor::StartDisposition::Launched);
@@ -144,10 +143,21 @@ impl Orchestrator {
     /// be observed apart. A stage that is already Executing (the contract
     /// phase handing over) keeps its running attempt clock and graph node.
     ///
-    /// Returns `Ok(None)` if the stage was marked Blocked instead.
-    fn mark_agent_executing(&mut self, stage_id: &str, session_id: &str) -> Result<Option<Stage>> {
+    /// A new launch is refused for a stage put on hold after `start_stage`
+    /// read it (the hold is taken while the worktree is provisioned). A
+    /// handover is not a new launch and is never refused.
+    ///
+    /// Returns `Ok(None)` when the stage was marked Blocked or is on hold.
+    pub(super) fn mark_agent_executing(
+        &mut self,
+        stage_id: &str,
+        session_id: &str,
+    ) -> Result<Option<Stage>> {
         let stage = match self.update_stage(stage_id, |current| {
             let continuing = current.status == StageStatus::Executing;
+            if !continuing && current.held {
+                return Err(HeldAtLaunch.into());
+            }
             current.try_mark_executing()?;
             if !continuing {
                 current.begin_attempt(Utc::now());
@@ -156,6 +166,10 @@ impl Orchestrator {
             Ok(())
         }) {
             Ok(stage) => stage,
+            Err(e) if e.is::<HeldAtLaunch>() => {
+                self.defer_held_launch(stage_id, session_id);
+                return Ok(None);
+            }
             Err(e) => {
                 self.block_and_undo_session(
                     stage_id,
@@ -185,7 +199,6 @@ impl Orchestrator {
         session: Session,
         signal_path: &Path,
         kind: AgentKind,
-        handover: bool,
     ) -> Option<Session> {
         let stage_id = stage.id.as_str();
         if self.config.manual_mode {
@@ -212,7 +225,7 @@ impl Orchestrator {
         let spawned = match spawned {
             Ok(spawned) => spawned,
             Err(spawn_err) => {
-                self.block_failed_spawn(stage_id, &original_session_id, &spawn_err, handover);
+                self.block_failed_spawn(stage_id, &original_session_id, &spawn_err);
                 return None;
             }
         };
@@ -233,25 +246,19 @@ impl Orchestrator {
     /// to the orchestrator loop and killing the daemon. Without this, a
     /// transient spawn error strands the stage in Executing on disk;
     /// subsequent `loom run` invocations poll forever because Executing
-    /// stages are never re-spawned. A `handover` keeps its worktree and
-    /// branch: they hold the contract phase's uncommitted work.
-    fn block_failed_spawn(
+    /// stages are never re-spawned.
+    ///
+    /// The worktree and branch stay: a retry reuses a registered worktree as
+    /// it is (`get_or_create_worktree`) and recreates a branch only when it
+    /// has no commits ahead (`recreate_or_reuse_branch`), so removing them
+    /// here would destroy commits, index and untracked files a retry keeps.
+    pub(super) fn block_failed_spawn(
         &mut self,
         stage_id: &str,
         session_id: &str,
         spawn_err: &anyhow::Error,
-        handover: bool,
     ) {
         let err_msg = format!("Failed to spawn session for stage {stage_id}: {spawn_err:#}");
-        if spawn_cleanup_allowed(&self.config.work_dir, stage_id, handover) {
-            // Remove orphan resources so a retry can start clean.
-            // Worktree — best-effort force-removal; ignore "not found" etc.
-            let _ = git::remove_worktree(stage_id, &self.config.repo_root, true);
-            // Branch — force-delete so the next retry can recreate
-            // it from the correct base.
-            let branch = git::branch_name_for_stage(stage_id);
-            let _ = git::delete_branch(&branch, true, &self.config.repo_root);
-        }
         let failure_type = spawn_failure_type(spawn_err);
         self.block_and_undo_session(stage_id, session_id, failure_type, err_msg);
     }
@@ -296,22 +303,9 @@ impl Orchestrator {
             return;
         }
 
-        self.insert_active_session(stage_id, spawned);
-        self.active_worktrees.insert(stage_id.to_string(), worktree);
-    }
-}
-
-/// Whether a failed spawn's worktree and branch may be deleted.
-fn spawn_cleanup_allowed(work_dir: &Path, stage_id: &str, handover: bool) -> bool {
-    if handover {
-        return false;
-    }
-    match crate::native_worker::index::stage_disposition(work_dir, stage_id).blocker(stage_id) {
-        Some(blocker) => {
-            eprintln!("Warning: keeping the worktree of stage '{stage_id}': {blocker}");
-            false
+        if self.track_spawned_session(stage_id, spawned) {
+            self.active_worktrees.insert(stage_id.to_string(), worktree);
         }
-        None => true,
     }
 }
 
@@ -364,16 +358,5 @@ fn print_manual_start(
 }
 
 #[cfg(test)]
-mod native_gate_tests {
-    use super::*;
-
-    #[test]
-    fn failed_spawn_keeps_worktree_while_worker_runs() {
-        let temp = tempfile::TempDir::new().unwrap();
-        let work = temp.path();
-        assert!(spawn_cleanup_allowed(work, "s1", false));
-        assert!(!spawn_cleanup_allowed(work, "s1", true));
-        crate::commands::stage::native_gate::tests::seed_active_worker(work, "s1", "unit");
-        assert!(!spawn_cleanup_allowed(work, "s1", false));
-    }
-}
+#[path = "spawn_publication_tests.rs"]
+mod spawn_publication_tests;

@@ -196,6 +196,8 @@ pub struct ReconcileReport {
     pub entries: Vec<ReconcileEntry>,
     pub appended: usize,
     pub duplicates: usize,
+    /// Starting position of the next poll's stage window.
+    pub next_cursor: usize,
 }
 
 #[derive(Debug)]
@@ -261,9 +263,10 @@ pub(crate) fn codex_worker_identity(
 pub fn reconcile_codex_jobs(
     work_dir: &Path,
     active_sessions: &[Session],
+    cursor: usize,
 ) -> Result<ReconcileReport> {
     let state_root = authorization::canonical_daemon_state_root()?;
-    reconcile::reconcile_with_state_root(work_dir, active_sessions, &state_root)
+    reconcile::reconcile_from(work_dir, active_sessions, &state_root, Utc::now(), cursor)
 }
 
 /// Read the exact v1.0.6 companion job bound to an authorization.
@@ -327,8 +330,12 @@ mod foreground_tests;
 #[cfg(test)]
 pub(crate) mod test_support;
 #[cfg(test)]
-pub(crate) use reconcile::reconcile_at;
+pub(crate) use reconcile::{reconcile_at, reconcile_from};
 #[cfg(test)]
 pub(crate) use token_threads::threads_with_state_root;
+#[cfg(test)]
+mod reconcile_window_contract_tests;
+#[cfg(test)]
+mod reconcile_window_tests;
 #[cfg(test)]
 mod tests;

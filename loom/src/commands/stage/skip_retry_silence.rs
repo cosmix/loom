@@ -13,15 +13,10 @@ use chrono::{DateTime, Utc};
 use crate::fs::session_files::load_session_exact;
 use crate::models::session::Session;
 use crate::models::stage::{Stage, StageStatus};
+use crate::orchestrator::core::MAX_STALL_RECOVERIES;
 use crate::orchestrator::monitor::heartbeat::{heartbeat_path, read_heartbeat, Heartbeat};
 use crate::orchestrator::monitor::hung_latch::host_job_holds_session;
 use crate::orchestrator::monitor::never_worked::{is_escalation, never_worked};
-
-/// How many stall recoveries the daemon spends on one stage before it parks
-/// the stage instead (`recover_hung.rs::MAX_STALL_RECOVERIES`, a private
-/// const of the daemon's event handler). Revisit when that const is exported
-/// from the monitor: this copy then goes away.
-const MAX_STALL_RECOVERIES: u32 = 2;
 
 /// Widest multiple of the budget [`escalation_line`] looks for.
 const MAX_LINE_MULTIPLE: u64 = 16;

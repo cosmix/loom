@@ -5,13 +5,12 @@ use crate::models::worktree::Worktree;
 
 use super::super::retrieval::STAGE_QUERY_INPUTS;
 use super::super::types::{DependencyStatus, EmbeddedContext};
+use super::super::wrap::wrap_untrusted;
 use super::brief::format_stage_brief;
 use super::codex::format_codex_implementers_section;
+use super::dependency_section::format_dependency_sections;
 use super::helpers::append_stage_end_sequence;
-use super::helpers::{
-    extract_tasks_from_stage, format_dependency_outputs, format_dependency_table,
-    format_structured_handoff,
-};
+use super::helpers::{extract_tasks_from_stage, format_structured_handoff};
 use super::sandbox_section::format_sandbox_section;
 use super::section_boxes::{
     append_empty_memory_box, append_execution_path_box, append_knowledge_updates_required_box,
@@ -21,10 +20,10 @@ use super::skills::format_skill_recommendations;
 mod acceptance;
 pub(in crate::orchestrator::signals) use acceptance::format_criterion;
 mod goal_backward_section;
-use goal_backward_section::format_goal_backward_verification_section;
+pub(in crate::orchestrator::signals) use goal_backward_section::format_goal_backward_verification_section;
 
 /// SEMI-STABLE section: per-stage content (brief, facts), never per-session
-pub(super) fn format_semi_stable_section(
+pub(in crate::orchestrator::signals) fn format_semi_stable_section(
     embedded_context: &EmbeddedContext,
     stage_type: StageType,
     stage_id: &str,
@@ -380,9 +379,7 @@ pub(super) fn format_dynamic_section(
     // Embed plan overview if available
     if let Some(plan_overview) = &embedded_context.plan_overview {
         content.push_str("## Plan Overview\n\n");
-        content.push_str("<plan-overview>\n");
-        content.push_str(plan_overview);
-        content.push_str("\n</plan-overview>\n\n");
+        content.push_str(&wrap_untrusted("plan-overview", plan_overview));
     }
 
     // Cross-stage change summary (integration-verify only)
@@ -410,23 +407,7 @@ pub(super) fn format_dynamic_section(
     content.push_str("\n\n");
 
     // Dependencies status (dynamic - status changes)
-    if !dependencies_status.is_empty() {
-        content.push_str("## Dependencies Status\n\n");
-        content.push_str(&format_dependency_table(dependencies_status));
-        content.push('\n');
-
-        // Include outputs from completed dependencies
-        let deps_with_outputs: Vec<_> = dependencies_status
-            .iter()
-            .filter(|d| !d.outputs.is_empty())
-            .collect();
-
-        if !deps_with_outputs.is_empty() {
-            content.push_str("## Dependency Outputs\n\n");
-            content.push_str(&format_dependency_outputs(&deps_with_outputs));
-            content.push('\n');
-        }
-    }
+    content.push_str(&format_dependency_sections(dependencies_status));
 
     // Embed handoff content if available (previous session context)
     if let Some(parsed) = &embedded_context.parsed_handoff {
@@ -440,9 +421,7 @@ pub(super) fn format_dynamic_section(
         content.push_str(
             "**READ THIS CAREFULLY** - This contains context from the previous session:\n\n",
         );
-        content.push_str("<handoff>\n");
-        content.push_str(handoff_content);
-        content.push_str("\n</handoff>\n\n");
+        content.push_str(&wrap_untrusted("handoff", handoff_content));
     } else if let Some(handoff) = handoff_file {
         // Fallback reference if content couldn't be read
         content.push_str("## Context Restoration\n\n");
@@ -495,7 +474,7 @@ pub(super) fn format_dynamic_section(
 
 /// RECITATION section: At end for maximum attention (Manus pattern)
 /// Contains immediate tasks, task progression, and session memory
-pub(super) fn format_recitation_section(
+pub(in crate::orchestrator::signals) fn format_recitation_section(
     stage: &Stage,
     embedded_context: &EmbeddedContext,
 ) -> String {

@@ -1,20 +1,17 @@
-//! Permission fold-back from a worktree's settings into the loom-owned
-//! approved-permissions list.
+//! Permission fold-back from the main checkout's own local settings into the
+//! loom-owned approved-permissions list.
 //!
-//! When Claude Code sessions run in worktrees, they may be granted additional
-//! permissions that are stored in the worktree's settings.local.json. This
-//! module reads those permissions (and the main repository's own local allow
-//! list, which Claude Code writes approvals into even for a capsule-launched
-//! session — see `approved.rs`) and records the portable ones into the
-//! loom-owned approved-permissions list, filtering out worktree-specific
-//! paths. It never writes the main repository's or a worktree's
-//! `.claude/settings.local.json` (owner decision 8,
-//! `doc/plans/PLAN-loom-state-confinement.md`).
+//! Claude Code writes a user's "don't ask again" approvals into the main
+//! checkout's `.claude/settings.local.json`, even for a capsule-launched
+//! session (see `approved.rs`). That one file is the only source: a
+//! worktree's settings file, or any subdirectory's under the main checkout,
+//! is writable by a session, so reading it would let a session grant itself
+//! rules every later capsule allows. This module never writes the main
+//! repository's or a worktree's `.claude/settings.local.json` (owner
+//! decision 8, `doc/plans/PLAN-loom-state-confinement.md`).
 
-use anyhow::{Context, Result};
-use serde_json::{json, Value};
-use std::fs;
-use std::path::{Path, PathBuf};
+use serde_json::Value;
+use std::path::Path;
 
 use super::write_rules::is_inert_write_permission;
 
@@ -27,148 +24,53 @@ use super::write_rules::is_inert_write_permission;
 /// to a completely different — and usually dangerous — location.
 const WORKTREE_PATH_PATTERNS: &[&str] = &["../", ".worktrees/"];
 
-/// Fold a worktree's approved permissions back into the loom-owned
-/// approved-permissions list.
-///
-/// This function:
-/// 1. Reads the worktree's settings.local.json (from both worktree root and working_dir)
-/// 2. Extracts the permissions.allow array
-/// 3. Normalizes a single-leading-slash path to its cwd-relative form (see
-///    `normalize_single_slash_path`), drops inert `Write(...)` rules (see
-///    `is_inert_write_permission`), and rewrites worktree-specific paths
-///    (containing ../../ or .worktrees/) to their portable form
-/// 4. Records the portable rules, plus the main repository's own local allow
-///    list, into `approved.rs`'s loom-owned list, through its control-surface
-///    filter
-///
-/// # Arguments
-/// * `worktree_path` - The root path of the worktree (`.worktrees/<stage-id>`)
-/// * `main_repo_path` - The root path of the main repository
-/// * `working_dir` - Optional working directory where Claude Code session ran
-///   (e.g., `<worktree>/loom` for Rust projects). Claude Code writes permissions
-///   to .claude/settings.local.json relative to the cwd, so we need to check
-///   both the worktree root and the working directory for permissions.
-pub fn sync_worktree_permissions(
-    worktree_path: &Path,
-    main_repo_path: &Path,
-) -> Result<SyncResult> {
-    sync_worktree_permissions_with_working_dir(worktree_path, main_repo_path, None)
-}
+/// Upper bound on the main checkout's local settings file; anything larger is
+/// refused and contributes nothing.
+const MAX_SETTINGS_BYTES: usize = 1 << 20;
 
-/// The settings files a worktree session's permissions may live in: the
-/// worktree root's; the session's working directory's when it differs
-/// (Claude Code writes permissions relative to the cwd, so a session run from
-/// `worktree/loom/` keeps them in `worktree/loom/.claude/settings.local.json`);
-/// and those of the common subdirectories a session usually runs from, for
-/// callers that pass no working directory.
-fn settings_paths_to_check(worktree_path: &Path, working_dir: Option<&Path>) -> Vec<PathBuf> {
-    let mut paths_to_check = vec![worktree_path.join(".claude/settings.local.json")];
-    if let Some(wd) = working_dir {
-        if wd != worktree_path {
-            let wd_settings = wd.join(".claude/settings.local.json");
-            if wd_settings.exists() && !paths_to_check.contains(&wd_settings) {
-                paths_to_check.push(wd_settings);
-            }
-        }
-    }
-    for subdir in ["loom", "src", "app", "packages", "workspace"] {
-        let subdir_settings = worktree_path
-            .join(subdir)
-            .join(".claude/settings.local.json");
-        if subdir_settings.exists() && !paths_to_check.contains(&subdir_settings) {
-            paths_to_check.push(subdir_settings);
-        }
-    }
-    paths_to_check
-}
+/// The main checkout's local settings file, relative to its root.
+const MAIN_SETTINGS: &str = ".claude/settings.local.json";
 
-/// Feed the loom-owned approved list (`approved.rs`, owner decision 8): the
-/// fold-back's own portable allow rules, plus the main repository's local
-/// allow list. Claude Code records a "don't ask again" approval there
-/// (destination `localSettings`, rooted at the operator-owned checkout) even
-/// for a worktree session launched with `--setting-sources user,project`, so
-/// the worktree's own file alone would miss it. Returns how many rules were
-/// newly recorded.
-fn record_approvals(
-    main_repo_path: &Path,
-    main_settings_path: &Path,
-    worktree_allow: &[String],
-) -> usize {
-    let mut rules = worktree_allow.to_vec();
-    match read_settings(main_settings_path) {
-        Ok(settings) => rules.extend(portable_permissions(extract_permissions(&settings).0)),
-        Err(error) => tracing::warn!(
-            %error,
-            "cannot read the main repository's local settings for approved permissions"
-        ),
-    }
+/// Fold the main checkout's own local allow rules into the loom-owned
+/// approved-permissions list and return how many were newly recorded.
+///
+/// Reads only `<main_repo_path>/.claude/settings.local.json`, never a
+/// worktree's file or a subdirectory's, since those are writable by a
+/// session. The read follows no symlink, refuses a non-regular file (a FIFO
+/// cannot block it) and is capped at `MAX_SETTINGS_BYTES`. A missing file
+/// means no rules; any other read or parse failure is logged and also means
+/// no rules, so the fold-back never fails. The rules are normalized (see
+/// `normalize_single_slash_path`), inert `Write(...)` rules are dropped (see
+/// `is_inert_write_permission`), worktree-specific paths are rewritten to
+/// their portable form, and the result is recorded through `approved.rs`'s
+/// control-surface filter. Never writes either settings file.
+pub fn fold_back_approvals(main_repo_path: &Path) -> usize {
+    let mut rules =
+        portable_permissions(extract_permissions(&read_main_settings(main_repo_path)).0);
+    rules.sort();
+    rules.dedup();
     super::approved::record_fold_back(main_repo_path, &rules)
 }
 
-/// Sync permissions with an explicit working directory.
-///
-/// Reads the worktree's `.claude/settings.local.json` (and the working
-/// directory's, and the main repository's local allow list), and records the
-/// portable allow rules into the loom-owned approved-permissions list
-/// (`approved.rs`). Never writes `main_repo_path`'s or the worktree's
-/// `.claude/settings.local.json` — Claude Code owns those files.
-pub fn sync_worktree_permissions_with_working_dir(
-    worktree_path: &Path,
-    main_repo_path: &Path,
-    working_dir: Option<&Path>,
-) -> Result<SyncResult> {
-    let main_settings_path = main_repo_path.join(".claude/settings.local.json");
-
-    // Collect allow permissions from every settings file a session's
-    // approvals could have landed in.
-    let mut all_allow_perms: Vec<String> = Vec::new();
-    for settings_path in &settings_paths_to_check(worktree_path, working_dir) {
-        let worktree_settings = read_settings(settings_path)?;
-        all_allow_perms.extend(extract_permissions(&worktree_settings).0);
+/// The main checkout's parsed local settings, or `Value::Null` when the file
+/// is absent, unreadable or not JSON.
+fn read_main_settings(main_repo_path: &Path) -> Value {
+    let relative = Path::new(MAIN_SETTINGS);
+    let parsed =
+        crate::fs::safe_read::read_to_string_bounded(main_repo_path, relative, MAX_SETTINGS_BYTES)
+            .and_then(|text| serde_json::from_str::<Value>(&text).map_err(anyhow::Error::from));
+    match parsed {
+        Ok(settings) => settings,
+        Err(error) if crate::fs::safe_read::is_not_found(&error) => Value::Null,
+        Err(error) => {
+            tracing::warn!(
+                path = %main_repo_path.join(relative).display(),
+                error = %format!("{error:#}"),
+                "cannot read the main checkout's local settings for approved permissions"
+            );
+            Value::Null
+        }
     }
-
-    // Deduplicate
-    all_allow_perms.sort();
-    all_allow_perms.dedup();
-
-    let filtered_allow = portable_permissions(all_allow_perms);
-    let allow_added = record_approvals(main_repo_path, &main_settings_path, &filtered_allow);
-
-    Ok(SyncResult {
-        allow_added,
-        // No destination for a propagated deny rule since loom stopped
-        // writing `.claude/settings.local.json`; kept for API compatibility.
-        deny_added: 0,
-        // No sibling-worktree propagation left to do: the loom-owned
-        // approved list is read fresh into every capsule instead.
-        worktrees_updated: 0,
-    })
-}
-
-/// Result of a permission sync operation
-#[derive(Debug, Default)]
-pub struct SyncResult {
-    /// Number of allow permissions newly recorded into the loom-owned
-    /// approved-permissions list.
-    pub allow_added: usize,
-    /// Always 0: no destination remains for a propagated deny rule.
-    pub deny_added: usize,
-    /// Always 0: sibling worktrees now read approvals fresh from the
-    /// loom-owned list at spawn instead of being propagated to directly.
-    pub worktrees_updated: usize,
-}
-
-/// Read and parse a settings.json file
-fn read_settings(path: &Path) -> Result<Value> {
-    if !path.exists() {
-        return Ok(json!({}));
-    }
-
-    let content =
-        fs::read_to_string(path).with_context(|| format!("Failed to read {}", path.display()))?;
-
-    serde_json::from_str(&content)
-        .with_context(|| format!("Failed to parse {} as JSON", path.display()))
 }
 
 /// Extract allow and deny permission arrays from settings

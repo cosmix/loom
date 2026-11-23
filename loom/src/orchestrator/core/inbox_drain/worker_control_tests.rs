@@ -231,6 +231,35 @@ fn cancel_after_the_backend_became_legacy_still_applies() {
 }
 
 #[test]
+fn a_start_for_a_stage_that_left_execution_is_refused() {
+    let fx = fixture();
+    let record = fx.record(SessionType::Stage, SessionStatus::Running);
+    fx.stage(StageStatus::Blocked, Some(&record.id));
+    let payload = prepared_start(&fx);
+    let reason = refused(apply(&fx, &record, payload, unexpected_backend));
+    assert!(reason.contains("Blocked"), "{reason}");
+    assert!(reason.contains("not Executing"), "{reason}");
+    assert!(!store::stage_dir(&fx.work_dir, STAGE).exists());
+}
+
+#[test]
+fn a_cancel_still_applies_after_execution_ended() {
+    let fx = fixture();
+    let record = fx.record(SessionType::Stage, SessionStatus::Running);
+    let invocation_id = seed_native_invocation(&fx, "unit-a");
+    fx.stage(StageStatus::Blocked, Some(&record.id));
+    assert_eq!(
+        apply(
+            &fx,
+            &record,
+            cancel_payload(&invocation_id),
+            unexpected_backend
+        ),
+        Settle::Applied(Some(format!("cancel requested for {invocation_id}")))
+    );
+}
+
+#[test]
 fn decodes_worker_start() {
     let wire = serde_json::json!({
         "op": "start", "unit_id": "unit-a", "brief_path": "/x/brief.md",

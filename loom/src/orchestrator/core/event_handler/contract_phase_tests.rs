@@ -382,3 +382,6 @@ fn a_held_admission_lock_defers_a_replacement_without_charging_it() {
     let stage = load_stage("test-stage", &work).unwrap();
     assert_ne!(stage.session.as_deref(), Some(ended.id.as_str()));
 }
+
+#[path = "contract_phase_wait_tests.rs"]
+mod wait_tests;

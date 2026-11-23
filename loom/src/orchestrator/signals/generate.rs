@@ -289,7 +289,7 @@ fn build_signal_context(
 
 /// Project the display summary from the effective launcher configuration: the
 /// stage's overrides merged over the plan, plus the licensed codex lane's grants.
-fn build_sandbox_summary(stage: &Stage, work_dir: &Path) -> SandboxSummary {
+pub(super) fn build_sandbox_summary(stage: &Stage, work_dir: &Path) -> SandboxSummary {
     let merged = crate::sandbox::stage_sandbox(work_dir, stage);
     let mut expanded = merged.clone();
     crate::sandbox::expand_paths(&mut expanded);
@@ -337,7 +337,7 @@ fn extend_unique(into: &mut Vec<String>, values: &[&str]) {
     }
 }
 
-fn append_stage_feedback(content: &mut String, stage: &Stage, work_dir: &Path) {
+pub(super) fn append_stage_feedback(content: &mut String, stage: &Stage, work_dir: &Path) {
     // A resolver's committed merge failed verification: the section is not
     // gated on disputes, since the stage may never have filed one.
     super::section_formatters::append_merge_handback_section(content, stage);

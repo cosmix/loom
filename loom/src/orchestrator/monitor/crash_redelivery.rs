@@ -51,7 +51,8 @@ impl Detection {
     }
 
     /// The event owed to `session`, whose status did not change: its crash
-    /// again while its stage still runs under it. A record no longer `Crashed`
+    /// again while its stage is still `Executing` or `WaitingForInput` under it.
+    /// A record no longer `Crashed`
     /// is a new attempt that reused the id, which owes nothing. A stage missing
     /// from this snapshot may just be unreadable now, so the crash stays
     /// remembered.
@@ -70,8 +71,10 @@ impl Detection {
         let still_owed = session.status == SessionStatus::Crashed
             && match owner {
                 Some(stage) => {
-                    stage.status == StageStatus::Executing
-                        && stage.session.as_deref() == Some(session.id.as_str())
+                    matches!(
+                        stage.status,
+                        StageStatus::Executing | StageStatus::WaitingForInput
+                    ) && stage.session.as_deref() == Some(session.id.as_str())
                 }
                 None => session.stage_id.is_some(),
             };
@@ -152,5 +155,17 @@ mod tests {
 
         assert!(events.is_empty());
         assert!(detection.undelivered_crashes.is_empty());
+    }
+
+    #[test]
+    fn a_crash_under_a_waiting_stage_is_still_owed() {
+        let mut detection = with_owed_crash();
+        let mut stage = stage_under_session();
+        stage.status = StageStatus::WaitingForInput;
+
+        let events = detection.redeliver_crash(&record(SessionStatus::Crashed), &[stage]);
+
+        assert_eq!(events.len(), 1);
+        assert!(matches!(events[0], MonitorEvent::SessionCrashed { .. }));
     }
 }

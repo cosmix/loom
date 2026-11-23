@@ -9,10 +9,24 @@ use chrono::Utc;
 use crate::models::failure::FailureType;
 use crate::models::session::Session;
 use crate::models::stage::Stage;
+use crate::orchestrator::scheduling_report::BlockReason;
 
 use super::persistence::Persistence;
 use super::stage_block::StageBlock;
 use super::Orchestrator;
+
+/// A launch refused because the stage was put on hold after the executor read
+/// it. `update_stage` writes on `Ok`, so the refusal has to be an `Err`.
+#[derive(Debug)]
+pub(super) struct HeldAtLaunch;
+
+impl std::fmt::Display for HeldAtLaunch {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("the stage was put on hold before its launch")
+    }
+}
+
+impl std::error::Error for HeldAtLaunch {}
 
 impl Orchestrator {
     /// Resolve the session for this spawn attempt (reusing a pending
@@ -96,26 +110,42 @@ impl Orchestrator {
             return Ok(None);
         }
 
-        // Mark Executing, linked to the session record above, in ONE locked
-        // update so "Executing" and "session assigned" can never disagree.
-        let session_id = session.id.clone();
-        if let Err(e) = self.update_stage(stage_id, |current| {
-            current.try_mark_executing()?;
-            current.begin_attempt(Utc::now());
-            current.assign_session(session_id.clone());
-            Ok(())
-        }) {
-            self.block_and_undo_session(
-                stage_id,
-                &session.id,
-                FailureType::InfrastructureError,
-                format!("Failed to mark knowledge stage executing: {e:#}"),
-            );
+        if !self.mark_knowledge_executing(stage_id, &session.id) {
             return Ok(None);
         }
         self.mark_graph_executing(stage_id)?;
 
         Ok(Some(session))
+    }
+
+    /// Mark a knowledge stage Executing, linked to `session_id`, in ONE locked
+    /// update so "Executing" and "session assigned" can never disagree. Returns
+    /// `false` when the launch was deferred (held) or the stage blocked, and the
+    /// caller must not spawn.
+    fn mark_knowledge_executing(&mut self, stage_id: &str, session_id: &str) -> bool {
+        let Err(e) = self.update_stage(stage_id, |current| {
+            // A knowledge launch is always a fresh attempt.
+            if current.held {
+                return Err(HeldAtLaunch.into());
+            }
+            current.try_mark_executing()?;
+            current.begin_attempt(Utc::now());
+            current.assign_session(session_id.to_string());
+            Ok(())
+        }) else {
+            return true;
+        };
+        if e.is::<HeldAtLaunch>() {
+            self.defer_held_launch(stage_id, session_id);
+        } else {
+            self.block_and_undo_session(
+                stage_id,
+                session_id,
+                FailureType::InfrastructureError,
+                format!("Failed to mark knowledge stage executing: {e:#}"),
+            );
+        }
+        false
     }
 
     /// Mark a stage Blocked with an `InfrastructureError` after a failure that
@@ -137,6 +167,29 @@ impl Orchestrator {
         ) {
             eprintln!("Failed to persist Blocked state for '{stage_id}'");
         }
+    }
+
+    /// Remove a write-ahead session record whose agent never started.
+    pub(super) fn discard_write_ahead_record(&self, session_id: &str) {
+        let session_path = self
+            .config
+            .work_dir
+            .join("sessions")
+            .join(format!("{session_id}.md"));
+        if let Err(e) = std::fs::remove_file(&session_path) {
+            if e.kind() != std::io::ErrorKind::NotFound {
+                eprintln!("Warning: failed to remove stranded session record '{session_id}': {e}");
+            }
+        }
+    }
+
+    /// Stop a launch the stage's hold forbids: drop its write-ahead record
+    /// and defer the stage (a hold is not a failure, so nothing is blocked).
+    /// A reused recovery signal stays on disk for the next attempt.
+    pub(super) fn defer_held_launch(&mut self, stage_id: &str, session_id: &str) {
+        self.discard_write_ahead_record(session_id);
+        self.spawn_blocks
+            .insert(stage_id.to_string(), BlockReason::Held);
     }
 
     /// Mark a stage Blocked and undo an in-flight session write-ahead.
@@ -162,16 +215,7 @@ impl Orchestrator {
         err_msg: String,
     ) {
         eprintln!("Stage '{stage_id}' blocked: {err_msg}");
-        let session_path = self
-            .config
-            .work_dir
-            .join("sessions")
-            .join(format!("{session_id}.md"));
-        if let Err(e) = std::fs::remove_file(&session_path) {
-            if e.kind() != std::io::ErrorKind::NotFound {
-                eprintln!("Warning: failed to remove stranded session record '{session_id}': {e}");
-            }
-        }
+        self.discard_write_ahead_record(session_id);
         let block = StageBlock {
             release_session: true,
             ..StageBlock::new(failure_type, vec![err_msg])
@@ -215,6 +259,29 @@ impl Orchestrator {
         }
         self.active_sessions.insert(stage_id.to_string(), session);
         true
+    }
+
+    /// Track a session the backend just spawned. A refusal means the new agent
+    /// runs beside a tracked one, so the stage is blocked for an operator to
+    /// stop one of them instead of leaving the new session unmonitored.
+    ///
+    /// Returns `true` if the session is tracked.
+    pub(super) fn track_spawned_session(&mut self, stage_id: &str, session: Session) -> bool {
+        let incumbent = self.active_sessions.get(stage_id).map(|s| s.id.clone());
+        let new_id = session.id.clone();
+        if self.insert_active_session(stage_id, session) {
+            return true;
+        }
+        let incumbent = incumbent.unwrap_or_default();
+        self.block_stranded_stage(
+            stage_id,
+            format!(
+                "session '{new_id}' was spawned for stage '{stage_id}' while session \
+                 '{incumbent}' is still tracked; stop the one that should not run, then \
+                 retry the stage"
+            ),
+        );
+        false
     }
 
     /// If the stage's recorded session points at an existing `recovery-*` signal
