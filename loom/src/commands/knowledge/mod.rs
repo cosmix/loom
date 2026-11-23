@@ -104,8 +104,11 @@ fn strip_repeated_heading(content: &str, heading: &str) -> String {
     for level in 2..=6 {
         let marker = format!("{} {heading}", "#".repeat(level));
         if let Some(after) = rest.strip_prefix(&marker) {
-            if after.is_empty() || after.starts_with('\n') {
-                return after.trim_start_matches('\n').trim_end().to_string();
+            if after.is_empty() || after.starts_with('\n') || after.starts_with("\r\n") {
+                return after
+                    .trim_start_matches(['\r', '\n'])
+                    .trim_end()
+                    .to_string();
             }
         }
     }

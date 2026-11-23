@@ -1,11 +1,11 @@
-//! The `reconcile.lock` lease [`super::reconcile_graph`] and
-//! [`super::spawn_if_needed`] share, in the context cache directory
+//! [`super::reconcile_graph`] and [`super::spawn_if_needed`] share one lease
+//! file per checkout in the context cache directory
 //! (`crate::context::store::CACHE_RELATIVE_DIR`).
 //!
 //! ## Encoding
 //!
-//! One line, `"<epoch_secs> <pid> <failures> <pending> <claim>"`. Older
-//! four-field lines parse with a zero claim. `pid != 0` means an
+//! One line, `"<epoch_secs> <pid> <failures> <pending> <claim>"`. A
+//! line without the trailing claim parses with a zero claim. `pid != 0` means an
 //! attempt STARTED at that epoch and is (as far as the lock says) still
 //! running; `pid == 0` means an attempt FINISHED at that epoch. `0` is a safe
 //! sentinel: never a real user process's pid on Linux or macOS. `failures` is
@@ -13,8 +13,8 @@
 //! backoff; `pending` is `1` when a request arrived while a live holder was
 //! running, the bounded queue of one.
 //!
-//! A line that does not parse as exactly those four fields is treated as no
-//! lock, which fails toward SPAWNING rather than toward permanent silence:
+//! A line whose first four fields do not parse (or whose claim is present but
+//! malformed) is treated as no lock, which fails toward SPAWNING rather than toward permanent silence:
 //! losing one debounce interval to a corrupt lock is merely annoying, treating
 //! it as "someone is on it, forever" is a self-healing feature that stopped
 //! healing.
@@ -48,9 +48,6 @@ use crate::context::store::ContextStore;
 use crate::fs::locking::{atomic_write_locked, locked_dir_update};
 use crate::fs::safe_read::read_to_string_bounded;
 
-/// File name of the lease, inside the context cache directory.
-const LOCK_FILE: &str = "reconcile.lock";
-
 /// The most bytes `read_lock` reads: the line is four small integers, and the
 /// directory it lives in is writable by a sandboxed session.
 const MAX_LOCK_BYTES: usize = 256;
@@ -61,9 +58,12 @@ const MAX_BACKOFF_DOUBLINGS: u32 = 5;
 /// The longest a failing reconciler is ever throttled for.
 const BACKOFF_CAP_SECS: u64 = 21_600;
 
-/// Path of the lease, inside the context cache directory.
-pub(super) fn reconcile_lock_path(store: &ContextStore) -> PathBuf {
-    store.root().join(LOCK_FILE)
+/// Path of the checkout's lease file in the context cache directory.
+pub(super) fn reconcile_lock_path(store: &ContextStore, project_root: &Path) -> PathBuf {
+    store.root().join(format!(
+        "reconcile-{}.lock",
+        crate::context::local_overlay::local_overlay_stage_name(project_root)
+    ))
 }
 
 /// The parsed lock line.

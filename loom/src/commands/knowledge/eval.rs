@@ -27,7 +27,7 @@
 use crate::context::config::RetrievalConfig;
 use crate::context::graph_store::GraphStore;
 use crate::context::refresh::{ensure_snapshot, SnapshotAction, SnapshotOutcome, SnapshotPolicy};
-use crate::context::retrieve::{retrieve_for_stage, StageQuery};
+use crate::context::retrieve::{capture, retrieve_with, Captured, StageQuery};
 use crate::context::store::ContextStore;
 use crate::fs::work_dir::WorkDir;
 use anyhow::{anyhow, Context, Result};
@@ -39,7 +39,7 @@ mod report;
 
 use cases::{build_query_text, load_cases_file, resolve_budget, EvalCase, CASES_RELATIVE_PATH};
 use metrics::{score_case, CaseResult};
-use report::{aggregate, exit_reason, print_human, print_json};
+use report::{aggregate, exit_reason, print_human, print_json, Corpus};
 
 /// Run every case in `cases` (or the default cases file) and report the gate.
 pub fn eval(cases: Option<PathBuf>, budget_tokens: Option<usize>, json: bool) -> Result<()> {
@@ -50,11 +50,7 @@ pub fn eval(cases: Option<PathBuf>, budget_tokens: Option<usize>, json: bool) ->
     let config = RetrievalConfig::load(&main_root);
 
     refresh_source_graph(work_dir_hint);
-    let results = cases_file
-        .cases
-        .iter()
-        .map(|case| run_case(case, budget_tokens, work_dir_hint, &config))
-        .collect::<Result<Vec<_>>>()?;
+    let (results, corpus) = run_cases(&cases_file.cases, budget_tokens, work_dir_hint, &config)?;
     let aggregates = aggregate(&results);
     let reason = exit_reason(
         &aggregates,
@@ -63,9 +59,21 @@ pub fn eval(cases: Option<PathBuf>, budget_tokens: Option<usize>, json: bool) ->
     );
 
     if json {
-        print_json(&results, &cases_file, &aggregates, reason.as_deref())?;
+        print_json(
+            &results,
+            &corpus,
+            &cases_file,
+            &aggregates,
+            reason.as_deref(),
+        )?;
     } else {
-        print_human(&results, &cases_file, &aggregates, reason.as_deref());
+        print_human(
+            &results,
+            &corpus,
+            &cases_file,
+            &aggregates,
+            reason.as_deref(),
+        );
     }
 
     if let Some(reason) = &reason {
@@ -117,17 +125,41 @@ fn ensure_local_snapshot(work_dir_hint: &Path) -> Result<SnapshotOutcome> {
     ))
 }
 
+/// Score every case against one capture of the corpus: case queries differ
+/// only in text, required ids and budget (all use the `Local` overlay, the
+/// default scope and the default surface), so every case reads the same
+/// revision and the catalog refresh and graph load run once.
+fn run_cases(
+    cases: &[EvalCase],
+    budget_tokens: Option<usize>,
+    work_dir_hint: &Path,
+    config: &RetrievalConfig,
+) -> Result<(Vec<CaseResult>, Corpus)> {
+    let captured = capture(&StageQuery::new(work_dir_hint, String::new()))
+        .context("eval retrieval setup failed")?;
+    let results = cases
+        .iter()
+        .map(|case| run_case(case, budget_tokens, work_dir_hint, config, &captured))
+        .collect::<Result<Vec<_>>>()?;
+    let corpus = Corpus {
+        structural: captured.structural_revision().to_string(),
+        semantic: captured.semantic_revision().to_string(),
+    };
+    Ok((results, corpus))
+}
+
 fn run_case(
     case: &EvalCase,
     cli_budget: Option<usize>,
     work_dir_hint: &Path,
     config: &RetrievalConfig,
+    captured: &Captured,
 ) -> Result<CaseResult> {
     let budget = resolve_budget(case, cli_budget);
     let mut query = StageQuery::new(work_dir_hint, build_query_text(case));
     query.required_ids = case.require_ids.clone();
 
-    let pack = retrieve_for_stage(&query, budget)
+    let pack = retrieve_with(captured, &query, budget)
         .with_context(|| format!("eval case '{}' failed retrieval", case.name))?;
     Ok(score_case(case, &pack, config))
 }
@@ -147,3 +179,7 @@ mod tests_prompt_mode;
 #[cfg(test)]
 #[path = "eval/tests_refresh.rs"]
 mod tests_refresh;
+
+#[cfg(test)]
+#[path = "eval/tests_precision_format.rs"]
+mod tests_precision_format;

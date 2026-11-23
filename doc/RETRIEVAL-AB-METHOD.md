@@ -76,7 +76,7 @@ the data). Each measure root gets an empty `.work/` marker (so
 `WorkDir::new`'s upward search can't escape to the real `.work/`), a patched
 `state.json` (`semantic.stale = false`, and `semantic.revision` repointed at
 a base graph layer the snapshot actually has — see "Why isolation is hard
-here" below), and a periodically-refreshed "just finished" `reconcile.lock`,
+here" below), and a periodically-refreshed "just finished" per-checkout lease (`reconcile-map-<sha256 of the mirror root>.lock`),
 so the background reconcile never has a live reason to fire. Every binary
 invocation is also routed through `run_bin`, which strips the harness's own
 inherited `LOOM_WORK_DIR`/`LOOM_STAGE_ID`/`LOOM_SESSION_ID` before exec'ing.

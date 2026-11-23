@@ -88,7 +88,7 @@ fn never_built_degraded_pack_spawns_nothing() {
     spawn_if_needed(&never_built, temp.path());
 
     assert_eq!(SUPPRESSED_SPAWNS.load(Ordering::SeqCst), before);
-    assert!(!reconcile_lock_path(&store).exists());
+    assert!(!reconcile_lock_path(&store, temp.path()).exists());
 
     // Control: the same environment does spawn for a built, degraded graph.
     spawn_if_needed(&degraded_pack(), temp.path());
@@ -101,7 +101,7 @@ fn never_built_degraded_pack_spawns_nothing() {
 fn two_failed_runs_count_two_failures() {
     let temp = TempDir::new().unwrap();
     let store = pinned_project(&temp);
-    let lock_path = reconcile_lock_path(&store);
+    let lock_path = reconcile_lock_path(&store, temp.path());
     let debounce = RetrievalConfig::load(temp.path()).reconcile_debounce_secs;
     let stale = RetrievalConfig::load(temp.path()).reconcile_stale_lock_secs;
     let config = RetrievalConfig::load(temp.path());

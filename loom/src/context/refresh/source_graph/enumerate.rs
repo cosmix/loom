@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use super::{excluded, SourceGraphScope};
+use crate::context::census::{attributes, attributes_at_head};
 use crate::git::worktree::WorktreeGit;
 
 /// Git modes of the entries that are never source files: a symlink, whose
@@ -13,18 +14,13 @@ const GITLINK_MODE: &str = "160000";
 
 pub(crate) struct Enumeration {
     /// Path → blob object id, from `git ls-tree -r -z HEAD` (Base) or `git ls-files -s -z` (Overlay).
-    /// Symlinks and gitlinks are left out.
+    /// Symlinks, gitlinks and paths git marks `linguist-generated` or `linguist-vendored` are left out.
     pub known: BTreeMap<String, String>,
     /// Existing untracked files from `git ls-files --others --exclude-standard -z` (Overlay only).
     pub untracked: Vec<String>,
     /// Known paths absent from the working tree (Overlay only): what the overlay tombstones
     /// because a tracked file was deleted or moved.
     pub deleted: Vec<String>,
-    /// Paths the index tracks as a symlink or gitlink (Overlay only) - never source, so they
-    /// never enter `known`. A layer only tombstones one of these when the base already holds a
-    /// regular-file entry for the same path (a file that became a symlink or gitlink); one the
-    /// base never tracked is simply absent from both, not counted anywhere.
-    pub not_source: Vec<String>,
 }
 
 pub(crate) fn enumerate(project_root: &Path, scope: &SourceGraphScope) -> Result<Enumeration> {
@@ -34,17 +30,21 @@ pub(crate) fn enumerate(project_root: &Path, scope: &SourceGraphScope) -> Result
             let output = git.run_checked(&["ls-tree", "-r", "-z", "HEAD"])?;
             // A base layer is built from `known` alone, so a committed symlink
             // or gitlink simply never enters it; there is nothing to tombstone.
-            let (known, _) = parse_known(&output, TreeRow::Committed);
+            let mut known = parse_known(&output, TreeRow::Committed);
+            let candidates = known.keys().map(String::as_str).collect::<Vec<_>>();
+            // The base is keyed by HEAD and shared across checkouts, so it
+            // must not depend on one checkout's uncommitted `.gitattributes`.
+            let attributes = attributes_at_head(project_root, &candidates)?;
+            known.retain(|path, _| !attributes.is_vendored_or_generated(path));
             Ok(Enumeration {
                 known,
                 untracked: Vec::new(),
                 deleted: Vec::new(),
-                not_source: Vec::new(),
             })
         }
         SourceGraphScope::Overlay { .. } => {
             let output = git.run_checked(&["ls-files", "-s", "-z"])?;
-            let (known, not_source) = parse_known(&output, TreeRow::Index);
+            let mut known = parse_known(&output, TreeRow::Index);
             let output = git.run_checked(&["ls-files", "--others", "--exclude-standard", "-z"])?;
             let mut untracked = nul_paths(&output)
                 .filter(|path| {
@@ -55,6 +55,7 @@ pub(crate) fn enumerate(project_root: &Path, scope: &SourceGraphScope) -> Result
                 .map(str::to_string)
                 .collect::<Vec<_>>();
             untracked.sort();
+            filter_generated(project_root, &mut known, &mut untracked)?;
             let deleted = known
                 .keys()
                 .filter(|path| !project_root.join(path).exists())
@@ -64,10 +65,30 @@ pub(crate) fn enumerate(project_root: &Path, scope: &SourceGraphScope) -> Result
                 known,
                 untracked,
                 deleted,
-                not_source,
             })
         }
     }
+}
+
+/// Drop attribute-filtered (generated or vendored) paths from `known` and
+/// `untracked`. Run before `deleted` is derived: an attribute-filtered path
+/// is not source, so it must never count as a deleted one. A failed lookup
+/// propagates; falling back to "no filtering" would let a transient failure
+/// write a layer that differs from the next run's under the same revision key.
+fn filter_generated(
+    project_root: &Path,
+    known: &mut BTreeMap<String, String>,
+    untracked: &mut Vec<String>,
+) -> Result<()> {
+    let candidates = known
+        .keys()
+        .chain(untracked.iter())
+        .map(String::as_str)
+        .collect::<Vec<_>>();
+    let attributes = attributes(project_root, &candidates)?;
+    known.retain(|path, _| !attributes.is_vendored_or_generated(path));
+    untracked.retain(|path| !attributes.is_vendored_or_generated(path));
+    Ok(())
 }
 
 #[derive(Clone, Copy)]
@@ -76,22 +97,14 @@ enum TreeRow {
     Index,
 }
 
-/// Split `ls-tree` / `ls-files -s` records into source files (path → blob oid)
-/// and the paths tracked as a symlink or gitlink, which are never read.
-fn parse_known(output: &str, row: TreeRow) -> (BTreeMap<String, String>, Vec<String>) {
-    let mut known = BTreeMap::new();
-    let mut not_source = Vec::new();
-    for (mode, oid, path) in nul_paths(output).filter_map(|record| parse_record(record, row)) {
-        if excluded(path) {
-            continue;
-        }
-        if matches!(mode, SYMLINK_MODE | GITLINK_MODE) {
-            not_source.push(path.to_string());
-        } else {
-            known.insert(path.to_string(), oid.to_string());
-        }
-    }
-    (known, not_source)
+/// Split `ls-tree` / `ls-files -s` records into source files (path → blob oid);
+/// a symlink or gitlink is never read, so it is left out.
+fn parse_known(output: &str, row: TreeRow) -> BTreeMap<String, String> {
+    nul_paths(output)
+        .filter_map(|record| parse_record(record, row))
+        .filter(|(mode, _, path)| !excluded(path) && !matches!(*mode, SYMLINK_MODE | GITLINK_MODE))
+        .map(|(_, oid, path)| (path.to_string(), oid.to_string()))
+        .collect()
 }
 
 /// `(mode, oid, path)` from one `<mode> [<kind>] <oid>[ <stage>]\t<path>` record.

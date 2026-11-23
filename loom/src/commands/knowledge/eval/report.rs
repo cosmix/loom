@@ -1,7 +1,14 @@
 use super::cases::CasesFile;
 use super::metrics::CaseResult;
+use crate::context::refresh::short_revision;
 use crate::context::untrusted::inline_safe;
 use anyhow::Result;
+
+/// Revisions of the two derived layers every case in a run was scored against.
+pub(super) struct Corpus {
+    pub structural: String,
+    pub semantic: String,
+}
 
 /// Aggregate scores and gate counts over every case in a run.
 #[derive(Debug, Default)]
@@ -124,13 +131,13 @@ pub(super) fn exit_reason(
     let mut reasons = Vec::new();
     if aggregates.hit_rate_at_5 < pass_floor {
         reasons.push(format!(
-            "hit@5 {:.2} < pass_floor {:.2}",
+            "hit@5 {} < pass_floor {}",
             aggregates.hit_rate_at_5, pass_floor
         ));
     }
     if aggregates.precision_at_5 < precision_floor {
         reasons.push(format!(
-            "precision@5 {:.2} < precision_floor {:.2}",
+            "precision@5 {} < precision_floor {}",
             aggregates.precision_at_5, precision_floor
         ));
     }
@@ -165,6 +172,7 @@ fn push_count_reason(reasons: &mut Vec<String>, count: usize, label: &str) {
 
 pub(super) fn print_human(
     results: &[CaseResult],
+    corpus: &Corpus,
     cases_file: &CasesFile,
     aggregates: &Aggregates,
     reason: Option<&str>,
@@ -173,6 +181,11 @@ pub(super) fn print_human(
         println!("{}", format_case_line(result));
         print_case_failures(result);
     }
+    println!(
+        "Corpus: structural={} semantic={}",
+        short_revision(&corpus.structural),
+        short_revision(&corpus.semantic)
+    );
     println!("\nAggregate:");
     println!(
         "  hit@5={:.2} ({}/{})  mean_mrr={:.2}",
@@ -275,6 +288,7 @@ fn case_gate_failures(result: &CaseResult) -> Vec<String> {
 
 pub(super) fn print_json(
     results: &[CaseResult],
+    corpus: &Corpus,
     cases_file: &CasesFile,
     aggregates: &Aggregates,
     reason: Option<&str>,
@@ -303,6 +317,8 @@ pub(super) fn print_json(
         "pass_floor": cases_file.pass_floor,
         "precision_floor": cases_file.precision_floor,
         "exit_reason": reason,
+        "structural_revision": corpus.structural,
+        "semantic_revision": corpus.semantic,
     });
     println!("{}", serde_json::to_string_pretty(&payload)?);
     Ok(())

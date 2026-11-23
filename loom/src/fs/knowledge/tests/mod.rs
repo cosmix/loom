@@ -2,3 +2,4 @@
 
 mod catalog;
 mod chunker;
+mod read;

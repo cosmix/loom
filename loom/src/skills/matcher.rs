@@ -3,11 +3,28 @@
 use super::types::SkillMatch;
 use std::collections::HashMap;
 
-/// Normalize text for matching: lowercase, replace separators with spaces
+/// Punctuation stripped from the start of a word; interior punctuation and a
+/// leading `.` stay, so `c++`, `.net` and `node.js` still match themselves.
+const LEADING_EDGE: &[char] = &[
+    ',', ';', ':', '!', '?', '(', ')', '[', ']', '{', '}', '"', '\'', '`',
+];
+
+/// Punctuation stripped from the end of a word: the leading set and a full stop.
+const TRAILING_EDGE: &[char] = &[
+    ',', ';', ':', '!', '?', '(', ')', '[', ']', '{', '}', '"', '\'', '`', '.',
+];
+
+/// Normalize text for matching: lowercase, replace separators with spaces and
+/// strip sentence punctuation from the edge of each word.
 pub fn normalize_text(text: &str) -> String {
     text.to_lowercase()
         .replace(['_', '-'], " ")
         .split_whitespace()
+        .map(|word| {
+            word.trim_start_matches(LEADING_EDGE)
+                .trim_end_matches(TRAILING_EDGE)
+        })
+        .filter(|word| !word.is_empty())
         .collect::<Vec<_>>()
         .join(" ")
 }
@@ -29,7 +46,6 @@ pub fn match_skills(
     max_results: usize,
     score_threshold: f32,
 ) -> Vec<SkillMatch> {
-    let normalized = normalize_text(text);
     let words = split_into_words(text);
 
     let mut skill_scores: HashMap<String, f32> = HashMap::new();
@@ -37,23 +53,17 @@ pub fn match_skills(
 
     for (trigger, skill_names) in trigger_map {
         let trigger_normalized = normalize_text(trigger);
-        let trigger_words: Vec<_> = trigger_normalized.split_whitespace().collect();
+        let trigger_words: Vec<&str> = trigger_normalized.split_whitespace().collect();
+        let Some(score_increment) = trigger_score(&words, &trigger_words) else {
+            continue;
+        };
 
-        let is_phrase_match = trigger_words.len() > 1 && normalized.contains(&trigger_normalized);
-
-        let is_word_match =
-            trigger_words.len() == 1 && words.iter().any(|w| w == &trigger_normalized);
-
-        if is_phrase_match || is_word_match {
-            let score_increment = if is_phrase_match { 2.0 } else { 1.0 };
-
-            for skill_name in skill_names {
-                *skill_scores.entry(skill_name.clone()).or_insert(0.0) += score_increment;
-                skill_matched_triggers
-                    .entry(skill_name.clone())
-                    .or_default()
-                    .push(trigger.clone());
-            }
+        for skill_name in skill_names {
+            *skill_scores.entry(skill_name.clone()).or_insert(0.0) += score_increment;
+            skill_matched_triggers
+                .entry(skill_name.clone())
+                .or_default()
+                .push(trigger.clone());
         }
     }
 
@@ -76,6 +86,19 @@ pub fn match_skills(
 
     matches.truncate(max_results);
     matches
+}
+
+/// Score of one trigger against the prompt's words: 2 for a whole-word phrase,
+/// 1 for a single word, `None` for no match.
+fn trigger_score(words: &[String], trigger_words: &[&str]) -> Option<f32> {
+    match trigger_words {
+        [] => None,
+        [word] => words.iter().any(|w| w == word).then_some(1.0),
+        phrase => words
+            .windows(phrase.len())
+            .any(|window| window.iter().map(String::as_str).eq(phrase.iter().copied()))
+            .then_some(2.0),
+    }
 }
 
 #[cfg(test)]
@@ -218,5 +241,42 @@ mod tests {
         assert_eq!(matches[0].score, 2.0);
         assert_eq!(matches[1].name, "skill_low");
         assert_eq!(matches[1].score, 1.0);
+    }
+
+    fn matched(text: &str, trigger: &str) -> bool {
+        let mut trigger_map = HashMap::new();
+        trigger_map.insert(trigger.to_string(), vec!["skill".to_string()]);
+        !match_skills(text, &trigger_map, &HashMap::new(), 5, 1.0).is_empty()
+    }
+
+    #[test]
+    fn a_word_followed_by_punctuation_matches_its_trigger() {
+        assert!(matched("fix auth, now", "auth"));
+        assert!(matched("(refresh token)", "refresh token"));
+        assert!(matched("port the c++ and node.js, code", "c++"));
+        assert!(matched("port the c++ and node.js, code", "node.js"));
+    }
+
+    #[test]
+    fn a_phrase_matches_whole_words_only() {
+        assert!(!matched("django model", "go mod"));
+        assert!(!matched("refresh tokens", "refresh token"));
+        assert!(matched("a refresh token here", "refresh token"));
+    }
+
+    #[test]
+    fn normalizing_is_idempotent_and_keeps_interior_punctuation() {
+        for text in [
+            "c++",
+            ".net",
+            "std::span",
+            "ci/cd",
+            "openapi 3.1",
+            "asp.net core",
+        ] {
+            assert_eq!(normalize_text(text), text);
+            assert_eq!(normalize_text(&normalize_text(text)), text);
+        }
+        assert_eq!(normalize_text("\"quoted\"; (x)."), "quoted x");
     }
 }

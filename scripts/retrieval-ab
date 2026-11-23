@@ -81,7 +81,8 @@
 #   - `state.json` patched (`.semantic.stale = false` AND
 #     `.semantic.revision` repointed at a base layer the snapshot actually
 #     has — see BREACH 2 above) and a pre-seeded, periodically-refreshed
-#     `reconcile.lock` "just finished" marker (see `seed_reconcile_lock`) —
+#     per-checkout `reconcile-map-<sha256>.lock` "just finished" marker (see
+#     `seed_reconcile_lock`) —
 #     belt-and-suspenders so `reconcile_graph::spawn_if_needed` never has a
 #     live reason to fire even if the copied state reads stale or degraded
 #     despite the patch (no `.git` in the mirror means the HEAD-comparison
@@ -414,7 +415,8 @@ seed_measure_root() {
 	seed_reconcile_lock "$mirror"
 }
 
-# (Re)write a "just finished" reconcile.lock (pid 0, current epoch) so
+# (Re)write a "just finished" per-checkout lease, reconcile-map-<sha256 of the
+# canonical mirror root>.lock (pid 0, current epoch) so
 # reconcile_graph::spawn_if_needed's debounce always reads "throttled,
 # skip" — see the ISOLATION CONTRACT header. Cheap; called at seed time and
 # again before each invocation phase below.
@@ -422,7 +424,9 @@ seed_reconcile_lock() {
 	local mirror="$1"
 	local cache_dir="$mirror/.loom/cache/context-v1"
 	[[ -d "$cache_dir" ]] || return 0
-	printf '%s 0\n' "$(date +%s)" >"$cache_dir/reconcile.lock"
+	local lease
+	lease="reconcile-map-$(printf %s "$(cd "$mirror" && pwd -P)" | sha256sum | cut -c1-64).lock"
+	printf '%s 0\n' "$(date +%s)" >"$cache_dir/$lease"
 }
 
 # --------------------------------------------------------------------------

@@ -24,36 +24,8 @@ pub(crate) struct SourceRead {
 
 impl SourceRead {
     /// Hash all bytes through a fixed buffer; never reserve from a file's size.
-    pub(crate) fn read(mut reader: impl Read) -> Result<Self> {
-        let mut bytes = Vec::new();
-        let mut size = 0usize;
-        let mut lines = 0usize;
-        let mut last = None;
-        let mut hash = Sha256::new();
-        let mut buffer = [0u8; 16 * 1024];
-        loop {
-            let count = match reader.read(&mut buffer) {
-                Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
-                result => result.context("reading source bytes")?,
-            };
-            if count == 0 {
-                break;
-            }
-            let chunk = &buffer[..count];
-            last = chunk.last().copied();
-            hash.update(chunk);
-            size = size.checked_add(count).context("source size overflow")?;
-            lines += chunk.iter().filter(|&&byte| byte == b'\n').count();
-            let retained = count.min(MAX_EXTRACTED_FILE_BYTES - bytes.len());
-            bytes.extend_from_slice(&chunk[..retained]);
-        }
-        Ok(Self {
-            bytes,
-            size,
-            hash: format!("sha256:{}", hex::encode(hash.finalize())),
-            lines,
-            last,
-        })
+    pub(crate) fn read(reader: impl Read) -> Result<Self> {
+        read_retaining(reader, MAX_EXTRACTED_FILE_BYTES)
     }
 
     pub(crate) fn entry(self, extractors: &[BoxedExtractor], path: &Path) -> FileEntry {
@@ -87,8 +59,41 @@ impl SourceRead {
     }
 }
 
-/// Open each component without following links, then stream the regular file.
-pub(crate) fn read_source(root: &Path, relative: &Path) -> Result<SourceRead> {
+/// Hash every byte of `reader`, retaining at most the first `limit` bytes.
+fn read_retaining(mut reader: impl Read, limit: usize) -> Result<SourceRead> {
+    let mut bytes = Vec::new();
+    let mut size = 0usize;
+    let mut lines = 0usize;
+    let mut last = None;
+    let mut hash = Sha256::new();
+    let mut buffer = [0u8; 16 * 1024];
+    loop {
+        let count = match reader.read(&mut buffer) {
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            result => result.context("reading source bytes")?,
+        };
+        if count == 0 {
+            break;
+        }
+        let chunk = &buffer[..count];
+        last = chunk.last().copied();
+        hash.update(chunk);
+        size = size.checked_add(count).context("source size overflow")?;
+        lines += chunk.iter().filter(|&&byte| byte == b'\n').count();
+        let retained = count.min(limit - bytes.len());
+        bytes.extend_from_slice(&chunk[..retained]);
+    }
+    Ok(SourceRead {
+        bytes,
+        size,
+        hash: format!("sha256:{}", hex::encode(hash.finalize())),
+        lines,
+        last,
+    })
+}
+
+/// Open each component without following links; refuse anything but a regular file.
+fn open_regular(root: &Path, relative: &Path) -> Result<File> {
     let root_fd = safe_open_dirfd(root)?;
     let fd = open_safely(
         root_fd.as_raw_fd(),
@@ -100,7 +105,39 @@ pub(crate) fn read_source(root: &Path, relative: &Path) -> Result<SourceRead> {
     if !file.metadata()?.is_file() {
         bail!("source is not a regular file: {}", relative.display());
     }
-    SourceRead::read(file)
+    Ok(file)
+}
+
+/// Open each component without following links, then stream the regular file.
+pub(crate) fn read_source(root: &Path, relative: &Path) -> Result<SourceRead> {
+    SourceRead::read(open_regular(root, relative)?)
+}
+
+/// A string that changes whenever the file's content does, without retaining it.
+///
+/// A file within the extraction cap is identified by its content hash (the
+/// `sha256:<hex>` string [`read_source`] reports). A larger file is identified
+/// by its metadata and never read: size, mtime, ctime, inode and device. Two
+/// writes of equal size inside one filesystem timestamp tick can therefore
+/// share an identity. The graph keeps only a size-and-hash `Oversized` entry
+/// for such a file; revisit if oversized files get real symbols.
+pub(crate) fn source_identity(root: &Path, relative: &Path) -> Result<String> {
+    use std::os::unix::fs::MetadataExt;
+    let file = open_regular(root, relative)?;
+    let metadata = file.metadata()?;
+    if metadata.len() > MAX_EXTRACTED_FILE_BYTES as u64 {
+        return Ok(format!(
+            "stat:{}:{}.{}:{}.{}:{}:{}",
+            metadata.len(),
+            metadata.mtime(),
+            metadata.mtime_nsec(),
+            metadata.ctime(),
+            metadata.ctime_nsec(),
+            metadata.dev(),
+            metadata.ino()
+        ));
+    }
+    Ok(read_retaining(file, 0)?.hash)
 }
 
 #[cfg(test)]
@@ -145,6 +182,41 @@ mod tests {
         assert_ne!(
             changed.hash, second.hash,
             "the hash must include bytes beyond retention"
+        );
+    }
+
+    #[test]
+    fn identity_above_the_cap_is_stat_based_and_below_it_is_the_content_hash() {
+        use std::io::{Seek, SeekFrom, Write};
+        let dir = tempfile::tempdir().unwrap();
+        let large = dir.path().join("large.rs");
+        File::create(&large)
+            .unwrap()
+            .set_len(MAX_EXTRACTED_FILE_BYTES as u64 + 1)
+            .unwrap();
+        let first = source_identity(dir.path(), Path::new("large.rs")).unwrap();
+        assert!(first.starts_with("stat:"), "{first}");
+        assert_eq!(
+            first,
+            source_identity(dir.path(), Path::new("large.rs")).unwrap()
+        );
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        let mut tail = std::fs::OpenOptions::new()
+            .write(true)
+            .open(&large)
+            .unwrap();
+        tail.seek(SeekFrom::End(-1)).unwrap();
+        tail.write_all(b"x").unwrap();
+        drop(tail);
+        assert_ne!(
+            first,
+            source_identity(dir.path(), Path::new("large.rs")).unwrap()
+        );
+
+        std::fs::write(dir.path().join("small.rs"), "fn small() {}\n").unwrap();
+        assert_eq!(
+            source_identity(dir.path(), Path::new("small.rs")).unwrap(),
+            read_source(dir.path(), Path::new("small.rs")).unwrap().hash
         );
     }
 

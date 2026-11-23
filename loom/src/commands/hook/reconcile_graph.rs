@@ -11,13 +11,13 @@
 //!
 //! ## Lease and backoff
 //!
-//! See the `lock` submodule for the `reconcile.lock` line's encoding and the
-//! full Spawn/Skip policy table. In short: the lock is a lease. A hook that
-//! decides to spawn claims it, the reconciler re-stamps it with its own pid and
-//! keeps that pid through every pass, and a request that arrives while it runs
-//! only sets `pending`, which earns exactly one more pass. A run that does not
-//! end `Current` counts a failure, and each failure doubles the throttle on
-//! the next attempt. `loom hook reconcile-graph --cancel` stops the holder.
+//! Each checkout has its own lease file in the context cache. See `lock` for
+//! the encoding and Spawn/Skip policy. The spawning hook claims the lease,
+//! and the reconciler stamps it with its own pid and keeps that pid through
+//! every pass. A request for the same checkout sets `pending` while the
+//! holder runs, earning one more pass. A run that fails to end `Current`
+//! doubles the throttle on that checkout's next attempt.
+//! `loom hook reconcile-graph --cancel` stops the checkout's holder.
 //!
 //! ## Scope resolution
 //!
@@ -91,7 +91,7 @@ fn try_reconcile() -> Result<()> {
     let Some((target, store)) = resolve_store()? else {
         return Ok(());
     };
-    let lock_path = reconcile_lock_path(&store);
+    let lock_path = reconcile_lock_path(&store, &target.project_root);
     let config = RetrievalConfig::load(&target.project_root);
     let claim = std::env::var("LOOM_RECONCILE_CLAIM")
         .ok()
@@ -105,8 +105,11 @@ fn try_reconcile() -> Result<()> {
 
 /// `--cancel`: stop the lease holder, if the lock names a live reconciler.
 fn try_cancel() -> Result<()> {
-    if let Some((_, store)) = resolve_store()? {
-        cancel::cancel_holder(&reconcile_lock_path(&store), unix_now());
+    if let Some((target, store)) = resolve_store()? {
+        cancel::cancel_holder(
+            &reconcile_lock_path(&store, &target.project_root),
+            unix_now(),
+        );
     }
     Ok(())
 }
@@ -186,8 +189,8 @@ pub fn wants_rebuild(freshness: &Freshness, degraded: Option<&str>) -> bool {
 }
 
 /// Spawn a detached `loom hook reconcile-graph` when [`wants_rebuild`] says
-/// `pack`'s source graph needs one, throttled through `reconcile_lock_path`
-/// so a burst of hook invocations spawns at most one reconcile at a time.
+/// `pack`'s source graph needs one. The checkout's lease throttles hook
+/// invocations so only one reconcile runs at a time for that checkout.
 ///
 /// Fire-and-forget by contract: never waits on the child, never fails, never
 /// prints — the hook's own latency budget must stay unaffected by however
@@ -256,7 +259,7 @@ fn try_spawn(project_root: &Path, now: u64) -> Result<()> {
         return Ok(());
     }
 
-    let lock_path = reconcile_lock_path(&store);
+    let lock_path = reconcile_lock_path(&store, project_root);
 
     let main_root = work_dir
         .main_project_root()
@@ -368,5 +371,7 @@ fn spawn_detached(project_root: &Path, claim: u128) -> Result<Option<u32>> {
 #[path = "tests_reconcile_graph.rs"]
 mod tests;
 
+#[cfg(test)]
+mod lease_contract_tests;
 #[cfg(test)]
 mod tests_wants_rebuild;

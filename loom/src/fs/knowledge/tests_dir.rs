@@ -32,8 +32,8 @@ fn test_knowledge_append() {
 
     // Append to entry-points
     knowledge
-        .append(
-            KnowledgeFile::EntryPoints,
+        .append_target(
+            &KnowledgeTarget::Tier1(KnowledgeFile::EntryPoints),
             "## New Section\n\n- New entry point",
         )
         .unwrap();
@@ -53,7 +53,10 @@ fn test_initialize_idempotent() {
 
     // Append extra content to a file
     knowledge
-        .append(KnowledgeFile::Mistakes, "## A Mistake\n\nDon't do this")
+        .append_target(
+            &KnowledgeTarget::Tier1(KnowledgeFile::Mistakes),
+            "## A Mistake\n\nDon't do this",
+        )
         .unwrap();
     let content_before = knowledge.read(KnowledgeFile::Mistakes).unwrap();
 
@@ -76,21 +79,25 @@ fn test_replace_section_existing() {
 
     // Add two sections
     knowledge
-        .append(
-            KnowledgeFile::Patterns,
+        .append_target(
+            &KnowledgeTarget::Tier1(KnowledgeFile::Patterns),
             "## Section A\n\nOriginal A content",
         )
         .unwrap();
     knowledge
-        .append(
-            KnowledgeFile::Patterns,
+        .append_target(
+            &KnowledgeTarget::Tier1(KnowledgeFile::Patterns),
             "## Section B\n\nOriginal B content",
         )
         .unwrap();
 
     // Replace Section A
     knowledge
-        .replace_section(KnowledgeFile::Patterns, "Section A", "Updated A content")
+        .replace_section_target(
+            &KnowledgeTarget::Tier1(KnowledgeFile::Patterns),
+            "Section A",
+            "Updated A content",
+        )
         .unwrap();
 
     let content = knowledge.read(KnowledgeFile::Patterns).unwrap();
@@ -118,7 +125,11 @@ fn test_replace_section_not_found_appends() {
     knowledge.initialize().unwrap();
 
     knowledge
-        .replace_section(KnowledgeFile::Patterns, "New Heading", "Brand new content")
+        .replace_section_target(
+            &KnowledgeTarget::Tier1(KnowledgeFile::Patterns),
+            "New Heading",
+            "Brand new content",
+        )
         .unwrap();
 
     let content = knowledge.read(KnowledgeFile::Patterns).unwrap();
@@ -136,14 +147,18 @@ fn test_replace_section_at_eof() {
 
     // Add a section that is at the end of the file (no following ## heading)
     knowledge
-        .append(
-            KnowledgeFile::Patterns,
+        .append_target(
+            &KnowledgeTarget::Tier1(KnowledgeFile::Patterns),
             "## Last Section\n\nOld last content",
         )
         .unwrap();
 
     knowledge
-        .replace_section(KnowledgeFile::Patterns, "Last Section", "New last content")
+        .replace_section_target(
+            &KnowledgeTarget::Tier1(KnowledgeFile::Patterns),
+            "Last Section",
+            "New last content",
+        )
         .unwrap();
 
     let content = knowledge.read(KnowledgeFile::Patterns).unwrap();
@@ -161,18 +176,25 @@ fn test_replace_section_exact_heading_match() {
 
     // Add sections with similar names
     knowledge
-        .append(KnowledgeFile::Patterns, "## Merge Flow\n\nMerge content")
+        .append_target(
+            &KnowledgeTarget::Tier1(KnowledgeFile::Patterns),
+            "## Merge Flow\n\nMerge content",
+        )
         .unwrap();
     knowledge
-        .append(
-            KnowledgeFile::Patterns,
+        .append_target(
+            &KnowledgeTarget::Tier1(KnowledgeFile::Patterns),
             "## Merge Flow Extended\n\nExtended content",
         )
         .unwrap();
 
     // Replace only the exact match
     knowledge
-        .replace_section(KnowledgeFile::Patterns, "Merge Flow", "Updated merge")
+        .replace_section_target(
+            &KnowledgeTarget::Tier1(KnowledgeFile::Patterns),
+            "Merge Flow",
+            "Updated merge",
+        )
         .unwrap();
 
     let content = knowledge.read(KnowledgeFile::Patterns).unwrap();
@@ -223,7 +245,7 @@ fn test_append_target_refreshes_index_only_when_hierarchical() {
     knowledge.write_index().unwrap();
     assert_eq!(knowledge.layout(), KnowledgeLayout::Hierarchical);
     knowledge.append_target(&target, "More content.").unwrap();
-    let index = knowledge.read_index().unwrap();
+    let index = std::fs::read_to_string(knowledge.index_path()).unwrap();
     assert!(index.contains("architecture/merge-flow.md"));
 }
 
@@ -278,7 +300,10 @@ mod exact_output {
         std::fs::write(knowledge.file_path(KnowledgeFile::Patterns), "").unwrap();
 
         knowledge
-            .append(KnowledgeFile::Patterns, "## A\n\nBody")
+            .append_target(
+                &KnowledgeTarget::Tier1(KnowledgeFile::Patterns),
+                "## A\n\nBody",
+            )
             .unwrap();
 
         assert_eq!(
@@ -299,7 +324,11 @@ mod exact_output {
         .unwrap();
 
         knowledge
-            .replace_section(KnowledgeFile::Patterns, "A", "new a")
+            .replace_section_target(
+                &KnowledgeTarget::Tier1(KnowledgeFile::Patterns),
+                "A",
+                "new a",
+            )
             .unwrap();
 
         assert_eq!(
@@ -320,7 +349,11 @@ mod exact_output {
         .unwrap();
 
         knowledge
-            .replace_section(KnowledgeFile::Patterns, "Last", "new")
+            .replace_section_target(
+                &KnowledgeTarget::Tier1(KnowledgeFile::Patterns),
+                "Last",
+                "new",
+            )
             .unwrap();
 
         assert_eq!(
@@ -337,7 +370,11 @@ mod exact_output {
         std::fs::write(knowledge.file_path(KnowledgeFile::Patterns), "# T\n").unwrap();
 
         knowledge
-            .replace_section(KnowledgeFile::Patterns, "New", "body")
+            .replace_section_target(
+                &KnowledgeTarget::Tier1(KnowledgeFile::Patterns),
+                "New",
+                "body",
+            )
             .unwrap();
 
         assert_eq!(

@@ -123,27 +123,6 @@ impl KnowledgeDir {
             .with_context(|| format!("Failed to read {}", file_type.filename()))
     }
 
-    /// Append content to a knowledge file (`update` appends; `replace-section` and `delete-section` edit in place)
-    pub fn append(&self, file_type: KnowledgeFile, content: &str) -> Result<()> {
-        self.append_target(&KnowledgeTarget::Tier1(file_type), content)
-    }
-
-    /// Replace a section in a knowledge file identified by its heading, at
-    /// whatever ATX level (`##` through `######`) it is written.
-    ///
-    /// Finds the first heading line matching `heading` and replaces everything
-    /// between it and the next heading of the same or shallower level (or EOF)
-    /// with the new content. If no heading matches, appends a new `##
-    /// <heading>` section instead — see [`SectionOutcome`].
-    pub fn replace_section(
-        &self,
-        file_type: KnowledgeFile,
-        heading: &str,
-        content: &str,
-    ) -> Result<SectionOutcome> {
-        self.replace_section_target(&KnowledgeTarget::Tier1(file_type), heading, content)
-    }
-
     /// Layout of this knowledge directory: `Hierarchical` iff `INDEX.md` exists.
     pub fn layout(&self) -> KnowledgeLayout {
         if self.index_path().exists() {
@@ -156,12 +135,6 @@ impl KnowledgeDir {
     /// Path to the generated `INDEX.md`.
     pub fn index_path(&self) -> PathBuf {
         self.root.join(INDEX_FILENAME)
-    }
-
-    /// Read the generated `INDEX.md`.
-    pub fn read_index(&self) -> Result<String> {
-        fs::read_to_string(self.index_path())
-            .with_context(|| format!("Failed to read {INDEX_FILENAME}"))
     }
 
     /// Regenerate and crash-atomically write `INDEX.md`.
@@ -219,7 +192,7 @@ impl KnowledgeDir {
     /// Replace a `#{2,6} <heading>` section in a tier-1 file or tier-2 topic,
     /// at whatever level the heading is actually written, appending a new
     /// `## <heading>` section if no heading matches. See
-    /// [`Self::replace_section`] for the exact splicing rules and
+    /// `splice::splice_section` for the exact splicing rules and
     /// [`SectionOutcome`] for what gets reported back.
     ///
     /// A tier-2 topic that does not exist yet is still seeded with

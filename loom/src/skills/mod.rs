@@ -25,6 +25,8 @@ mod index;
 mod index_catalog;
 mod install_layout;
 mod matcher;
+#[cfg(test)]
+mod matcher_contract_tests;
 pub mod project;
 pub mod recommend;
 mod types;

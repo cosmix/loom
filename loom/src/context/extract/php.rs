@@ -159,7 +159,7 @@ impl QueryHarness for PhpExtractor {
     fn identity(&self) -> ExtractorIdentity {
         ExtractorIdentity {
             dialect: "php",
-            grammar_version: "0.24.2",
+            grammar_version: "0.25.1",
             query_digest: crate::context::source_graph::body_hash(QUERY.as_bytes()),
             extractor_version: 4,
         }

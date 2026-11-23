@@ -5,7 +5,7 @@ use std::path::Path;
 
 use super::excluded;
 use crate::context::source_graph::body_hash;
-use crate::context::source_graph::read::read_source;
+use crate::context::source_graph::read::source_identity;
 use crate::git::revision::require_head_commit;
 use crate::git::status_entries::{parse_porcelain_v1_z, StatusEntry, PORCELAIN_V1_Z};
 use crate::git::worktree::WorktreeGit;
@@ -52,8 +52,11 @@ fn generation(project_root: &Path, head: &str, dirty: &BTreeMap<String, String>)
         // marker is hashed rather than embedding the raw error (which could
         // vary by platform or leak path detail), while still changing the
         // generation if the refusal state itself changes.
-        let identity = match read_source(project_root, Path::new(path)) {
-            Ok(source) => source.hash,
+        //
+        // A dirty file above the extraction cap is identified by its metadata
+        // (see `source_identity`), not read in full on every call.
+        let identity = match source_identity(project_root, Path::new(path)) {
+            Ok(identity) => identity,
             Err(_) if !full_path.exists() => "deleted".to_string(),
             Err(_) => body_hash(format!("{path}\0unreadable").as_bytes()),
         };

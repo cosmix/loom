@@ -14,6 +14,7 @@ use tempfile::TempDir;
 mod blob_reads;
 mod enumeration;
 mod layer_reuse;
+mod overlay_tombstones;
 mod tombstones_freshness;
 mod working_tree;
 

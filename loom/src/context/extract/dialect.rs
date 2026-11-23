@@ -159,7 +159,7 @@ pub static DIALECTS: &[DialectSpec] = &[
         language: NodeLanguage::Php,
         family: "php",
         extensions: &["php"],
-        grammar: "tree-sitter-php 0.24.2 (php)",
+        grammar: "tree-sitter-php 0.25.1 (php)",
         pack: GrammarPack::WaveB,
         self_receivers: &["$this", "self", "static"],
         bare_calls_reach_members: false,

@@ -1,0 +1,2 @@
+web/dist/** linguist-generated
+loom/tests/fixtures/** linguist-vendored

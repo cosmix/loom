@@ -1,10 +1,53 @@
-//! Tests for [`super::read_lock`] against what a sandboxed session can put in
-//! the lock's place: the cache directory is writable by the session.
+//! Tests for lease paths and for reading lock files in the session-writable
+//! cache directory.
 
+use super::super::{try_claim, Claim};
 use super::*;
 use tempfile::TempDir;
 
+const LOCK_FILE: &str = "reconcile.lock";
 const LINE: &str = "100 0 0 0\n";
+
+#[test]
+fn lease_paths_differ_per_checkout() {
+    let cache = TempDir::new().unwrap();
+    let store = ContextStore::with_root(cache.path().join("cache"));
+    let checkout_a = TempDir::new().unwrap();
+    let checkout_b = TempDir::new().unwrap();
+
+    let lock_a = reconcile_lock_path(&store, checkout_a.path());
+    let lock_b = reconcile_lock_path(&store, checkout_b.path());
+
+    assert_ne!(lock_a, lock_b);
+    assert_eq!(lock_a, reconcile_lock_path(&store, checkout_a.path()));
+    for lock_path in [lock_a, lock_b] {
+        assert_eq!(lock_path.parent(), Some(store.root()));
+        let name = lock_path.file_name().unwrap().to_str().unwrap();
+        assert!(name.starts_with("reconcile-"));
+        assert!(name.ends_with(".lock"));
+    }
+}
+
+#[test]
+fn a_live_holder_in_one_checkout_does_not_queue_a_request_from_another() {
+    let cache = TempDir::new().unwrap();
+    let store = ContextStore::with_root(cache.path().join("cache"));
+    store.ensure().unwrap();
+    let checkout_a = TempDir::new().unwrap();
+    let checkout_b = TempDir::new().unwrap();
+    let lock_a = reconcile_lock_path(&store, checkout_a.path());
+    let lock_b = reconcile_lock_path(&store, checkout_b.path());
+
+    assert_eq!(
+        try_claim(&lock_a, 1_000, 600, 1_800, |_| true, 4_242),
+        Claim::Won
+    );
+    assert_eq!(
+        try_claim(&lock_b, 1_001, 600, 1_800, |_| true, 4_343),
+        Claim::Won
+    );
+    assert!(!read_lock(&lock_a).unwrap().pending);
+}
 
 fn lock_with(content: &str) -> (TempDir, PathBuf) {
     let temp = TempDir::new().unwrap();
