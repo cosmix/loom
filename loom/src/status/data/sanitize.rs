@@ -69,7 +69,6 @@ pub(super) fn sanitize_stage_summary(summary: &mut StageSummary) {
     flatten_multiline(&mut summary.review_notes);
     summary.cleanup_warning.iter_mut().for_each(flatten);
     summary.merge_block.iter_mut().for_each(flatten);
-    summary.stash_warning.iter_mut().for_each(flatten);
     summary.incoherence.iter_mut().for_each(flatten);
     summary.merge_resolver_session.iter_mut().for_each(flatten);
     bound_close_reason(&mut summary.close_reason);

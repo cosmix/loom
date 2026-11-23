@@ -5,7 +5,6 @@
 
 use anyhow::{bail, Context, Result};
 use std::ffi::{OsStr, OsString};
-use std::fs::File;
 use std::path::Path;
 use std::process::{Command, Output};
 use std::time::Duration;
@@ -220,19 +219,6 @@ pub fn run_git(args: &[&str], repo_root: &Path) -> Result<Output> {
 /// [`run_git`] with `env` added to this one command's environment.
 pub fn run_git_with_env(args: &[&str], env: &[(&str, &OsStr)], repo_root: &Path) -> Result<Output> {
     run_git_with_env_within(repo_root, args, env, git_timeout(args))
-}
-
-/// [`run_git_with_env`] with git reading `stdin`.
-pub(crate) fn run_git_with_stdin(
-    args: &[&str],
-    env: &[(&str, &OsStr)],
-    stdin: File,
-    repo_root: &Path,
-) -> Result<Output> {
-    let exec_args = global_args(args);
-    let mut command = git_command("git", &exec_args, env, repo_root);
-    command.stdin(stdin);
-    run_bounded_git(command, &exec_args, &git_label(args), git_timeout(args))
 }
 
 /// [`run_git_with_env`] bounded by `timeout` instead of the subcommand's

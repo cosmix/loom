@@ -175,7 +175,7 @@ fn normal_cleanup_does_not_prune_an_unrelated_detached_worktree() {
         &CleanupConfig::quiet()
     )
     .is_empty());
-    crate::git::cleanup::cleanup_orphaned_worktrees(repo.path()).unwrap();
+    crate::orchestrator::merge_lifecycle::orphans::cleanup_orphaned_worktrees(repo.path()).unwrap();
     assert_eq!(fs::read(admin.join("HEAD")).unwrap(), head);
     assert!(admin.join("index").is_file());
 }

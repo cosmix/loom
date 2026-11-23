@@ -55,13 +55,13 @@ function overflowEverything() {
 }
 
 /// The stage's entry turned into one about something other than its failure.
-function stashEntry(id: string): Attention {
+function blockedEntry(id: string): Attention {
   return {
     ...fixtureEntry(id),
-    label: "STASH NOT RESTORED",
+    label: "BLOCKED",
     status: "blocked",
-    command: "git stash list",
-    note: "restore them with `git stash pop`",
+    command: `loom stage retry ${id}`,
+    note: null,
     failure_type: null,
     failure_label: null,
     evidence: [],
@@ -113,7 +113,7 @@ describe("the now card", () => {
     (status) => {
       const failure = fixtureStage("client").failure_info;
       renderModal(fixtureStage("server", { status, retry_count: 1, failure_info: failure }), [
-        { ...stashEntry("client"), id: "server" },
+        { ...blockedEntry("client"), id: "server" },
       ]);
 
       expect(region("now").queryByText(/^since/)).toBeNull();
@@ -135,17 +135,17 @@ describe("the now card", () => {
   });
 
   it("keeps the live failure's evidence and time under an entry about something else", () => {
-    renderModal(fixtureStage("client"), [stashEntry("client")]);
+    renderModal(fixtureStage("client"), [blockedEntry("client")]);
 
     const now = region("now");
-    expect(now.getByText("STASH NOT RESTORED")).toBeTruthy();
+    expect(now.getByText("BLOCKED")).toBeTruthy();
     expect(now.getByText("1 test failed: schema::parses_fixture")).toBeTruthy();
     expect(now.getByText(/^since/)).toBeTruthy();
   });
 
   it("dates no failure when the entry's stage has none live", () => {
     const stage = fixtureStage("client", { status: "completed" });
-    renderModal(stage, [stashEntry("client")]);
+    renderModal(stage, [blockedEntry("client")]);
 
     expect(region("now").queryByText("1 test failed: schema::parses_fixture")).toBeNull();
     expect(region("now").queryByText(/^since/)).toBeNull();
@@ -155,7 +155,7 @@ describe("the now card", () => {
     const warning = "git worktree remove failed: worktree contains modified files";
     const stage = fixtureStage("knowledge-bootstrap", { cleanup_warning: warning });
     const entry: Attention = {
-      ...stashEntry("client"),
+      ...blockedEntry("client"),
       id: stage.id,
       name: stage.name,
       label: "CLEANUP FAILED",
@@ -173,7 +173,7 @@ describe("the now card", () => {
 
   it("wears the entry's tone, as the attention card and the current history row do", () => {
     renderModal(fixtureStage("knowledge-bootstrap"), [
-      { ...stashEntry("client"), id: "knowledge-bootstrap" },
+      { ...blockedEntry("client"), id: "knowledge-bootstrap" },
     ]);
 
     expect(screen.getByRole("region", { name: "now" }).className).toContain("tone-blocked");

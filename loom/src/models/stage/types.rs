@@ -289,7 +289,7 @@ pub struct Stage {
     /// Whether stage has unresolved merge conflicts
     #[serde(default)]
     pub merge_conflict: bool,
-    /// Why the merge was not advanced and what it did with stashed changes;
+    /// Why the merge was not advanced, and its conflict and handback state;
     /// see [`MergeRecord`].
     #[serde(flatten)]
     pub merge: MergeRecord,

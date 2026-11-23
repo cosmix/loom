@@ -5,7 +5,7 @@ use super::batch::cleanup_after_merge;
 use super::branch::branch_exists_strict;
 use super::config::{CleanupConfig, CleanupResult};
 use super::worktree::worktree_directory_exists;
-use crate::git::branch::{branch_name_for_stage, branch_ref, is_ancestor_of};
+use crate::git::branch::{branch_name_for_stage, branch_ref, commits_ahead_of, is_ancestor_of};
 use crate::git::status_entries::{parse_porcelain_v1_z, StatusEntry, PORCELAIN_V1_Z};
 use crate::git::worktree::{is_worktree_scaffold_path, WorktreeGit};
 use crate::verify::tool_artifacts::is_tool_artifact;
@@ -37,7 +37,10 @@ pub fn cleanup_verified_stage(
     let resources = inspect_resources(stage_id, repo_root)?;
     require_resources(stage_id, &resources)?;
     require_clean_worktree(&resources, repo_root)?;
-    require_merged_history(completed_commit, target_branch, repo_root, &resources)?;
+    if completed_commit.trim().is_empty() {
+        bail!("Stage has no retained completed commit; refusing normal removal");
+    }
+    require_contained(&resources, Some(completed_commit), target_branch, repo_root)?;
 
     let config = CleanupConfig {
         force_worktree_removal: false,
@@ -93,10 +96,11 @@ fn inspect_resources(stage_id: &str, repo_root: &Path) -> Result<StageResources>
         .with_context(|| format!("Invalid stage ID '{stage_id}' for worktree removal"))?;
     let worktree_path = repo_root.join(".worktrees").join(stage_id);
     let worktree_exists = worktree_directory_exists(&worktree_path)?;
+    let branch_name = branch_name_for_stage(stage_id);
+    let branch_exists = branch_exists_strict(&branch_name, repo_root)
+        .with_context(|| format!("cannot determine whether branch '{branch_name}' exists"))?;
     let worktree_registered =
         super::worktree_failure::registered_worktree(&worktree_path, repo_root)?.is_some();
-    let branch_name = branch_name_for_stage(stage_id);
-    let branch_exists = branch_exists_strict(&branch_name, repo_root)?;
     let base_branch_name = format!("loom/_base/{stage_id}");
     let base_branch_present = base_branch_exists(stage_id, repo_root)?;
     Ok(StageResources {
@@ -155,36 +159,44 @@ fn is_disposable_untracked(worktree: &Path, entry: &StatusEntry) -> bool {
         && (is_worktree_scaffold_path(&entry.path) || is_tool_artifact(worktree, &entry.path))
 }
 
-fn require_merged_history(
-    completed_commit: &str,
+/// The predicate that gates destroying a stage's worktree and branches, shared
+/// by `cleanup_verified_stage` and the daemon's containment check.
+///
+/// Every ref that can still hold commits must be retained by `target_branch`:
+/// the stage branch, the worktree HEAD and the base branch, then the recorded
+/// commit. Any git failure is a refusal.
+pub(crate) fn require_stage_contained(
+    stage_id: &str,
+    completed_commit: Option<&str>,
     target_branch: &str,
     repo_root: &Path,
-    resources: &StageResources,
 ) -> Result<()> {
-    if completed_commit.trim().is_empty() {
-        bail!("Stage has no retained completed commit; refusing normal removal");
-    }
-    require_ancestor(
-        completed_commit,
-        target_branch,
-        repo_root,
-        "completed commit",
-    )?;
+    let resources = inspect_resources(stage_id, repo_root)?;
+    require_contained(&resources, completed_commit, target_branch, repo_root)
+}
+
+fn require_contained(
+    resources: &StageResources,
+    completed_commit: Option<&str>,
+    target_branch: &str,
+    repo_root: &Path,
+) -> Result<()> {
     if resources.branch_exists {
-        require_ancestor(
-            &branch_ref(&resources.branch_name),
-            target_branch,
-            repo_root,
-            "stage branch head",
-        )?;
-    } else if resources.worktree_exists && resources.worktree_path.join(".git").try_exists()? {
-        let git = WorktreeGit::pinned(repo_root, &resources.worktree_path)
-            .context("Failed to pin worktree for history check")?;
-        let target = branch_ref(target_branch);
-        let output = git.run(&["merge-base", "--is-ancestor", "HEAD", &target])?;
-        if !output.status.success() {
-            bail!("Worktree HEAD is not retained by target branch '{target_branch}'");
+        let branch = &resources.branch_name;
+        let ahead = commits_ahead_of(branch, target_branch, repo_root).with_context(|| {
+            format!("Failed to compare stage branch '{branch}' against '{target_branch}'")
+        })?;
+        if ahead != 0 {
+            bail!(
+                "stage branch head '{branch}' still holds {ahead} commit(s) not retained by target branch '{target_branch}'"
+            );
         }
+    }
+    // A merged branch can coexist with a detached worktree HEAD that holds
+    // commits no ref names, so the HEAD is checked whether or not the branch
+    // exists.
+    if resources.worktree_exists && resources.worktree_path.join(".git").try_exists()? {
+        require_worktree_head_contained(resources, target_branch, repo_root)?;
     }
     if resources.base_branch_present {
         require_ancestor(
@@ -194,7 +206,43 @@ fn require_merged_history(
             "stage base branch head",
         )?;
     }
+    // Checked last so a refusal names the ref that still holds work before the
+    // snapshot that merely was not retained.
+    if let Some(commit) = completed_commit {
+        let target = branch_ref(target_branch);
+        let retained = is_ancestor_of(commit, &target, repo_root)
+            .with_context(|| format!("Failed to verify the recorded commit {commit}"))?;
+        if !retained {
+            bail!(
+                "the recorded commit {commit} is not retained by target branch '{target_branch}'"
+            );
+        }
+    }
     Ok(())
+}
+
+/// Reads HEAD through the registered admin directory: the worktree's own
+/// `.git` is agent-writable and must not steer the query.
+fn require_worktree_head_contained(
+    resources: &StageResources,
+    target_branch: &str,
+    repo_root: &Path,
+) -> Result<()> {
+    let git = WorktreeGit::pinned(repo_root, &resources.worktree_path)
+        .context("Failed to pin worktree for history check")?;
+    let target = branch_ref(target_branch);
+    let output = git.run(&["merge-base", "--is-ancestor", "HEAD", &target])?;
+    match output.status.code() {
+        Some(0) => Ok(()),
+        Some(1) => bail!(
+            "the worktree HEAD of {} holds commits not retained by target branch '{target_branch}'",
+            resources.worktree_path.display()
+        ),
+        _ => bail!(
+            "Failed to verify the worktree HEAD against '{target_branch}': {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ),
+    }
 }
 
 fn require_ancestor(commit: &str, target: &str, repo_root: &Path, label: &str) -> Result<()> {
@@ -206,5 +254,7 @@ fn require_ancestor(commit: &str, target: &str, repo_root: &Path, label: &str) -
     Ok(())
 }
 
+#[cfg(test)]
+mod detached_contract_tests;
 #[cfg(test)]
 mod tests;

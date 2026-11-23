@@ -20,7 +20,6 @@ fn git_results() -> Vec<MergeResult> {
             files_changed: 1,
             insertions: 2,
             deletions: 3,
-            stash: None,
         },
         MergeResult::AlreadyUpToDate,
         MergeResult::Conflict {
@@ -39,7 +38,6 @@ fn daemon_results() -> Vec<AutoMergeResult> {
             files_changed: 1,
             insertions: 2,
             deletions: 3,
-            stash: None,
         },
         AutoMergeResult::AlreadyUpToDate,
         AutoMergeResult::Conflict {
@@ -54,10 +52,7 @@ fn daemon_results() -> Vec<AutoMergeResult> {
 
 fn progressive_results() -> Vec<ProgressiveMergeResult> {
     vec![
-        ProgressiveMergeResult::Success {
-            files_changed: 1,
-            stash: None,
-        },
+        ProgressiveMergeResult::Success { files_changed: 1 },
         ProgressiveMergeResult::AlreadyMerged,
         ProgressiveMergeResult::Conflict {
             conflicting_files: vec!["a".into()],

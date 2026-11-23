@@ -19,81 +19,13 @@ fn block_merge_records_the_reason_and_status() {
 }
 
 #[test]
-fn record_merge_stash_keeps_the_outcome() {
+fn leaving_merge_blocked_by_transition_clears_the_block() {
     let mut stage = stage_in(StageStatus::Completed);
-    let stash = StashReapply {
-        backup_ref: "refs/loom/autostash/s-1".to_string(),
-        restored: true,
-    };
-    stage.record_merge_stash(stash.clone());
-    assert_eq!(stage.merge.stash, Some(stash));
-}
-
-#[test]
-fn block_merge_stash_not_restored_records_the_unrestored_stash() {
-    let mut stage = stage_in(StageStatus::Completed);
-    stage.block_merge(MergeBlock::StashNotRestored {
-        backup_ref: "refs/loom/autostash/s-1".to_string(),
-    });
-    assert_eq!(
-        stage.merge.stash,
-        Some(StashReapply {
-            backup_ref: "refs/loom/autostash/s-1".to_string(),
-            restored: false,
-        })
-    );
-    stage.block_merge(MergeBlock::TargetMoved);
-    assert!(stage.merge.stash.is_some(), "a later block keeps the note");
-}
-
-fn stash(backup_ref: &str, restored: bool) -> StashReapply {
-    StashReapply {
-        backup_ref: backup_ref.to_string(),
-        restored,
-    }
-}
-
-#[test]
-fn a_restored_stash_note_keeps_an_unrestored_one() {
-    let mut stage = stage_in(StageStatus::Completed);
-    stage.record_merge_stash(stash("ref1", false));
-    stage.record_merge_stash(stash("ref2", true));
-    assert_eq!(stage.merge.stash, Some(stash("ref1", false)));
-}
-
-#[test]
-fn an_unrestored_stash_note_replaces_any_note() {
-    let mut stage = stage_in(StageStatus::Completed);
-    stage.record_merge_stash(stash("ref1", false));
-    stage.record_merge_stash(stash("ref2", false));
-    assert_eq!(stage.merge.stash, Some(stash("ref2", false)));
-    stage.record_merge_stash(stash("ref3", true));
-    stage.merge.stash = Some(stash("ref4", true));
-    stage.record_merge_stash(stash("ref5", true));
-    assert_eq!(stage.merge.stash, Some(stash("ref5", true)));
-}
-
-#[test]
-fn every_unrestored_backup_ref_is_kept_once() {
-    let mut stage = stage_in(StageStatus::Completed);
-    stage.record_merge_stash(stash("ref1", false));
-    stage.record_merge_stash(stash("ref2", false));
-    stage.record_merge_stash(stash("ref2", false));
-    stage.record_merge_stash(stash("ref3", true));
-    assert_eq!(stage.merge.unrestored, vec!["ref1", "ref2"]);
-    assert_eq!(stage.merge.stash, Some(stash("ref2", false)));
-}
-
-#[test]
-fn leaving_merge_blocked_by_transition_clears_the_block_and_keeps_the_stash() {
-    let mut stage = stage_in(StageStatus::Completed);
-    stage.record_merge_stash(stash("ref1", false));
     stage.block_merge(MergeBlock::TargetMoved);
     assert_eq!(stage.merge.block, Some(MergeBlock::TargetMoved));
     stage.try_transition(StageStatus::Queued).unwrap();
     assert_eq!(stage.merge.block, None);
     assert!(stage.failure_info.is_none());
-    assert_eq!(stage.merge.stash, Some(stash("ref1", false)));
 }
 
 #[test]
@@ -185,16 +117,9 @@ fn merge_record_keeps_top_level_keys_and_round_trips() {
     let mut stage = stage_in(StageStatus::Completed);
     let plain = crate::yaml::to_string(&stage).unwrap();
     assert!(!plain.contains("merge_block:"), "{plain}");
-    assert!(!plain.contains("merge_stash:"), "{plain}");
-    assert!(!plain.contains("merge_unrestored_stashes:"), "{plain}");
 
     stage.merge = MergeRecord {
         block: Some(MergeBlock::TargetMoved),
-        stash: Some(StashReapply {
-            backup_ref: "refs/loom/autostash/x".to_string(),
-            restored: false,
-        }),
-        unrestored: vec!["refs/loom/autostash/x".to_string()],
         conflict_since: Some(chrono::Utc::now()),
         ..MergeRecord::default()
     };
@@ -207,15 +132,56 @@ fn merge_record_keeps_top_level_keys_and_round_trips() {
         text.lines().any(|l| l.starts_with("merge_conflict_since:")),
         "{text}"
     );
-    assert!(
-        text.lines().any(|l| l.starts_with("merge_stash:")),
-        "{text}"
-    );
-    assert!(
-        text.lines()
-            .any(|l| l.starts_with("merge_unrestored_stashes:")),
-        "{text}"
-    );
     let back: Stage = crate::yaml::from_str(&text).unwrap();
     assert_eq!(back.merge, stage.merge);
+}
+
+#[test]
+fn only_an_incomplete_restore_whose_quarantine_exists_holds_displaced_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let held = |quarantine: std::path::PathBuf| MergeBlock::CheckoutRestoreIncomplete {
+        quarantine,
+        failures: vec![],
+        detail: None,
+    };
+    assert!(held(dir.path().to_path_buf()).holds_displaced_files());
+    assert!(!held(dir.path().join("gone")).holds_displaced_files());
+    for other in [
+        MergeBlock::TargetMoved,
+        MergeBlock::UncommittedOverlap {
+            paths: vec![dir.path().display().to_string()],
+        },
+        MergeBlock::FastForwardRefused {
+            detail: dir.path().display().to_string(),
+        },
+    ] {
+        assert!(!other.holds_displaced_files(), "{other:?}");
+    }
+}
+
+#[test]
+fn only_a_held_quarantine_tells_the_operator_to_recover_the_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let held = |quarantine: std::path::PathBuf| MergeBlock::CheckoutRestoreIncomplete {
+        quarantine,
+        failures: vec![],
+        detail: None,
+    };
+    let note = held(dir.path().to_path_buf()).retry_note();
+    assert!(note.contains("No merge of this stage runs"), "{note}");
+    assert!(!note.contains("every tick"), "{note}");
+    let held_with_remedy = MergeBlock::CheckoutRestoreIncomplete {
+        quarantine: dir.path().to_path_buf(),
+        failures: vec![],
+        detail: Some("delete it".to_string()),
+    };
+    let note = held_with_remedy.retry_note();
+    assert!(note.contains("No merge of this stage runs"), "{note}");
+    assert!(!note.contains("delete"), "{note}");
+    for daemon_retried in [held(dir.path().join("gone")), MergeBlock::TargetMoved] {
+        assert_eq!(
+            daemon_retried.retry_note(),
+            "Loom retries the merge every tick"
+        );
+    }
 }

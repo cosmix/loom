@@ -52,11 +52,8 @@ pub fn create_worktree(
     let branch_name = branch_name_for_stage(stage_id);
 
     // Ensure .worktrees directory exists
-    let worktrees_dir = repo_root.join(".worktrees");
-    if !worktrees_dir.exists() {
-        std::fs::create_dir_all(&worktrees_dir)
-            .with_context(|| "Failed to create .worktrees directory")?;
-    }
+    std::fs::create_dir_all(repo_root.join(".worktrees"))
+        .context("Failed to create .worktrees directory")?;
 
     // Check if worktree already exists
     if worktree_path.exists() {
@@ -82,7 +79,8 @@ pub fn create_worktree(
         recreate_or_reuse_branch(stage_id, repo_root, &args, base_branch, start_point)?;
     }
 
-    scaffold_worktree(&worktree_path, repo_root)?;
+    scaffold_worktree(&worktree_path, repo_root)
+        .map_err(|error| discard_unscaffolded(stage_id, repo_root, &worktree_path, error))?;
 
     let mut worktree = Worktree::new(stage_id.to_string(), worktree_path, branch_name);
     worktree.mark_active();
@@ -90,10 +88,48 @@ pub fn create_worktree(
     Ok(worktree)
 }
 
+/// `error` (a failed scaffold) with context saying whether the new worktree
+/// was removed.
+///
+/// The worktree is seconds old and holds only a checkout and loom's scaffold,
+/// so `--force` loses nothing of the operator's. Leaving it registered would
+/// let a retry reuse it unscaffolded. The branch is kept: the retry recreates
+/// or reuses it (`recreate_or_reuse_branch`).
+fn discard_unscaffolded(
+    stage_id: &str,
+    repo_root: &Path,
+    worktree_path: &Path,
+    error: anyhow::Error,
+) -> anyhow::Error {
+    match remove_worktree(stage_id, repo_root, true) {
+        Ok(()) => error.context("Failed to scaffold the new worktree; it was removed so a retry starts clean"),
+        Err(removal) => error.context(format!(
+            "Failed to scaffold the new worktree, and removing it failed too ({removal:#}); remove it with `git worktree remove --force {}` before retrying",
+            worktree_path.display()
+        )),
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    static FAIL_NEXT_SCAFFOLD: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Make the next `scaffold_worktree` on this thread fail.
+#[cfg(test)]
+pub(super) fn fail_next_scaffold() {
+    FAIL_NEXT_SCAFFOLD.with(|flag| flag.set(true));
+}
+
 /// Set up a freshly added worktree: state-root symlink, `.claude/`, the root
 /// `CLAUDE.md`, Claude Code trust, and the shared git excludes. Trust and
 /// exclude failures only warn.
 fn scaffold_worktree(worktree_path: &Path, repo_root: &Path) -> Result<()> {
+    #[cfg(test)]
+    if FAIL_NEXT_SCAFFOLD.with(|flag| flag.replace(false)) {
+        bail!("simulated scaffold failure");
+    }
+
     // Create symlink to the main repo's state root (.loom/work, or .work on
     // a legacy workspace)
     ensure_work_symlink(worktree_path, repo_root)?;
@@ -231,12 +267,6 @@ pub fn list_worktrees(repo_root: &Path) -> Result<Vec<WorktreeInfo>> {
     parse_worktree_list(&stdout)
 }
 
-/// Clean orphaned worktrees (prune)
-pub fn clean_worktrees(repo_root: &Path) -> Result<()> {
-    run_git_checked(&["worktree", "prune"], repo_root)?;
-    Ok(())
-}
-
 /// Get an existing worktree or create a new one
 ///
 /// If a valid worktree exists at .worktrees/{stage_id}/, reuses it.
@@ -285,7 +315,15 @@ fn remove_empty_remnant(path: &Path, repo_root: &Path) -> Result<()> {
     if !meta.is_dir() || std::fs::read_dir(path)?.next().transpose()?.is_some() {
         bail!("Cannot reuse unregistered worktree {}; its contents were preserved. Inspect and move or remove the directory before retrying", path.display());
     }
-    clean_worktrees(repo_root).context("Failed to prune stale worktree registrations")?;
+    // No `git worktree prune` here: it is repository-wide and would drop
+    // unrelated registrations. A still-registered path is refused instead.
+    if is_valid_git_worktree(path, repo_root)? {
+        bail!(
+            "Worktree {} is still registered with git but its directory is empty; the directory was preserved. Inspect its admin entry under .git/worktrees, then run `git worktree remove --force {}` before retrying",
+            path.display(),
+            path.display()
+        );
+    }
     std::fs::remove_dir(path)
         .with_context(|| format!("Failed to remove empty worktree remnant {}", path.display()))?;
     Ok(())

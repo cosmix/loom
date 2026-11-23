@@ -135,7 +135,7 @@ fn advance_updates_the_ref_and_logs_the_stage() {
 
     let advance = advance_target(root, "main", "s1", &mut pending).unwrap();
 
-    assert_eq!(advance, Advance::Advanced { stash: None });
+    assert_eq!(advance, Advance::Advanced);
     assert_eq!(rev(root, "main"), pending.commit().unwrap());
     let reflog = git_out(root, &["reflog", "show", "main", "-1", "--format=%gs"]);
     assert_eq!(reflog, "loom: merge loom/s1");
@@ -177,7 +177,7 @@ fn a_deleted_worktree_does_not_hold_the_target() {
 
     let advance = advance_target(root, "main", "s1", &mut pending).unwrap();
 
-    assert_eq!(advance, Advance::Advanced { stash: None });
+    assert_eq!(advance, Advance::Advanced);
     assert_eq!(rev(root, "main"), pending.commit().unwrap());
 }
 
@@ -197,36 +197,39 @@ fn the_new_blocks_serialize_and_explain_themselves() {
     let refused = MergeBlock::FastForwardRefused {
         detail: "odd".to_string(),
     };
-    let not_restored = MergeBlock::StashNotRestored {
-        backup_ref: "refs/loom/autostash/s1-1".to_string(),
-    };
     let incomplete = MergeBlock::CheckoutRestoreIncomplete {
-        source_rev: "abc123".to_string(),
+        quarantine: PathBuf::from("/q/s1-1"),
         failures: vec![RestoreFailure {
             path: "path.txt".to_string(),
             reason: "destination occupied".to_string(),
         }],
-        changes: RollbackChanges::Stashed {
-            backup_ref: "refs/loom/autostash/s1-1".to_string(),
-        },
+        detail: None,
     };
-    for block in [&refused, &not_restored, &incomplete] {
+    for block in [&refused, &incomplete] {
         let json = serde_json::to_string(block).unwrap();
         assert_eq!(&serde_json::from_str::<MergeBlock>(&json).unwrap(), block);
     }
     assert!(refused.to_string().contains("odd"));
-    let text = not_restored.to_string();
-    assert!(
-        text.contains("git stash apply refs/loom/autostash/s1-1"),
-        "{text}"
-    );
-    assert!(!text.contains("git stash pop"), "{text}");
     let text = incomplete.to_string();
     assert!(
-        text.contains("path.txt")
-            && text.contains("abc123")
-            && text.contains("refs/loom/autostash/s1-1")
+        text.contains("path.txt") && text.contains("/q/s1-1"),
+        "{text}"
     );
+}
+
+#[test]
+fn a_held_quarantine_states_its_remedy_once() {
+    let block = MergeBlock::CheckoutRestoreIncomplete {
+        quarantine: PathBuf::from("/q/s1-1"),
+        failures: Vec::new(),
+        detail: Some("move each back, then delete the quarantine directory".to_string()),
+    };
+
+    let text = block.to_string();
+
+    assert!(text.contains("/q/s1-1") && !text.contains("()"), "{text}");
+    assert_eq!(text.matches("delete the").count(), 1, "{text}");
+    assert!(!text.contains("inspect each"), "{text}");
 }
 
 #[test]
@@ -295,22 +298,4 @@ fn target_held_without_an_observed_tip_prints_unknown_in_both_forms() {
         unreadable_tip.contains(&format!("({} → unknown)", "a".repeat(12))),
         "{unreadable_tip}"
     );
-}
-
-#[test]
-fn stash_reapply_notice_says_whether_the_merge_landed_without_the_changes() {
-    let restored = StashReapply {
-        backup_ref: "refs/loom/autostash/s1-1".to_string(),
-        restored: true,
-    };
-    let lost = StashReapply {
-        restored: false,
-        ..restored.clone()
-    };
-    assert!(restored.notice().contains("reapplied"));
-    assert!(lost.notice().contains("LANDED"));
-    assert!(lost
-        .notice()
-        .contains("git stash apply refs/loom/autostash/s1-1"));
-    assert!(!lost.notice().contains("git stash pop"));
 }

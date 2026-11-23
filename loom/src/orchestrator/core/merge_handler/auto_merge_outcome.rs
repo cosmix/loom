@@ -89,9 +89,7 @@ impl Orchestrator {
                 files: files_changed,
                 insertions,
                 deletions,
-                stash,
             }) => {
-                self.note_merge_stash(stage_id, stash);
                 let summary = format!("merged: {files_changed} files, +{insertions} -{deletions}");
                 self.finalize_auto_merge(stage, stage_id, target, &summary)
             }

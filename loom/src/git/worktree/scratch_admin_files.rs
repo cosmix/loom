@@ -170,9 +170,15 @@ pub(super) fn copy_in(
         .mode(meta.mode() & 0o777)
         .open(&target)
         .with_context(|| format!("cannot create {}", target.display()))?;
-    let limit = MAX_COPIED_BYTES.min(*budget);
-    let copied = std::io::copy(&mut source.take(limit), &mut copy)
+    #[cfg(test)]
+    super::tests::before_copy(&admin_path.join(name));
+    let copied = std::io::copy(&mut source.take(meta.len() + 1), &mut copy)
         .with_context(|| format!("cannot copy {}", admin_path.join(name).display()))?;
+    ensure!(
+        copied == meta.len(),
+        "loom will not run git in the worktree: {} changed while it was being copied",
+        admin_path.join(name).display()
+    );
     *budget -= copied;
     copy.set_modified(meta.modified()?)?;
     let private = Stamp::of(&copy.metadata()?);

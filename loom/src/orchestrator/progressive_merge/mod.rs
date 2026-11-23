@@ -11,19 +11,14 @@ pub mod execution;
 
 pub use crate::fs::get_merge_point;
 pub use crate::git::merge::lock::MergeLock;
-use crate::git::merge::{MergeBlock, StashReapply};
+use crate::git::merge::MergeBlock;
 pub use execution::merge_completed_stage;
 
 /// Result of a progressive merge attempt
 #[derive(Debug, Clone)]
 pub enum ProgressiveMergeResult {
-    /// Merge completed successfully with changes. `stash` says where the
-    /// operator's uncommitted tracked changes are when they were stashed
-    /// around the merge.
-    Success {
-        files_changed: u32,
-        stash: Option<StashReapply>,
-    },
+    /// Merge completed successfully with changes.
+    Success { files_changed: u32 },
     /// The merge was not attempted or not advanced for a reason the operator
     /// can clear (a merge in progress, an overlapping uncommitted edit, ...)
     Blocked(MergeBlock),
@@ -41,14 +36,10 @@ pub enum ProgressiveMergeResult {
 impl From<ProgressiveMergeResult> for crate::stage_service::merge_outcome::MergeDisposition {
     fn from(result: ProgressiveMergeResult) -> Self {
         match result {
-            ProgressiveMergeResult::Success {
-                files_changed,
-                stash,
-            } => Self::Landed {
+            ProgressiveMergeResult::Success { files_changed } => Self::Landed {
                 files: files_changed,
                 insertions: 0,
                 deletions: 0,
-                stash,
             },
             ProgressiveMergeResult::AlreadyMerged => Self::AlreadyLanded,
             ProgressiveMergeResult::Conflict { conflicting_files } => {
@@ -105,11 +96,7 @@ mod tests {
 
     #[test]
     fn test_progressive_merge_result_is_success() {
-        assert!(ProgressiveMergeResult::Success {
-            files_changed: 5,
-            stash: None
-        }
-        .is_success());
+        assert!(ProgressiveMergeResult::Success { files_changed: 5 }.is_success());
         assert!(!ProgressiveMergeResult::Blocked(MergeBlock::TargetMoved).is_success());
         assert!(!ProgressiveMergeResult::Held {
             reason: "control path".to_string()
@@ -135,12 +122,9 @@ mod tests {
             Some(&["a.rs".to_string(), "b.rs".to_string()][..])
         );
 
-        assert!(ProgressiveMergeResult::Success {
-            files_changed: 1,
-            stash: None
-        }
-        .conflicting_files()
-        .is_none());
+        assert!(ProgressiveMergeResult::Success { files_changed: 1 }
+            .conflicting_files()
+            .is_none());
     }
 
     #[test]

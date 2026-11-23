@@ -26,6 +26,7 @@ pub(super) fn admit_retry(stage_id: &str, work_dir: &Path) -> Result<RetryAdmiss
     let mut limited = None;
     let updated = update_stage(stage_id, work_dir, |stage| {
         require_merge_state(stage, stage_id)?;
+        super::refuse_displaced_files(stage)?;
         if stage.is_at_fix_limit() {
             limited = Some(stage.clone());
             bail!("merge retry limit reached");
@@ -201,6 +202,36 @@ mod tests {
             );
         });
         assert_eq!(load_stage("stage-a", temp.path()).unwrap().fix_attempts, 3);
+    }
+
+    #[test]
+    fn a_stage_whose_quarantine_holds_files_is_refused_without_charging() {
+        let (_repo, work_dir) = retry_fixture();
+        let quarantine = tempfile::tempdir().unwrap();
+        update_stage("stage-a", &work_dir, |stage| {
+            stage.block_merge(crate::git::MergeBlock::CheckoutRestoreIncomplete {
+                quarantine: quarantine.path().to_path_buf(),
+                failures: vec![],
+                detail: None,
+            });
+            Ok(())
+        })
+        .unwrap();
+
+        let refusal = admit_retry("stage-a", &work_dir).err().expect("refused");
+
+        let text = format!("{refusal:#}");
+        let held = quarantine.path().display().to_string();
+        assert!(text.contains(&held), "{text}");
+        assert!(text.contains("delete the directory"), "{text}");
+        let stage = load_stage("stage-a", &work_dir).unwrap();
+        assert_eq!(stage.fix_attempts, 0);
+        assert_eq!(stage.status, StageStatus::MergeBlocked);
+        std::fs::remove_dir(quarantine.path()).unwrap();
+        assert!(matches!(
+            admit_retry("stage-a", &work_dir).unwrap(),
+            RetryAdmission::Admitted(_)
+        ));
     }
 
     #[test]

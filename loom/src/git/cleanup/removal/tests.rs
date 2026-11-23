@@ -179,6 +179,44 @@ fn verified_cleanup_refuses_unmerged_stage_base_branch() {
 }
 
 #[test]
+fn stage_containment_refuses_a_base_branch_holding_unmerged_commits() {
+    let temp = init_repo();
+    let root = temp.path();
+    create_stage_worktree(root, "base-ahead");
+    merge_stage(root, "base-ahead");
+    git(root, &["checkout", "-b", "loom/_base/base-ahead"]);
+    fs::write(root.join("base-only.txt"), "not retained\n").unwrap();
+    git(root, &["add", "base-only.txt"]);
+    git(root, &["commit", "-m", "unmerged base change"]);
+    git(root, &["checkout", "main"]);
+
+    let error = require_stage_contained("base-ahead", None, "main", root).unwrap_err();
+
+    assert!(
+        error.to_string().contains("stage base branch head"),
+        "{error:#}"
+    );
+}
+
+#[test]
+fn verified_cleanup_refuses_a_detached_head_with_work_beyond_a_merged_branch() {
+    let temp = init_repo();
+    let root = temp.path();
+    let (worktree, commit) = create_stage_worktree(root, "detached-ahead");
+    merge_stage(root, "detached-ahead");
+    git(&worktree, &["checkout", "--detach"]);
+    fs::write(worktree.join("later.txt"), "later\n").unwrap();
+    git(&worktree, &["add", "later.txt"]);
+    git(&worktree, &["commit", "-m", "later"]);
+
+    let error = cleanup_verified_stage("detached-ahead", &commit, "main", root).unwrap_err();
+
+    assert!(error.to_string().contains("worktree HEAD"), "{error:#}");
+    assert!(worktree.join("later.txt").exists());
+    assert!(branch_exists_strict("loom/detached-ahead", root).unwrap());
+}
+
+#[test]
 fn verified_cleanup_ignores_a_tag_shadowing_the_stage_branch() {
     let temp = init_repo();
     let root = temp.path();

@@ -30,17 +30,15 @@ pub mod worktree;
 
 // Re-export commonly used types and functions
 pub use worktree::{
-    check_git_available, check_worktree_support, clean_worktrees, create_worktree,
-    ensure_work_symlink, get_or_create_worktree, get_worktree_path, list_worktrees,
-    remove_worktree, resolve_base_branch, worktree_exists, BaseBranchError, ResolvedBase,
-    WorktreeInfo,
+    check_git_available, check_worktree_support, create_worktree, ensure_work_symlink,
+    get_or_create_worktree, get_worktree_path, list_worktrees, remove_worktree,
+    resolve_base_branch, worktree_exists, BaseBranchError, ResolvedBase, WorktreeInfo,
 };
 
 pub use merge::{
     blocked_merge_inputs, build_merge_report, check_merge_state, check_resolved_worktree,
     control_path_violation, get_conflicting_files, has_merge_commit_since, merge_stage,
     verify_merge_succeeded, MergeBlock, MergeGate, MergeResult, MergeState, MergeStatusReport,
-    StashReapply,
 };
 
 pub use repository::{ensure_repo_ready_for_worktrees, RepoBootstrapResult};

@@ -7,12 +7,12 @@ use std::path::{Path, PathBuf};
 
 use crate::git::branch::{branch_name_for_stage, default_branch};
 use crate::git::cleanup::{
-    cleanup_destructive_stage, cleanup_orphaned_worktrees, cleanup_verified_stage,
-    stage_resources_exist, CleanupResult,
+    cleanup_destructive_stage, cleanup_verified_stage, stage_resources_exist, CleanupResult,
 };
 use crate::git::merge::lock::MergeLock;
 use crate::git::worktree::find_worktree_by_prefix;
 use crate::models::stage::{Stage, StageStatus};
+use crate::orchestrator::merge_lifecycle::orphans::cleanup_orphaned_worktrees;
 use crate::relay::emit::{mode, EnvSnapshot, RelayMode};
 use crate::verify::transitions::{load_stage, update_stage};
 use std::time::Duration;

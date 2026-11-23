@@ -8,7 +8,6 @@ use std::time::{Duration, Instant};
 
 use crate::git::branch::resolve_target_branch;
 use crate::git::cleanup::branch_exists_strict;
-use crate::git::runner::run_git_bool;
 use crate::git::{blocked_merge_inputs, branch_name_for_stage, get_branch_head, MergeBlock};
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::core::persistence::Persistence;
@@ -25,34 +24,6 @@ fn overlap_paths(stage: &Stage) -> Vec<String> {
         Some(MergeBlock::UncommittedOverlap { paths }) => paths.clone(),
         _ => Vec::new(),
     }
-}
-
-/// The backup refs of stashes the stage holds, the block's own first: each
-/// keeps changes of the operator that the checkout lacks, or a spare copy of
-/// them after a refused reset, which a retry would stash again.
-fn unrestored_backup_refs(stage: &Stage) -> Vec<&str> {
-    let held = match &stage.merge.block {
-        Some(
-            MergeBlock::StashNotRestored { backup_ref }
-            | MergeBlock::StashResetRefused { backup_ref },
-        ) => Some(backup_ref),
-        _ => None,
-    };
-    held.into_iter()
-        .chain(&stage.merge.unrestored)
-        .map(String::as_str)
-        .collect()
-}
-
-/// Whether the operator's work still sits in a backup stash of `stage`: one
-/// of its unrestored backup refs exists. A retry would stash the checkout
-/// again, possibly half updated, under a new ref; the operator deleting the
-/// ref after restoring resumes the retries.
-fn holds_backup_stash(repo_root: &Path, stage: &Stage) -> bool {
-    unrestored_backup_refs(stage).into_iter().any(|backup_ref| {
-        backup_ref.starts_with("refs/loom/autostash/")
-            && run_git_bool(&["rev-parse", "--verify", "--quiet", backup_ref], repo_root)
-    })
 }
 
 /// A memo entry older than this is ignored: a safety net for inputs the
@@ -90,18 +61,26 @@ impl Orchestrator {
     /// the last blocked attempt saw, for at most ten minutes: an attempt
     /// writes git objects even when the target cannot advance. An attempt
     /// that watches a directory is never skipped, and a `FastForwardRefused`
-    /// one is retried at most once a minute. A stage whose operator work
-    /// still sits in a backup stash is not retried at all, and no stage is
-    /// while the tick's target guard check left the target held: the retry
-    /// resumes on the first tick after the operator accepts or restores it.
+    /// one is retried at most once a minute. A stage whose block names a
+    /// quarantine directory that still exists is not retried at all: a retry
+    /// would land over the paths whose bytes the quarantine holds, and the
+    /// block is the operator's only pointer to it. Deleting the directory
+    /// resumes retries. No stage is retried while the tick's target guard
+    /// check left the target held: the retry resumes on the first tick after
+    /// the operator accepts or restores it.
     pub(super) fn retry_blocked_merge_at(&mut self, stage: &Stage, now: Instant) {
         if self.target_held() {
             tracing::debug!(stage_id = %stage.id, "Target is held; merge retry paused");
             return;
         }
         let stage_id = stage.id.as_str();
-        if holds_backup_stash(&self.config.repo_root, stage) {
-            tracing::debug!(stage_id = %stage_id, "Operator changes are in a backup stash; retry paused");
+        if stage
+            .merge
+            .block
+            .as_ref()
+            .is_some_and(MergeBlock::holds_displaced_files)
+        {
+            tracing::debug!(stage_id = %stage_id, "Operator files are in a merge quarantine; retry paused");
             return;
         }
         if self.refused_retry_pending(stage_id, now) {

@@ -3,6 +3,7 @@
 //! moved `HEAD` by publication.
 
 use super::*;
+use std::os::unix::fs::symlink;
 
 #[test]
 fn staging_and_committing_reach_the_real_worktree_state() {
@@ -164,6 +165,54 @@ fn a_moved_head_is_published_and_a_racing_one_is_reported() {
     );
     let kept = std::fs::read_to_string(fixture.admin.join(HEAD)).unwrap();
     assert_eq!(kept, "ref: refs/heads/loom/s1\n");
+}
+
+#[test]
+fn a_failed_publish_names_what_was_already_published() {
+    let fixture = Fixture::new();
+    ok(&fixture.worktree, &["checkout", "-q", "--detach"]);
+    let scratch = fixture.scratch();
+    std::fs::write(fixture.worktree.join("staged.txt"), "staged\n").unwrap();
+    let output = fixture.with_private_dir(scratch.path(), &["add", "--", "staged.txt"]);
+    assert!(output.status.success(), "{output:?}");
+    std::fs::write(scratch.path().join(HEAD), "ref: refs/heads/main\n").unwrap();
+    std::fs::write(fixture.admin.join(HEAD), "ref: refs/heads/loom/s1\n").unwrap();
+
+    let error = scratch.publish().unwrap_err();
+
+    assert_eq!(error.to_string(), "published before the failure: index");
+    assert!(
+        format!("{error:#}").contains("changed while git"),
+        "{error:#}"
+    );
+    let staged = ok(&fixture.worktree, &["diff", "--cached", "--name-only"]);
+    assert_eq!(staged.trim(), "staged.txt");
+}
+
+#[test]
+fn a_linked_directory_removal_does_not_follow_a_swapped_admin_directory() {
+    let fixture = Fixture::with_extension(false);
+    let sequencer = fixture.admin.join("sequencer");
+    std::fs::create_dir(&sequencer).unwrap();
+    std::fs::write(sequencer.join("todo"), "original state").unwrap();
+    let scratch =
+        ScratchAdmin::prepare(&fixture.repo, &fixture.admin, &fixture.common, false).unwrap();
+    std::fs::remove_file(scratch.path().join("sequencer")).unwrap();
+
+    let target = TempDir::new().unwrap();
+    let replacement = target.path().join("sequencer");
+    std::fs::create_dir(&replacement).unwrap();
+    let keep = replacement.join("keep");
+    std::fs::write(&keep, "keep").unwrap();
+    let moved = fixture.admin.with_file_name("s1-moved");
+    std::fs::rename(&fixture.admin, &moved).unwrap();
+    symlink(target.path(), &fixture.admin).unwrap();
+
+    let result = scratch.publish();
+
+    assert!(keep.is_file());
+    result.unwrap();
+    assert!(!moved.join("sequencer").exists());
 }
 
 #[test]

@@ -22,11 +22,10 @@ mod preflight;
 mod relay;
 use landing::{
     attempt_retried_merge, complete_resolved_merge, hold_for_review, main_repo_root, record_block,
+    refuse_displaced_files,
 };
 use next_step::print_fix_limit_options;
 use preflight::{admit_retry, retry_preflight, RetryAdmission, RetryPreflight};
-
-use super::progressive_complete::note_merge_stash;
 
 /// Unified merge command entry point.
 ///
@@ -71,6 +70,7 @@ fn merge_resolved(stage_id: Option<String>) -> Result<()> {
             stage.status
         );
     }
+    refuse_displaced_files(&stage)?;
 
     refuse_live_host_job(&stage_id, work_dir)?;
 
@@ -83,8 +83,7 @@ fn merge_resolved(stage_id: Option<String>) -> Result<()> {
 
     let stage = super::complete::verify_resolved_completion(&stage, work_dir)?;
     match merge_stage(&stage_id, &target, &repo_root, work_dir, MergeGate::Enforce)? {
-        MergeResult::Success { stash, .. } => {
-            note_merge_stash(&stage_id, work_dir, stash);
+        MergeResult::Success { .. } => {
             complete_resolved_merge(&stage, work_dir, &repo_root, &target)
         }
         MergeResult::AlreadyUpToDate => {
@@ -258,6 +257,8 @@ fn find_repo_root(cwd: &Path) -> Result<std::path::PathBuf> {
     }
 }
 
+#[cfg(test)]
+mod displaced_tests;
 #[cfg(test)]
 mod live_job_tests;
 

@@ -14,16 +14,11 @@ pub enum Classification {
     /// carries the local changes through the fast-forward.
     NoOverlap,
     /// The only overlap is untracked files the merge adds with identical
-    /// bytes; remove them, then fast-forward.
+    /// bytes; move them aside, then fast-forward.
     RemoveUntracked { paths: Vec<String> },
-    /// A tracked change sits on a touched path. The caller dry-runs the
-    /// reapply to tell a clean overlap from a conflict.
-    Reapply {
-        tracked: Vec<String>,
-        remove_untracked: Vec<String>,
-    },
-    /// Refuse: an untracked file with different content on a touched path,
-    /// or an unmerged index entry (`merge --ff-only` refuses those).
+    /// Refuse: a tracked change on a touched path, an untracked file with
+    /// different content on one, or an unmerged index entry
+    /// (`merge --ff-only` refuses those). A blocked merge moves nothing.
     Blocked { paths: Vec<String> },
 }
 
@@ -83,9 +78,10 @@ fn nested_or_equal(a: &str, b: &str) -> bool {
 ///
 /// A status path overlaps a touched path when they are equal or one is a
 /// directory prefix of the other. Only an exact-path untracked overlap can be
-/// byte-compared and removed; a prefix overlap blocks. Ignored files do not
-/// appear in status, so each path the merge adds that status does not list
-/// is looked up on disk through `probe`.
+/// byte-compared and moved aside; a prefix overlap blocks, and so does a
+/// tracked change on a touched path. Ignored files do not appear in status,
+/// so each path the merge adds that status does not list is looked up on
+/// disk through `probe`.
 pub fn classify(
     status_v2_z: &str,
     diff_name_status_z: &str,
@@ -129,18 +125,15 @@ pub fn classify(
     overlap_action(tracked, remove_untracked.into_iter().collect())
 }
 
-/// The action once nothing blocks: fast-forward as is, remove equal
-/// untracked files first, or reapply tracked changes around it.
+/// The action once no untracked file blocks: fast-forward as is, move equal
+/// untracked files aside first, or refuse on a tracked overlap.
 fn overlap_action(tracked: Vec<String>, remove_untracked: Vec<String>) -> Classification {
     match (tracked.is_empty(), remove_untracked.is_empty()) {
         (true, true) => Classification::NoOverlap,
         (true, false) => Classification::RemoveUntracked {
             paths: remove_untracked,
         },
-        (false, _) => Classification::Reapply {
-            tracked,
-            remove_untracked,
-        },
+        (false, _) => Classification::Blocked { paths: tracked },
     }
 }
 

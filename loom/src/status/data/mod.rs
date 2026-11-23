@@ -195,10 +195,6 @@ pub struct StageSummary {
     /// stage is `MergeBlocked`; the daemon retries it every tick
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub merge_block: Option<String>,
-    /// Backup ref holding changes a merge stashed in the main checkout and
-    /// could not restore, while that ref still exists
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub stash_warning: Option<String>,
     /// Whether the stage is held
     pub held: bool,
     /// Current retry count

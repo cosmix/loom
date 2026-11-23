@@ -1,22 +1,26 @@
 //! Reads and writes the operator's checkout for the off-checkout merge:
 //! the status and diff inputs of [`super::checkout_state::classify`], the disk
-//! probe behind it, and removing and restoring the untracked files a merge
-//! replaces.
+//! probe behind it, and moving the untracked files a merge replaces aside.
 
 use anyhow::{bail, Context, Result};
-use std::ffi::{CString, OsStr};
-use std::fmt;
+use std::ffi::{CStr, CString, OsStr};
 use std::fs::File;
-use std::io::{self, Write};
+use std::io::{self, Read};
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 use std::os::unix::ffi::OsStrExt;
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Component, Path};
 
 use super::checkout_state::{CheckoutProbe, DiskEntry};
-use super::tree::{MergeBlock, RestoreFailure, RollbackChanges};
 use crate::fs::safe_fs::{open_safely, safe_open_dirfd};
 use crate::git::runner::{run_git, run_git_with_env};
+
+mod displace;
+mod held;
+
+#[cfg(test)]
+pub(super) use displace::inject_before_displace;
+pub(super) use displace::{displace_files, Displaced};
+pub(super) use held::held_block;
 
 /// Stdout of a git command that must succeed, untrimmed (`-z` output).
 pub(super) fn checked_stdout(
@@ -54,7 +58,13 @@ pub(super) struct DiskProbe<'a> {
 
 impl CheckoutProbe for DiskProbe<'_> {
     fn disk(&self, path: &str) -> DiskEntry {
-        match std::fs::symlink_metadata(self.repo.join(path)) {
+        let Ok(rel) = checkout_relative(path) else {
+            return DiskEntry::Other;
+        };
+        if let Some(entry) = parent_entry(self.repo, rel) {
+            return entry;
+        }
+        match std::fs::symlink_metadata(self.repo.join(rel)) {
             Ok(meta) if meta.is_file() => DiskEntry::RegularFile,
             Ok(meta) if meta.is_dir() => DiskEntry::Directory,
             Ok(_) => DiskEntry::Other,
@@ -62,7 +72,7 @@ impl CheckoutProbe for DiskProbe<'_> {
             Err(error)
                 if matches!(
                     error.kind(),
-                    std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
+                    io::ErrorKind::NotFound | io::ErrorKind::NotADirectory
                 ) =>
             {
                 DiskEntry::Absent
@@ -81,12 +91,40 @@ impl CheckoutProbe for DiskProbe<'_> {
         let Some(blob) = read_blob(self.repo, self.tree, path) else {
             return false;
         };
-        std::fs::read(self.repo.join(path)).is_ok_and(|bytes| bytes == blob)
+        let Ok(rel) = checkout_relative(path) else {
+            return false;
+        };
+        open_parent(self.repo, rel)
+            .and_then(|parent| Ok(entry_matches(&parent, &entry_name(rel)?, &blob)?))
+            .unwrap_or(false)
     }
 
     fn in_base_tree(&self, path: &str) -> bool {
         tree_entry_mode(self.repo, self.base, path).is_some()
     }
+}
+
+/// What a proper prefix of `rel` makes of the path, walking from the top:
+/// `None` when every prefix is a directory. A symlinked parent would lead
+/// outside the checkout, so it blocks; a file parent leaves the path free.
+fn parent_entry(repo: &Path, rel: &Path) -> Option<DiskEntry> {
+    let parents: Vec<&Path> = rel
+        .ancestors()
+        .skip(1)
+        .filter(|prefix| !prefix.as_os_str().is_empty())
+        .collect();
+    for prefix in parents.into_iter().rev() {
+        match std::fs::symlink_metadata(repo.join(prefix)) {
+            Ok(meta) if meta.is_dir() => continue,
+            Ok(meta) if meta.file_type().is_symlink() => return Some(DiskEntry::Other),
+            Ok(_) => return Some(DiskEntry::Absent),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                return Some(DiskEntry::Absent)
+            }
+            Err(_) => return Some(DiskEntry::Other),
+        }
+    }
+    None
 }
 
 /// `ls-tree -z` prints `<mode> <type> <oid>\t<path>`; the mode of the entry
@@ -106,116 +144,51 @@ fn read_blob(repo: &Path, rev: &str, path: &str) -> Option<Vec<u8>> {
     blob.status.success().then_some(blob.stdout)
 }
 
-/// Failure to remove a checkout file, including any rollback failures.
-#[derive(Debug)]
-pub(super) struct RemoveFailure {
-    pub path: String,
-    pub error: io::Error,
-    pub restore: RestoreReport,
-}
-
-impl fmt::Display for RemoveFailure {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "cannot remove {}: {}", self.path, self.error)?;
-        if !self.restore.failures.is_empty() {
-            write!(f, "; rollback incomplete: {:?}", self.restore.failures)?;
-        }
-        Ok(())
-    }
-}
-
-/// Every failed path is retained so callers can report incomplete recovery.
-#[derive(Debug, Default)]
-pub(super) struct RestoreReport {
-    pub failures: Vec<RestoreFailure>,
-}
-
-impl RestoreReport {
-    pub fn block(self, rev: &str, changes: RollbackChanges) -> MergeBlock {
-        MergeBlock::CheckoutRestoreIncomplete {
-            source_rev: rev.to_string(),
-            failures: self.failures,
-            changes,
-        }
-    }
-}
-
-/// Remove `paths`, whose bytes equal their blobs in `rev`. On failure,
-/// restore earlier removals and retain any recovery failures in the result.
-pub(super) fn remove_files(
-    repo: &Path,
-    rev: &str,
-    paths: &[String],
-) -> std::result::Result<(), RemoveFailure> {
-    for (index, path) in paths.iter().enumerate() {
-        if let Err(error) = std::fs::remove_file(repo.join(path)) {
-            #[cfg(test)]
-            tests::before_restore(repo);
-            return Err(RemoveFailure {
-                path: path.clone(),
-                error,
-                restore: restore_files(repo, rev, &paths[..index]),
-            });
-        }
-    }
-    Ok(())
-}
-
-/// Restore removed untracked files without replacing any occupied pathname.
-pub(super) fn restore_files(repo: &Path, rev: &str, paths: &[String]) -> RestoreReport {
-    let mut report = RestoreReport::default();
-    for path in paths {
-        if let Err(error) = restore_one(repo, rev, path) {
-            report.failures.push(RestoreFailure {
-                path: path.clone(),
-                reason: format!("{error:#}"),
-            });
-        }
-    }
-    report
-}
-
-fn restore_one(repo: &Path, rev: &str, path: &str) -> Result<()> {
-    let mode = tree_entry_mode(repo, rev, path)
-        .filter(|mode| mode == "100644" || mode == "100755")
-        .with_context(|| format!("regular blob mode unavailable at {rev}:{path}"))?;
-    let blob =
-        read_blob(repo, rev, path).with_context(|| format!("blob unavailable at {rev}:{path}"))?;
+/// `path` as a non-empty sequence of plain names: no root, `.` or `..`.
+fn checkout_relative(path: &str) -> Result<&Path> {
     let rel = Path::new(path);
-    if !rel
-        .components()
-        .all(|part| matches!(part, Component::Normal(_)))
-    {
+    let mut components = rel.components().peekable();
+    if components.peek().is_none() || !components.all(|part| matches!(part, Component::Normal(_))) {
         bail!("invalid checkout-relative path");
     }
-    let parent = open_parent(repo, rel)?;
-    let name = CString::new(rel.file_name().unwrap().as_bytes())?;
+    Ok(rel)
+}
+
+/// The last component of a path accepted by [`checkout_relative`].
+fn entry_name(rel: &Path) -> Result<CString> {
+    let name = rel.file_name().context("path has no file name")?;
+    CString::new(name.as_bytes()).context("path contains a NUL byte")
+}
+
+/// Whether `name` under `parent` is a regular file holding exactly `blob`.
+/// Never follows a link and reads at most one byte past the blob.
+fn entry_matches(parent: &OwnedFd, name: &CStr, blob: &[u8]) -> io::Result<bool> {
     // SAFETY: `parent` is an open directory and `name` is a NUL-terminated
-    // basename. O_EXCL reserves only a missing entry; O_NOFOLLOW rejects links.
+    // basename. O_NOFOLLOW rejects a link; O_NONBLOCK keeps a FIFO from
+    // blocking the open.
     let fd = unsafe {
         libc::openat(
             parent.as_raw_fd(),
             name.as_ptr(),
-            libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL | libc::O_NOFOLLOW | libc::O_CLOEXEC,
-            0o666,
+            libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC,
         )
     };
     if fd < 0 {
-        return Err(io::Error::last_os_error()).context("destination is occupied or unavailable");
+        let error = io::Error::last_os_error();
+        // O_NOFOLLOW refuses a symlink with ELOOP: not a regular file.
+        if error.raw_os_error() == Some(libc::ELOOP) {
+            return Ok(false);
+        }
+        return Err(error);
     }
     // SAFETY: successful openat returned a fresh fd owned by this function.
-    let mut file = unsafe { File::from_raw_fd(fd) };
-    if mode == "100755" {
-        file.set_permissions(std::fs::Permissions::from_mode(0o755))?;
+    let file = unsafe { File::from_raw_fd(fd) };
+    if !file.metadata()?.is_file() {
+        return Ok(false);
     }
-    #[cfg(test)]
-    if tests::fail_restored_write() {
-        bail!("simulated restored-file write failure");
-    }
-    file.write_all(&blob)
-        .context("cannot write restored blob")?;
-    file.sync_all().context("cannot sync restored blob")?;
-    Ok(())
+    let mut bytes = Vec::with_capacity(blob.len() + 1);
+    file.take(blob.len() as u64 + 1).read_to_end(&mut bytes)?;
+    Ok(bytes == blob)
 }
 
 fn open_parent(repo: &Path, rel: &Path) -> Result<OwnedFd> {
@@ -240,8 +213,3 @@ fn open_parent(repo: &Path, rel: &Path) -> Result<OwnedFd> {
 
 #[cfg(test)]
 mod tests;
-
-#[cfg(test)]
-pub(super) fn inject_before_restore(hook: impl FnOnce(&Path) + 'static) {
-    tests::inject_before_restore(Box::new(hook));
-}

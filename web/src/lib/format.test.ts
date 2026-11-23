@@ -99,10 +99,6 @@ describe("TUI formatter ports", () => {
       { text: "blocked", tone: "blocked" },
     ],
     [
-      { status: "completed", stage_type: "standard", merged: true, stash_warning: "refs/x" },
-      { text: "stash!", tone: "blocked" },
-    ],
-    [
       { status: "completed", stage_type: "knowledge", cleanup_warning: "leftover" },
       { text: "cleanup!", tone: "warning" },
     ],

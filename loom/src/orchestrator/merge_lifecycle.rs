@@ -32,6 +32,7 @@ use crate::git::cleanup::{cleanup_after_merge, needs_cleanup, CleanupConfig, Cle
 use super::session_registry::live_sessions_for_stage;
 
 mod containment;
+pub mod orphans;
 
 /// What the cleanup step did.
 ///

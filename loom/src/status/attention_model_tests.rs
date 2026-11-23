@@ -193,41 +193,6 @@ fn an_untyped_merge_block_keeps_the_resolver_guidance() {
 }
 
 #[test]
-fn stash_warning_outranks_every_other_state() {
-    let mut stage = make_stage_summary("stash-stage", StageStatus::MergeBlocked);
-    stage.stash_warning = Some("refs/loom/autostash/stash-stage-9".to_string());
-    stage.merge_block = Some("the target moved".to_string());
-    stage.cleanup_warning = Some("could not remove worktree".to_string());
-
-    let entries = attention_entries(&[stage]);
-
-    assert_eq!(entries[0].label, "STASH NOT RESTORED");
-    assert_eq!(entries[0].command.as_deref(), Some("git stash list"));
-    assert!(!entries[0].automatic);
-    let note = entries[0].note.as_deref().unwrap();
-    assert!(note.contains("the merge of stash-stage stashed your uncommitted changes"));
-    assert!(note.contains("git stash apply <ref>"), "{note}");
-    assert!(!note.contains("git stash pop"), "{note}");
-    assert!(
-        note.contains("(backups: refs/loom/autostash/stash-stage-9)"),
-        "{note}"
-    );
-    assert!(note.contains("git update-ref -d <ref>"), "{note}");
-}
-
-#[test]
-fn stash_warning_lists_every_backup_ref() {
-    let mut stage = make_stage_summary("stash-stage", StageStatus::Completed);
-    stage.stash_warning =
-        Some("refs/loom/autostash/stash-stage-1, refs/loom/autostash/stash-stage-2".to_string());
-
-    let entries = attention_entries(&[stage]);
-
-    let note = entries[0].note.as_deref().unwrap();
-    assert!(note.contains("refs/loom/autostash/stash-stage-1, refs/loom/autostash/stash-stage-2"));
-}
-
-#[test]
 fn executing_pending_blocker_requires_attention() {
     let mut stage = make_stage_summary("writer", StageStatus::Executing);
     stage.completion_blocker = Some(completion_blocker(CompletionBlockerState::Pending));

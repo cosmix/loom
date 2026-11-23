@@ -185,7 +185,8 @@ impl ScratchAdmin {
             std::fs::write(self.dir.path().join(LOGS).join(HEAD), "")
                 .context("cannot create the private HEAD reflog")?;
         }
-        let mut copied_names = vec![OsString::from(HEAD), OsString::from(INDEX)];
+        // Match git's commit order so a HEAD race leaves the new index visible to git status.
+        let mut copied_names = vec![OsString::from(INDEX), OsString::from(HEAD)];
         for (name, kind) in entries {
             if is_copied_state(&name) {
                 copied_names.push(name);

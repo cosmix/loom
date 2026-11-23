@@ -78,8 +78,6 @@ const HINT = {
   cleanup: "The worktree or branch could not be removed after the merge and is still on disk.",
   mergeBlock:
     "Why the merge is held back. The daemon retries it every tick and merges once this changes; no merge resolver is spawned for it.",
-  stashWarning:
-    "The merge stashed your uncommitted changes in the main checkout and could not put them back. Restore them with git stash pop, then delete this backup ref.",
   incoherence:
     "Why an executing stage does not describe a working agent, for example because its session is an adjudication session.",
   held: "Held by you: the daemon leaves the stage alone until you release it.",
@@ -219,8 +217,7 @@ function mergeRows(stage: StageSummary) {
     stage.base_branch !== null ||
     stage.base_merged_from.length > 0 ||
     Boolean(stage.cleanup_warning) ||
-    Boolean(stage.merge_block) ||
-    Boolean(stage.stash_warning);
+    Boolean(stage.merge_block);
   if (!applies) return [];
   return present([
     row(
@@ -236,7 +233,6 @@ function mergeRows(stage: StageSummary) {
     row("base branch", HINT.baseBranch, stage.base_branch, true),
     row("base merged from", HINT.baseMergedFrom, stage.base_merged_from.join(", "), true),
     row("merge block", HINT.mergeBlock, stage.merge_block ?? null),
-    row("stash not restored", HINT.stashWarning, stage.stash_warning ?? null),
     row("cleanup warning", HINT.cleanup, stage.cleanup_warning ?? null),
   ]);
 }

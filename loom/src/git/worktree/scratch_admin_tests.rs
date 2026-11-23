@@ -7,6 +7,8 @@ use super::*;
 use crate::git::runner::run_git_with_env;
 use crate::git::worktree::{partition_admin_dirs, WorktreeGit};
 use crate::verify::contracts::test_support::{contract_worktree, plant_foreign_git_dir};
+use std::cell::RefCell;
+use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -14,6 +16,25 @@ use std::time::Duration;
 use tempfile::TempDir;
 
 const SPARSE: &str = "[core]\n\tsparseCheckout = true\n";
+
+type CopyHook = Box<dyn FnOnce(&Path)>;
+
+thread_local! {
+    static BEFORE_COPY: RefCell<Option<CopyHook>> = const { RefCell::new(None) };
+}
+
+pub(super) fn before_copy(path: &Path) {
+    // Keep the hook armed through copies of the index and HEAD.
+    if path.ends_with("MERGE_MSG") {
+        if let Some(hook) = BEFORE_COPY.with(|slot| slot.borrow_mut().take()) {
+            hook(path);
+        }
+    }
+}
+
+fn inject_before_copy(hook: impl FnOnce(&Path) + 'static) {
+    BEFORE_COPY.with(|slot| *slot.borrow_mut() = Some(Box::new(hook)));
+}
 
 struct Fixture {
     _tmp: TempDir,
@@ -250,6 +271,50 @@ fn the_validated_settings_still_reach_git() {
         .unwrap();
 
     assert_eq!(value.trim(), "true");
+}
+
+#[test]
+fn a_file_that_grows_while_it_is_copied_refuses_the_command() {
+    let fixture = Fixture::with_extension(false);
+    std::fs::write(fixture.admin.join("MERGE_MSG"), b"0123456789").unwrap();
+    inject_before_copy(|path| {
+        std::fs::OpenOptions::new()
+            .append(true)
+            .open(path)
+            .unwrap()
+            .write_all(b"abcde")
+            .unwrap();
+    });
+
+    let error = ScratchAdmin::prepare(&fixture.repo, &fixture.admin, &fixture.common, false)
+        .err()
+        .expect("a growing MERGE_MSG must refuse the command");
+
+    assert!(error
+        .to_string()
+        .contains("changed while it was being copied"));
+}
+
+#[test]
+fn a_file_that_shrinks_while_it_is_copied_refuses_the_command() {
+    let fixture = Fixture::with_extension(false);
+    std::fs::write(fixture.admin.join("MERGE_MSG"), b"0123456789").unwrap();
+    inject_before_copy(|path| {
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(path)
+            .unwrap()
+            .set_len(3)
+            .unwrap();
+    });
+
+    let error = ScratchAdmin::prepare(&fixture.repo, &fixture.admin, &fixture.common, false)
+        .err()
+        .expect("a shrinking MERGE_MSG must refuse the command");
+
+    assert!(error
+        .to_string()
+        .contains("changed while it was being copied"));
 }
 
 #[test]

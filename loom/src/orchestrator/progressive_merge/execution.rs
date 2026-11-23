@@ -56,14 +56,9 @@ pub fn merge_completed_stage(
 
     // Convert git::merge::MergeResult to ProgressiveMergeResult
     let progressive_result = match result {
-        MergeResult::Success {
-            files_changed,
-            stash,
-            ..
-        } => ProgressiveMergeResult::Success {
-            files_changed,
-            stash,
-        },
+        MergeResult::Success { files_changed, .. } => {
+            ProgressiveMergeResult::Success { files_changed }
+        }
         MergeResult::Blocked(block) => ProgressiveMergeResult::Blocked(block),
         MergeResult::Held { reason } => ProgressiveMergeResult::Held { reason },
         MergeResult::AlreadyUpToDate => ProgressiveMergeResult::AlreadyMerged,

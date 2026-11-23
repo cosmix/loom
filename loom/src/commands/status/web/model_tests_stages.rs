@@ -35,7 +35,6 @@ macro_rules! stage {
             merge_assumed: false,
             cleanup_warning: $cleanup_warning.map(str::to_owned),
             merge_block: None,
-            stash_warning: None,
             held: $held,
             retry_count: $retry_count,
             max_retries: $max_retries,

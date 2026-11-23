@@ -28,7 +28,7 @@ use outcome::{
     block_failed_merge, block_missing_branch, hold_blocked_merge, hold_for_review, record_conflict,
     ConflictTarget,
 };
-pub(super) use report::{note_merge_stash, report_merge_block, route_held_to_review};
+pub(super) use report::{report_merge_block, route_held_to_review};
 
 /// Result of attempting to merge a completed stage
 pub enum MergeOutcome {
@@ -127,11 +127,9 @@ fn record_merge_result(
     match merged.map(MergeDisposition::from) {
         Ok(MergeDisposition::Landed {
             files: files_changed,
-            stash,
             ..
         }) => {
             println!("  ✓ Merged {files_changed} file(s) into '{merge_point}'");
-            note_merge_stash(&stage.id, work_dir, stash);
             mark_landed(stage, merge_point, repo_root)
         }
         Ok(MergeDisposition::AlreadyLanded) => {
@@ -218,15 +216,7 @@ pub fn complete_with_merge(
                 stage.id
             );
         }
-        MergeOutcome::Blocked => {
-            bail!(
-                "Merge blocked for stage '{}'.\n\
-                 The stage has been marked MergeBlocked.\n\
-                 This session should exit now. Fix the issue and run: loom stage retry {}",
-                stage.id,
-                stage.id
-            );
-        }
+        MergeOutcome::Blocked => bail!("{}", report::blocked_exit(stage)),
         MergeOutcome::NoCommits => {
             bail!(
                 "Stage '{}' has no commits beyond the merge point: the agent never committed \

@@ -8,7 +8,7 @@
 //! stage's commit is in the target.
 
 use crate::git::cleanup::CleanupConfig;
-use crate::git::merge::{merge_stage, verify_merge_succeeded, MergeBlock, MergeGate, StashReapply};
+use crate::git::merge::{merge_stage, verify_merge_succeeded, MergeBlock, MergeGate};
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::core::persistence::Persistence;
 use crate::orchestrator::core::{clear_status_line, Orchestrator};
@@ -41,40 +41,7 @@ pub(in crate::orchestrator::core) enum Landing {
     Failed(String),
 }
 
-/// Print where the operator's stashed changes are, when a merge stashed them.
-/// Changes that could not be reapplied are a warning: the merge did land.
-pub(in crate::orchestrator::core) fn report_stash(stage_id: &str, stash: Option<&StashReapply>) {
-    let Some(stash) = stash else { return };
-    clear_status_line();
-    if stash.restored {
-        tracing::info!(stage_id = %stage_id, backup_ref = %stash.backup_ref, "Main checkout changes stashed around a merge");
-        eprintln!("Stage '{stage_id}': {}", stash.notice());
-    } else {
-        tracing::warn!(stage_id = %stage_id, backup_ref = %stash.backup_ref, "Stashed changes were not reapplied after a merge");
-        eprintln!("WARNING: stage '{stage_id}': {}", stash.notice());
-    }
-}
-
 impl Orchestrator {
-    /// Report the stash outcome of a merge that landed and record it on the
-    /// stage, so `loom status` still shows unrestored changes after the
-    /// terminal output is gone.
-    pub(in crate::orchestrator::core) fn note_merge_stash(
-        &mut self,
-        stage_id: &str,
-        stash: Option<StashReapply>,
-    ) {
-        report_stash(stage_id, stash.as_ref());
-        let Some(stash) = stash else { return };
-        let saved = self.update_stage(stage_id, |current| {
-            current.record_merge_stash(stash);
-            Ok(())
-        });
-        if let Err(error) = saved {
-            tracing::warn!(stage_id = %stage_id, %error, "Failed to record the merge stash outcome");
-        }
-    }
-
     /// Merge `stage_id` into `target` with `merge_stage`, whose control-path
     /// gate reads the commits it merges, and leave the stage in the status
     /// the result calls for.
@@ -92,8 +59,7 @@ impl Orchestrator {
         match merge_stage(stage_id, target, &repo_root, &work_dir, MergeGate::Enforce)
             .map(MergeDisposition::from)
         {
-            Ok(MergeDisposition::Landed { stash, .. }) => {
-                self.note_merge_stash(stage_id, stash);
+            Ok(MergeDisposition::Landed { .. }) => {
                 self.verify_landing(&mut stage, stage_id, target)
             }
             Ok(MergeDisposition::AlreadyLanded) => {
@@ -296,6 +262,7 @@ impl Orchestrator {
             }
         }
         let shown = block.to_string();
+        let note = block.retry_note();
         let saved = self.update_stage(stage_id, |current| {
             check_expected(current, expected)?;
             crate::stage_service::merge_outcome::apply_block(current, block);
@@ -308,7 +275,7 @@ impl Orchestrator {
         let _ = self.graph.mark_status(stage_id, StageStatus::MergeBlocked);
         clear_status_line();
         eprintln!("Stage '{stage_id}' merge is blocked: {shown}");
-        eprintln!("  Loom retries the merge every tick.");
+        eprintln!("  {note}.");
         true
     }
 

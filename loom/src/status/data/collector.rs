@@ -16,7 +16,7 @@ use super::completion_view::collect_completion_view;
 use super::criteria_results::failing_criteria;
 use super::execution_models::execution_models_in;
 use super::heartbeat_facts::{heartbeat_facts, HeartbeatFacts};
-use super::merge_note::{merge_block_text, stash_warning};
+use super::merge_note::merge_block_text;
 use super::resolver::{merge_resolver_facts, speaking_for};
 use super::sanitize::{flow_is_fresh, neutralize, sanitize_stage_summary, sanitize_token_flow};
 use super::stopped::{blocked_acceptance, blocked_close_reason, terminal_history};
@@ -213,7 +213,6 @@ fn build_stage_summary(stage: &Stage, sessions: &[Session], work_dir: &WorkDir) 
         merge_assumed: stage.merge_assumed,
         cleanup_warning: stage.cleanup_warning.clone(),
         merge_block: merge_block_text(stage),
-        stash_warning: stash_warning(stage, work_dir),
         held: stage.held,
         retry_count: stage.retry_count,
         max_retries: stage.max_retries,

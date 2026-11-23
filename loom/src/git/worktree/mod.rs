@@ -42,12 +42,13 @@ pub use discovery::{
 pub(crate) use main_identity::{
     capture_main_identity, main_identity_exists, require_main_identity, require_main_identity_at,
 };
-pub use operations::{
-    clean_worktrees, create_worktree, get_or_create_worktree, list_worktrees, remove_worktree,
-};
+pub use operations::{create_worktree, get_or_create_worktree, list_worktrees, remove_worktree};
 pub use parser::WorktreeInfo;
 pub use paths::{find_repo_root_from_cwd, find_worktree_root_from_cwd};
 pub use pinned::WorktreeGit;
 pub use settings::{
     add_settings_local_to_worktree_gitignore, ensure_work_symlink, is_worktree_scaffold_path,
 };
+
+#[cfg(test)]
+mod operations_contract_tests;
