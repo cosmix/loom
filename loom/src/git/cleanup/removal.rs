@@ -147,7 +147,7 @@ fn require_clean_worktree(resources: &StageResources, repo_root: &Path) -> Resul
 }
 
 /// Untracked entries that never block removal: loom's own scaffold and the
-/// empty stubs a sandbox leaves at the worktree root. Ignored paths are not
+/// empty stubs a sandbox leaves at its protected names. Ignored paths are not
 /// listed at all (`git worktree remove` deletes them). Every other entry,
 /// tracked modifications included, still blocks.
 fn is_disposable_untracked(worktree: &Path, entry: &StatusEntry) -> bool {

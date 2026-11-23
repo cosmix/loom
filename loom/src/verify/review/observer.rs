@@ -4,7 +4,7 @@
 //! one computed at completion, and the test-integrity gate compares counts
 //! derived from it with those a dispute accepted. Two processes computing the
 //! two sides see different worktrees: a sandbox mounts `/dev/null` over some
-//! root dotfiles (`verify::tool_artifacts`), masks git's global config and
+//! protected dotfiles (`verify::tool_artifacts`), masks git's global config and
 //! with it `core.excludesFile`, and runs with another environment and `HOME`.
 //! So one process computes every such value: the loom daemon of the project
 //! that owns the worktree. Its own code computes directly

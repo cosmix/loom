@@ -36,7 +36,7 @@ pub fn has_uncommitted_changes(repo_root: &Path) -> Result<bool> {
 /// module an agent added is untracked, and that is exactly the case callers
 /// asking "has work happened here?" care about. Files ignored by `.gitignore` /
 /// `.git/info/exclude` are excluded by git itself, and untracked sandbox
-/// artifacts at the root by [`is_tool_artifact`].
+/// artifacts by [`is_tool_artifact`].
 ///
 /// Paths are as git names them, relative to the repository root and never
 /// C-quoted; untracked directories are reported collapsed (`some/dir/`). For

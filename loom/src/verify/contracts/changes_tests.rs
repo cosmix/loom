@@ -50,7 +50,7 @@ fn harness_files_stay_inside_the_working_directory() {
     assert_eq!(files, vec!["src/inside.rs"]);
 }
 
-/// The sandbox's placeholders at worktree-root dotfiles are not changes
+/// The sandbox's placeholders at protected dotfiles are not changes
 /// the contract phase made; the same name tracked and modified, content
 /// at a listed name, and a FIFO a session made are.
 #[test]
@@ -66,6 +66,29 @@ fn untracked_sandbox_artifacts_are_not_changes() {
     let listed = status_paths(root, status).unwrap();
 
     assert_eq!(listed, vec![".mcp.json", "pipe", ".gitconfig"]);
+}
+
+/// A sandbox run from a subdirectory masks its protected names there: the
+/// empty placeholder is no change, the same name holding content is.
+#[test]
+fn untracked_sandbox_artifacts_below_the_root_are_not_changes() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let worktree = contract_worktree(&tmp.path().join("repo"), "s1");
+    std::fs::create_dir_all(worktree.join("src")).unwrap();
+    std::fs::write(worktree.join("src/.mcp.json"), b"").unwrap();
+    let repo = pinned(&worktree);
+    let base = String::from_utf8(read_only(&repo, &["rev-parse", "HEAD"]).unwrap()).unwrap();
+    let base = base.trim();
+
+    assert!(!changed_paths(&repo, &worktree, base)
+        .unwrap()
+        .contains(&"src/.mcp.json".to_string()));
+
+    std::fs::write(worktree.join("src/.mcp.json"), b"{}").unwrap();
+
+    assert!(changed_paths(&repo, &worktree, base)
+        .unwrap()
+        .contains(&"src/.mcp.json".to_string()));
 }
 
 /// Git lists no FIFO, so the walk finds it; one inside an ignored
