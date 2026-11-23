@@ -359,7 +359,7 @@ tests parent, `rg` the name in sibling files that glob-import `super::*`.
 
 ## The Impact Gate Hid a Monorepo Package's Siblings
 
-**What happened:** in a monorepo stage (collaterai shared-contracts) every acceptance criterion passed from the worktree root, but `loom stage complete` failed on impact-selected tests. The impact runner starts each test group in its package directory, and the confinement bound only the command's working directory, so sibling packages (a uv editable path dependency), shared fixtures and the root Bun store were invisible. The stage had no dispute for the impact gate and blocked.
+**What happened:** in a monorepo stage (a downstream project) every acceptance criterion passed from the worktree root, but `loom stage complete` failed on impact-selected tests. The impact runner starts each test group in its package directory, and the confinement bound only the command's working directory, so sibling packages (a uv editable path dependency), shared fixtures and the root Bun store were invisible. The stage had no dispute for the impact gate and blocked.
 
 **Why:** the confinement treated the working directory as the writable tree. That held while every caller ran from the worktree root; the impact gate was the first to start below it.
 

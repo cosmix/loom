@@ -293,7 +293,7 @@ failure parks the stage for the operator
 - **`loom stage complete <id> --no-verify --force-unsafe`:** completed the stage without a commit. The daemon's `missing_completion_proof` (`orchestrator/core/merge_handler/auto_merge_dispatch.rs`) sent it straight back: "completion proof is missing".
 - **`loom stage human-review <id> --force-complete`:** reached `git/merge/mod.rs::verify_completed_tip`, which refused with "stage has no verified commit", and the stage went MergeBlocked. The daemon's `clean_merge_lacks_original_work` then parked it with a misleading "the stage's recorded commit is not in loom/<id>".
 - **What landed it:** a manual `git merge loom/<id>`, then `--force-unsafe --assume-merged`, then `loom target accept`.
-- **Repeats:** the same sequence was needed for collaterai `shared-contracts` (2026-10-18) and for `integration-verify` of the same plan.
+- **Repeats:** the same sequence was needed for another stage of a downstream project (2026-10-18) and for `integration-verify` of the same plan.
 
 **Why:** the landing guard was hardened ([every landing entry point must reject missing proof](verification-v2-delivery.md#every-landing-entry-point-must-reject-missing-proof)), but the operator overrides meant to skip verification never produced the proof it now demands. `--force-unsafe`'s route returns before `--no-verify`'s snapshot capture, and `--force-complete` recorded nothing.
 

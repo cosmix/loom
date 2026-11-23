@@ -142,3 +142,13 @@ include `INDEX.md` in it.
 **Prevention:** never remove a knowledge entry someone else wrote, resolved or not. Leave it in place, or ask the operator; `delete-section` is only for an entry the operator asks to remove.
 
 **Fix:** `git checkout -- doc/loom/knowledge/concerns/sandbox-and-confinement-gaps.md` restored the section.
+
+## Downstream Project Names Stayed in Knowledge Entries
+
+**What happened:** Mistake entries recorded the downstream projects, stages and plans where an incident happened (`In <project> on <date>`, `<project> <stage>`, sibling paths such as `../<project>`). They were moved between topics during an index-size merge and reported as a style issue instead of being fixed.
+
+**Why:** The incident was copied from the stage log into the entry as written. Knowledge ships with loom and is read by projects that must not learn which projects use it. Noticing the leak while moving the text and leaving it was a second slip.
+
+**Prevention:** Describe the project as "a downstream project" and a stage by its role. Keep only what the next agent needs: the command, the condition and the fix. Before committing a knowledge change run `rg -n -i "<project-name>" doc/loom/knowledge` for each project involved. Fix a leak where it is found, in the same change.
+
+**Fix:** The seven entries naming downstream projects, plans and stages were rewritten without them.

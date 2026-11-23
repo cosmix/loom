@@ -229,7 +229,7 @@ prompt spells the schema out.
 
 ## Needs-More-Evidence Feedback Asked for a Frozen-File Edit (2026-11-17)
 
-**What happened:** in collaterai stage `kit-consumers`, the adjudicator's needs-more-evidence feedback on a third contract dispute asked the agent to edit the frozen test and dispute against the diff. The signal says never to edit a frozen file, and the permission classifier denied the edit, so the agent could not produce the evidence the judge asked for.
+**What happened:** in a stage of a downstream project, the adjudicator's needs-more-evidence feedback on a third contract dispute asked the agent to edit the frozen test and dispute against the diff. The signal says never to edit a frozen file, and the permission classifier denied the edit, so the agent could not produce the evidence the judge asked for.
 
 **Why:** loom contradicted itself. The signal forbade the edit; the contract prompt built its evidence as a frozen-vs-worktree diff; accept re-froze at worktree content; the generic feedback said "gather the requested evidence, commit it"; and [A Contract Dispute Proposed an Edit It Had Not Applied](#a-contract-dispute-proposed-an-edit-it-had-not-applied-2026-10-28) prescribed editing the frozen file.
 

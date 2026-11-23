@@ -142,7 +142,7 @@
 | [host-verify-group-containment](mistakes/host-verify-group-containment.md) |  | 47 |
 | [knowledge-base-drift](mistakes/knowledge-base-drift.md) |  | 286 |
 | [knowledge-cli-invariants](mistakes/knowledge-cli-invariants.md) | Rules | 241 |
-| [knowledge-write-channel](mistakes/knowledge-write-channel.md) | Writes | 144 |
+| [knowledge-write-channel](mistakes/knowledge-write-channel.md) | Writes | 154 |
 | [ledger-tui-rendering](mistakes/ledger-tui-rendering.md) |  | 84 |
 | [live-state-pollution](mistakes/live-state-pollution.md) |  | 143 |
 | [maintainability-baseline](mistakes/maintainability-baseline.md) |  | 134 |
@@ -154,7 +154,7 @@
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Pins | 332 |
 | [plan-authoring](mistakes/plan-authoring.md) |  | 347 |
 | [plan-server-delivery](mistakes/plan-server-delivery.md) | Slips | 376 |
-| [planner-design-brainstorm](mistakes/planner-design-brainstorm.md) | Stubs | 134 |
+| [planner-design-brainstorm](mistakes/planner-design-brainstorm.md) | Stubs | 141 |
 | [planner-follow-ups-delivery](mistakes/planner-follow-ups-delivery.md) | Slips | 196 |
 | [planner-polish](mistakes/planner-polish.md) | Polish | 155 |
 | [planner-redesign](mistakes/planner-redesign.md) |  | 101 |

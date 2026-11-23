@@ -328,7 +328,7 @@ unprivileged user namespace `bwrap` creates. With both steps the confined tests 
 
 ## Provisioned Bun Installs Fail Before the Stage Can Start
 
-**What happened:** in `../collaterai`, `workspace-scaffold` failed during the guarded frozen Bun install. Several `registry.npmjs.org` downloads returned `ConnectionRefused` even though the saved plan allowed that registry. The plan author had no provisioning-network choice.
+**What happened:** in a downstream project, a workspace-scaffold stage failed during the guarded frozen Bun install. Several `registry.npmjs.org` downloads returned `ConnectionRefused` even though the saved plan allowed that registry. The plan author had no provisioning-network choice.
 
 **Why:** `orchestrator/provision.rs::run_entry` used the verification command policy. Fresh host verification denies network access, so package provisioning could not fetch missing dependencies; stage domain permissions govern a different sandbox.
 
@@ -348,7 +348,7 @@ unprivileged user namespace `bwrap` creates. With both steps the confined tests 
 
 ## Provision DNS Requires Resolver Symlink Targets
 
-**What happened:** collaterai workspace-scaffold provisioning could not fetch npm tarballs although the registry was allowed and host curl succeeded.
+**What happened:** Workspace-scaffold provisioning in a downstream project could not fetch npm tarballs although the registry was allowed and host curl succeeded.
 
 **Why:** Linux provisioning shares networking but binds /etc without /run. On this system /etc/resolv.conf points to /run/systemd/resolve/stub-resolv.conf, leaving the resolver unreadable inside bubblewrap. The installed binary also predates the source change that grants provisioning host networking.
 
