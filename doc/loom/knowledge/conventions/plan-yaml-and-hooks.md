@@ -184,3 +184,11 @@ are unaffected.
 ## Acceptance Lines Run Under sh -c
 
 A plan acceptance string runs as `sh -c <line>` (`loom/src/verify/criteria/confine.rs::SHELL`). On Linux `/bin/sh` is dash, so a bash script (`#!/usr/bin/env bash`, `[[`, `pipefail`, every `loom-hooks/tests/*.sh`) run as `sh <script>` exits 127 or takes a false branch. Invoke such a script with `bash`, and for hook changes run the suite the way CI does: `bash loom-hooks/tests/run-all.sh` (it scrubs the session's `LOOM_*` variables), `LOOM_HOOK_TEST_BSD=1 bash loom-hooks/tests/run-all.sh`, and `bash scripts/check-hook-syntax.sh`. A plan-level `!` negation works under dash.
+
+## A Stage That Owns Files Outside One Package Is Rooted at the Repository Top
+
+A worker-table path that climbs out of `working_dir` (`../loom-hooks/x.sh`) always draws the `loom plan verify` warning "outside the stage's declared files patterns" (`loom/src/plan/schema/structural_checks/worker_table.rs`, `claim_path`), and `--strict` fails on it. A stage whose workers own files in more than one package sets `working_dir: "."`, writes every path in `files:`, `contracts:` and the worker table repo-relative, and runs cargo criteria with `--manifest-path loom/Cargo.toml`.
+
+## One Owner for the Maintainability Ledger Among Parallel Stages
+
+`loom/maintainability-baseline.txt` is exact in both directions (`loom/tests/maintainability/baseline.rs`, `validate`): a row whose file or function shrank, or stopped violating, fails the gate until it is lowered or removed. Two stages with no dependency between them cannot both list the ledger in `files:`; `loom plan verify` warns on the overlap. In a plan with parallel Rust stages no implementation stage edits the ledger. Each runs the gate as a growth-only criterion (`! cargo test --test maintainability 2>&1 | rg -q "grew from|new violation at|scan failed|invalid maintainability baseline|could not compile"`), records shrunk rows in stage memory, and integration-verify lowers them.

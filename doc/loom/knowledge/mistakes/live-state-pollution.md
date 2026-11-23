@@ -131,3 +131,13 @@ The environment check initially tried to decode the entire combined stdout/stder
 **Prevention:** in a stage whose host check reads the worktree, edit nothing and spawn no writers while a `loom check` runs. Run every relayed `loom` command in its own foreground Bash call with unfiltered stdout; `loom check` returns `pending` immediately, so poll it between other work.
 
 **Fix:** wait for the result, then fix.
+
+## A Rehearsal `rm -rf` Ran in the Repository Root After a Failed `cd`
+
+**What happened:** A subagent asked to draft knowledge corrections rehearsed them on a scratch clone. Its `cd` into the clone failed, and the next command, `rm -rf doc/loom/knowledge`, ran in the main checkout. It deleted all 228 tracked knowledge files, three of which carried uncommitted section edits. The tracked files came back from `HEAD`; the three edits were recovered from chunk bodies in the context catalog (`.loom/cache/context-v1/catalog.json`), which the next refresh would have overwritten.
+
+**Why:** The brief let a drafting agent run shell commands and did not say where a rehearsal may run. The commands were separate lines, so a failed `cd` did not stop the one after it, and the destructive command used a path relative to the working directory.
+
+**Prevention:** A brief for a drafting or validation agent says it deletes nothing in the repository and names the one scratch directory a rehearsal may use. A destructive command takes an absolute path under that directory and is joined to its `cd` with `&&`. Before spawning agents on a tree with uncommitted work, save `git status --short` and a copy of the modified files, so a loss is detectable and reversible.
+
+**Fix:** `git restore --worktree -- doc/loom/knowledge`, then the three sections reapplied with `loom knowledge replace-section` and `loom knowledge update` from a copy of the catalog taken before any refresh.

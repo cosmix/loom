@@ -127,9 +127,7 @@ Every reader of an installed asset uses those roots: the hooks dir (`hooks::gene
 | `loom/src/fs/knowledge/splice.rs`    | `splice_section` — level-agnostic (`##` through `######`) section splicer; returns `SectionOutcome`                                                   |
 | `loom/src/fs/knowledge/index.rs`     | `scan_topics`, `generate_index`, `write_index`                                                                                                        |
 | `loom/src/fs/knowledge/templates.rs` | tier-1/tier-2 scaffolds                                                                                                                               |
-| `loom/src/commands/knowledge/mod.rs` | the four knowledge verbs — `update` (append), `replace-section` (overwrite the section body at any heading level `##` to `######`), `context`, `sync` |
+| `loom/src/commands/knowledge/mod.rs` | command implementations including `update` (append), `replace-section` (overwrite the section body at any heading level `##` to `######`), `context`, `sync` |
 | `loom/src/cli/types_memory.rs`       | clap definitions for the knowledge subcommands                                                                                                        |
 
-`loom knowledge sync`, or any `loom knowledge update`, regenerates `INDEX.md` — the index
-regenerates on every knowledge write — and on a flat directory creates it, which is what flips
-the layout to hierarchical. See [Knowledge Hierarchy](../architecture/knowledge-hierarchy.md).
+`loom knowledge update` preserves an existing flat layout. Creating a new knowledge directory scaffolds a hierarchical index. Writes in a hierarchical directory refresh the index, and `loom knowledge sync` explicitly upgrades a flat directory. See [Knowledge Hierarchy](../architecture/knowledge-hierarchy.md).

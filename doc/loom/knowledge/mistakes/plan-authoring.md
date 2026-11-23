@@ -303,3 +303,13 @@ knowledge-distill the rewrite, or the stage changes it. Raise a cap to the measu
 **Why:** it treated plans as scratch files. Loom stage worktrees are created from committed history, so a plan or brief that is not committed never reaches a stage.
 **Prevention:** plans and briefs under doc/plans/ stay committed on the local branch that loom runs from. To keep them off the remote, leave them out of the branch that gets pushed. Never ignore doc/plans/ as a whole, in .gitignore or in .git/info/exclude.
 **Fix:** the recommendation was withdrawn before anything was written.
+
+## A Security Fix in a Plan Traded Away Tunnelled Dashboard Access
+
+**What happened:** The remediation plan for the November review fixed the cross-port read of the dashboard socket by requiring `Origin` to name the listening port, and listed the broken different-port SSH tunnel as an accepted cost. The operator rejected it: tunnel and VPN access is a requirement.
+
+**Why:** The plan author picked the strictest check that closed the finding and treated a supported way of reaching the product as negotiable, without asking. A rule that closes the same finding without that cost (compare `Origin` with the request's `Host`) was already in the tree for the planner and the terminal.
+
+**Prevention:** When a fix would stop a way of reaching or using the product that works today, look first for a rule that closes the finding without it, starting with sibling code that solves the same problem. If none exists, ask before writing the brief; never record the loss as a decision to confirm afterwards.
+
+**Fix:** The brief compares a loopback `Origin` with the request's `Host`; see architecture/web-dashboard.md, Tunnelled and VPN Access Is a Requirement.

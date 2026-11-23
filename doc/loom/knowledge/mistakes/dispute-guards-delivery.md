@@ -119,3 +119,13 @@
 **Prevention:** stage paths whose ignore status differs in separate commands, and test a git step against a repository that ignores the path it writes.
 
 **Fix:** `fs/plan_lifecycle/commit.rs` always stages the old path's removal and stages the new path only when `git check-ignore` says it is not ignored.
+
+## Private-Root Tests Were Merged Without a Sandbox Guard
+
+**What happened:** 21 tests that build a native worker's private root (`native_worker::boundary::private_root_tests`, its rollout tests, one each in `runner_recover_tests`, `tokens::discover` and `commands::subagents`) failed on Linux in a host job and in a plain shell with umask 002, and failed for a second reason inside an agent session's sandbox. A plan's dry run reported four test selections failing at the base commit as "expected before the stage's work", with no test name.
+
+**Why:** two environment assumptions. The fixtures created their directories with `tempfile::tempdir()` and `create_dir_all`, which give `0o777 & !umask`: 0775 under umask 002, which `trusted_directory` refuses as writable by other users. CI and macOS run with 022. Separately, in a user namespace that binds the real root, `/` reports uid 65534 and the same check refuses it. The tests came in with the macOS native-worker work and no Linux run with umask 002 happened before the next plan. A first diagnosis made inside a session sandbox found only the second cause, because the walk refuses `/` before it reaches the temp directory; the host job mounts its own root, so the fix for that cause changed nothing there.
+
+**Prevention:** a fixture whose directories are checked for mode or owner creates them with explicit modes (`test_private_dirs::private_tempdir`, `create_dirs`) and never relies on or sets the umask. A failure reproduced in one sandbox is not evidence about another: get the failing output from the environment that reported it before fixing. A test failing at a plan's base commit already exists there; read the dry-run note's failing lines.
+
+**Fix:** explicit modes in the five fixtures; `require_directory_owners!` for the session sandbox; the scratch sweep test accepts the user's own private `/tmp`; the dry run lists the failing lines of a test command that fails at the base commit.

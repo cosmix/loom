@@ -87,7 +87,7 @@
 | [token-flow-sources](architecture/token-flow-sources.md) |  | 85 |
 | [usage-evidence](architecture/usage-evidence.md) |  | 136 |
 | [verification-v2-gates](architecture/verification-v2-gates.md) | Gates | 265 |
-| [web-dashboard](architecture/web-dashboard.md) | Web | 133 |
+| [web-dashboard](architecture/web-dashboard.md) | Web | 137 |
 | [web-terminal](architecture/web-terminal.md) |  | 181 |
 
 ### entry-points
@@ -96,7 +96,7 @@
 | --- | --- | --- |
 | [cli-and-plan-pipeline](entry-points/cli-and-plan-pipeline.md) | CLI | 197 |
 | [context-and-source-graph](entry-points/context-and-source-graph.md) |  | 80 |
-| [filesystem-and-integration-modules](entry-points/filesystem-and-integration-modules.md) |  | 135 |
+| [filesystem-and-integration-modules](entry-points/filesystem-and-integration-modules.md) |  | 133 |
 | [hooks](entry-points/hooks.md) |  | 152 |
 | [orchestrator-daemon-and-sessions](entry-points/orchestrator-daemon-and-sessions.md) |  | 262 |
 | [remote-control](entry-points/remote-control.md) | RC | 96 |
@@ -128,10 +128,10 @@
 | [dispute-and-adjudication](conventions/dispute-and-adjudication.md) |  | 155 |
 | [git-and-build-workflow](conventions/git-and-build-workflow.md) |  | 237 |
 | [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) |  | 134 |
-| [host-job-test-guards](conventions/host-job-test-guards.md) | macOS host-job denials, sandbox_probe guards, strict-CI skips | 48 |
+| [host-job-test-guards](conventions/host-job-test-guards.md) | macOS host-job denials, sandbox_probe guards, strict-CI skips | 56 |
 | [model-and-effort-config](conventions/model-and-effort-config.md) |  | 147 |
 | [plan-web](conventions/plan-web.md) |  | 215 |
-| [plan-yaml-and-hooks](conventions/plan-yaml-and-hooks.md) |  | 186 |
+| [plan-yaml-and-hooks](conventions/plan-yaml-and-hooks.md) |  | 194 |
 | [web-dashboard-typography](conventions/web-dashboard-typography.md) |  | 68 |
 
 ### mistakes
@@ -160,7 +160,7 @@
 | [daemon-singleton](mistakes/daemon-singleton.md) |  | 141 |
 | [detached-spawn-in-tests](mistakes/detached-spawn-in-tests.md) |  | 65 |
 | [dev-install](mistakes/dev-install.md) | Daemon | 68 |
-| [dispute-guards-delivery](mistakes/dispute-guards-delivery.md) | host-job hangs, parallel worker collisions, scaffold wording, hook quirks | 121 |
+| [dispute-guards-delivery](mistakes/dispute-guards-delivery.md) | host-job hangs, parallel worker collisions, scaffold wording, hook quirks | 131 |
 | [doctrine-and-acceptance](mistakes/doctrine-and-acceptance.md) |  | 392 |
 | [hooks-shell-portability](mistakes/hooks-shell-portability.md) |  | 412 |
 | [host-verify-group-containment](mistakes/host-verify-group-containment.md) |  | 47 |
@@ -168,7 +168,7 @@
 | [knowledge-cli-invariants](mistakes/knowledge-cli-invariants.md) | Rules | 241 |
 | [knowledge-write-channel](mistakes/knowledge-write-channel.md) | Writes | 144 |
 | [ledger-tui-rendering](mistakes/ledger-tui-rendering.md) |  | 84 |
-| [live-state-pollution](mistakes/live-state-pollution.md) |  | 133 |
+| [live-state-pollution](mistakes/live-state-pollution.md) |  | 143 |
 | [maintainability-baseline](mistakes/maintainability-baseline.md) |  | 103 |
 | [memory-relay-drain-gap](mistakes/memory-relay-drain-gap.md) |  | 51 |
 | [merge-cleanup-boundary](mistakes/merge-cleanup-boundary.md) |  | 237 |
@@ -178,7 +178,7 @@
 | [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Shared | 351 |
 | [phantom-merges](mistakes/phantom-merges.md) | Merges | 347 |
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Pins | 332 |
-| [plan-authoring](mistakes/plan-authoring.md) |  | 305 |
+| [plan-authoring](mistakes/plan-authoring.md) |  | 315 |
 | [plan-server-delivery](mistakes/plan-server-delivery.md) | Slips | 376 |
 | [planner-design-brainstorm](mistakes/planner-design-brainstorm.md) | Stubs | 134 |
 | [planner-follow-ups-delivery](mistakes/planner-follow-ups-delivery.md) | Slips | 196 |
@@ -193,7 +193,7 @@
 | [review-continuation-verification](mistakes/review-continuation-verification.md) | Repair | 331 |
 | [review-final-wave](mistakes/review-final-wave.md) |  | 200 |
 | [review-integration-verification](mistakes/review-integration-verification.md) |  | 303 |
-| [review-tracker](mistakes/review-tracker.md) |  | 353 |
+| [review-tracker](mistakes/review-tracker.md) |  | 363 |
 | [sandbox-and-settings](mistakes/sandbox-and-settings.md) |  | 391 |
 | [sandbox-hook-preflight](mistakes/sandbox-hook-preflight.md) | Check 5 hook preflight: why extending its program denylist fails | 13 |
 | [sandbox-protected-hooks-dir](mistakes/sandbox-protected-hooks-dir.md) |  | 37 |

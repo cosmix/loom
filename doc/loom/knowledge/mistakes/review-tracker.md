@@ -351,3 +351,13 @@
 **Prevention:** When a review finds a defect under a done finding, move that ID out of done at once. Derive each tally from all open work, including defect lists, and count individual IDs against the index.
 
 **Fix:** The tracker carries a correcting tally naming every moved ID.
+
+## Independent validation in the November repository review
+
+**What happened** — The operator requested a separate validation pass over the repository review candidates before publication.
+
+**Why** — A subsystem review can miss a guard in a caller or recovery path.
+
+**Prevention** — For this audit, have independent reviewers trace each candidate. The report author investigates disputed or conditional claims personally.
+
+**Fix** — Record each disposition against the source before drafting the report.
