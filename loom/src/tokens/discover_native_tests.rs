@@ -10,6 +10,7 @@ use crate::native_worker::{
     store::{create_invocation, EventLog},
 };
 use crate::process::sandbox_probe::require_directory_owners;
+use crate::test_private_dirs::create_dirs;
 use sha2::{Digest, Sha256};
 use std::fs;
 
@@ -141,7 +142,7 @@ fn a_macos_workers_rollout_is_found_once_its_private_root_is_reclaimed() {
     seed(&fx.work_dir, STAGE, true);
     let base = fx.workspace.canonicalize().unwrap();
     let cache = base.join("cache");
-    fs::create_dir(&cache).unwrap();
+    create_dirs(&cache).unwrap();
     let invocation = "inv-0123456789abcdef0123456789abcdef";
     let private = private_root::create(&cache, invocation, &base.join("no-codex")).unwrap();
     let day = private.codex_home.join("sessions/2026/09/04");

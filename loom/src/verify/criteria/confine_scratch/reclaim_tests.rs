@@ -186,9 +186,22 @@ fn removing_a_missing_scratch_succeeds() {
     remove(&root.path().join(format!("{PREFIX}gone"))).unwrap();
 }
 
+/// Whether `sweepable` keeps `/tmp`: a directory that is root-owned and sticky, or, as in
+/// a host job where `/tmp` is this user's own tmpfs, this user's with no group or other
+/// write bit.
+fn tmp_is_swept(tmp: &Path) -> bool {
+    let metadata = tmp.symlink_metadata().unwrap();
+    let owner = std::os::unix::fs::MetadataExt::uid(&metadata);
+    let root_sticky = owner == 0 && mode_of(tmp) & 0o1000 != 0;
+    let own_private = owner == crate::models::forward_receipt::locator::effective_uid()
+        && mode_of(tmp) & 0o022 == 0;
+    metadata.is_dir() && (root_sticky || own_private)
+}
+
 /// Only roots outside the tree, root-owned and sticky or this user's own
 /// directory no one else can write (0700 or 0755), are swept: a TMPDIR inside
-/// the worktree or one a group can write never is.
+/// the worktree or one a group can write never is. `/tmp` follows the same rule,
+/// whoever owns it.
 #[test]
 fn sweep_roots_exclude_the_tree_and_shared_directories() {
     let tree = tempfile::tempdir().unwrap();
@@ -221,10 +234,7 @@ fn sweep_roots_exclude_the_tree_and_shared_directories() {
     assert!(!roots.contains(&group.path().to_path_buf()), "{roots:?}");
     assert!(roots.contains(&private.path().to_path_buf()), "{roots:?}");
     assert!(roots.contains(&readable.path().to_path_buf()), "{roots:?}");
-    let tmp = sticky.symlink_metadata().unwrap();
-    let root_sticky =
-        std::os::unix::fs::MetadataExt::uid(&tmp) == 0 && mode_of(&sticky) & 0o1000 != 0;
-    assert_eq!(roots.contains(&sticky), root_sticky, "{roots:?}");
+    assert_eq!(roots.contains(&sticky), tmp_is_swept(&sticky), "{roots:?}");
     let own = Owner::current().unwrap();
     let (namespace, pid, start) = (own.namespace, own.pid, own.start + 1);
     let orphan = readable

@@ -11,6 +11,7 @@ use super::super::Quiescence;
 use super::{created, fixture, INVOCATION};
 use crate::native_worker::model::MacIdentity;
 use crate::process::sandbox_probe::require_directory_owners;
+use crate::test_private_dirs::create_dirs;
 
 const DAY: &str = "2026/11/21";
 const ROLLOUT: &str = "rollout-2026-11-21T10-00-00-thread-m.jsonl";
@@ -27,7 +28,7 @@ fn identity(scratch_root: PathBuf) -> MacIdentity {
 }
 
 fn write(path: &Path, text: &str) {
-    fs::create_dir_all(path.parent().expect("a parent")).expect("a directory");
+    create_dirs(path.parent().expect("a parent")).expect("a directory");
     fs::write(path, text).expect("a file");
 }
 

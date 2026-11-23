@@ -1,5 +1,6 @@
 use super::*;
 use crate::process::sandbox_probe::require_directory_owners;
+use crate::test_private_dirs::{create_dirs, private_tempdir};
 
 #[test]
 fn in_session_cancel_relays_and_refuses_stage_flag() {
@@ -137,14 +138,14 @@ fn release_after_proof_removes_the_macos_private_root() {
     let mut h = Harness::new();
     h.session = false;
     let dir = h.record();
-    let cache = tempfile::tempdir().unwrap();
+    let cache = private_tempdir();
     let root = cache
         .path()
         .canonicalize()
         .unwrap()
         .join("native")
         .join(INV);
-    fs::create_dir_all(root.join("tmp")).unwrap();
+    create_dirs(&root.join("tmp")).unwrap();
     fs::write(root.join("tmp").join("scratch"), "x").unwrap();
     write_mac_identity(&dir, root.clone());
     mark_unverified(&dir);

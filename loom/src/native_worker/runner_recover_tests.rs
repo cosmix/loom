@@ -8,6 +8,7 @@ use crate::native_worker::ids::mint_invocation_id;
 use crate::native_worker::model::NativeManifest;
 use crate::native_worker::store::{create_invocation, mark_spawn_begun, read_events};
 use crate::process::sandbox_probe::require_directory_owners;
+use crate::test_private_dirs::{create_dirs, private_tempdir};
 
 const STAGE: &str = "recover-unit";
 
@@ -119,7 +120,7 @@ fn a_lost_supervisor_without_the_spawn_marker_is_released() {
 fn mac_boundary(dir: &Path, cache: &Path, boot_id: &str, session: u32) -> PathBuf {
     let invocation = dir.file_name().unwrap().to_str().unwrap().to_string();
     let root = cache.join("native").join(&invocation);
-    fs::create_dir_all(root.join("tmp")).expect("private root");
+    create_dirs(&root.join("tmp")).expect("private root");
     fs::write(root.join("tmp").join("scratch"), b"x").expect("scratch file");
     let mac = crate::native_worker::model::MacIdentity {
         invocation,
@@ -141,7 +142,7 @@ fn mac_boundary(dir: &Path, cache: &Path, boot_id: &str, session: u32) -> PathBu
 }
 
 fn canonical_temp() -> (tempfile::TempDir, PathBuf) {
-    let tmp = tempfile::TempDir::new().expect("temp dir");
+    let tmp = private_tempdir();
     let path = tmp.path().canonicalize().expect("canonical temp");
     (tmp, path)
 }
@@ -260,7 +261,7 @@ fn a_lost_supervisor_before_identity_publication_keeps_its_scratch() {
     mark_spawn_begun(&dir).expect("marker");
     let invocation = dir.file_name().unwrap().to_owned();
     let root = base.join("cache").join("native").join(invocation);
-    fs::create_dir_all(&root).expect("private root");
+    create_dirs(&root).expect("private root");
     settle_lost_supervisor(&dir).expect("settle");
     assert!(matches!(
         &tail(&dir)[1],

@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 
 use super::private_root::{create, remove, PrivateRoot, CODEX_HOME_DIR, NATIVE_DIR};
 use crate::process::sandbox_probe::require_directory_owners;
+use crate::test_private_dirs::{create_dirs, private_tempdir};
 
 const INVOCATION: &str = "inv-0123456789abcdef0123456789abcdef";
 const FIXTURE_AUTH: &str = "{\"fixture\":true}\n";
@@ -18,11 +19,12 @@ struct Fixture {
 }
 
 fn fixture() -> Fixture {
-    let dir = tempfile::tempdir().expect("a temp dir");
+    // Every directory the walk crosses must be closed to group and others, whatever the umask.
+    let dir = private_tempdir();
     let base = dir.path().canonicalize().expect("canonical");
     let cache = base.join("cache");
     let host_home = base.join("host-codex");
-    fs::create_dir_all(&cache).expect("cache");
+    create_dirs(&cache).expect("cache");
     fs::create_dir_all(host_home.join("sessions")).expect("host home");
     fs::write(host_home.join("auth.json"), FIXTURE_AUTH).expect("auth");
     fs::write(host_home.join("AGENTS.md"), "rules\n").expect("agents");
@@ -145,7 +147,7 @@ fn remove_refuses_a_path_that_is_not_a_native_invocation_root() {
     let fixture = fixture();
     let private = created(&fixture);
     let foreign = fixture.cache.join("other").join(INVOCATION);
-    fs::create_dir_all(&foreign).expect("foreign");
+    create_dirs(&foreign).expect("foreign");
     assert!(remove(&foreign, INVOCATION).is_err());
     assert!(foreign.is_dir());
     let other = "inv-ffffffffffffffffffffffffffffffff";
@@ -175,7 +177,7 @@ fn under_ancestor(ancestor_mode: u32) -> (Fixture, PathBuf, PathBuf) {
     let fixture = fixture();
     let ancestor = fixture.cache.parent().expect("base").join("ancestor");
     let cache = ancestor.join("cache");
-    fs::create_dir_all(&cache).expect("nested cache");
+    create_dirs(&cache).expect("nested cache");
     let private = create(&cache, INVOCATION, &fixture.host_home).expect("the private root");
     fs::set_permissions(&ancestor, fs::Permissions::from_mode(ancestor_mode)).expect("chmod");
     (fixture, ancestor, private.root)

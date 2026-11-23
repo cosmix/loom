@@ -48,14 +48,16 @@ impl Fixture {
 
     /// A fixture whose stage file binds `stage` to the running `session`.
     pub fn bound(stage: &str, session_id: &str) -> Result<Self> {
-        let temp = tempfile::tempdir()?;
+        // The temp root and the workspace are ancestors of a native private root, which
+        // the walk refuses when group or others can write them (umask 002).
+        let temp = crate::test_private_dirs::private_tempdir();
         let root = fs::canonicalize(temp.path())?;
         let work_dir = root.join(".loom/work");
         let workspace = root.join("workspace");
         let state_root = root.join("home/.codex/plugin-data/state");
         let companion = root.join("plugin/codex-companion.mjs");
         fs::create_dir_all(work_dir.join("stages"))?;
-        fs::create_dir_all(&workspace)?;
+        crate::test_private_dirs::create_dirs(&workspace)?;
         fs::create_dir_all(&state_root)?;
         fs::create_dir_all(companion.parent().context("companion parent")?)?;
         fs::write(&companion, "// companion fixture\n")?;

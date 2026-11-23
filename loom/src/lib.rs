@@ -59,6 +59,9 @@ pub(crate) mod test_git;
 pub(crate) mod test_cache_env;
 
 #[cfg(test)]
+pub(crate) mod test_private_dirs;
+
+#[cfg(test)]
 pub(crate) mod test_stand_in;
 
 /// ASCII art logo for loom CLI
