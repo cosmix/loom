@@ -84,20 +84,19 @@ A relayed freeze is dropped unless `loom-hooks/_relay_kinds.sh` `relay_kind_at` 
 
 ## Sandbox Placeholders Are Not Changes, and the Daemon Refuses Planted Special Files
 
-Claude Code's Bash sandbox denies writes to eleven worktree-root names (`.bashrc`, `.gitconfig`,
-`.mcp.json`, `.vscode`, ...) and bind-mounts `/dev/null` over one that does not already exist,
-visible only inside its own mount namespace (see mistakes/parallel-worktree-shared-state.md,
-"Claude Code's Bash Sandbox..."). `git status` inside that namespace lists the mount point
-untracked; on the host the same name can be left behind as an empty regular file or directory.
-Every in-session freeze check must not treat any of these as the writer's own change.
-`changes::changed_paths`/`special_files` (`verify/contracts/changes.rs`) and
-`fingerprint::compute_local` (`verify/review/fingerprint.rs`) drop an untracked path at one of the
-eleven names when `verify::tool_artifacts::is_tool_artifact` (replaces the removed
-`git::branch::is_device_node`) finds it a device node, an empty regular file, an empty directory,
-or gone; a FIFO, a socket, or real content at that name is kept, and so is every path below the
-root or under another name. Before this filter, every freeze a Claude Code contract writer
-attempted was refused on these placeholders, so a v2 stage with contracts could never leave the
-contract phase.
+Claude Code's Bash sandbox denies writes to eleven names (`.bashrc`, `.gitconfig`, `.mcp.json`,
+`.vscode`, ...) and bind-mounts `/dev/null` over one that does not already exist, visible only
+inside its own mount namespace. The mount appears at the worktree root for every name and can
+appear in a directory below it (see mistakes/parallel-worktree-shared-state.md, "Claude Code's
+Bash Sandbox..." and "A Sandbox Placeholder Below the Worktree Root Blocked a Contract Freeze").
+`git status` inside that namespace lists the mount point untracked; on the host the same name can
+be left behind as an empty regular file or directory. Every in-session freeze check must not treat
+any of these as the writer's own change. `changes::changed_paths`/`special_files`
+(`verify/contracts/changes.rs`) and `fingerprint::compute_local` (`verify/review/fingerprint.rs`)
+drop an untracked path whose final component is one of the eleven names, at any depth, when
+`verify::tool_artifacts::is_tool_artifact` finds it the `/dev/null` device, an empty regular file,
+an empty directory, or gone; a FIFO, a socket, or real content at that name is kept, and so is
+every path under another name, an absolute path and a path with a `..` component.
 
 Git for every one of these checks runs through a `WorktreeGit` (`git/worktree/pinned.rs`). The
 writer's own freeze pre-check (`commands/stage/contracts/freeze.rs`) uses the worktree's own
@@ -110,7 +109,7 @@ elsewhere cannot choose which configuration git reads.
 The daemon's own check (`stage_service/contracts.rs::check_changes`, calling
 `changes::special_files`, walk in `verify/contracts/special_walk.rs`) walks the worktree — skip
 `.git`, skip git-ignored — and refuses the freeze outright if it finds a FIFO, socket, or device
-node anywhere, except a device-node placeholder at one of the eleven protected root names
+node anywhere, except a device-node placeholder at one of the eleven protected names, at any depth
 (`special_walk::sandbox_mount`, the same `is_tool_artifact` rule): git shows none of the rest, and
 leaving one where the implementer will write blocks its first `open()`. The writer can still act
 during the walk, so every directory is opened from

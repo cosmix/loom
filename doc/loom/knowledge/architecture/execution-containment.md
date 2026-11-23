@@ -278,7 +278,8 @@ does not depend on the answer either way.
 ## A Denied Missing Path Shows Up in the Session's `git status`
 
 Inside a Claude Code Bash sandbox, a write-denied path that does not exist is held by a read-only
-bind mount of `/dev/null`. Observed at `<cwd>/.mcp.json`: `stat` reports a character special file
+bind mount of `/dev/null`. Observed at `<cwd>/.mcp.json`, at the worktree root and in a subdirectory
+a session's commands had run from: `stat` reports a character special file
 (size 0, owner `nobody`, mtime of the device node), and `/proc/self/mountinfo` lists it as a
 `devtmpfs udev` mount. On the host the mount point is an empty regular file that exists while a
 sandboxed command runs and is removed afterwards

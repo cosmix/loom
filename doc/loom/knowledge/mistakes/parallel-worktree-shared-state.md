@@ -349,3 +349,13 @@ One question catches the class: **was this path resolved through `main_project_r
 **Prevention:** Scope diff checks to the paths edited by the current task, after inspecting their diff stat.
 
 **Fix:** Repeat any needed whitespace check with explicit paths and leave unrelated edits to their owners.
+
+## A Sandbox Placeholder Below the Worktree Root Blocked a Contract Freeze
+
+**What happened:** a contract writer's `loom stage contracts freeze` was refused twice over `loom/src/.mcp.json`, an untracked path it never wrote. Inside its sandbox the path was the `/dev/null` device (owner `nobody`, `rm` fails with `Device or resource busy`); on the host it did not exist between commands. Only `.mcp.json` appeared, none of the other ten protected names, and the entry left `git status` a few commands later without anyone removing it.
+
+**Why:** `is_tool_artifact` accepted a protected name only as an entry directly at the worktree root, on the belief that the sandbox masks the names nowhere else. The session had run Bash commands with `loom/src` as their working directory, and the sandbox then masked `.mcp.json` there too. What triggers a mask below the root is not established: a second session that moved its Bash working directory into a subdirectory saw no mask in it.
+
+**Prevention:** recognise a sandbox placeholder by its final path component and the state of the entry, at any depth, never by where it sits. When a freeze or a completion names an untracked path the session never wrote, run `stat -c %F <path>` on it before disputing: a character device is the sandbox's mount.
+
+**Fix:** `artifact_among` (`loom/src/verify/tool_artifacts.rs`) matches the final component at any depth and keeps absolute paths and paths with a `..` component as changes; `special_walk::sandbox_mount` (`loom/src/verify/contracts/special_walk.rs`) lost its root-only check. Regression test: `untracked_sandbox_artifacts_below_the_root_are_not_changes` (`verify/contracts/changes_tests.rs`).
