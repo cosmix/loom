@@ -10,7 +10,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Mutex, OnceLock, PoisonError};
 
 mod launcher;
 mod needs;
@@ -40,7 +40,7 @@ fn cached_path_probe(
     probe: impl FnOnce(&Path) -> bool,
 ) -> bool {
     let cache = cache.get_or_init(|| Mutex::new(HashMap::new()));
-    let mut answers = cache.lock().expect("sandbox probe cache poisoned");
+    let mut answers = cache.lock().unwrap_or_else(PoisonError::into_inner);
     if let Some(&answer) = answers.get(dir) {
         return answer;
     }
@@ -73,10 +73,7 @@ fn own_parent_pid_visible() -> bool {
         .unwrap_or(false)
 }
 
-/// Returns true if this process can see its own parent pid through the OS
-/// process-tree interface. Memoized: the answer is a fact about the sandbox,
-/// not about any one test, and several of the 22 tests this module exists
-/// for call it independently within the same test binary.
+/// Whether this process can see its own parent pid through the OS process tree. Memoized.
 pub fn process_tree_visible() -> bool {
     static RESULT: OnceLock<bool> = OnceLock::new();
     *RESULT.get_or_init(own_parent_pid_visible)
@@ -349,6 +346,9 @@ pub fn skip_unless(probe_ok: bool, test_name: &str, why: &str) -> bool {
     true
 }
 
+#[cfg(test)]
+#[path = "sandbox_probe_cache_tests.rs"]
+mod cache_tests;
 #[cfg(test)]
 #[path = "host_job_lane_tests.rs"]
 mod host_job_lane;

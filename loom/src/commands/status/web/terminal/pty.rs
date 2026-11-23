@@ -47,7 +47,12 @@ impl PtyChild {
         unsafe {
             command.pre_exec(|| {
                 nix::unistd::setsid().map_err(io::Error::from)?;
-                libc::ioctl(0, libc::TIOCSCTTY as _, 0);
+                // A child without a controlling terminal cannot take the
+                // terminal's job-control signals (the hangup `shutdown`
+                // relies on), so a failure ends the spawn.
+                if libc::ioctl(0, libc::TIOCSCTTY as _, 0) == -1 {
+                    return Err(io::Error::last_os_error());
+                }
                 Ok(())
             });
         }
@@ -170,15 +175,21 @@ fn open_slave(master: &PtyMaster, flags: OFlag) -> io::Result<OwnedFd> {
     open(slave_path.as_str(), flags, Mode::empty()).map_err(io::Error::from)
 }
 
-/// `openpty(3)` and a `FD_CLOEXEC` set on the master after it returns. The
-/// master is open without the flag for the instant between the two (see the
-/// Linux variant); `ptsname_r`, which the Linux variant needs, is a Linux
-/// extension, and the portable `ptsname` is not thread-safe.
+/// `openpty(3)` and a `FD_CLOEXEC` set on both ends after it returns. Each end
+/// is open without the flag for the instant between the two (see the Linux
+/// variant), so a fork on another thread in that window still inherits it;
+/// there is no atomic variant of `openpty`. `ptsname_r`, which the Linux
+/// variant needs, is a Linux extension, and the portable `ptsname` is not
+/// thread-safe. The slave matters as much as the master: it is the original
+/// descriptor `spawn` keeps open until the child has its own stdio copies, so
+/// a child forked meanwhile would otherwise carry it across its exec.
 #[cfg(not(target_os = "linux"))]
 pub(super) fn open_pty(size: WindowSize) -> io::Result<(OwnedFd, OwnedFd)> {
     let winsize = winsize(size);
     let pair = openpty(Some(&winsize), None).map_err(io::Error::from)?;
-    fcntl(&pair.master, FcntlArg::F_SETFD(FdFlag::FD_CLOEXEC)).map_err(io::Error::from)?;
+    for end in [&pair.master, &pair.slave] {
+        fcntl(end, FcntlArg::F_SETFD(FdFlag::FD_CLOEXEC)).map_err(io::Error::from)?;
+    }
     Ok((pair.master, pair.slave))
 }
 

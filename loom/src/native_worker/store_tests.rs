@@ -1,4 +1,4 @@
-use super::super::model::{Delivery, NATIVE_DEADLINE_SECS};
+use super::super::model::{Delivery, Outcome, NATIVE_DEADLINE_SECS, SETTLEMENT_TEXT_BYTES};
 use super::*;
 use std::os::unix::fs::{symlink, PermissionsExt};
 use tempfile::TempDir;
@@ -23,7 +23,7 @@ fn manifest(unit: &str, inv: &str, brief: &[u8]) -> NativeManifest {
     }
 }
 
-fn invocation() -> (TempDir, PathBuf) {
+pub(super) fn invocation() -> (TempDir, PathBuf) {
     let work = TempDir::new().unwrap();
     let dir = create_invocation(work.path(), &manifest("unit", INV, BRIEF), BRIEF).unwrap();
     (work, dir)
@@ -310,6 +310,52 @@ fn event_log_size_limit_does_not_poison_or_consume_sequence() {
     ));
     log.bytes = bytes;
     assert_eq!(log.append(NativeEvent::Progress).unwrap().seq, 2);
+}
+
+#[test]
+fn settlement_records_use_the_reserve() {
+    let (_work, dir) = invocation();
+    let mut log = EventLog::open(&dir).unwrap();
+    log.bytes = MAX_RECORD_BYTES - SETTLEMENT_RESERVE_BYTES;
+    assert!(matches!(
+        log.append(NativeEvent::Progress),
+        Err(StoreError::TooLarge(_))
+    ));
+    let terminal = NativeEvent::Terminal {
+        outcome: Outcome::Unknown,
+        reason: "x".repeat(10_000),
+    };
+    log.append(terminal).unwrap();
+    log.append(NativeEvent::OwnershipReleased {
+        by: "daemon".into(),
+    })
+    .unwrap();
+    let events = read_events(&dir).unwrap();
+    let Some(NativeEvent::Terminal { reason, .. }) = events.get(1).map(|r| &r.event) else {
+        panic!("terminal event missing: {events:?}");
+    };
+    assert_eq!(reason.len(), SETTLEMENT_TEXT_BYTES);
+}
+
+#[test]
+fn three_worst_case_settlement_records_fit_the_reserve() {
+    let (_work, dir) = invocation();
+    let mut log = EventLog::open(&dir).unwrap();
+    log.bytes = MAX_RECORD_BYTES - SETTLEMENT_RESERVE_BYTES;
+    let controls = "\u{1}".repeat(SETTLEMENT_TEXT_BYTES);
+    log.append(NativeEvent::Terminal {
+        outcome: Outcome::Failed,
+        reason: controls.clone(),
+    })
+    .unwrap();
+    log.append(NativeEvent::OwnershipUnverified {
+        detail: controls.clone(),
+    })
+    .unwrap();
+    log.append(NativeEvent::OwnershipReleased { by: controls })
+        .unwrap();
+    assert!(log.bytes <= MAX_RECORD_BYTES, "{}", log.bytes);
+    assert_eq!(read_events(&dir).unwrap().len(), 4);
 }
 
 #[test]

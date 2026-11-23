@@ -50,14 +50,12 @@ impl DashboardRouter {
         peeked: &RequestHead,
         conn: &ConnInfo<'_>,
     ) {
-        // Remote mode requires Origin on this lane; loopback keeps its existing
-        // lenient rule, matching a same-origin page that never sends one.
-        let requirement = if conn.policy.is_remote() {
-            OriginRequirement::Required
-        } else {
-            OriginRequirement::Optional
-        };
-        if !conn.policy.origin_allowed(conn.local, peeked, requirement) {
+        // A browser sends `Origin` on every WebSocket upgrade, through a
+        // forwarded port too, so an absent one is not a page under this origin.
+        if !conn
+            .policy
+            .origin_allowed(conn.local, peeked, OriginRequirement::Required)
+        {
             fail(&mut stream, 403, "Forbidden", b"origin not allowed");
             return;
         }

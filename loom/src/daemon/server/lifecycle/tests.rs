@@ -4,13 +4,18 @@
 //! passes and would prove nothing about the boundary itself. Then the ready
 //! byte `run_server` writes once the bind succeeds.
 
-use super::{socket_path_fits, DaemonServer, READY_BYTE, SUN_PATH_MAX};
+use super::{
+    fds::redirect_fd, socket_path_fits, threads::join_all, DaemonServer, READY_BYTE, SUN_PATH_MAX,
+};
 use crate::daemon::DaemonConfig;
 use crate::process::sandbox_probe::{skip_unless, unix_socket_bindable};
-use std::io::Read;
-use std::os::fd::OwnedFd;
+use std::io::{Read, Seek};
+use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
+use std::sync::mpsc;
+use std::thread;
+use std::time::{Duration, Instant};
 use tempfile::TempDir;
 
 fn path_of_len(len: usize) -> PathBuf {
@@ -111,4 +116,63 @@ fn a_failed_bind_writes_no_ready_byte() {
         written.is_empty(),
         "no ready byte without a bound socket: {written:?}"
     );
+}
+
+#[test]
+fn join_all_shares_one_deadline_across_threads() {
+    let mut senders = Vec::new();
+    let mut handles = Vec::new();
+    for _ in 0..5 {
+        let (sender, receiver) = mpsc::channel::<()>();
+        senders.push(sender);
+        let handle = thread::spawn(move || {
+            let _ = receiver.recv();
+        });
+        handles.push((Some(handle), "blocked"));
+    }
+
+    let started = Instant::now();
+    join_all(handles, started + Duration::from_millis(400));
+    let elapsed = started.elapsed();
+    drop(senders);
+
+    assert!(elapsed < Duration::from_secs(1), "waited {elapsed:?}");
+}
+
+#[test]
+fn join_all_joins_finished_threads() {
+    let handle = thread::spawn(|| {});
+    while !handle.is_finished() {
+        thread::yield_now();
+    }
+
+    let started = Instant::now();
+    join_all(
+        vec![(Some(handle), "finished")],
+        started + Duration::from_secs(5),
+    );
+
+    assert!(started.elapsed() < Duration::from_millis(200));
+}
+
+#[test]
+fn redirect_fd_reports_a_bad_descriptor_and_redirects_a_good_one() {
+    let error = redirect_fd(-1, 1).unwrap_err();
+    assert_eq!(error.raw_os_error(), Some(libc::EBADF));
+
+    let mut file = tempfile::tempfile().unwrap();
+    // SAFETY: dup validates its input and returns a new descriptor on success.
+    let spare = unsafe { libc::dup(2) };
+    assert!(spare > 2);
+    // SAFETY: spare is a fresh descriptor returned by dup above.
+    let spare = unsafe { OwnedFd::from_raw_fd(spare) };
+    redirect_fd(file.as_raw_fd(), spare.as_raw_fd()).unwrap();
+    let message = b"redirected";
+    assert_eq!(nix::unistd::write(&spare, message).unwrap(), message.len());
+    drop(spare);
+
+    file.rewind().unwrap();
+    let mut written = Vec::new();
+    file.read_to_end(&mut written).unwrap();
+    assert_eq!(written.as_slice(), message);
 }

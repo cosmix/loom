@@ -190,7 +190,9 @@ impl Machine {
             Incoming::Notification { method, params } => self.on_notification(&method, &params),
             Incoming::ServerRequest { id, method, .. } => vec![
                 Action::Send(wire::server_reply(&id, &policy::reply_for(&method))),
-                Action::Persist(NativeEvent::ServerRequestRefused { method }),
+                Action::Persist(NativeEvent::ServerRequestRefused {
+                    method: bounded_method(method),
+                }),
             ],
         }
     }
@@ -261,4 +263,12 @@ impl Machine {
         actions.push(Action::ArmDeadline);
         actions
     }
+}
+
+/// Longest method name a refusal event keeps; the reply still names the full method.
+const MAX_REFUSED_METHOD_BYTES: usize = 256;
+
+fn bounded_method(mut method: String) -> String {
+    method.truncate(method.floor_char_boundary(MAX_REFUSED_METHOD_BYTES));
+    method
 }

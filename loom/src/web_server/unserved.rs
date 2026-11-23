@@ -43,8 +43,8 @@ fn prepare_socket(stream: &TcpStream) -> Option<SocketAddr> {
 }
 
 /// Turn a connection away with a 503 because no thread could be spawned for
-/// it. `connection::reject_unavailable` bounds the write and drains the unread
-/// request bytes first, so the status arrives rather than an RST.
+/// it. `connection::reject_unavailable` reads what has already arrived without
+/// waiting and bounds the write, so the accept loop never stalls on the client.
 pub(super) fn answer_unserved(stream: &mut TcpStream) {
     connection::reject_unavailable(stream, b"dashboard could not serve this connection");
 }

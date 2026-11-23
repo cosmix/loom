@@ -6,8 +6,8 @@ use crate::models::session::{Session, SessionBackendKind, SessionStatus};
 use crate::web_server::token;
 
 use super::protocol::{
-    CLOSE_ENDED, CLOSE_NOT_YET, CLOSE_REFUSED, CLOSE_SERVER_STOPPING, CLOSE_TOO_LARGE,
-    CLOSE_UNKNOWN_STAGE,
+    CLOSE_ATTACH_FAILED, CLOSE_BUSY, CLOSE_ENDED, CLOSE_NOT_YET, CLOSE_REFUSED,
+    CLOSE_SERVER_STOPPING, CLOSE_TOO_LARGE, CLOSE_UNKNOWN_STAGE, READY_FRAME,
 };
 use super::resolve::{attach_args, resolve, Refusal, Target};
 use super::upgrade::origin_matches_host;
@@ -153,6 +153,12 @@ fn close_codes_match_the_literal_wire_values_the_browser_depends_on() {
     assert_eq!(CLOSE_UNKNOWN_STAGE, 4004);
     assert_eq!(CLOSE_REFUSED, 4008);
     assert_eq!(CLOSE_NOT_YET, 4009);
+    // 4010 and 4011 are sent after the handshake completes; the browser keys
+    // its "could not attach" and "terminal limit" notices on them.
+    assert_eq!(CLOSE_ATTACH_FAILED, 4010);
+    assert_eq!(CLOSE_BUSY, 4011);
+    // The browser attaches its terminal on exactly this text frame.
+    assert_eq!(READY_FRAME, r#"{"ready":true}"#);
 }
 
 #[test]

@@ -14,6 +14,12 @@ pub const MAX_BRIEF_BYTES: u64 = 262_144;
 pub const MAX_FRAME_BYTES: usize = 1_048_576;
 /// Maximum record size in bytes.
 pub const MAX_RECORD_BYTES: u64 = 4_194_304;
+/// Bytes of `events.jsonl` only settlement records (terminal and ownership) may use:
+/// room for three records of `SETTLEMENT_TEXT_BYTES` of text each, with their envelopes.
+pub const SETTLEMENT_RESERVE_BYTES: u64 = 16_384;
+/// Longest `reason`, `by` or `detail` a settlement record keeps, in bytes of its
+/// JSON-escaped form.
+pub const SETTLEMENT_TEXT_BYTES: usize = 2_048;
 /// Default report size in bytes.
 pub const REPORT_DEFAULT_BYTES: usize = 8_192;
 /// Maximum number of queued messages.

@@ -157,3 +157,47 @@ fn phase_orders_by_declaration() {
     assert!(Phase::Admitted < Phase::Starting && Phase::Starting < Phase::Running);
     assert!(Phase::Running < Phase::Finalizing && Phase::Finalizing < Phase::Terminal);
 }
+
+#[test]
+fn settlement_text_is_cut_on_a_char_boundary_and_other_events_are_untouched() {
+    let long = "€".repeat(SETTLEMENT_TEXT_BYTES);
+    let NativeEvent::Terminal { reason, .. } = (NativeEvent::Terminal {
+        outcome: Outcome::Failed,
+        reason: long.clone(),
+    })
+    .clamp_settlement_text() else {
+        panic!("variant changed");
+    };
+    assert_eq!(reason, "€".repeat(SETTLEMENT_TEXT_BYTES / 3));
+    let refused = NativeEvent::ServerRequestRefused { method: long };
+    assert_eq!(refused.clone().clamp_settlement_text(), refused);
+    assert!(!refused.is_settlement());
+    assert!(NativeEvent::OwnershipReleased { by: "d".into() }.is_settlement());
+    assert!(NativeEvent::OwnershipUnverified { detail: "d".into() }.is_settlement());
+}
+
+fn terminal_reason(reason: String) -> String {
+    let NativeEvent::Terminal { reason, .. } = (NativeEvent::Terminal {
+        outcome: Outcome::Failed,
+        reason,
+    })
+    .clamp_settlement_text() else {
+        panic!("variant changed");
+    };
+    reason
+}
+
+#[test]
+fn settlement_text_is_capped_by_its_json_escaped_length() {
+    let controls = terminal_reason("\u{1}".repeat(SETTLEMENT_TEXT_BYTES));
+    assert_eq!(controls.chars().count(), SETTLEMENT_TEXT_BYTES / 6);
+    let escaped = serde_json::to_string(&controls).unwrap();
+    assert!(escaped.len() - 2 <= SETTLEMENT_TEXT_BYTES);
+    let straddling = format!("{}\u{1}", "a".repeat(SETTLEMENT_TEXT_BYTES - 1));
+    assert_eq!(
+        terminal_reason(straddling),
+        "a".repeat(SETTLEMENT_TEXT_BYTES - 1)
+    );
+    let quotes = terminal_reason("\"".repeat(SETTLEMENT_TEXT_BYTES));
+    assert_eq!(quotes.len(), SETTLEMENT_TEXT_BYTES / 2);
+}

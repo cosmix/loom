@@ -36,6 +36,8 @@ mod pure;
 mod remote;
 #[path = "tests/socket.rs"]
 mod socket;
+#[path = "tests/socket_edges.rs"]
+mod socket_edges;
 
 /// Build a fresh `.loom/work` directory for a test server.
 pub(super) fn workspace() -> (TempDir, PathBuf) {

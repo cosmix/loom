@@ -320,18 +320,22 @@ fn get_process_cwd_macos(pid: u32) -> Option<PathBuf> {
     let pid_arg = pid.to_string();
     let output = run_process_discovery_probe(
         "lsof",
-        &["-p", &pid_arg],
+        &["-a", "-d", "cwd", "-Ffn", "-p", &pid_arg],
         format!("process cwd probe for PID {pid}"),
     )?;
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    for line in stdout.lines() {
-        if line.contains("cwd") {
-            // lsof output format: COMMAND PID USER FD TYPE DEVICE SIZE/OFF NODE NAME
-            // The NAME column is the path when FD is "cwd"
-            let parts: Vec<&str> = line.split_whitespace().collect();
-            if parts.len() >= 9 {
-                return Some(PathBuf::from(parts[8]));
+    cwd_from_lsof_fields(&String::from_utf8_lossy(&output.stdout))
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn cwd_from_lsof_fields(text: &str) -> Option<PathBuf> {
+    let mut is_cwd = false;
+    for line in text.lines() {
+        if let Some(descriptor) = line.strip_prefix('f') {
+            is_cwd = descriptor == "cwd";
+        } else if is_cwd {
+            if let Some(path) = line.strip_prefix('n').filter(|path| !path.is_empty()) {
+                return Some(PathBuf::from(path));
             }
         }
     }

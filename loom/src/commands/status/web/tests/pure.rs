@@ -1,6 +1,5 @@
-//! Pure-function dashboard tests: request-head parsing, origin checks, MIME
-//! lookup, routing, and daemon-response classification. None of these open a
-//! socket.
+//! Pure-function dashboard tests: request-head parsing, MIME lookup,
+//! routing, and daemon-response classification. None of these open a socket.
 
 use std::sync::mpsc::TryRecvError;
 use std::time::Duration;
@@ -82,46 +81,6 @@ fn parse_head_rejects_duplicate_gate_headers() {
             "a duplicated gate header must not resolve to its first value"
         );
     }
-}
-
-#[test]
-fn origin_allowed_accepts_loopback_and_rejects_foreign() {
-    for origin in [
-        None,
-        Some("http://127.0.0.1:5173"),
-        Some("http://localhost:7373"),
-        Some("https://localhost"),
-        Some("http://LocalHost:7373"),
-        Some("http://[::1]:7373"),
-    ] {
-        assert!(http::origin_allowed(origin), "{origin:?}");
-    }
-    for origin in [
-        "http://evil.example",
-        "http://127.0.0.1.evil.example",
-        "http://[2001:db8::1]:7373",
-        "null",
-    ] {
-        assert!(!http::origin_allowed(Some(origin)));
-    }
-}
-
-#[test]
-fn host_allowed_accepts_loopback_and_rejects_everything_else() {
-    for host in [
-        "127.0.0.1:41599",
-        "127.0.0.1",
-        "localhost",
-        "LOCALHOST",
-        "[::1]:7373",
-    ] {
-        assert!(http::host_allowed(Some(host)), "{host}");
-    }
-    for host in ["evil.example", "127.0.0.1.evil.example", "loom.test:7373"] {
-        assert!(!http::host_allowed(Some(host)), "{host}");
-    }
-    // HTTP/1.1 mandates Host, so an absent one is a rejection.
-    assert!(!http::host_allowed(None));
 }
 
 #[test]

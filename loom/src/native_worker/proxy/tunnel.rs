@@ -55,15 +55,22 @@ pub(super) fn refuse(client: &mut UnixStream, refusal: Refusal, timeout: Duratio
     let _ = client.write_all(refusal.response());
 }
 
-/// Serves one client connection to completion: head, allowlist, upstream, tunnel.
+/// Serves one client connection to completion: head, allowlist, upstream, tunnel. `attach` hands
+/// the opened upstream to the proxy's shutdown sweep; when it returns false the proxy is
+/// stopping and the connection is dropped before the tunnel starts.
 pub(super) fn serve(
     mut client: UnixStream,
     allowed: &[&str],
     limits: &Limits,
     connector: &Connector,
+    attach: &dyn Fn(&TcpStream) -> bool,
 ) {
     match open_upstream(&mut client, allowed, limits, connector) {
         Ok((mut upstream, early)) => {
+            if !attach(&upstream) {
+                let _ = upstream.shutdown(Shutdown::Both);
+                return;
+            }
             let _ = upstream.set_write_timeout(Some(limits.idle_timeout));
             if client.write_all(ESTABLISHED).is_ok() && upstream.write_all(&early).is_ok() {
                 splice(client, upstream, Some(limits.idle_timeout));

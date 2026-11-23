@@ -11,7 +11,10 @@
 //! local users - with only `Host` and `Origin` checks to keep a browser on
 //! another site from reading it. That is the intended trade-off for an
 //! operator-run localhost dashboard, but it is a deliberate downgrade of the
-//! daemon's authentication model, not an oversight.
+//! daemon's authentication model, not an oversight. On that bind `Host` must be
+//! a loopback name in the strict authority grammar, with any port (an SSH
+//! tunnel maps any local port), and a present `Origin` must be `http://` or
+//! `https://` plus that same `Host`; `/ws` and writes require `Origin`.
 //!
 //! `--host` widens that bind. Any bind that is not loopback - a concrete
 //! remote address, or a wildcard (`0.0.0.0`/`::`) reachable from anywhere,

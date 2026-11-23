@@ -35,7 +35,7 @@ fn post(port: u16, headers: &str, payload: &str) -> String {
 /// The headers a legitimate dashboard write carries.
 fn valid_headers() -> String {
     format!(
-        "Origin: http://127.0.0.1:7373\r\nContent-Type: application/json\r\nX-Loom-Csrf: {}\r\n",
+        "Origin: http://localhost\r\nContent-Type: application/json\r\nX-Loom-Csrf: {}\r\n",
         token()
     )
 }
@@ -142,13 +142,13 @@ fn a_write_without_a_csrf_token_is_refused() {
     let (port, running) = start(base);
     let missing = post(
         port,
-        "Origin: http://127.0.0.1:7373\r\nContent-Type: application/json\r\n",
+        "Origin: http://localhost\r\nContent-Type: application/json\r\n",
         r#"{"scope":"project","name":"terminal.backend","value":"tmux"}"#,
     );
     let wrong = post(
         port,
         &format!(
-            "Origin: http://127.0.0.1:7373\r\nContent-Type: application/json\r\nX-Loom-Csrf: {}\r\n",
+            "Origin: http://localhost\r\nContent-Type: application/json\r\nX-Loom-Csrf: {}\r\n",
             "0".repeat(64)
         ),
         r#"{"scope":"project","name":"terminal.backend","value":"tmux"}"#,
@@ -170,7 +170,7 @@ fn a_write_must_declare_a_json_body() {
     let response = post(
         port,
         &format!(
-            "Origin: http://127.0.0.1:7373\r\nContent-Type: text/plain\r\nX-Loom-Csrf: {}\r\n",
+            "Origin: http://localhost\r\nContent-Type: text/plain\r\nX-Loom-Csrf: {}\r\n",
             token()
         ),
         r#"{"scope":"project","name":"terminal.backend","value":"tmux"}"#,

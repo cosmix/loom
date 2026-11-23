@@ -1,8 +1,14 @@
 //! Browser terminals: a PTY-hosted `tmux attach-session` client per WebSocket.
 mod bridge;
+#[cfg(test)]
+mod busy_contract_tests;
 mod history;
+#[cfg(test)]
+mod liveness_contract_tests;
 mod protocol;
 mod pty;
+#[cfg(test)]
+mod ready_contract_tests;
 mod resolve;
 #[cfg(test)]
 mod tests_bridge;

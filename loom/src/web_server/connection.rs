@@ -1,8 +1,8 @@
 //! Socket timeouts and the plain-text answers every connection may need:
 //! refusals, error statuses, and routed responses that honour `HEAD`.
 
-use std::io::Read;
-use std::net::TcpStream;
+use std::io::{ErrorKind, Read};
+use std::net::{Shutdown, TcpStream};
 use std::time::{Duration, Instant};
 
 use super::http::{self, RequestHead};
@@ -29,13 +29,13 @@ pub(crate) const WRITE_TIMEOUT: Duration = Duration::from_secs(5);
 /// Bytes drained from an unfinished request before an error response.
 const MAX_DRAIN_BYTES: usize = 64 * 1024;
 
-/// Wall-clock bound on that drain.
+/// Wall-clock bound on [`drain_pending`].
 ///
 /// The byte cap alone bounds nothing in time: a client trickling one byte per
 /// read timeout satisfies every read, so the loop can run for as many
-/// iterations as [`MAX_DRAIN_BYTES`] allows. [`reject_unavailable`] performs
-/// that drain on the accept loop, where stalling stops the server answering
-/// anyone at all, so the drain gives up on whichever bound it reaches first.
+/// iterations as [`MAX_DRAIN_BYTES`] allows. The drain therefore gives up on
+/// whichever bound it reaches first. It blocks, so only a connection thread
+/// may call it; the accept loop uses [`reject_unavailable`] instead.
 const DRAIN_DEADLINE: Duration = Duration::from_millis(300);
 
 /// Read and discard whatever the client has already sent, up to
@@ -65,14 +65,58 @@ pub(crate) fn drain_pending(stream: &mut TcpStream) {
     }
 }
 
+/// How long the 503 written by [`reject_unavailable`] may block the accept loop.
+const REJECT_WRITE_TIMEOUT: Duration = Duration::from_millis(250);
+
 /// Turn a connection away with a 503 carrying `body`, without occupying a
-/// connection slot or a thread. Runs on the accept loop, so it only drains and
-/// answers; the write timeout bounds the answer.
+/// connection slot or a thread.
+///
+/// Runs on the accept loop, so it never waits on the client: it reads only the
+/// bytes that have already arrived (non-blocking, no timeout, no sleep), then
+/// writes the answer under [`REJECT_WRITE_TIMEOUT`]. A blocking drain here let
+/// one client that trickles bytes stall every other accept.
+///
+/// Trade-off: a request that arrives after the single read pass leaves unread
+/// bytes, which turns the close into an RST that may discard the 503. The
+/// message is advisory, and the connection is refused either way.
 pub(crate) fn reject_unavailable(stream: &mut TcpStream, body: &[u8]) {
-    if stream.set_write_timeout(Some(WRITE_TIMEOUT)).is_err() {
+    if stream.set_nonblocking(true).is_err() {
         return;
     }
-    fail(stream, 503, "Service Unavailable", body);
+    read_available(stream);
+    if stream.set_nonblocking(false).is_err()
+        || stream
+            .set_write_timeout(Some(REJECT_WRITE_TIMEOUT))
+            .is_err()
+    {
+        return;
+    }
+    let written = http::write_response(
+        stream,
+        503,
+        "Service Unavailable",
+        "text/plain; charset=utf-8",
+        body,
+        true,
+    );
+    if written.is_ok() {
+        let _ = stream.shutdown(Shutdown::Write);
+    }
+}
+
+/// Discard what a non-blocking `stream` already holds, up to
+/// [`MAX_DRAIN_BYTES`], stopping at `WouldBlock`, end of stream or an error.
+fn read_available(stream: &mut TcpStream) {
+    let mut chunk = [0_u8; 4096];
+    let mut drained = 0;
+    while drained < MAX_DRAIN_BYTES {
+        match stream.read(&mut chunk) {
+            Ok(0) => return,
+            Ok(read) => drained += read,
+            Err(error) if error.kind() == ErrorKind::Interrupted => {}
+            Err(_) => return,
+        }
+    }
 }
 
 /// Drain the unread request bytes, then write a plain-text error response.

@@ -57,11 +57,12 @@ pub(super) fn require_login_with(
 }
 
 /// Refuse to start when claude is logged out under the stage environment. The
-/// probe is memoized by `remote_control::cached_stage_auth`, so the Remote
-/// Control preflight that follows reuses this run's result.
+/// probe is memoized by `remote_control::cached_stage_auth` (for a few minutes
+/// per binary), so the Remote Control preflight that follows reuses this run's
+/// result.
 pub(super) fn require_stage_login(claude_path: &Path) -> Result<()> {
     require_login_with(
-        crate::remote_control::cached_stage_auth(claude_path).clone(),
+        crate::remote_control::cached_stage_auth(claude_path),
         || operator_auth_status(claude_path),
     )
 }

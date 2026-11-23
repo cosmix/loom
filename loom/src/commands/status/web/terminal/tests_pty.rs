@@ -104,12 +104,8 @@ fn pty_slave_is_close_on_exec_and_peers_the_master() {
         return;
     }
     let (master, slave) = open_pty(WindowSize { cols: 80, rows: 24 }).expect("open PTY");
-    // `openpty(3)` on other platforms hands out a slave without the flag.
-    #[cfg(target_os = "linux")]
-    {
-        let flags = fcntl(&slave, FcntlArg::F_GETFD).expect("read descriptor flags");
-        assert!(FdFlag::from_bits_truncate(flags).contains(FdFlag::FD_CLOEXEC));
-    }
+    let flags = fcntl(&slave, FcntlArg::F_GETFD).expect("read descriptor flags");
+    assert!(FdFlag::from_bits_truncate(flags).contains(FdFlag::FD_CLOEXEC));
     let mut slave = File::from(slave);
     let mut master = File::from(master);
     slave.write_all(b"peer-check\n").expect("write to slave");
@@ -131,6 +127,28 @@ fn pty_slave_is_close_on_exec_and_peers_the_master() {
         "master saw {:?}",
         String::from_utf8_lossy(&seen)
     );
+}
+
+/// What the child sees of the PTY pair: its three stdio descriptors point at
+/// the slave, and neither the master nor a fourth slave copy came along.
+#[cfg(target_os = "linux")]
+#[test]
+fn slave_and_master_do_not_leak_into_the_child() {
+    if skip_without_pty("slave_and_master_do_not_leak_into_the_child") {
+        return;
+    }
+    let child = spawn_shell("for f in /proc/$$/fd/*; do readlink \"$f\"; done");
+    // The needle never appears, so this reads until the shell exits and the
+    // master reports the hangup.
+    let output = read_until(&child, b"\0\0", Duration::from_secs(10));
+    let output = String::from_utf8_lossy(&output).into_owned();
+    child.shutdown();
+    let slaves = output
+        .lines()
+        .filter(|line| line.contains("/dev/pts/"))
+        .count();
+    assert_eq!(slaves, 3, "descriptors seen by the child: {output:?}");
+    assert!(!output.contains("ptmx"), "master leaked: {output:?}");
 }
 
 #[test]

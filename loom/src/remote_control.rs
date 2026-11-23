@@ -27,7 +27,12 @@ use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::process::Command;
-use std::sync::OnceLock;
+use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::time::{Duration, Instant};
+
+mod memo;
+
+use memo::Memo;
 
 /// Minimum claude version that supports the `--remote-control` flag.
 const MIN_REMOTE_CONTROL_VERSION: (u64, u64, u64) = (2, 1, 51);
@@ -156,12 +161,29 @@ pub fn claude_supports_remote_control(claude_path: &Path) -> bool {
     }
 }
 
-/// Memoized login probe under the stage environment. `claude auth status`
-/// is invariant for the process's purposes, and `loom run` seeds this through
-/// `auth_preflight::require_stage_login` so the probe runs once per process.
-pub(crate) fn cached_stage_auth(claude_path: &Path) -> &'static AuthProbe {
-    static CACHE: OnceLock<AuthProbe> = OnceLock::new();
-    CACHE.get_or_init(|| stage_auth_status(claude_path))
+/// How long a login verdict is reused before `claude auth status` runs again.
+const AUTH_TTL: Duration = Duration::from_secs(300);
+
+/// Locks `mutex`, taking the data of a poisoned one: every value these locks guard is replaced
+/// whole, so a panic in another holder leaves nothing half written.
+fn locked<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// `claude --version`, probed again when the binary at `path` is replaced.
+fn cached_version(path: &Path) -> Option<(u64, u64, u64)> {
+    static VERSION: Memo<Option<(u64, u64, u64)>> = Memo::new();
+    VERSION.get(path, None, Instant::now(), || probe_claude_version(path))
+}
+
+/// Memoized login probe under the stage environment, repeated after [`AUTH_TTL`] or when the
+/// binary at `claude_path` is replaced. `loom run` seeds it through
+/// `auth_preflight::require_stage_login`.
+pub(crate) fn cached_stage_auth(claude_path: &Path) -> AuthProbe {
+    static AUTH: Memo<AuthProbe> = Memo::new();
+    AUTH.get(claude_path, Some(AUTH_TTL), Instant::now(), || {
+        stage_auth_status(claude_path)
+    })
 }
 
 /// Longest auth method name a reason repeats.
@@ -196,13 +218,13 @@ fn eligibility_from(probe: &AuthProbe) -> Result<()> {
 /// Check that the claude login under the stage environment is eligible for
 /// Remote Control (claude.ai login).
 pub fn remote_control_eligible(claude_path: &Path) -> Result<()> {
-    eligibility_from(cached_stage_auth(claude_path))
+    eligibility_from(&cached_stage_auth(claude_path))
 }
 
 /// Combine the version probe and the stage-environment login verdict into a
 /// single [`RemoteControlStatus`].
 pub fn preflight(claude_path: &Path) -> RemoteControlStatus {
-    let version = probe_claude_version(claude_path);
+    let version = cached_version(claude_path);
     match version {
         Some(v) if version_supported(v) => {}
         Some(v) => {
@@ -239,13 +261,6 @@ pub fn preflight(claude_path: &Path) -> RemoteControlStatus {
     RemoteControlStatus::Enabled
 }
 
-/// Memoized version-probe result, keyed by nothing — `claude --version` is
-/// invariant for the lifetime of a process. `None` means "not yet probed".
-fn cached_preflight_enabled(claude_path: &Path) -> bool {
-    static CACHE: OnceLock<bool> = OnceLock::new();
-    *CACHE.get_or_init(|| preflight(claude_path).is_enabled())
-}
-
 /// Process-lifetime "Remote Control unavailable" latch, set by
 /// [`disable_for_this_process`]. Never persisted — a daemon restart starts
 /// clear and probes again.
@@ -256,36 +271,42 @@ static DISABLED_FOR_PROCESS: std::sync::Mutex<Option<String>> = std::sync::Mutex
 /// a later call keeps the first reason — and never touches disk, so a CLI
 /// invocation is unaffected and a daemon restart tries again.
 pub fn disable_for_this_process(reason: &str) {
-    let mut latch = DISABLED_FOR_PROCESS.lock().unwrap();
-    if latch.is_some() {
-        return;
+    let latched = {
+        let mut latch = locked(&DISABLED_FOR_PROCESS);
+        let first = latch.is_none();
+        if first {
+            *latch = Some(reason.to_string());
+        }
+        first
+    };
+    if latched {
+        eprintln!(
+            "Remote Control unavailable ({reason}); continuing without it for the rest of this \
+             daemon run. Set [remote_control] mode = \"off\" to stop trying it."
+        );
     }
-    *latch = Some(reason.to_string());
-    eprintln!(
-        "Remote Control unavailable ({reason}); continuing without it for the rest of this \
-         daemon run. Set [remote_control] mode = \"off\" to stop trying it."
-    );
 }
 
 /// Whether [`disable_for_this_process`] has latched for this process.
 pub(crate) fn disabled_for_process() -> bool {
-    DISABLED_FOR_PROCESS.lock().unwrap().is_some()
+    locked(&DISABLED_FOR_PROCESS).is_some()
 }
 
 /// Test-only reset of the latch. Callers must be `#[serial]`.
 #[cfg(test)]
 pub(crate) fn reset_disabled_for_process() {
-    *DISABLED_FOR_PROCESS.lock().unwrap() = None;
+    *locked(&DISABLED_FOR_PROCESS) = None;
 }
 
 /// Per-spawn gate: whether `--remote-control` should be appended for a
 /// session spawned against `work_dir`. Returns `false` when
 /// [`disable_for_this_process`] has latched (never persisted; a daemon
 /// restart clears it), the persisted `[remote_control]` mode is `off`, or
-/// the (memoized) preflight is not satisfied.
+/// the preflight is not satisfied.
 ///
-/// Config is re-read every call (cheap); the `claude --version` subprocess
-/// behind the preflight runs at most once per process. All errors are
+/// Config is re-read every call (cheap); the `claude --version` and login
+/// probes behind the preflight are memoized and run again when the binary is
+/// replaced (the login probe also every `AUTH_TTL`). All errors are
 /// swallowed (treated as "disabled") so a spawn site can call this
 /// unconditionally.
 pub fn resolve(work_dir: &Path) -> bool {
@@ -301,17 +322,18 @@ pub fn resolve(work_dir: &Path) -> bool {
     }
 
     match find_claude_path() {
-        Ok(path) => cached_preflight_enabled(&path),
+        Ok(path) => preflight(&path).is_enabled(),
         Err(_) => false,
     }
 }
 
-/// Memoized named-argument capability probe, keyed by nothing — `claude
-/// --help` output is invariant for the daemon's lifetime. Separate from the
-/// version-preflight cache in [`cached_preflight_enabled`].
+/// Memoized named-argument capability probe; `claude --help` is run again when the
+/// binary at `claude_path` is replaced.
 fn cached_named_arg_supported(claude_path: &Path) -> bool {
-    static CACHE: OnceLock<bool> = OnceLock::new();
-    *CACHE.get_or_init(|| probe_named_arg_support(claude_path))
+    static HELP: Memo<bool> = Memo::new();
+    HELP.get(claude_path, None, Instant::now(), || {
+        probe_named_arg_support(claude_path)
+    })
 }
 
 /// Resolve the concrete `--remote-control` invocation for a spawn against
@@ -319,8 +341,7 @@ fn cached_named_arg_supported(claude_path: &Path) -> bool {
 /// supports the optional name argument.
 ///
 /// The config is re-read on every call (via [`resolve`]); the `--help`
-/// capability probe runs at most once per process (memoized in
-/// `cached_named_arg_supported`).
+/// capability probe is memoized per binary in `cached_named_arg_supported`.
 pub fn resolve_invocation(work_dir: &Path, session_name: &str) -> RemoteControlInvocation {
     if !resolve(work_dir) {
         return RemoteControlInvocation::Disabled;
