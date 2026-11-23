@@ -1,4 +1,5 @@
 use super::*;
+use crate::process::sandbox_probe::require_directory_owners;
 
 #[test]
 fn in_session_cancel_relays_and_refuses_stage_flag() {
@@ -132,6 +133,7 @@ fn ownership(h: &Harness) -> Ownership {
 
 #[test]
 fn release_after_proof_removes_the_macos_private_root() {
+    require_directory_owners!("release_after_proof_removes_the_macos_private_root");
     let mut h = Harness::new();
     h.session = false;
     let dir = h.record();

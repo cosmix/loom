@@ -19,12 +19,15 @@ pub mod reap;
 
 pub use launcher::start_blocker;
 pub use needs::{
-    bash_process_substitution_usable, plan_locks_usable, skip_without_confinement,
-    skip_without_lockfile_access, skip_without_loopback, skip_without_plan_locks,
-    skip_without_process_substitution, skip_without_process_tree, skip_without_unix_socket,
+    bash_process_substitution_usable, directory_owners_visible, plan_locks_usable,
+    skip_without_confinement, skip_without_directory_owners, skip_without_lockfile_access,
+    skip_without_loopback, skip_without_plan_locks, skip_without_process_substitution,
+    skip_without_process_tree, skip_without_unix_socket,
 };
 #[cfg(test)]
-pub(crate) use needs::{require_unix_socket, require_unix_socket_and_loopback};
+pub(crate) use needs::{
+    require_directory_owners, require_unix_socket, require_unix_socket_and_loopback,
+};
 pub use orphan::{orphans_signalable, skip_without_orphan_signals, spawn_orphan};
 
 /// A per-directory answer cache, backed by a `OnceLock`-initialized map so

@@ -12,6 +12,7 @@ use super::linux::{self, Plan, TMPFS_BYTES};
 use super::tests::{bind_sources, canonical_tempdir, finish, host, no_boundary, no_bwrap};
 use super::tests::{position, sh};
 use super::{spawn_payload, tmpdir, BOUNDARY_TMPDIR};
+use crate::process::sandbox_probe::{path_writable, skip_unless};
 use crate::verify::criteria::{bubblewrap, NetworkAccess};
 
 #[test]
@@ -173,6 +174,17 @@ fn argv_never_binds_a_shared_cargo_home() {
     }
 }
 
+/// Skip decision for a test that creates a real directory under `BOUNDARY_TMPDIR`: true
+/// when the host's `/tmp` is not writable (a host job or session sandbox), where
+/// creating it fails regardless of the code under test.
+fn no_host_tmp(test_name: &str) -> bool {
+    skip_unless(
+        path_writable(Path::new("/tmp")),
+        test_name,
+        "/tmp is not writable",
+    )
+}
+
 /// A real directory under the host's `/tmp/loom-tmp`, removed on drop with
 /// that parent when it is left empty.
 struct UnderTmpdir(Option<tempfile::TempDir>);
@@ -205,6 +217,9 @@ fn refused(plan: &Plan, host: &[(OsString, OsString)]) -> String {
 #[test]
 #[serial_test::serial]
 fn plans_under_boundary_tmpdir_are_refused() {
+    if no_host_tmp("plans_under_boundary_tmpdir_are_refused") {
+        return;
+    }
     let (_w_tmp, w) = canonical_tempdir();
     let (_home_tmp, home) = canonical_tempdir();
     let under = UnderTmpdir::new();
@@ -230,6 +245,9 @@ fn plans_under_boundary_tmpdir_are_refused() {
 #[test]
 #[serial_test::serial]
 fn symlinks_into_boundary_tmpdir_are_refused() {
+    if no_host_tmp("symlinks_into_boundary_tmpdir_are_refused") {
+        return;
+    }
     let (_w_tmp, w) = canonical_tempdir();
     let (_home_tmp, home) = canonical_tempdir();
     let under = UnderTmpdir::new();

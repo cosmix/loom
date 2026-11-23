@@ -9,6 +9,7 @@ use crate::native_worker::{
     model::{NativeEvent, NativeManifest},
     store::{create_invocation, EventLog},
 };
+use crate::process::sandbox_probe::require_directory_owners;
 use sha2::{Digest, Sha256};
 use std::fs;
 
@@ -131,6 +132,9 @@ fn unit_without_a_thread_adds_no_source() {
 /// where the next lookup finds it.
 #[test]
 fn a_macos_workers_rollout_is_found_once_its_private_root_is_reclaimed() {
+    require_directory_owners!(
+        "a_macos_workers_rollout_is_found_once_its_private_root_is_reclaimed"
+    );
     use crate::native_worker::boundary::{private_root, Quiescence};
     let fx = Fixture::new().unwrap();
     save_session(&fx.session, &fx.work_dir).unwrap();

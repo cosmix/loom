@@ -10,6 +10,7 @@ use super::super::private_root::reclaim_into;
 use super::super::Quiescence;
 use super::{created, fixture, INVOCATION};
 use crate::native_worker::model::MacIdentity;
+use crate::process::sandbox_probe::require_directory_owners;
 
 const DAY: &str = "2026/11/21";
 const ROLLOUT: &str = "rollout-2026-11-21T10-00-00-thread-m.jsonl";
@@ -32,6 +33,9 @@ fn write(path: &Path, text: &str) {
 
 #[test]
 fn reclaim_moves_each_rollout_to_its_relative_path_and_removes_the_root() {
+    require_directory_owners!(
+        "reclaim_moves_each_rollout_to_its_relative_path_and_removes_the_root"
+    );
     let fixture = fixture();
     let private = created(&fixture);
     let sessions = private.codex_home.join("sessions");
@@ -52,6 +56,7 @@ fn reclaim_moves_each_rollout_to_its_relative_path_and_removes_the_root() {
 
 #[test]
 fn a_rollout_whose_name_is_taken_keeps_the_root_and_both_files() {
+    require_directory_owners!("a_rollout_whose_name_is_taken_keeps_the_root_and_both_files");
     let fixture = fixture();
     let private = created(&fixture);
     let source = private.codex_home.join("sessions").join(DAY).join(ROLLOUT);
@@ -73,6 +78,7 @@ fn a_rollout_whose_name_is_taken_keeps_the_root_and_both_files() {
 
 #[test]
 fn a_taken_name_with_the_same_bytes_counts_as_moved() {
+    require_directory_owners!("a_taken_name_with_the_same_bytes_counts_as_moved");
     let fixture = fixture();
     let private = created(&fixture);
     write(&private.codex_home.join("sessions").join(ROLLOUT), LINES);
@@ -89,6 +95,7 @@ fn a_taken_name_with_the_same_bytes_counts_as_moved() {
 
 #[test]
 fn a_linked_rollout_is_not_followed_and_goes_with_the_root() {
+    require_directory_owners!("a_linked_rollout_is_not_followed_and_goes_with_the_root");
     let fixture = fixture();
     let private = created(&fixture);
     let outside = fixture.cache.join("outside").join(ROLLOUT);
@@ -108,6 +115,7 @@ fn a_linked_rollout_is_not_followed_and_goes_with_the_root() {
 
 #[test]
 fn rollouts_without_a_host_sessions_tree_keep_the_root() {
+    require_directory_owners!("rollouts_without_a_host_sessions_tree_keep_the_root");
     let fixture = fixture();
     let private = created(&fixture);
     write(&private.codex_home.join("sessions").join(ROLLOUT), LINES);
@@ -122,6 +130,7 @@ fn rollouts_without_a_host_sessions_tree_keep_the_root() {
 
 #[test]
 fn an_unproven_verdict_moves_nothing() {
+    require_directory_owners!("an_unproven_verdict_moves_nothing");
     let fixture = fixture();
     let private = created(&fixture);
     let source = private.codex_home.join("sessions").join(ROLLOUT);
@@ -140,6 +149,7 @@ fn an_unproven_verdict_moves_nothing() {
 
 #[test]
 fn a_rollout_with_another_hard_link_is_not_moved() {
+    require_directory_owners!("a_rollout_with_another_hard_link_is_not_moved");
     let fixture = fixture();
     let private = created(&fixture);
     let outside = fixture.cache.join("outside").join(ROLLOUT);
@@ -162,6 +172,7 @@ fn a_rollout_with_another_hard_link_is_not_moved() {
 
 #[test]
 fn a_root_removal_would_refuse_is_never_read() {
+    require_directory_owners!("a_root_removal_would_refuse_is_never_read");
     let fixture = fixture();
     let private = created(&fixture);
     // Laid out like a private root but outside `native/`: without the shape

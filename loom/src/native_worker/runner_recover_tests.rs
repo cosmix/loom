@@ -7,6 +7,7 @@ use super::*;
 use crate::native_worker::ids::mint_invocation_id;
 use crate::native_worker::model::NativeManifest;
 use crate::native_worker::store::{create_invocation, mark_spawn_begun, read_events};
+use crate::process::sandbox_probe::require_directory_owners;
 
 const STAGE: &str = "recover-unit";
 
@@ -147,6 +148,9 @@ fn canonical_temp() -> (tempfile::TempDir, PathBuf) {
 
 #[test]
 fn a_lost_macos_supervisor_after_a_boot_change_is_released_and_its_root_removed() {
+    require_directory_owners!(
+        "a_lost_macos_supervisor_after_a_boot_change_is_released_and_its_root_removed"
+    );
     let (_tmp, base) = canonical_temp();
     let dir = record(&base);
     mark_spawn_begun(&dir).expect("marker");

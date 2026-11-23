@@ -6,6 +6,7 @@ use std::os::unix::fs::{symlink, PermissionsExt};
 use std::path::{Path, PathBuf};
 
 use super::private_root::{create, remove, PrivateRoot, CODEX_HOME_DIR, NATIVE_DIR};
+use crate::process::sandbox_probe::require_directory_owners;
 
 const INVOCATION: &str = "inv-0123456789abcdef0123456789abcdef";
 const FIXTURE_AUTH: &str = "{\"fixture\":true}\n";
@@ -48,6 +49,7 @@ fn created(fixture: &Fixture) -> PrivateRoot {
 
 #[test]
 fn create_makes_a_closed_root_with_only_the_allowed_copies() {
+    require_directory_owners!("create_makes_a_closed_root_with_only_the_allowed_copies");
     let fixture = fixture();
     let private = created(&fixture);
     assert_eq!(
@@ -71,6 +73,7 @@ fn create_makes_a_closed_root_with_only_the_allowed_copies() {
 
 #[test]
 fn create_refuses_an_existing_invocation_root() {
+    require_directory_owners!("create_refuses_an_existing_invocation_root");
     let fixture = fixture();
     created(&fixture);
     let again = create(&fixture.cache, INVOCATION, &fixture.host_home);
@@ -89,6 +92,7 @@ fn create_refuses_a_symlinked_native_directory() {
 
 #[test]
 fn create_refuses_a_symlinked_auth_file() {
+    require_directory_owners!("create_refuses_a_symlinked_auth_file");
     let fixture = fixture();
     let secret = fixture.host_home.join("real-auth.json");
     fs::write(&secret, FIXTURE_AUTH).expect("target");
@@ -106,6 +110,7 @@ fn create_refuses_a_bad_invocation_id() {
 
 #[test]
 fn remove_deletes_the_tree_and_is_idempotent() {
+    require_directory_owners!("remove_deletes_the_tree_and_is_idempotent");
     let fixture = fixture();
     let private = created(&fixture);
     let nested = private.codex_home.join("sessions/2026/11");
@@ -120,6 +125,7 @@ fn remove_deletes_the_tree_and_is_idempotent() {
 
 #[test]
 fn remove_unlinks_a_planted_link_without_following_it() {
+    require_directory_owners!("remove_unlinks_a_planted_link_without_following_it");
     let fixture = fixture();
     let private = created(&fixture);
     let outside = fixture.cache.parent().expect("base").join("outside");
@@ -135,6 +141,7 @@ fn remove_unlinks_a_planted_link_without_following_it() {
 
 #[test]
 fn remove_refuses_a_path_that_is_not_a_native_invocation_root() {
+    require_directory_owners!("remove_refuses_a_path_that_is_not_a_native_invocation_root");
     let fixture = fixture();
     let private = created(&fixture);
     let foreign = fixture.cache.join("other").join(INVOCATION);
@@ -149,6 +156,7 @@ fn remove_refuses_a_path_that_is_not_a_native_invocation_root() {
 
 #[test]
 fn remove_refuses_to_walk_through_a_symlinked_ancestor() {
+    require_directory_owners!("remove_refuses_to_walk_through_a_symlinked_ancestor");
     let fixture = fixture();
     let private = created(&fixture);
     let alias = fixture.cache.parent().expect("base").join("alias");
@@ -179,6 +187,9 @@ fn restore(ancestor: &Path) {
 
 #[test]
 fn an_ancestor_writable_by_others_without_sticky_is_refused_by_create_and_remove() {
+    require_directory_owners!(
+        "an_ancestor_writable_by_others_without_sticky_is_refused_by_create_and_remove"
+    );
     let (fixture, ancestor, root) = under_ancestor(0o777);
     let cache = ancestor.join("cache");
     let refused = create(
@@ -200,6 +211,7 @@ fn an_ancestor_writable_by_others_without_sticky_is_refused_by_create_and_remove
 
 #[test]
 fn a_sticky_world_writable_ancestor_is_accepted() {
+    require_directory_owners!("a_sticky_world_writable_ancestor_is_accepted");
     let (fixture, ancestor, root) = under_ancestor(0o1777);
     let cache = ancestor.join("cache");
     let created = create(
@@ -216,6 +228,7 @@ fn a_sticky_world_writable_ancestor_is_accepted() {
 
 #[test]
 fn a_regular_file_in_place_of_an_ancestor_directory_is_refused() {
+    require_directory_owners!("a_regular_file_in_place_of_an_ancestor_directory_is_refused");
     let fixture = fixture();
     let base = fixture.cache.parent().expect("base");
     let file = base.join("not-a-directory");

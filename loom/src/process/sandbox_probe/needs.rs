@@ -135,9 +135,7 @@ fn plan_lock_dir() -> PathBuf {
     } else {
         PathBuf::from("/tmp")
     };
-    // SAFETY: geteuid has no preconditions and does not access caller memory.
-    let uid = unsafe { libc::geteuid() };
-    base.join(format!("loom-plan-locks-{uid}"))
+    base.join(format!("loom-plan-locks-{}", effective_uid()))
 }
 
 /// Whether a plan lock file can be created: the lock directory is writable, or can be
@@ -163,6 +161,48 @@ pub fn skip_without_plan_locks(test_name: &str) -> bool {
         "the plan lock directory is not writable",
     )
 }
+
+/// Whether the owner of `/` is visible: it is root or this user, the owners a trusted
+/// directory walk accepts (`native_worker::boundary::private_root::trusted_directory`).
+/// Inside a user-namespace sandbox (bubblewrap) the real root's files belong to an
+/// unmapped uid, so every ancestor walk to a private root is refused. Memoized.
+pub fn directory_owners_visible() -> bool {
+    use std::os::unix::fs::MetadataExt;
+    static RESULT: OnceLock<bool> = OnceLock::new();
+    *RESULT.get_or_init(|| {
+        std::fs::symlink_metadata("/")
+            .is_ok_and(|root| root.uid() == 0 || root.uid() == effective_uid())
+    })
+}
+
+fn effective_uid() -> u32 {
+    // SAFETY: geteuid has no preconditions and does not access caller memory.
+    unsafe { libc::geteuid() }
+}
+
+/// Skip when `/` belongs to a uid this process cannot name, which fails every test that
+/// builds or removes a private root.
+pub fn skip_without_directory_owners(test_name: &str) -> bool {
+    skip_unless(
+        directory_owners_visible(),
+        test_name,
+        "the root directory's owner is not visible inside this user namespace",
+    )
+}
+
+/// Returns from the calling test, naming it, when `/` is owned by a uid this process
+/// cannot name. Put it first in a test that builds a private root; one line keeps the
+/// test under the function size limit.
+#[cfg(test)]
+macro_rules! require_directory_owners {
+    ($test:literal) => {
+        if $crate::process::sandbox_probe::skip_without_directory_owners($test) {
+            return;
+        }
+    };
+}
+#[cfg(test)]
+pub(crate) use require_directory_owners;
 
 /// Returns from the calling test, naming it, when an `AF_UNIX` listener cannot be bound at
 /// the given socket path. One line keeps a test under the function size limit.
@@ -191,3 +231,18 @@ macro_rules! require_unix_socket_and_loopback {
 }
 #[cfg(test)]
 pub(crate) use require_unix_socket_and_loopback;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::os::unix::fs::MetadataExt;
+
+    #[test]
+    fn directory_owners_are_visible_exactly_when_root_belongs_to_root_or_this_user() {
+        let owner = std::fs::symlink_metadata("/").expect("lstat /").uid();
+        assert_eq!(
+            directory_owners_visible(),
+            owner == 0 || owner == effective_uid()
+        );
+    }
+}
