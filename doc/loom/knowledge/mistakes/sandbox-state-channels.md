@@ -84,7 +84,7 @@ looked intentional rather than like a gap. A second fossil pointed the same wron
 `fs/permissions/constants.rs` declared `LOOM_PERMISSIONS_WORKTREE` with `Write(.loom/work/**)` and
 `Bash(loom *)`, which read like a blanket grant but has no consumers outside its own unit test
 — and `Write(path)` rules are inert anyway. (That entry is now `Edit(.loom/work/handoffs/**)`; see
-[sandbox-write-rules-inert.md](sandbox-write-rules-inert.md).)
+[sandbox-protected-hooks-dir.md](sandbox-protected-hooks-dir.md#sandbox-write-rules-inert).)
 
 **Prevention:** when a comment says state is written "through the daemon", verify the RPC
 exists in `daemon/protocol.rs` before treating a missing write grant as intentional. An

@@ -296,7 +296,7 @@ tests parent, `rg` the name in sibling files that glob-import `super::*`.
 
 **What happened:** token-core piped `loom stage commit` through `rg` and tui-tokens through `tail -1`; both cut the `LOOM_RELAY_V1` line, so `loom request status` answered "not relayed yet" and the commit never reached the daemon. integration-verify chained several `loom memory resolve` calls with `&&` and a trailing command, and the relay hook refused both requests until the next standalone loom call.
 
-**Why:** commit tickets are the control kind, which the hook's sweep never drains ([Memory Relay Drain Gap](memory-relay-drain-gap.md)); the relay reads the line from the Bash call's own unfiltered stdout and admits one memory-writing loom command per call.
+**Why:** commit tickets are the control kind, which the hook's sweep never drains ([Memory Relay Drain Gap](status-broadcast-hardening.md#a-ticket-whose-line-never-reached-the-hook-was-leaked-forever-2026-09-18)); the relay reads the line from the Bash call's own unfiltered stdout and admits one memory-writing loom command per call.
 
 **Prevention:** run `loom stage commit` and each `loom memory` write alone in a Bash call with stdout unfiltered. When the line was cut, issue the command once more: the first ticket never reached the daemon.
 

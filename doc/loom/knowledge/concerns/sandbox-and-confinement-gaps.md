@@ -29,7 +29,7 @@ not receive the proxy variables, the CA bundle locations (`SSL_CERT_FILE`, `SSL_
 `NIX_SSL_CERT_FILE`), `CARGO_HOME` or `RUSTUP_HOME`, although plan-authored commands do, and no
 list forwards `CLAUDE_CONFIG_DIR`.
 
-The stage cache variables are a fourth route that bypasses these lists: `stage_cache/session.rs::wrapper_exports` appends them to the wrapper's `exec env -i` line, and the daemon list keeps the nine names the cache reads (`stage_cache/environment.rs::HOST_ENV_NAMES`), among them `GOPROXY` and `GOFLAGS` ([Stage Build Cache](../architecture/stage-build-cache.md)). A credential-bearing `GOPROXY` is dropped when the cache reads it, but it still sits in the daemon's own environment, inherited by `Inherit` commands and the tmux server ([open suggestion](stage-build-cache-gaps.md#open-reviewer-suggestions-from-the-stage-cache-plan)).
+The stage cache variables are a fourth route that bypasses these lists: `stage_cache/session.rs::wrapper_exports` appends them to the wrapper's `exec env -i` line, and the daemon list keeps the nine names the cache reads (`stage_cache/environment.rs::HOST_ENV_NAMES`), among them `GOPROXY` and `GOFLAGS` ([Stage Build Cache](../architecture/stage-build-cache.md)). A credential-bearing `GOPROXY` is dropped when the cache reads it, but it still sits in the daemon's own environment, inherited by `Inherit` commands and the tmux server ([open suggestion](state-confinement-gaps.md#open-reviewer-suggestions-from-the-stage-cache-plan)).
 
 **Concrete failure mode:** on a host behind a corporate proxy, a plan-authored acceptance command
 can fetch and a stage agent session cannot, and the symptom is a network failure inside the agent

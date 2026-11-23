@@ -95,4 +95,4 @@ A metaplan that denied the `Workflow` tool every ultracode stage runs on, a sibl
 
 - [contract-phase-human-blocking](contract-autonomy-delivery.md#a-contract-freeze-refusal-waited-on-the-operator): a plan defect in the contract phase parked the stage on the operator. Rule: no stage waits on a human for something loom or an agent can resolve; a human is reached only after the automatic budgets run out.
 
-- [codex-direct-mode-invisible](codex-direct-mode-invisible.md): direct-mode codex forwards (Linux nested-bubblewrap fallback) leave no companion job, so reconcile, lifecycle and the status model display all miss them.
+- [codex-lane-rogue-wrapper](codex-lane-rogue-wrapper.md#direct-mode-codex-forwards-are-invisible-to-lifecycle-reconcile-and-status): direct-mode codex forwards (Linux nested-bubblewrap fallback) leave no companion job, so reconcile, lifecycle and the status model display all miss them.

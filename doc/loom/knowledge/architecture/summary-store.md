@@ -213,7 +213,7 @@ cost lines, `routes.rs` the four `/api/summaries/{panel,rebuild,release,answer}`
   `concept::delta::page_keys`, so it needs no `Project` and takes no project lock. A `ConceptChanged` broadcast follows every
   rebuild state change.
 - **Quota.** The panel reads the quota cache through `crate::quota::read_snapshot(runtime)`, the file the shared
-  poller writes (`architecture/quota-poller.md`); the summaries add no poller of their own. The read runs under
+  poller writes (`architecture/usage-evidence.md`); the summaries add no poller of their own. The read runs under
   `panel_sent`, so a cost record from the bridge's flushing thread waits behind a panel build.
 
 ## Rebuild Scheduler

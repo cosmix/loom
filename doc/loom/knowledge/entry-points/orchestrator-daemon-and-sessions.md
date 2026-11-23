@@ -30,7 +30,7 @@
 ## Daemon
 
 - `daemon/server/core.rs` - `DaemonServer` state and bounded-client constants
-- `daemon/server/launch.rs` - starts the daemon child: `spawn_daemon` re-executes the binary as `loom run --daemon-child <root>` and `await_ready` reads its readiness pipe (`0x02` log active, `0x01` ready); see [Daemon Launch and the Socket Path](../architecture/daemon-launch.md)
+- `daemon/server/launch.rs` - starts the daemon child: `spawn_daemon` re-executes the binary as `loom run --daemon-child <root>` and `await_ready` reads its readiness pipe (`0x02` log active, `0x01` ready); see [Daemon Launch and the Socket Path](../architecture/orchestrator-loop.md)
 - `daemon/server/lifecycle.rs` - `start` (delegates to `launch`) and `serve`, the daemon child's body: `setsid`, the authoritative singleton lock (held for the process lifetime), pid and token publication, the log redirect, socket binding, accept loop, and shutdown
 - `daemon/server/environment.rs` - the allowlisted environment the daemon child starts with (`DaemonEnvironment`)
 - `daemon/socket.rs` - `socket_path`, `socket_path_fits`, `socket_path_problem`: the one place a client resolves the socket
@@ -235,7 +235,7 @@ The legacy `ToolEvent` reader remains able to consume an older `.loom/work/tool-
 - `loom/src/commands/status/ui/tui/ledger/tokens_pane.rs`, `tokens_models.rs`, `layout_tokens.rs` - the `t` pane, its by-model block and the row budget
 - `web/src/lib/tokens.ts`, `web/src/components/token-flow-panel.tsx`, `token-models.tsx`, `stage-tokens.tsx`, `graph/node-tokens.tsx` - web helpers and surfaces
 
-Design and limits: [architecture/token-flow-sources.md](../architecture/token-flow-sources.md).
+Design and limits: [architecture/usage-evidence.md](../architecture/usage-evidence.md).
 
 ## Subagent Verification Guard
 
@@ -259,4 +259,4 @@ so the children reach the parent's private helpers via `use super::*` without wi
 - `native_worker/supervisor/`, `machine/`, `protocol/` - the per-worker loop, the pure reducer and the app-server wire. `boundary/`, `proxy/`, `bridge.rs` - the bubblewrap boundary, allowlist proxy and in-boundary forwarder.
 - `commands/subagents/native_start.rs`, `native_control.rs` and `wait/native.rs` - the CLI verbs and the wait binding; `commands/stage/native_gate.rs` - the shared gate; `relay/payload_native.rs` - the `subagents:control` payload; `loom-hooks/loom-control-subagents.sh` - the command pin.
 
-Design and gates: [Native Codex Workers](../architecture/native-codex-workers.md).
+Design and gates: [Native Codex Workers](../architecture/codex-concurrency.md).

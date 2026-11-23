@@ -64,7 +64,7 @@ If a session crashes within `FAST_FAIL_WINDOW_SECS` (15s) of creation with a ver
 
 ## `loom pressure` Command (Plan Pressure-Testing Driver)
 
-`loom pressure <plan> [--rounds N=1] [--{claude,codex,address}-model M] [--{claude,codex,address}-effort E] [--dry-run]` (loom/src/commands/pressure/mod.rs, on the shared pipeline in [pressure](pressure.md)) is a standalone, **synchronous foreground** driver that hardens a plan by combining two external agents. It is a second execution model distinct from the daemon/worktree orchestrator: it runs in the user's repo — NOT a worktree, NOT a background daemon, NOT a terminal-spawn.
+`loom pressure <plan> [--rounds N=1] [--{claude,codex,address}-model M] [--{claude,codex,address}-effort E] [--dry-run]` (loom/src/commands/pressure/mod.rs, on the shared pipeline in [pressure](planning-document-model.md)) is a standalone, **synchronous foreground** driver that hardens a plan by combining two external agents. It is a second execution model distinct from the daemon/worktree orchestrator: it runs in the user's repo — NOT a worktree, NOT a background daemon, NOT a terminal-spawn.
 
 Per round (default 1, or `pressure.rounds`): delete the codex report → run **Claude `/pressure` (foreground) and Codex `$pressure` (background) CONCURRENTLY** → once both finish, run Claude `/address <plan>` (folds Codex's written review back into the plan). One final report deletion after all rounds. Because the two pressure-tests run in parallel, Codex reviews the _pre-edit_ plan while Claude edits it — a more independent perspective; `/address` reconciles both afterward.
 

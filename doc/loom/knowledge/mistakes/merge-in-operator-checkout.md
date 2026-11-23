@@ -8,7 +8,7 @@
 
 **Why**: the merge used the operator's working tree as scratch space, so every sandbox artefact, dirty file or interruption there became a merge failure.
 
-**Prevention**: no agent runs git against the main checkout. The merge is computed with `merge-tree` and `commit-tree`, and the main checkout is touched only by a guarded fast-forward ([merge-flow](../architecture/merge-flow.md), [merge-checkout-state](../architecture/merge-checkout-state.md)).
+**Prevention**: no agent runs git against the main checkout. The merge is computed with `merge-tree` and `commit-tree`, and the main checkout is touched only by a guarded fast-forward ([merge-flow](../architecture/merge-flow.md), [merge-checkout-state](../architecture/merge-flow.md)).
 
 **Fix**: `merge_stage` rewritten around `merge-tree`/`commit-tree`/`advance_target`, the resolver moved to the stage worktree, blocked merges retried by the daemon (commits f42b4eb0, 0f2d65a3, 5a91759d, 1bd5804b, a731e3c2).
 
@@ -68,3 +68,10 @@
 **Prevention**: every writer of `merged = true` goes through the same proof (`verify_or_derive_completed_commit`) and guard (`Stage::zero_commit_reason`).
 
 **Fix**: one shared guard text and the proof on every CLI merge path.
+
+## A whole-tree git stash on main swept up another writer's edits
+
+**What happened:** To prove a regression test failed without the fix, the agent ran a bare `git stash` on `main` while a loom plan was running and another process was editing files in the same checkout. The stash took that writer's uncommitted `loom/src/verify/tool_artifacts.rs` edits, and `git stash pop` then aborted because the writer had rewritten the file in the meantime.
+**Why:** `git stash` without a pathspec captures every tracked change in the checkout, not only the agent's own, and the main checkout can be written by stages, sessions and the operator at any moment.
+**Prevention:** On a shared checkout, never run a bare `git stash`. To test without a change, stash only your own files with `git stash push -- <path>...` (pathspec relative to the current directory), or copy the files aside and restore them.
+**Fix:** The working-tree copy of the other writer's file was a superset of the stashed one, so it was left alone. The agent's two files were restored with `git checkout stash@{0} -- <files>` and the stash was dropped.

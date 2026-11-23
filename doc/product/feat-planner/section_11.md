@@ -398,7 +398,7 @@ The planning app does not monitor stages; the dashboard does (vision, Non-goals)
 Planning edits during a run are safe for the run. The daemon merges stage branches into the
 checkout with the user's uncommitted changes carried along, and blocks a merge, without touching
 the checkout, when a change overlaps a path the merge touches
-(`doc/loom/knowledge/architecture/merge-checkout-state.md`). The paths that can overlap are the
+(`doc/loom/knowledge/architecture/merge-flow.md`). The paths that can overlap are the
 plan's own renames and knowledge-stage writes under `doc/loom/knowledge/`; planning sessions write
 neither directly.
 

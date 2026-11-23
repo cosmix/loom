@@ -92,7 +92,7 @@ fixing an address bug, and test with a path past the limit through each client.
 
 **Fix:** `daemon/socket.rs` (`socket_path`, `socket_path_fits`, `socket_path_problem`); the broker uses
 `daemon::send_request`; `loom run` refuses a root that does not fit
-([The Socket Path Rule](../architecture/daemon-launch.md#the-socket-path-rule)).
+([The Socket Path Rule](../architecture/orchestrator-loop.md#the-socket-path-rule)).
 
 ## The StageDependency Boost Never Fired: Producer and Consumer Shared a Normalizer, Not a Path Base
 

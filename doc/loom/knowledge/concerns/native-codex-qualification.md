@@ -4,7 +4,7 @@
 
 ## Qualification Items
 
-No criterion could run a real Codex job (acceptance is confined: no network, no `~/.codex`), so `codex.backend = native`, the default, is unqualified against real jobs; an operator qualifies it on a disposable worktree. The eight items, in the order to run them ([backend design](../architecture/native-codex-workers.md)):
+No criterion could run a real Codex job (acceptance is confined: no network, no `~/.codex`), so `codex.backend = native`, the default, is unqualified against real jobs; an operator qualifies it on a disposable worktree. The eight items, in the order to run them ([backend design](../architecture/codex-concurrency.md)):
 
 1. `codex --version` matches `0.169.0`; otherwise re-measure the method table in `doc/plans/briefs/native-codex-workers/common.md` section 8.
 2. One real job in workspace-write mode (the only mode; hosts where bubblewrap cannot nest are refused): the report arrives, `git status` shows only the briefed files, and `loom usage` attributes the thread.
@@ -22,7 +22,7 @@ Two further questions need a real job: whether codex 0.169 loads `/etc/codex` sy
 - `auth.json` is readable by every process in the boundary and can leave over the four allowlisted OpenAI domains. It is bound read-write, so a prompt-injected worker can read the refresh token or overwrite it with another account's. This is the same exposure as the legacy lane. Narrowing it means copying auth into the tmpfs and writing back only a validated refresh.
 - The allowlist proxy inspects no TLS: it admits CONNECT targets by host and port, so it cannot tell what a worker sends to an allowed domain.
 - `sessions/` is bound from the host, so a worker can read and rewrite every operator rollout across projects; usage accounting reads those rollouts.
-- Commands are kept off the proxy socket and the bridge's loopback port only by Codex's own seccomp filter and network namespace (checked against codex 0.169; [Boundary and Proxy](../architecture/native-codex-workers.md#boundary-and-proxy)). After a Codex upgrade, repeat that check: run `codex sandbox` nested in a payload boundary against a Unix socket and a loopback port, and expect both refused.
+- Commands are kept off the proxy socket and the bridge's loopback port only by Codex's own seccomp filter and network namespace (checked against codex 0.169; [Boundary and Proxy](../architecture/codex-concurrency.md#boundary-and-proxy)). After a Codex upgrade, repeat that check: run `codex sandbox` nested in a payload boundary against a Unix socket and a loopback port, and expect both refused.
 - Auth lock files bind only when they already exist; otherwise each boundary locks on its own tmpfs and concurrent token refreshes across workers and the host Codex are not serialised.
 
 ## Reviewed Codex Tool Profile
@@ -31,7 +31,7 @@ The boundary loads no operator Codex configuration, and a reviewed profile of wh
 
 ## macOS Support
 
-Supported when `boundary/probe.rs::qualify_macos_from` passes its three probes (`sandbox_exec`, `payload_boundary`, `codex_home_honoured`; [Backend and Lane Selection](../architecture/native-codex-workers.md#backend-and-lane-selection), [macOS Boundary](../architecture/native-codex-workers.md#macos-boundary-seatbelt)). A host whose Codex is a script wrapper, or a process already inside a sandbox that forbids nesting `sandbox-exec`, is `Unavailable` with the probe's reason; such a host sets `codex.backend = legacy`.
+Supported when `boundary/probe.rs::qualify_macos_from` passes its three probes (`sandbox_exec`, `payload_boundary`, `codex_home_honoured`; [Backend and Lane Selection](../architecture/codex-concurrency.md#backend-and-lane-selection), [macOS Boundary](../architecture/codex-concurrency.md#macos-boundary-seatbelt)). A host whose Codex is a script wrapper, or a process already inside a sandbox that forbids nesting `sandbox-exec`, is `Unavailable` with the probe's reason; such a host sets `codex.backend = legacy`.
 
 **Kernel and host checks still awaiting a real host run.** The stage sandbox denies `sandbox-exec` (a nested profile exits 71; a syntax error exits 65, so profile syntax is checkable), the boot-id sysctl and tmux sockets, so the operator runs these from a plain macOS shell with native Codex installed:
 
@@ -101,7 +101,7 @@ Reviewer findings nobody implemented, grouped by area. File paths are under `loo
 
 Two throwaway smoke runs on 2026-11-16 each sent one terra/xhigh unit adding one test to `native_worker/ids_tests.rs`. In the second, the unit ran a full Codex thread in `workspace_write` mode: admitted, thread started 5 s later, one turn of 18 s, report stored, outcome `succeeded`, ownership released; the edit was exactly the briefed one and touched no other file. That covers item 2 except the `loom usage` attribution, which is unchecked; items 3 to 8 have not been run.
 
-That unit could not link its test binary. Units now get a writable `$TMPDIR` ([Boundary and Proxy](../architecture/native-codex-workers.md#boundary-and-proxy)), but no real Codex job has yet confirmed a unit can build and run its tests; the next smoke run should brief a unit to run one.
+That unit could not link its test binary. Units now get a writable `$TMPDIR` ([Boundary and Proxy](../architecture/codex-concurrency.md#boundary-and-proxy)), but no real Codex job has yet confirmed a unit can build and run its tests; the next smoke run should brief a unit to run one.
 
 The first run failed before any thread on the proxy socket directory mode: see [Native Proxy Socket Dir Umask](../mistakes/codex-worker-briefing.md#native-proxy-socket-dir-umask).
 
@@ -118,3 +118,22 @@ Reviewer findings of the bounded-exploration and startup-deadline work nobody im
 - `exploration_doctrine_contract_tests.rs`: `signals()` formats only a mixed claude+codex stage, so the codex-only branch of `push_codex_intro` is unpinned (a codex-only `Implementers` for both lanes would pin it); `OLD_WORDING` rejects fixed phrases, so a reworded hand-off of debugging to Codex would pass, and the positive reservation check (`assert_full_reservation`) is the real guard.
 - `native_worker/supervisor/lifecycle_tests.rs` sends a real `turn/start` through the real proxy where the spec asks for an offline `initialize` or session operation; `retire_parts` and `teardown_mac::retire_mac` duplicate a sequence ([macOS limits](native-codex-qualification.md#macos-support)).
 - `process/owned.rs`: the `wait_unreaped` test calls `owned.retire()` after `try_wait` already reaped the child, so `killpg` targets a reaped pid; `Drop` retires anyway, so the call can go.
+
+## Long Codex Runs Starve the Loom Heartbeat
+
+A foreground Codex forward can outlast the session heartbeat because PostToolUse runs after a blocking call. Sandboxed output, process names, job files and logs do not prove that a worker is the authorized launch, so the hold rests on what the sandbox cannot reach (`orchestrator/monitor/direct_worker.rs`, `codex_lifecycle.rs::forward_is_fresh`):
+
+- `codex-forward-guard.sh` runs outside the sandbox, mints an invocation id, records it in a ledger the sandbox cannot write, writes it into the tool call it authorizes, and refuses every other tool command quoting a minted id. The authorized launch is the one direct launcher child of the PID-verified agent whose kernel-visible argv holds the id; two such children are refused.
+- **Direct lane:** only CPU under the supervisor (`python3 _codex-direct.py`) counts, excluding the supervisor's own polling. No worker under it means no hold.
+- **Companion lane:** the launch's own `status <job> --wait` names the job, and the job's log must be fresh, so a planted job and a touched log hold nothing without the authorized wait.
+- A forward with no receipt yet tries both; one finished by its receipt holds nothing while a process lingers. The window is `RECEIPT_WINDOW_SECS` (1560 s) from `authorized_at`, with one idle budget.
+
+Limits:
+
+- Where the launcher runs the command with no outer process outside the sandbox (macOS `sandbox-exec`, an unsandboxed session), a stage that reads an id from the ledger can `exec` that launcher into a matching argv. That earns only the bounded CPU hold any foreground command earns. Revisit if the harness exposes a per-tool-call host identity.
+- Inside a real authorized companion launch, the job file and log stay stage-writable, so a stage can stretch the hold to the end of that launch, inside the same window. Closing it needs a host-owned progress signal.
+- A real bubblewrap-launched direct forward's argv has not been observed; the check fails closed. The macOS `ps` argv path has not been executed, and macOS tick totals exclude reaped children.
+
+## `loom status` Badge Follows the Stage Budget
+
+The status activity badge and the monitor share the same foreground evidence and bounded idle and wall-window decisions. Direct receipts alone do not authorize a progress hold. Transcript data supplies only the display label: a live process with fresh observed progress shows Busy while an idle process expires. Native macOS execution remains a CI check. Rules: [status-data-model.md](../architecture/status-data-model.md#heartbeat-and-activity).

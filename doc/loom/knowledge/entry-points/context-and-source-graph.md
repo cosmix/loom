@@ -69,12 +69,12 @@ only.
 
 | Module                                           | What it owns                                                                                                                  |
 | ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
-| `context/view/`                                  | `GraphStore::view`, `build_cold`, `relink`, `ViewIdentity`, `RESOLVER_VERSION` ([view](../architecture/source-graph-view.md)) |
+| `context/view/`                                  | `GraphStore::view`, `build_cold`, `relink`, `ViewIdentity`, `RESOLVER_VERSION` ([view](../architecture/source-graph-resolution.md)) |
 | `context/resolve/`                               | `resolve_graph*`, `resolve_edges`, `ImpactOptions::impact_from`, `impact_with`, path conventions ([resolution](../architecture/source-graph-resolution.md)) |
 | `context/extract/dialect.rs`                     | `DIALECTS`, `GrammarPack`, `dialect_for_path`, `dialect_by_id`                                                                |
 | `context/census/`                                | the `--census` classifier and report                                                                                          |
 | `context/window.rs`                              | `read_window`, `SourceWindow`, `WindowError`                                                                                  |
-| `context/eval_edges/`                            | `evaluate_dir`, `Thresholds`, label loading ([evaluation](../architecture/source-graph-evaluation.md))                        |
+| `context/eval_edges/`                            | `evaluate_dir`, `Thresholds`, label loading ([evaluation](../architecture/source-graph-resolution.md))                        |
 | `context/freshness.rs`                           | `GraphState`, `Freshness::state`                                                                                              |
 | `commands/hook/reconcile_graph/`                 | `wants_rebuild`, the lease (`lock.rs`), `--cancel` (`cancel.rs`)                                                              |
-| `context/rank_source/{intent,routing,expand}.rs` | intent routing and capped expansion ([routing](../architecture/context-retrieval-routing.md))                                 |
+| `context/rank_source/{intent,routing,expand}.rs` | intent routing and capped expansion ([routing](../architecture/context-retrieval-state.md))                                 |

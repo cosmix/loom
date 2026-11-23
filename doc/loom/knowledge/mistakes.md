@@ -20,11 +20,11 @@ Seven lessons on what a large removal or rename leaves behind — straggler init
 
 ## Sandbox: Contradictory Path Rules
 
-Sandbox path rules, permission sync, `excludedCommands` matching, settings env leaking between the main repo and its worktrees, a worktree-only escape rule applied at the repo root, a directory literally named `hooks/` being sandbox-protected regardless of permission config, and `Write(path)` permission rules never enforcing (only `Edit(path)` does). Root cause: settings are _merged_ from several sources. The tool and network failures (sccache, `cargo audit`, loopback TCP, bind-mounted files, macOS path aliases) and the `.loom/work` state channels (credentials, `loom memory`, handoff, daemon socket, ledgers) each have their own topic, as does a merge resolver that inherited its stage's write denies and gave up silently, or was handed back because the integrity gate read its formatter reflow of an unchanged assertion as a changed one (reformat-only hunks are exempt). → [Merge Resolver Sandbox](mistakes/merge-cleanup-boundary.md), [Sandbox & Settings](mistakes/sandbox-and-settings.md), [Tooling & Network](mistakes/sandbox-tooling-and-network.md), [State Channels](mistakes/sandbox-state-channels.md), [Directory Named `hooks/`](mistakes/sandbox-protected-hooks-dir.md), [Sandbox Write Rules Inert](mistakes/sandbox-write-rules-inert.md) (also the TMPDIR deny that failed every Bash call), [Seatbelt Loopback Grant](mistakes/seatbelt-loopback-grant.md) (a `localhost` listener re-added as if it held binds to loopback, and a port deny macOS 26 ignored after a `remote ip` grant)
+Sandbox path rules, permission sync, `excludedCommands` matching, settings env leaking between the main repo and its worktrees, a worktree-only escape rule applied at the repo root, a directory literally named `hooks/` being sandbox-protected regardless of permission config, and `Write(path)` permission rules never enforcing (only `Edit(path)` does). Root cause: settings are _merged_ from several sources. The tool and network failures (sccache, `cargo audit`, loopback TCP, bind-mounted files, macOS path aliases) and the `.loom/work` state channels (credentials, `loom memory`, handoff, daemon socket, ledgers) each have their own topic, as does a merge resolver that inherited its stage's write denies and gave up silently, or was handed back because the integrity gate read its formatter reflow of an unchanged assertion as a changed one (reformat-only hunks are exempt). → [Merge Resolver Sandbox](mistakes/merge-cleanup-boundary.md), [Sandbox & Settings](mistakes/sandbox-and-settings.md), [Tooling & Network](mistakes/sandbox-tooling-and-network.md), [State Channels](mistakes/sandbox-state-channels.md), [Directory Named `hooks/`](mistakes/sandbox-protected-hooks-dir.md), [Sandbox Write Rules Inert](mistakes/sandbox-protected-hooks-dir.md#sandbox-write-rules-inert) (also the TMPDIR deny that failed every Bash call), [Seatbelt Loopback Grant](mistakes/native-macos-delivery.md#a-seatbelt-localhost-listener-was-re-added-as-if-it-held-binds-to-loopback) (a `localhost` listener re-added as if it held binds to loopback, and a port deny macOS 26 ignored after a `remote ip` grant)
 
 ## Stage Build Cache Delivery
 
-The stage cache plan forwarded host proxy settings that can hold credentials, shared one root between consumers whose sockets bubblewrap cannot separate, read seeds from an environment that lacked them, and lost review rounds and gate runs to edits made while they ran. → [Stage Build Cache Delivery](mistakes/stage-build-cache-delivery.md)
+The stage cache plan forwarded host proxy settings that can hold credentials, shared one root between consumers whose sockets bubblewrap cannot separate, read seeds from an environment that lacked them, and lost review rounds and gate runs to edits made while they ran. → [Stage Build Cache Delivery](mistakes/ci-gate-rollout.md#forwarding-the-hosts-goproxy-and-maven_opts-into-sessions-leaked-credentials)
 
 ## Session Identity: Backend Metadata Must Be Persisted
 
@@ -198,7 +198,7 @@ Claude Code began wrapping a delivered prompt in `<pasted_content id="X">` tags 
 
 ## Planner Polish
 
-A container-query component in an unsized flex item (footer meters stacked), a stop notice produced twice from one event, spine plan rows that lost their slug to badge words, layout and glyph fixes judged from a stubbed payload or one surface, and worker slips. → [Planner Polish Mistakes](mistakes/planner-polish.md) Planner feedback fixes: a route test that sent the id form the web client never sends, a background hand-back that reopened activity after the closing Stop, a bulk route holding the project read guard across saves, tests removed with a page, a test file over 400 lines, `loom check` backgrounded. → [Planner Review Fixes Mistakes](mistakes/planner-review-fixes.md#a-route-test-sent-the-id-form-the-web-client-never-sends) A visual request needs a concrete design brief and a screenshot check, not only DOM-presence tests. → [Planner Visual Feedback Shortfall](mistakes/planner-visual-feedback-shortfall.md)
+A container-query component in an unsized flex item (footer meters stacked), a stop notice produced twice from one event, spine plan rows that lost their slug to badge words, layout and glyph fixes judged from a stubbed payload or one surface, and worker slips. → [Planner Polish Mistakes](mistakes/planner-polish.md) Planner feedback fixes: a route test that sent the id form the web client never sends, a background hand-back that reopened activity after the closing Stop, a bulk route holding the project read guard across saves, tests removed with a page, a test file over 400 lines, `loom check` backgrounded. → [Planner Review Fixes Mistakes](mistakes/planner-review-fixes.md#a-route-test-sent-the-id-form-the-web-client-never-sends) A visual request needs a concrete design brief and a screenshot check, not only DOM-presence tests. → [Planner Visual Feedback Shortfall](mistakes/planner-redesign.md#visual-feedback-met-by-contract-tests-while-the-look-stayed-bland)
 
 ## Planner follow-ups delivery
 
@@ -223,7 +223,7 @@ A tag named like a stage branch broke stage detection, blocks left the scheduler
 
 ## Check 5 Hook Preflight Fixes
 
-Extending check 5's list of refused programs cannot cover what an unsandboxed hook loads (runners, shims, caches, hard links, unscanned launchers). See [mistakes/sandbox-hook-preflight.md](mistakes/sandbox-hook-preflight.md).
+Extending check 5's list of refused programs cannot cover what an unsandboxed hook loads (runners, shims, caches, hard links, unscanned launchers). See [mistakes/sandbox-protected-hooks-dir.md](mistakes/sandbox-protected-hooks-dir.md#extending-the-check-5-program-denylist-was-proposed-as-a-fix).
 
 ## Dispute Guards Delivery
 
@@ -237,7 +237,7 @@ Strict CI gates pushed in bulk and untested, a commit that took another session'
 
 Whole-crate lint run by a subagent, a pinned struct field whose construction sites no worker owned, and concurrent workers sharing one `$TMPDIR`; the cfg and merge slips are in [Review Integration Verification](mistakes/review-integration-verification.md).
 
-→ [macOS Boundary Delivery](mistakes/native-macos-delivery.md), [Cargo Test Harness Layout](mistakes/cargo-test-harness-layout.md) (kernel tests that always skipped), [Tunnel Half-Close](mistakes/native-worker-tunnel-half-close.md) (replies dropped once they ran)
+→ [macOS Boundary Delivery](mistakes/native-macos-delivery.md), [Cargo Test Harness Layout](mistakes/native-macos-delivery.md#a-harness-relative-binary-lookup-missed-the-cargo-1100-test-layout) (kernel tests that always skipped), [Tunnel Half-Close](mistakes/native-macos-delivery.md#the-tunnel-copier-dropped-replies-after-a-client-half-close) (replies dropped once they ran)
 
 ## Plan Input, Convention and Amendment Slips
 
@@ -247,4 +247,4 @@ Whole-crate lint run by a subagent, a pinned struct field whose construction sit
 
 ## Shared main checkout
 
-A bare `git stash` on the main checkout captures other writers' edits. → [Shared main checkout](mistakes/shared-main-checkout.md)
+A bare `git stash` on the main checkout captures other writers' edits. → [Shared main checkout](mistakes/merge-in-operator-checkout.md#a-whole-tree-git-stash-on-main-swept-up-another-writers-edits)

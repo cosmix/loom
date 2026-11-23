@@ -2,7 +2,7 @@
 >
 >
 
-Slips from the planner review-fixes plan (kickoff, chat, drafts, uploads, vision summary). Current behaviour is in [Planner Uploads and Kickoff Drafts](../architecture/planner-uploads-and-drafts.md) and [Planner Web Shell](../architecture/planner-web-shell.md).
+Slips from the planner review-fixes plan (kickoff, chat, drafts, uploads, vision summary). Current behaviour is in [Planner Uploads and Kickoff Drafts](../architecture/planner-feature-screens.md) and [Planner Web Shell](../architecture/planner-web-shell.md).
 
 ## A Structured Block and a Composite Opening Were Never Replayed Through the Transcript
 
@@ -146,4 +146,4 @@ Slips from the planner review-fixes plan (kickoff, chat, drafts, uploads, vision
 
 **Prevention:** a command that waits on the agent must change what the user sees and carry its own bound; do not reuse the 600 s end bound for a user-facing action. Tests after a set aside cannot `wait_state(Idle/Working)`: observe the closing paste and the "Stopped" notice frames.
 
-**Fix:** `Bridge::close_within` (`bridge/end_plan.rs`) bounds the final write by `SET_ASIDE_BOUND` (60 s) and leaves a planned end's closing turn alone; `now: true` tears down; the web notice reads "is being set aside…" with Stop now ([Kickoff drafts](../architecture/planner-uploads-and-drafts.md#kickoff-drafts)).
+**Fix:** `Bridge::close_within` (`bridge/end_plan.rs`) bounds the final write by `SET_ASIDE_BOUND` (60 s) and leaves a planned end's closing turn alone; `now: true` tears down; the web notice reads "is being set aside…" with Stop now ([Kickoff drafts](../architecture/planner-feature-screens.md#kickoff-drafts)).

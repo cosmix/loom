@@ -150,7 +150,7 @@ exactly one spelling of `loom subagents start`, `message` and `cancel` (`<bin> s
 then `--flag value` pairs, then an optional `2>&1`), rewrites it to the trusted absolute loom
 binary, and refuses every other spelling and every caller other than the stage's main agent. It
 writes no heartbeat. A local refusal in these commands exits 3 before any ticket exists; once a
-ticket is written they exit 0 ([Native Codex Workers](../architecture/native-codex-workers.md#admission-and-ingress)).
+ticket is written they exit 0 ([Native Codex Workers](../architecture/codex-concurrency.md#admission-and-ingress)).
 
 ## Every Relay Command Exits 0
 

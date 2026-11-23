@@ -4,7 +4,7 @@
 
 Mistakes made while building the evidence-classed, dialect-aware source graph (resolver, resolved view, retrieval
 routing, edge-quality evaluator). Current behaviour is in [Source Graph](../architecture/source-graph.md),
-[Resolution](../architecture/source-graph-resolution.md) and [Resolved View](../architecture/source-graph-view.md).
+[Resolution](../architecture/source-graph-resolution.md) and [Resolved View](../architecture/source-graph-resolution.md).
 
 ## A Hand-Built Resolver Fixture Named a File After the Symbol Under Test
 

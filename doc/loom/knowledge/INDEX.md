@@ -23,69 +23,47 @@
 | Topic | Blurb | Lines |
 | --- | --- | --- |
 | [adjudication-lifecycle](architecture/adjudication-lifecycle.md) |  | 167 |
-| [codex-concurrency](architecture/codex-concurrency.md) | Limits | 112 |
+| [codex-concurrency](architecture/codex-concurrency.md) | Limits | 194 |
 | [codex-plugin](architecture/codex-plugin.md) |  | 353 |
-| [completion-recovery](architecture/completion-recovery.md) | Proof | 38 |
-| [config-value-types](architecture/config-value-types.md) |  | 85 |
 | [context-ceiling](architecture/context-ceiling.md) |  | 111 |
 | [context-retrieval](architecture/context-retrieval.md) |  | 397 |
 | [context-retrieval-corpus](architecture/context-retrieval-corpus.md) | BM25 | 178 |
-| [context-retrieval-routing](architecture/context-retrieval-routing.md) |  | 75 |
-| [context-retrieval-state](architecture/context-retrieval-state.md) | Layers | 179 |
-| [contract-collection](architecture/contract-collection.md) |  | 70 |
+| [context-retrieval-state](architecture/context-retrieval-state.md) | Layers | 253 |
+| [contract-collection](architecture/contract-collection.md) |  | 124 |
 | [contract-phase](architecture/contract-phase.md) | Freeze | 281 |
-| [contract-trial](architecture/contract-trial.md) | loom check --contracts, replacement trial receipt, overlay undo, env-red refusal | 24 |
-| [core-abstractions](architecture/core-abstractions.md) | Graph | 129 |
-| [criterion-narrowing-evidence](architecture/criterion-narrowing-evidence.md) | base-run evidence, leaves_out narrowing rules, hand-offs | 36 |
-| [daemon-launch](architecture/daemon-launch.md) |  | 71 |
-| [daemon-owned-commits](architecture/daemon-owned-commits.md) |  | 151 |
+| [core-abstractions](architecture/core-abstractions.md) | Graph | 210 |
+| [daemon-owned-commits](architecture/daemon-owned-commits.md) | How a completed/parked/stalled session's disposition is proven trustworthy, and… | 186 |
 | [directory-structure](architecture/directory-structure.md) | Tree | 50 |
 | [execution-containment](architecture/execution-containment.md) |  | 399 |
 | [hook-system](architecture/hook-system.md) |  | 342 |
-| [knowledge-bootstrap](architecture/knowledge-bootstrap.md) | KB | 83 |
-| [knowledge-hierarchy](architecture/knowledge-hierarchy.md) | KB fs | 264 |
-| [live-preview-editor](architecture/live-preview-editor.md) | Editor | 32 |
-| [loom-ask](architecture/loom-ask.md) |  | 75 |
+| [knowledge-hierarchy](architecture/knowledge-hierarchy.md) | KB fs | 344 |
 | [memory-spool](architecture/memory-spool.md) |  | 211 |
-| [merge-checkout-state](architecture/merge-checkout-state.md) | FF | 32 |
-| [merge-flow](architecture/merge-flow.md) |  | 133 |
-| [native-codex-workers](architecture/native-codex-workers.md) |  | 85 |
-| [orchestrator-loop](architecture/orchestrator-loop.md) | Ticks | 80 |
-| [owned-waits](architecture/owned-waits.md) | Waits | 72 |
-| [plan-lifecycle-and-fields](architecture/plan-lifecycle-and-fields.md) |  | 284 |
+| [merge-flow](architecture/merge-flow.md) |  | 162 |
+| [orchestrator-loop](architecture/orchestrator-loop.md) | Ticks | 214 |
+| [plan-lifecycle-and-fields](architecture/plan-lifecycle-and-fields.md) |  | 302 |
 | [plan-server](architecture/plan-server.md) | Chat | 293 |
-| [plan-stats-overview](architecture/plan-stats-overview.md) | Finished-plan record, archive, phases, TUI and web plan overview | 21 |
-| [planner-feature-screens](architecture/planner-feature-screens.md) | Spine | 48 |
-| [planner-uploads-and-drafts](architecture/planner-uploads-and-drafts.md) |  | 37 |
+| [planner-feature-screens](architecture/planner-feature-screens.md) | Spine | 113 |
 | [planner-web-shell](architecture/planner-web-shell.md) | Shell | 147 |
-| [planning-document-model](architecture/planning-document-model.md) | Docs | 183 |
-| [planning-guidance](architecture/planning-guidance.md) |  | 43 |
+| [planning-document-model](architecture/planning-document-model.md) | Docs | 266 |
 | [planning-session-bridge](architecture/planning-session-bridge.md) |  | 351 |
 | [planning-session-sandbox](architecture/planning-session-sandbox.md) |  | 148 |
 | [planning-trace](architecture/planning-trace.md) |  | 145 |
-| [pressure](architecture/pressure.md) |  | 42 |
-| [quota-poller](architecture/quota-poller.md) |  | 41 |
-| [read-gate](architecture/read-gate.md) |  | 153 |
+| [read-gate](architecture/read-gate.md) |  | 221 |
 | [remote-control](architecture/remote-control.md) |  | 81 |
 | [run-handoff](architecture/run-handoff.md) |  | 52 |
-| [seatbelt-completion-profile](architecture/seatbelt-completion-profile.md) | macOS completion Seatbelt profile: pure builder, shared file rules, residuals | 9 |
 | [security-and-isolation](architecture/security-and-isolation.md) | Deny | 202 |
 | [signal-generation](architecture/signal-generation.md) |  | 261 |
 | [skill-catalog](architecture/skill-catalog.md) |  | 158 |
 | [source-graph](architecture/source-graph.md) |  | 372 |
 | [source-graph-build](architecture/source-graph-build.md) |  | 130 |
-| [source-graph-evaluation](architecture/source-graph-evaluation.md) |  | 68 |
-| [source-graph-resolution](architecture/source-graph-resolution.md) |  | 125 |
-| [source-graph-view](architecture/source-graph-view.md) |  | 78 |
-| [stage-build-cache](architecture/stage-build-cache.md) | Per-stage cache root: env, seeds, sockets, read roots, xcrun bypass | 50 |
+| [source-graph-resolution](architecture/source-graph-resolution.md) |  | 269 |
+| [stage-build-cache](architecture/stage-build-cache.md) | Per-stage cache root: env, seeds, sockets, read roots, xcrun bypass | 56 |
 | [status-data-model](architecture/status-data-model.md) | Fields | 272 |
 | [summary-store](architecture/summary-store.md) |  | 352 |
-| [target-guard](architecture/target-guard.md) | Tip | 127 |
+| [target-guard](architecture/target-guard.md) | Tip | 180 |
 | [terminal-backends](architecture/terminal-backends.md) |  | 282 |
-| [test-runner-adapters](architecture/test-runner-adapters.md) |  | 56 |
 | [token-accounting-and-receipts](architecture/token-accounting-and-receipts.md) | Ledger | 355 |
-| [token-flow-sources](architecture/token-flow-sources.md) |  | 85 |
-| [usage-evidence](architecture/usage-evidence.md) |  | 136 |
+| [usage-evidence](architecture/usage-evidence.md) |  | 256 |
 | [verification-v2-gates](architecture/verification-v2-gates.md) | Gates | 265 |
 | [web-dashboard](architecture/web-dashboard.md) | Web | 137 |
 | [web-terminal](architecture/web-terminal.md) |  | 183 |
@@ -141,12 +119,10 @@
 | [adjudication-autonomy-deadlock](mistakes/adjudication-autonomy-deadlock.md) |  | 238 |
 | [ambient-filesystem-trust](mistakes/ambient-filesystem-trust.md) |  | 186 |
 | [briefs-and-bug-reports](mistakes/briefs-and-bug-reports.md) |  | 396 |
-| [cargo-test-harness-layout](mistakes/cargo-test-harness-layout.md) | Test harness binary lookup missed cargo 1.100 build/<hash>/out layout | 13 |
 | [cargo-under-confinement](mistakes/cargo-under-confinement.md) | Cargo in sandboxes and confined runs: audit fetches, cold builds, Seatbelt | 93 |
-| [ci-gate-rollout](mistakes/ci-gate-rollout.md) | CI gate rollout slips: untested strict gates, shared index, known-red runs | 43 |
+| [ci-gate-rollout](mistakes/ci-gate-rollout.md) | CI gate rollout slips: untested strict gates, shared index, known-red runs | 84 |
 | [ci-toolchain-and-cargo](mistakes/ci-toolchain-and-cargo.md) |  | 399 |
-| [codex-direct-mode-invisible](mistakes/codex-direct-mode-invisible.md) |  | 23 |
-| [codex-lane-rogue-wrapper](mistakes/codex-lane-rogue-wrapper.md) |  | 187 |
+| [codex-lane-rogue-wrapper](mistakes/codex-lane-rogue-wrapper.md) |  | 207 |
 | [codex-navigation](mistakes/codex-navigation.md) | Reader | 202 |
 | [codex-worker-briefing](mistakes/codex-worker-briefing.md) |  | 258 |
 | [completion-broker-credential](mistakes/completion-broker-credential.md) |  | 225 |
@@ -156,9 +132,8 @@
 | [concurrency-and-locking](mistakes/concurrency-and-locking.md) |  | 207 |
 | [consolidation-drift](mistakes/consolidation-drift.md) |  | 139 |
 | [contract-autonomy-delivery](mistakes/contract-autonomy-delivery.md) | Bypass | 109 |
-| [daemon-fork-after-threads](mistakes/daemon-fork-after-threads.md) | Fork | 38 |
-| [daemon-singleton](mistakes/daemon-singleton.md) |  | 141 |
-| [detached-spawn-in-tests](mistakes/detached-spawn-in-tests.md) |  | 65 |
+| [daemon-singleton](mistakes/daemon-singleton.md) |  | 176 |
+| [detached-spawn-in-tests](mistakes/detached-spawn-in-tests.md) |  | 95 |
 | [dev-install](mistakes/dev-install.md) | Daemon | 68 |
 | [dispute-guards-delivery](mistakes/dispute-guards-delivery.md) | host-job hangs, parallel worker collisions, scaffold wording, hook quirks | 131 |
 | [doctrine-and-acceptance](mistakes/doctrine-and-acceptance.md) |  | 392 |
@@ -171,11 +146,9 @@
 | [ledger-tui-rendering](mistakes/ledger-tui-rendering.md) |  | 84 |
 | [live-state-pollution](mistakes/live-state-pollution.md) |  | 143 |
 | [maintainability-baseline](mistakes/maintainability-baseline.md) |  | 134 |
-| [memory-relay-drain-gap](mistakes/memory-relay-drain-gap.md) |  | 51 |
 | [merge-cleanup-boundary](mistakes/merge-cleanup-boundary.md) |  | 237 |
-| [merge-in-operator-checkout](mistakes/merge-in-operator-checkout.md) |  | 70 |
-| [native-macos-delivery](mistakes/native-macos-delivery.md) | macOS boundary delivery slips: lint scope, pinned fields, shared TMPDIR | 25 |
-| [native-worker-tunnel-half-close](mistakes/native-worker-tunnel-half-close.md) | Tunnel splice cut replies when a client half-closed after its request | 13 |
+| [merge-in-operator-checkout](mistakes/merge-in-operator-checkout.md) |  | 77 |
+| [native-macos-delivery](mistakes/native-macos-delivery.md) | macOS boundary delivery slips: lint scope, pinned fields, shared TMPDIR | 67 |
 | [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Shared | 361 |
 | [phantom-merges](mistakes/phantom-merges.md) | Merges | 347 |
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Pins | 332 |
@@ -184,10 +157,9 @@
 | [planner-design-brainstorm](mistakes/planner-design-brainstorm.md) | Stubs | 134 |
 | [planner-follow-ups-delivery](mistakes/planner-follow-ups-delivery.md) | Slips | 196 |
 | [planner-polish](mistakes/planner-polish.md) | Polish | 155 |
-| [planner-redesign](mistakes/planner-redesign.md) |  | 80 |
+| [planner-redesign](mistakes/planner-redesign.md) |  | 101 |
 | [planner-review-fixes](mistakes/planner-review-fixes.md) |  | 149 |
 | [planner-ui-repair](mistakes/planner-ui-repair.md) | Repair | 215 |
-| [planner-visual-feedback-shortfall](mistakes/planner-visual-feedback-shortfall.md) | Visual | 24 |
 | [planning-sandbox-delivery](mistakes/planning-sandbox-delivery.md) |  | 98 |
 | [pre-commit-hardening](mistakes/pre-commit-hardening.md) |  | 93 |
 | [refactor-stragglers](mistakes/refactor-stragglers.md) |  | 335 |
@@ -196,27 +168,21 @@
 | [review-integration-verification](mistakes/review-integration-verification.md) |  | 303 |
 | [review-tracker](mistakes/review-tracker.md) |  | 363 |
 | [sandbox-and-settings](mistakes/sandbox-and-settings.md) |  | 391 |
-| [sandbox-hook-preflight](mistakes/sandbox-hook-preflight.md) | Check 5 hook preflight: why extending its program denylist fails | 13 |
-| [sandbox-protected-hooks-dir](mistakes/sandbox-protected-hooks-dir.md) |  | 37 |
+| [sandbox-protected-hooks-dir](mistakes/sandbox-protected-hooks-dir.md) | Sandbox-protected hooks/ dir, inert Write() rules, hook preflight denylist | 113 |
 | [sandbox-state-channels](mistakes/sandbox-state-channels.md) |  | 299 |
 | [sandbox-tooling-and-network](mistakes/sandbox-tooling-and-network.md) |  | 397 |
-| [sandbox-write-rules-inert](mistakes/sandbox-write-rules-inert.md) |  | 67 |
 | [schema-reuse-and-silent-skips](mistakes/schema-reuse-and-silent-skips.md) |  | 130 |
-| [seatbelt-loopback-grant](mistakes/seatbelt-loopback-grant.md) | Seatbelt localhost listener re-added as if it held binds to loopback | 25 |
 | [session-identity-env](mistakes/session-identity-env.md) | Env | 126 |
 | [sessions-and-liveness](mistakes/sessions-and-liveness.md) |  | 399 |
-| [shared-main-checkout](mistakes/shared-main-checkout.md) | Agents sharing the main checkout with other writers: stash and reset hazards | 10 |
 | [shell-command-matchers](mistakes/shell-command-matchers.md) |  | 295 |
 | [source-graph-delivery](mistakes/source-graph-delivery.md) | Misses | 182 |
 | [spurious-waiting-for-input](mistakes/spurious-waiting-for-input.md) | Idle | 53 |
-| [stage-build-cache-delivery](mistakes/stage-build-cache-delivery.md) | Stage cache delivery: credential forwarding, sockets, seeds, gate timing | 44 |
-| [status-broadcast-hardening](mistakes/status-broadcast-hardening.md) |  | 75 |
+| [status-broadcast-hardening](mistakes/status-broadcast-hardening.md) | Status frame overflow, relay ticket leaks and backgrounded relayed commands | 120 |
 | [store-without-consumer](mistakes/store-without-consumer.md) | Unread | 104 |
 | [subagent-briefing](mistakes/subagent-briefing.md) |  | 394 |
 | [subagent-liveness-and-watch](mistakes/subagent-liveness-and-watch.md) |  | 387 |
 | [subagent-orchestration](mistakes/subagent-orchestration.md) | Agents | 397 |
 | [test-concurrency-and-fixtures](mistakes/test-concurrency-and-fixtures.md) | Races | 398 |
-| [test-hermeticity](mistakes/test-hermeticity.md) | Tests that reached real network, keychain or home state | 33 |
 | [test-sweep-and-fixture-discipline](mistakes/test-sweep-and-fixture-discipline.md) |  | 398 |
 | [testing-and-lint](mistakes/testing-and-lint.md) |  | 377 |
 | [tests-that-cannot-fail](mistakes/tests-that-cannot-fail.md) |  | 392 |
@@ -237,34 +203,24 @@
 | --- | --- | --- |
 | [agent-rule-bending-hardening](concerns/agent-rule-bending-hardening.md) |  | 375 |
 | [automatic-knowledge-source-graph-followups](concerns/automatic-knowledge-source-graph-followups.md) | Gap | 69 |
-| [ci-macos-test-build-time](concerns/ci-macos-test-build-time.md) | macOS lib test build swaps on the 7 GB runner; nightly split and open options | 16 |
 | [code-quality-and-hook-debt](concerns/code-quality-and-hook-debt.md) | Debt | 327 |
-| [codex-heartbeat-starvation](concerns/codex-heartbeat-starvation.md) |  | 22 |
 | [consolidation-followups](concerns/consolidation-followups.md) |  | 148 |
-| [contract-autonomy-followups](concerns/contract-autonomy-followups.md) |  | 70 |
-| [dispute-guards-followups](concerns/dispute-guards-followups.md) | open review suggestions: trial, overlay undo, narrowing, prompt text | 55 |
-| [handoff-followups](concerns/handoff-followups.md) |  | 57 |
+| [contract-autonomy-followups](concerns/contract-autonomy-followups.md) |  | 122 |
 | [knowledge-cli-gaps](concerns/knowledge-cli-gaps.md) |  | 87 |
 | [loom-ask-and-read-gate](concerns/loom-ask-and-read-gate.md) |  | 107 |
-| [macos-confined-networking](concerns/macos-confined-networking.md) | macOS confined IP networking: off by default, loopback opt-in, residual | 15 |
 | [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Edges | 105 |
-| [native-codex-qualification](concerns/native-codex-qualification.md) |  | 120 |
-| [plan-chat-followups](concerns/plan-chat-followups.md) | Chat | 41 |
-| [planner-follow-ups-followups](concerns/planner-follow-ups-followups.md) |  | 91 |
-| [planner-kickoff-fixes-followups](concerns/planner-kickoff-fixes-followups.md) | Kickoff-fixes open items: web/dist hook, gate env, reviewer suggestions | 31 |
+| [native-codex-qualification](concerns/native-codex-qualification.md) |  | 139 |
+| [planner-follow-ups-followups](concerns/planner-follow-ups-followups.md) | Planner, chat, guidance, kickoff and typed-config open follow-ups | 221 |
 | [planner-ui-repair-followups](concerns/planner-ui-repair-followups.md) | UI | 214 |
 | [planning-document-model-followups](concerns/planning-document-model-followups.md) |  | 173 |
-| [planning-guidance-followups](concerns/planning-guidance-followups.md) |  | 43 |
 | [planning-session-sandbox-limits](concerns/planning-session-sandbox-limits.md) |  | 236 |
 | [platform-and-commit-gaps](concerns/platform-and-commit-gaps.md) |  | 249 |
-| [runtime-and-session-safety](concerns/runtime-and-session-safety.md) |  | 147 |
+| [runtime-and-session-safety](concerns/runtime-and-session-safety.md) |  | 201 |
 | [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) |  | 396 |
 | [source-graph-known-gaps](concerns/source-graph-known-gaps.md) | Limits | 94 |
 | [source-graph-review-backlog](concerns/source-graph-review-backlog.md) | Todo | 295 |
-| [stage-build-cache-gaps](concerns/stage-build-cache-gaps.md) | Open reviewer suggestions and residuals of the stage build cache | 33 |
-| [state-confinement-gaps](concerns/state-confinement-gaps.md) | Caches | 21 |
+| [state-confinement-gaps](concerns/state-confinement-gaps.md) | Open confinement gaps: caches, task outputs, macOS networking, stage cache | 63 |
 | [token-accounting-and-proof-defects](concerns/token-accounting-and-proof-defects.md) |  | 323 |
-| [typed-config-values](concerns/typed-config-values.md) | Gap | 22 |
 | [verification-v2-followups](concerns/verification-v2-followups.md) |  | 248 |
 | [web-dashboard-latent-issues](concerns/web-dashboard-latent-issues.md) | UI | 100 |
-| [worktree-build-cold-start](concerns/worktree-build-cold-start.md) | Cold | 108 |
+| [worktree-build-cold-start](concerns/worktree-build-cold-start.md) | Cold | 121 |

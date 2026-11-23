@@ -120,7 +120,7 @@ When the implementation stops matching `doc/product/<feature>/` (an operator's c
 
 ## Live Preview Editor Rules
 
-The editor's design is in [the live preview editor](../architecture/live-preview-editor.md).
+The editor's design is in [the live preview editor](../architecture/planner-feature-screens.md).
 
 - **Lazy edit mode.** `EditMode` is a `React.lazy` chunk in `reading-column.tsx`; a static import of it grows `plan.js` past 500 kB. The chunk is one of several: Coverage, Findings and the handoff dialogs are lazy too, all guarded by `bundle-rules.json` `plan.html` `forbidChunks` (route-level lazy for `/new`, `/changes`, home and concept is blocked by synchronous `getBy` asserts in `router.test.tsx`; the settings dialog by `shell.test.tsx`). A vendor `codeSplitting` group cannot fix it: the lucide and radix code in `plan.js` is shared with `index`, and a source group pulls dependencies recursively. `bundle-rules.json` `plan.html` therefore forbids the chunk `src/plan/editor/edit-mode.tsx` and also the text sentinels `Your kept text` (`edit-panels.tsx`) and `took authoring. Your text is kept as a draft.` (`edit-body.tsx`): `forbidChunks` cannot see a module merged back into `plan.js`, and a static import that skips `EditMode` would tree-shake a sentinel owned by only one of its files. A new editor module with its own user-visible string adds a sentinel.
 - **Chunk warning checks.** The dist criterion hides the warning (`--logLevel error`); `cd web && bun run build` prints it. Check the size after a change that grows `src/plan/**`.

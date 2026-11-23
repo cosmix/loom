@@ -72,7 +72,7 @@ receiver)` and merges `sites`, so two calls to one callee are one edge with two 
 `Contains` edges carry no sites; `Calls`, `Imports` and `References` carry at least one.
 `SourceEdge::bind` moves ONLY an unresolved `Syntax` edge to `Receiver`, `Import` or
 `UniqueName` at that class's ceiling and clears its candidates; `unbind` restores the
-extraction-time state (relink uses it, see [Source Graph Resolved View](source-graph-view.md)).
+extraction-time state (relink uses it, see [Source Graph Resolved View](source-graph-resolution.md)).
 
 **Candidate sets.** A `Syntax` edge whose target is ambiguous keeps `candidates`: sorted
 node ids, at most `MAX_CANDIDATES = 8`; with more than 8 the list stays empty and the edge is
@@ -273,7 +273,7 @@ adds byte totals and a symbol-level share of bytes, `unsupported_files`/`unsuppo
 `edges_by_provenance`, `unresolved_edges`, `ambiguous_edges`, the extractor status `registered` /
 `pack {feature} not compiled` / `no extractor`, and `capabilities`) and `gaps`. The `loom map`
 footer prints `52% of files, 61% of bytes symbol-level` plus a short `gaps:` clause; `footer_json`
-carries every field. `loom map --census` ([Source Graph Evaluation](source-graph-evaluation.md))
+carries every field. `loom map --census` ([Source Graph Evaluation](source-graph-resolution.md))
 reports the same dimensions across projects.
 
 ## Stack
@@ -314,7 +314,7 @@ base a failed build fell back to. `state()` maps the outcome to a `GraphState`, 
 `describe()` renders the single `source graph: …` advisory line every surface prints,
 appending `; not persisted (cache read-only)` or `; serving stale base <rev8>`. After it
 publishes or reuses a layer, `ensure_snapshot` also materializes the resolved view so the
-prompt hook never builds one on its hot path ([Source Graph Resolved View](source-graph-view.md)).
+prompt hook never builds one on its hot path ([Source Graph Resolved View](source-graph-resolution.md)).
 
 | When                                                   | Call site                                                                                                                                                                                  | Policy or scope                                                                        |
 | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------- |

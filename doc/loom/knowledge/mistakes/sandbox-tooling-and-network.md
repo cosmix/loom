@@ -258,7 +258,7 @@ export before any local source; never mix two sources for one identity.
 
 **Fix:** the daemon exports `LOOM_BOOT_ID` in each session wrapper and `process::boot_id::resolve_boot_id`
 takes it first, then `/proc/sys/kernel/random/boot_id` or `kern.bootsessionuuid`
-([Where the Boot ID Comes From](../architecture/owned-waits.md#where-the-boot-id-comes-from)).
+([Where the Boot ID Comes From](../architecture/orchestrator-loop.md#where-the-boot-id-comes-from)).
 
 ## Stages Stranded on the Sandbox's AF_UNIX Denial (2026-10-14)
 

@@ -136,7 +136,7 @@ clap surface is `UsageArgs` in `commands/usage/args.rs`. Rules:
   Continuity between two points compares both windows: a `resets_at` more than
   `RESET_TOLERANCE_SECS` (300) apart is `Reset`; a missing window on one side, a missing reset
   time, or a lower `used_percent` under the same reset is `Unknown`, and `Unknown` wins over
-  `Reset` ([quota-poller.md](quota-poller.md#history-consumers)).
+  `Reset` ([usage-evidence.md](usage-evidence.md#history-consumers)).
 
 ## Offline Comparison (`loom usage --compare`)
 

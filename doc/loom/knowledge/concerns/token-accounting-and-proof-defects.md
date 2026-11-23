@@ -72,7 +72,7 @@ Found during the plan's stages and integration-verify, verified against the tree
 
 ## Token Flow Gaps
 
-Open items from PLAN-token-flow; the design is in [token-flow-sources](../architecture/token-flow-sources.md).
+Open items from PLAN-token-flow; the design is in [token-flow-sources](../architecture/usage-evidence.md).
 
 ### Measurement Limits
 
@@ -129,7 +129,7 @@ Open items from PLAN-token-flow; the design is in [token-flow-sources](../archit
 ### Proposals
 
 - **Dist freshness check.** A `loom plan verify` or gate check that rebuilds `web/dist` and compares it would end the recurrence in [Token-flow delivery](../mistakes/verification-v2-delivery.md) and the legend-text mirror in [verification-v2-delivery](../mistakes/verification-v2-delivery.md).
-- **Commit-output filter.** A PreToolUse hook that refuses `loom stage commit` followed by a pipe or redirect would end the lost commit ticket, which stages of two plans hit (token-core and tui-tokens, then web-insights of the live-token-insights plan) after [Memory Relay Drain Gap](../mistakes/memory-relay-drain-gap.md) was written.
+- **Commit-output filter.** A PreToolUse hook that refuses `loom stage commit` followed by a pipe or redirect would end the lost commit ticket, which stages of two plans hit (token-core and tui-tokens, then web-insights of the live-token-insights plan) after [Memory Relay Drain Gap](../mistakes/status-broadcast-hardening.md#a-ticket-whose-line-never-reached-the-hook-was-leaked-forever-2026-09-18) was written.
 - **Wiring detector and `#[path]` test modules** (first recorded in [Test Modules Wired by `#[path]` Read as Unwired](../mistakes/verification-v2-delivery.md), now failing a stage's finish step). `verify/wiring_detection.rs` `detect_unwired_files` matches only `mod <stem>` or `use .*<stem>`, and its `is_test_file` misses file names ending in _tests or starting with tests_, so a test file wired by a `#[path]` attribute on `mod tests;` is flagged and the stage's finish step fails; the error is lost when impact-test notes overflow the tool output.
 - **Integrity events.** `loom stage review integrity` reported no events after a commit although width-test assertion numbers changed in several `tui/ledger` test files; the gap is in the detector's reading of a numeric edit.
 

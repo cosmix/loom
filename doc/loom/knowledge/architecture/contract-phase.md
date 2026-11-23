@@ -189,7 +189,7 @@ The notice lists the written and the restored files. A crash between the write a
 
 A re-freeze writes a version 2 record. It stages a complete generation under `staging/`, checks every copy hash, syncs every file and directory, renames it to `generations/<digest>/` (`<digest>` names its file and hash set), and only then publishes the freeze record (`verify/contracts/store_generation.rs`). Readers resolve copies from the generation their loaded record names, so a reader holding either record sees all of one generation; version 1 records keep the `files/` reader. Only `staging/` is collected, under the store lock and after publication, and a failure to collect changes nothing. A failed step leaves the previous committed record and generation readable, and a re-freeze that crashed restarts with every committed file restorable. Committed generations are kept indefinitely; power loss has not been exercised.
 
-The stage must already be frozen. A replacement is trialled before it is filed ([Contract Trial](contract-trial.md)); see also [Gate-Dedup and Integration-Verify Review Suggestions](../concerns/verification-v2-followups.md#gate-dedup-and-integration-verify-review-suggestions).
+The stage must already be frozen. A replacement is trialled before it is filed ([Contract Trial](contract-collection.md)); see also [Gate-Dedup and Integration-Verify Review Suggestions](../concerns/verification-v2-followups.md#gate-dedup-and-integration-verify-review-suggestions).
 
 ## Refused Freezes Are Disputed
 

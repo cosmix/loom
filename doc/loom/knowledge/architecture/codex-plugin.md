@@ -180,7 +180,7 @@ this instance follows.
 
 ## The loom-codex-forwarder lane
 
-This section describes the Legacy lane (`codex.backend = legacy`; the default is native). The Native lane runs no forwarder and no plugin: see [Native Codex Workers](native-codex-workers.md).
+This section describes the Legacy lane (`codex.backend = legacy`; the default is native). The Native lane runs no forwarder and no plugin: see [Native Codex Workers](codex-concurrency.md).
 
 On the Legacy lane loom stages spawn `subagent_type: "loom-codex-forwarder"`. The agent definition
 (`agents/loom-codex-forwarder.md`) selects haiku and Bash; the shim forwards one
@@ -254,7 +254,7 @@ Stage licensing (`implementers` listing `codex`) permits the lane; availability 
 - `commands/run/` emits an advisory warning when the lane is unavailable; it does not block a run.
 - Signal generation supplies fallback guidance instead of licensing `loom-codex-forwarder` when the lane is unavailable: terra- and sol-tier work goes to sonnet (`loom-software-engineer`), boilerplate, scaffolding and simple unit tests to haiku (`loom-software-developer`) (`format/codex.rs:51-52`).
 - The check does not mutate stage state or the `implementers` list.
-- The check above is the Legacy lane's. `codex_backend.rs::codex_lane` selects `Legacy`, `Native` or `Unavailable(reason)` from `codex.backend`; a configured native backend whose boundary does not qualify is `Unavailable`, never Legacy ([Native Codex Workers](native-codex-workers.md#backend-and-lane-selection)).
+- The check above is the Legacy lane's. `codex_backend.rs::codex_lane` selects `Legacy`, `Native` or `Unavailable(reason)` from `codex.backend`; a configured native backend whose boundary does not qualify is `Unavailable`, never Legacy ([Native Codex Workers](codex-concurrency.md#backend-and-lane-selection)).
 
 ## What Codex Actually Reads
 
@@ -340,13 +340,13 @@ through its receipt first (`codex_lifecycle/direct.rs::receipt_outcome`, matched
   or a `queued`/`unknown` direct receipt is Unknown and records nothing, companion rows included.
 
 Reconcile's Active is lifecycle state and earns no stall hold. A hold takes host-observed progress of the authorized
-launch (`codex_lifecycle.rs::forward_is_fresh`; [Long Codex Runs](../concerns/codex-heartbeat-starvation.md#long-codex-runs-starve-the-loom-heartbeat)).
+launch (`codex_lifecycle.rs::forward_is_fresh`; [Long Codex Runs](../concerns/native-codex-qualification.md#long-codex-runs-starve-the-loom-heartbeat)).
 
 A direct record's `turn_id` is optional (`subagent_lifecycle/codex_evidence.rs`); a companion record's is
 exact. `loom subagents watch` binds a stage's codex children the same way (`wait/codex_binding.rs::receipt_matches`
 maps a receipt to `CodexExecution::Companion` or `Direct`), and `loom status` reads the resulting lifecycle
 through `has_correlated_lifecycle` ([Execution-Model Ledgers](status-data-model.md#execution-model-ledgers)).
-See [mistakes/codex-direct-mode-invisible.md](../mistakes/codex-direct-mode-invisible.md).
+See [mistakes/codex-lane-rogue-wrapper.md](../mistakes/codex-lane-rogue-wrapper.md#direct-mode-codex-forwards-are-invisible-to-lifecycle-reconcile-and-status).
 Known gaps: token discovery (`codex_lifecycle/token_threads.rs::authorized_threads`) still finds threads only
 through companion jobs, and inside the receipt window a `locate_job` error (ambiguous job, binding mismatch)
 reports Active until the window ends, because `jobs.rs` has no typed error to tell it from absence; both are

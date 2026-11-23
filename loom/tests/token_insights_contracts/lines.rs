@@ -1,5 +1,5 @@
 //! Transcript and rollout builders carrying model and effort keys, shaped from
-//! the line formats in `architecture/token-flow-sources.md` "Token Usage Sources".
+//! the line formats in `architecture/usage-evidence.md` "Token Usage Sources".
 
 use crate::support::{body, iso, Fx};
 use loom::tokens::{ModelUsage, TokenUsage};

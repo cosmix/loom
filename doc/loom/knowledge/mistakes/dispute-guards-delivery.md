@@ -26,7 +26,7 @@
 
 **Why:** `verify/contracts/collection/mod.rs::StageTree::scaffold` derives edits only for contracts whose `test` is set, and every contract in these plans read `(you choose)`. The freeze derives the scaffold over the merged `--test` choices, so the signal's text was wrong at the time it was printed.
 
-**Prevention:** recurrence across four stages: the signal should say the scaffold is derived at freeze when tests are writer-chosen. A writer declares each new contract file in its parent `mod.rs` itself. Tracked in [concerns](../concerns/dispute-guards-followups.md#contract-signal-and-prompt-text).
+**Prevention:** recurrence across four stages: the signal should say the scaffold is derived at freeze when tests are writer-chosen. A writer declares each new contract file in its parent `mod.rs` itself. Tracked in [concerns](../concerns/contract-autonomy-followups.md#contract-signal-and-prompt-text).
 
 ## A Bash Call Quoting the Completion Command Was Blocked by the Control Hook
 

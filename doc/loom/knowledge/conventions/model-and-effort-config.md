@@ -82,7 +82,7 @@ Subagent effort is not a `[models]` key: `loom-senior-software-engineer` carries
 This file's `[pressure]`/`[models]` keys are string-valued (model names, effort levels) and
 resolved through the precedence chain above. The registry's typed read path — `ConfigValue`,
 `ValueKind`, per-surface threading through CLI/TUI/web/TS/React — is a cross-cutting seam documented
-separately: see [Typed Config Values](../architecture/config-value-types.md).
+separately: see [Typed Config Values](../architecture/core-abstractions.md).
 
 ## Codex Model Fallback
 
@@ -132,7 +132,7 @@ Haiku accepts `--effort high`: `claude --help` lists the levels with no per-mode
 `GuidanceModels::resolve`; `user_config/plan_authoring.rs`): `plan.spec_authoring_model` opus and `plan.spec_authoring_effort`
 medium for steps that write the product spec; `plan.plan_authoring_model` opus and `plan.plan_authoring_effort` high for steps
 that write metaplans and plans. `step_class` (`planning/guidance/start.rs`) sorts each authoring start into the spec or plan class
-(the rules are in [Planning Session Guidance](../architecture/planning-guidance.md#plan-authoring-keys-and-step-classes)). The user
+(the rules are in [Planning Session Guidance](../architecture/planning-document-model.md#plan-authoring-keys-and-step-classes)). The user
 tier is the `[plan]` table of `~/.loom/config.toml` (`user_config/plan.rs`, values validated as model and effort enums); the project
 tier is the `[planning]` table of `.loom/work/config.toml` (`fs/work_dir/config_sections/plan_config.rs`, `read_plan_config`,
 `deny_unknown_fields`). The tables differ because the project `[plan]` table already holds the run identity (`plan_id`,
@@ -140,7 +140,7 @@ tier is the `[planning]` table of `.loom/work/config.toml` (`fs/work_dir/config_
 without a log line, so every project override reverts to the user tier; this mirrors `read_pressure_config`. The README
 configuration table lists every row, and the web Settings dialog pairs the keys into six `plan` rows (`web/src/components/settings-model.ts`,
 pinned by `settings-model.test.ts`; the Codex pair is `plan.summary_codex`). The server resolves the keys once at start (see
-[follow-ups](../concerns/planning-guidance-followups.md)). The allowed backends are one constant, `SUMMARY_BACKENDS` (`user_config/plan.rs`), shared by the key list, the user tier and the project tier.
+[follow-ups](../concerns/planner-follow-ups-followups.md#planning-guidance-follow-ups)). The allowed backends are one constant, `SUMMARY_BACKENDS` (`user_config/plan.rs`), shared by the key list, the user tier and the project tier.
 
 ## Planner Execution Worker Allocation
 

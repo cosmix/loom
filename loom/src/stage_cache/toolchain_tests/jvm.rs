@@ -59,7 +59,7 @@ fn maven_resolves_from_the_host_seed_offline() {
 /// Linux only: confined Gradle is unsupported on macOS, where Seatbelt denies
 /// the network Gradle needs even in-process (a UDP bind per cache lock and
 /// loopback TCP to its compiler and test workers); see
-/// `concerns/stage-build-cache-gaps.md`.
+/// `concerns/state-confinement-gaps.md`.
 #[cfg(target_os = "linux")]
 #[test]
 #[serial_test::serial]

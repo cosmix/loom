@@ -57,7 +57,7 @@ The three verdicts above amend criteria or ask for evidence, so each re-queues t
 - A **findings** ruling that upholds nothing closes every disputed finding (`dismiss` or `defer`) and holds the stage the same way; a ruling that upholds one finding re-queues it, because the finding stays open.
 - The daemon finishes a held stage whose committed tree passes (see "Retirement and Fresh-Session Boundary"); a held stage that fails the eligibility checks gets a fresh session with the failure listed in `disputes/<stage>/feedback.md`.
 - A **contract** dispute is judged per contract (`contract-rulings`, below). An accept requeues the stage after the daemon writes each allowed replacement and re-freezes every recorded file at vetted bytes (see "Accepted Dispute Re-Freeze" in [contract-phase](contract-phase.md)); a verdict that rejects every contract requeues with a notice and no write. The prompt and notice are built from `prompt/contract_*.rs` and `apply_contract_notice.rs`.
-- An accepted **criterion** narrowing (`plan_patch.leaves_out`) also records hand-offs for the tests it leaves out ([criterion-narrowing-evidence](criterion-narrowing-evidence.md)).
+- An accepted **criterion** narrowing (`plan_patch.leaves_out`) also records hand-offs for the tests it leaves out ([criterion-narrowing-evidence](contract-collection.md)).
 
 An accepted amendment's audit row stores the dispute id and the optional reason inside
 `plan_patch`; that reason is not necessarily the verdict's full `reasoning` field. For the complete

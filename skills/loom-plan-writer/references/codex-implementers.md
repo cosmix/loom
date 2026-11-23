@@ -34,8 +34,8 @@ spawn time.
 | Availability | Needs the codex CLI and the configured backend's requirements (see Backends). Missing at run time, the signal reroutes terra- and sol-tier work to sonnet, and boilerplate and simple unit tests to haiku | Always available |
 
 Sources: BLOCK-A (subagent preamble), orchestration Rule 7, and knowledge
-`architecture/codex-concurrency.md`, `architecture/owned-waits.md` (unit deadline, unit verification
-limit), `architecture/codex-plugin.md`, `concerns/codex-heartbeat-starvation.md`,
+`architecture/codex-concurrency.md`, `architecture/orchestrator-loop.md` (unit deadline, unit verification
+limit), `architecture/codex-plugin.md`, `concerns/native-codex-qualification.md`,
 `mistakes/codex-navigation.md`, `mistakes/codex-worker-briefing.md`.
 
 ## Per-stage lane rule

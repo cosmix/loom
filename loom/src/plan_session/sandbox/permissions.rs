@@ -4,7 +4,7 @@
 //! resolves against the settings file's directory (`architecture/execution-containment.md`,
 //! "Sandbox-List vs Permission-Rule Path Syntax"). Only `Edit(...)` binds file writes; no
 //! `Write(...)` rule and no `Read(...)` deny is ever emitted
-//! (`mistakes/sandbox-write-rules-inert.md`, `concerns/sandbox-and-confinement-gaps.md`). No
+//! (`mistakes/sandbox-protected-hooks-dir.md`, `concerns/sandbox-and-confinement-gaps.md`). No
 //! `Edit` deny names `doc/loom/`: it would also be an OS write deny and block `loom knowledge`
 //! and `loom plan summary seal`. An `Edit` ask is the form `doc/loom/` takes: it prompts for a file
 //! tool and leaves the OS write set alone.

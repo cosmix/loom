@@ -140,7 +140,7 @@
 - A probe file was written to a path under `.worktrees/scratch/` instead of the session scratchpad; temp files go only under the scratchpad directory.
 - A zsh variable holding several file paths does not word-split, so `oxlint` and `oxfmt` received one bogus path and reported no files; pass literal paths to the lint and format tools.
 - A subagent brief that forbids `git add` and `git rm` still got `git mv` for a test-file rename; the rename staged. Rename with plain `mv` in subagent work ([the same slip](source-graph-delivery.md#a-worker-ran-git-mv-despite-the-subagent-git-restriction); a hook proposal is in [concerns](../concerns/planning-document-model-followups.md#planning-trace-limits)).
-- A `loom check integration-verify` run with `run_in_background` was never relayed and the next call reported `the request never reached the daemon` (a recurrence of [the backgrounded check](live-state-pollution.md#editing-while-loom-check-ran-and-a-backgrounded-check-that-never-relayed); the hook proposal is in [planning-guidance-followups](../concerns/planning-guidance-followups.md)).
+- A `loom check integration-verify` run with `run_in_background` was never relayed and the next call reported `the request never reached the daemon` (a recurrence of [the backgrounded check](live-state-pollution.md#editing-while-loom-check-ran-and-a-backgrounded-check-that-never-relayed); the hook proposal is in [planner-follow-ups-followups](../concerns/planner-follow-ups-followups.md#planning-guidance-follow-ups)).
 - Fact reports on a branch with uncommitted work say working tree versus HEAD: on `feat-planner-ui` about 94 web files were uncommitted while HEAD still had `NextAction` in `spine.tsx`.
 
 ## Path-Order Test Expectations Written in Case-Insensitive Order

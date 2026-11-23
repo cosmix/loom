@@ -8,7 +8,7 @@ Every gate whose result depends on the target OS runs on `macos-latest` as well 
 runs `lint-macos` (clippy, rustdoc), `flake-check-macos`, and `hooks-macos` (hook syntax, the hook suite
 and the partial-staging regression under `/bin/bash` 3.2, which a step asserts) on every push;
 `.github/workflows/nightly.yml` runs `test-macos` as lib, integration and host-job-lane jobs, plus both smoke scripts,
-because its build swaps on the push path ([CI macOS Test Build Time](ci-macos-test-build-time.md)).
+because its build swaps on the push path ([CI macOS Test Build Time](worktree-build-cold-start.md#the-lib-test-crates-rustc-needs-more-memory-than-the-macos-runner-has)).
 fmt, audit, deny and the web job stay Linux-only.
 Related portability lessons: [The First macOS Hook Run](../mistakes/hooks-macos-and-bash32.md#the-first-macos-hook-run-found-bash-32-and-bsd-faults-the-linux-shims-hid-2026-10-13),
 [Rust Fixtures Assumed Linux](../mistakes/ci-toolchain-and-cargo.md#rust-fixtures-assumed-linux-paths-ptys-and-tool-output-2026-10-13)
@@ -167,7 +167,7 @@ completion evidence, and both sides use the same constant.
   that returns the printed line and the notification reason would make it testable.
 - **First-call stages.** A stage whose first tool call is a long foreground run is parked at one budget;
   it needs a raised `subagent_timeout_secs`
-  ([Long Codex Runs Starve the Loom Heartbeat](codex-heartbeat-starvation.md)).
+  ([Long Codex Runs Starve the Loom Heartbeat](native-codex-qualification.md#long-codex-runs-starve-the-loom-heartbeat)).
 
 ## Test-Code Hygiene Left As Is
 

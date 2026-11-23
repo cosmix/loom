@@ -103,7 +103,7 @@ A relay ticket whose `LOOM_RELAY_V1` line never reached `loom-hooks/loom-relay.s
 - **`check`.** Swept the same way; rerun `loom check` in the foreground.
 - **Control kinds** (`block`, `commit`, `dispute`, `file-dispute`, `handoff`, `verdict`, `merge-resolved`, `freeze-contracts`, `complete`, `subagents:control`). Never swept. Run `loom request status <id>` alone; when it reports pending relay or not found the request was not filed, so rerun the command alone, in the foreground, with stdout unfiltered. Any other state means it was received.
 
-Control tickets older than 60 s stop counting against the 32-ticket quota but stay on disk, up to the 128-ticket scratch limit ([Session Requests Travel Through a Hook-Written Inbox](architecture/security-and-isolation.md#session-requests-travel-through-a-hook-written-inbox)). Manual recovery for sessions on a pre-fix binary, and the root cause: [Memory Relay Drain Gap](mistakes/memory-relay-drain-gap.md).
+Control tickets older than 60 s stop counting against the 32-ticket quota but stay on disk, up to the 128-ticket scratch limit ([Session Requests Travel Through a Hook-Written Inbox](architecture/security-and-isolation.md#session-requests-travel-through-a-hook-written-inbox)). Manual recovery for sessions on a pre-fix binary, and the root cause: [Status Broadcast Hardening](mistakes/status-broadcast-hardening.md#a-ticket-whose-line-never-reached-the-hook-was-leaked-forever-2026-09-18).
 
 ## One Canonical NotFound-Tolerant Delete Helper
 
@@ -136,7 +136,7 @@ before writing a new one.
 
 ## Optional Status Field From a Daemon-Written File
 
-A field the daemon derives slowly (token flow) gets its own thread that persists a compact file; the collector reads it bounded (`read_bounded`: no-follow, non-blocking, size-capped), keeps it only while fresh, and sanitizes strings and numbers at that boundary. The key is absent when stale, the web schema marks it optional, and a frame whose only defects sit under that key drops the block alone, so ordinary status always wins over the overlay. Shedding rules keep the file under a quarter of the response frame. Instance: [architecture/token-flow-sources.md](architecture/token-flow-sources.md#collector-boundary).
+A field the daemon derives slowly (token flow) gets its own thread that persists a compact file; the collector reads it bounded (`read_bounded`: no-follow, non-blocking, size-capped), keeps it only while fresh, and sanitizes strings and numbers at that boundary. The key is absent when stale, the web schema marks it optional, and a frame whose only defects sit under that key drops the block alone, so ordinary status always wins over the overlay. Shedding rules keep the file under a quarter of the response frame. Instance: [architecture/usage-evidence.md](architecture/usage-evidence.md#collector-boundary).
 
 ## Remote Control Capability/Preflight/Resolve Pattern
 

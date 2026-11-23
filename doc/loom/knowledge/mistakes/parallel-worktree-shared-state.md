@@ -283,7 +283,7 @@ No worktree stage could complete through the trusted PostToolUse broker: the cli
 
 Nothing enforced daemon singleton, so a second daemon could attach to a live `.loom/work/` and both would drive the same stages. Startup now takes an authoritative `flock` for the daemon's whole lifetime before touching the socket or control files. The daemon starts by re-executing `loom run --daemon-child`: forking it after threads existed crashed it on macOS while `loom run` reported success.
 
-→ [Daemon Singleton Incident](daemon-singleton.md), [Fork After Threads](daemon-fork-after-threads.md)
+→ [Daemon Singleton Incident](daemon-singleton.md), [Fork After Threads](daemon-singleton.md)
 
 ## Adjudication Autonomy Deadlock (2026-09-02)
 

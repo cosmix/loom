@@ -5,6 +5,7 @@ sources:
 - loom/src/planning/checklist.rs
 - loom/src/commands/plan/check.rs
 ---
+
 # Planning Document Model
 
 > Docs
@@ -181,3 +182,85 @@ failure). `--json` prints one pretty object `{schema: 1, root, checklist, proble
 become U+02CB). Plans without an `Implements:` line raise `implements-missing`, so the command exits 1 on a tree that has
 such plans; tests assert the JSON, not the exit code, for this repository's own `doc/`. `loom plan verify` resolves a
 retired plan's brief bundle through `plan::inputs::bundle_dir`, which strips `RETIRED-` too.
+
+## Planning Session Guidance
+
+What a planning session is told: the `loom-plan` plugin, the brief, the opening message and the model pair. Rendered per session by `planning::guidance` (`loom/src/planning/guidance/`), installed into the chat bridge by `plan_server::guidance` (`loom/src/plan_server/guidance/`).
+
+## Layout and one-source rules
+
+`plan-plugin/` at the repository root holds `.claude-plugin/plugin.json` (name `loom-plan`), `skills/` (`brainstorming`, `vision`, `section`, `metaplan`, `plan`, `refine`, `kickoff`, `knowledge`, `summaries`, `review`, `address-findings`) and `agents/` (`summary.md`, `overview.md`). The `review` skill (`loom-plan:review`, the Review the feature offer) verifies and records findings in `doc/plans/<f>/findings.md` and writes nothing else; the `address-findings` skill drives the Address the findings team ([planning trace](planning-trace.md#address-run)). It is embedded as `PLAN_PLUGIN` by `loom/build/assets.rs` beside `CLAUDE_COMMANDS` and the skills; the walker admits the `.claude-plugin` dot-directory only under that root. `install_all` never installs it: a session gets it only through the per-session copy below (see "Loom Assets Outside ~/.claude Need a Plugin" in [guidance-channels-and-plugin-scope](../conventions/guidance-channels-and-plugin-scope.md)).
+
+- The two pressure commands have no second copy: `plan-plugin/` has no `commands/`, and `plugin.rs` renders `commands/pressure.md` and `commands/address.md` from `CLAUDE_COMMANDS` (`pressure.md`, `address.md`). Both carry the sentence forbidding edits to the plan's `## Pressure tests` section.
+- The `knowledge` skill quotes `commands/distill.md`'s routing list; `knowledge_skill_preserves_every_distill_routing_line` (`planning/guidance/tests.rs`) takes distill.md lines 14-19 by position, so a change to that list is a change to the skill. The skill states ``Do not run `loom memory pending` or `loom memory resolve`.`` because the user's message names what to record, and writes only through `loom knowledge update`, `replace-section` or `annotate`.
+
+## Per-kind render table
+
+`render_session_guidance(kind, project, runtime, session_dir, models)` checks `StartBlocks::current` first (a present `config-block.json` refuses the start with `start blocked: <reason>`, an unreadable one fails closed), then writes `<session dir>/plugin/` and `<session dir>/brief.md`. `preflight` refuses a destination that already exists; `write_new` uses `create_new`, mode 0600 and `O_NOFOLLOW`, directories 0700. Each launch gets a fresh session directory, so a partial write is safe only for that reason.
+
+| Kind | Plugin content | Brief | Model and effort |
+| --- | --- | --- | --- |
+| `Authoring` | manifest, every `skills/*`, both agents with `model:` and `effort:` rewritten | `common_brief.md` + `## Starting point` + project state | spec or plan pair by `step_class` |
+| `Summary` | manifest, `skills/summaries/*` only, both agents rewritten | `summary_brief.md` | the overview pair |
+| `Pressure` | manifest, `commands/pressure.md`, `commands/address.md` | the caller's `brief` | the caller's `model`, `effort` |
+
+`rewrite_agent` demands exactly one `model:` and one `effort:` line in the frontmatter and fails otherwise. The summary agent takes the document pair, the overview agent the overview pair. The launch passes `--model`, `--effort`, `--plugin-dir` and `--append-system-prompt-file` (`plan_session/launch/script.rs`); the opening message rides the bridge, not argv (`opening_on_argv: false`).
+
+## `[plan]` authoring keys and step classes
+
+`plan.spec_authoring_model|effort` and `plan.plan_authoring_model|effort` (defaults in [model-and-effort-config](../conventions/model-and-effort-config.md)) resolve per key, project tier then user tier then default (`GuidanceModels::resolve`). `step_class` (`start.rs`) maps a start to `Spec` or `Plan`: vision, vision-table, add-section, write-section and review offers, a refine of a path under `doc/product` and the knowledge and no-step starts are `Spec`; metaplan, write-plan, add-plan, new-round offers and a refine of any other path are `Plan`; a `Message` start is `Plan` only when its first attachment lies under `doc/plans`.
+
+## The brief's starting-point block
+
+`brief.rs::starting_point` is derived from the rendered opening message: label (`loom plan:` and a `step` prefix stripped), target line, and the skill named by `Load the skill <skill>,`. `AuthoringStart` (`planning/guidance/start.rs`) has four variants, `Kickoff`, `Offer`, `Refine` and `Message`; a start needs an offer or typed text (`plan_server/chat/dispatch.rs`), and the block always reads the skill line. A `Message` start renders `Step: any, Refine.` and `Skill: loom-plan:refine.` with no `Target:` line, because it carries attachment paths and `opening_message` returns an empty string for it (the caller supplies the user's text). `project_state` then lists vision (`absent` or counts), metaplans, plan counts by state and the locked plan files (`IN_PROGRESS-PLAN-`, `DONE-PLAN-`, `RETIRED-PLAN-`). `common_brief.md` copies the seven-bullet conventions section of the product spec verbatim, heading and introduction included.
+
+## Questions and background work in the brief
+
+Every subagent the session spawns runs in the background, and so does a shell started with `run_in_background`. An agent reports with an `<agent-message>` hand-back and a `<task-notification>`, a shell with a `<task-notification>`; each opens a turn that is not the user's reply. `common_brief.md` has a section "Questions and background work" for this: ask a question last in a reply and end the turn; in a hand-back or notification turn do only what it calls for and never ask a waiting question again or call it unanswered; when the user's reply skips a waiting question, answer what they wrote and name the skipped one at most once. The bridge does not confirm a delivery with such a prompt unless its text equals the pasted message ([Delivery](planning-session-bridge.md#delivery), [the mistake](../mistakes/planner-ui-repair.md#a-question-was-reported-unanswered-after-a-background-turn)).
+
+## The turn-end duty
+
+An authoring turn that edited documents ends with `loom plan check` and nothing more (`common_brief.md` "The turn-end duty"); the `vision`, `section`, `refine` and `plan` skills repeat "Do not rebuild summaries at the end of the turn". The summaries a turn made out of date are rebuilt by the server's background scheduler once their inputs have stayed unchanged for `QUIET_PERIOD` (5 minutes, counted from the turn's end for edits made inside a turn), or at once on the user's Rebuild press ([Summary Store](summary-store.md#rebuilds-and-cost)). The authoring plugin still ships `agents/summary.md` and `agents/overview.md` (pinned by `tests/planning_guidance_contracts.rs` `authoring_plugin_carries_skills_and_agents_only`) for the one rebuild a chat makes itself: a summary sentence that misstates a right document, rebuilt through `loom plan summary brief --note` and `seal` (product spec section 10, "When the summary is wrong"). `Bash(loom plan summary *)` is pre-allowed for the Open and Team scopes for that path and for status checks (`plan_session/sandbox/permissions.rs`).
+
+## Server installation and brief route
+
+`plan_server::routes` installs `guidance::routes()` and calls `guidance::install(ctx)` after chat installation. `install` takes the chat `GuidanceSlot` from the extensions, resolves `GuidanceModels::load` once (a missing slot logs and leaves the `ChecklistGuidance` default), builds one `PlanGuidance`, `set`s it into the slot and also inserts it into the typed extensions, so the bridge and the `GET /api/session/brief?session=<id>` route (viewer role) share one map of rendered `SessionBriefView`s. An unknown or missing session answers 404 `unknown_session`. Only `Authoring` starts reach `render_session_guidance` through `PlanGuidance::authoring`; the summary and pressure kinds are rendered by plans 10 and 11 (see [planning-guidance-follow-ups](../concerns/planner-follow-ups-followups.md#planning-guidance-follow-ups)).
+
+## One Pipeline, Two Drivers
+
+`loom::pressure` (`loom/src/pressure/`) is the one pipeline behind `loom pressure` and the planning server's pressure run. `run_pipeline(driver, &PipelineInput)` (`mod.rs`) walks `plan_steps` (`steps.rs`: `Step::{DeleteReport, Pressure{claude, codex}, Address}`, the Claude `/pressure` + Codex `$pressure` pair per round, then `/address`) and calls a `PressureDriver` for each: `delete_report`, `run_pressure`, `run_address`. A `StepVerdict::Stop` deletes the report, writes no record and returns `PipelineOutcome::Stopped`. A step `Err` deletes the report and returns the error. `rounds >= 1` is asserted in `run_pipeline` itself.
+
+| Driver | Where | Runs steps as |
+| --- | --- | --- |
+| `TerminalDriver` | `commands/pressure/terminal.rs` (+ `spawn.rs`, `paths.rs`, `mod.rs::execute`) | foreground `claude` on the TTY with a marker file watched for completion; Codex in the background with a spinner |
+| app driver | `plan_server/pressure/` (`driver.rs`, `driver/step.rs`, `codex.rs`) | a pressure session through the planning bridge per Claude step; `codex exec` beside the `/pressure` session |
+
+Everything shared lives in `loom/src/pressure/`: `models.rs` (`PressureModels::resolve`, free `resolve_for`, `project_pressure_config`, `resolve_rounds`), `paths.rs` (`resolve_plan_path`, `codex_report_path`), `codex_run.rs` (`CodexRun`, `spawn_codex_with_fallback`, `unavailable_line`, `codex_args`), `instruction.rs` (`completion_instruction`, `MarkerHome`), `record.rs`. `commands/pressure/` keeps only the terminal-specific half; `models.rs` and `fallback.rs` are gone. The two drivers resolve rounds differently: the terminal uses `resolve_rounds` (flag, then `[pressure] rounds`, default 1) while `plan_server/pressure/options.rs` defaults the dialog to 1 (a fixed value, not the config chain) and validates 1..=10 (open, see [runtime-and-session-safety](../concerns/runtime-and-session-safety.md#pressure-backlog)).
+
+## The Record
+
+The pressure pipeline renders a `RecordLine` with date, model names, rounds and missing-review evidence, then calls `record::append_record` before deleting the final report. An empty Codex model renders as `unknown`.
+
+`append_to_text` preserves CRLF, places a record inside an existing unfenced `## Pressure tests` section before the next heading, or appends a new section. It uses the parsed metadata boundary, with a nonfenced marker fallback. The public text renderer preserves those placement rules.
+
+File publication takes the stable per-plan lock also used by amendment and plan-server save. It reads a retained no-follow regular file with an 8 MiB cap and stages a synced sibling candidate. To avoid overwriting a noncooperating edit, it writes once with `O_APPEND` only if the renderer result extends the snapshot. An interior insertion, unsupported file mode or other unsafe case is refused before publication. The path and contents are checked again after writing; a conflict can leave a suffix or partial fragment and is reported for inspection, without destructive rollback.
+
+## The Codex Half
+
+`codex_model_candidates` orders the fallback chain (see [model-and-effort-config](../conventions/model-and-effort-config.md)); `unavailable_line` in `codex_run.rs` is the only judge of "model unavailable". The app's `CodexHalf` (`plan_server/pressure/codex.rs`) snapshots session configuration before Codex starts (`config_guard::snapshot`), records the Codex `ProcessIdentity` (pid plus start time) in the session record again after each fallback attempt, and compares snapshots after the step. A change ends the run with a reason starting `Codex changed session configuration` and writes a `StartBlocks` entry; a Codex still alive after `codex_exit_grace` (10 s) writes the block `Codex did not exit; session configuration cannot be checked`.
+
+`config_guard` fingerprints regular files by SHA-256 through no-follow reads; symlinks by `readlinkat` target plus what an in-repo target serves (file digest, special kind, or the directory's tree), dangling/loop/outside links by target only; FIFOs, sockets and devices by kind, never followed. One Walker-owned work stack with `MAX_ENTRIES = 100_000` and `MAX_PATH_BYTES = 4096` fails closed past either; a real-directory `.claude/worktrees/` (Claude Code's own checkouts) is skipped. A link resolving to the repo root, `.git` or `.loom` is refused.
+
+## Stop, Grace And Recovery
+
+Stop and the holder-away grace go through the shared `driver/live.rs` state (each lock held for one short step). Stop terminates the current Claude session and Codex (SIGTERM, wait at most the exit grace, then the block above) and writes no record. Start-up recovery (`recover.rs`) tears a live pressure session down, terminates a recorded Codex only when its start time verifies against the stored identity (missing evidence never destroys), deletes that run's Codex report and names the run on the terminal. `PressureRunning` (`options.rs`) is the availability flag: set for the whole accepted run, cleared on every end; the ended `pressure_run` frame is published before it clears, so the dialog also refetches on `PlanMessage::PressureOptionsChanged` (sent after the clear and after a successful confirm-config).
+
+Routes (`pressure/routes.rs`): `GET /api/pressure/options` Viewer; `POST /start` and `POST /confirm-config` `Role::HolderOrTake` (after a restart nobody holds authoring, and a persisted Codex block must stay confirmable); `POST /stop` Holder.
+
+## Teammates
+
+Claude Code 2.1.312 writes an in-process teammate's transcript where it writes a subagent's (`<transcript dir>/<session>/subagents/agent-<id>.jsonl`, `agent-<id>.meta.json` with `taskKind: in_process_teammate`). `teammates.rs` registers each with the bridge's `add_token_transcript`; usage is keyed by message id, so a file the bridge also tails is not counted twice. The settings key `teammateMode` is real in 2.1.312; whether a `--settings` file beats the user's own value is unobserved, and the driver's tmux pane check is the runtime guard. Revisit if Claude Code moves the files or drops `taskKind`.
+
+## Terminal Driver Behaviour
+
+`TerminalDriver` keeps `loom pressure`'s output as it was before the pipeline moved: a `Stopped` outcome is `Ok(())` with no completion lines, and stop reasons come from the terminal exit helpers (`spawn.rs::should_stop`, `claude_should_stop`). Codex fallback notes print after the foreground Claude session exits. `execute` resolves rounds with `resolve_rounds` and `render_dry_run` prints the planned steps from `plan_steps`. A Codex attempt leads its own process group, so the terminal's SIGINT never reaches it. `retire_on_signal` holds a `CodexRetirement` (`pressure/codex_run/retirement.rs`) that signals every run started through it on a termination signal; the process exits 130 and refuses any further fallback or run. A SIGKILL of `loom` runs no handler and still leaves Codex running. A finished worker leaves no group to signal, and a group is dropped once `killpg(group, 0)` finds it empty, which narrows and does not close the window for a recycled group id; a straggler that outlives its worker is not killed by a later cancel.

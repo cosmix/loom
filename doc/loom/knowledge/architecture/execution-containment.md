@@ -33,7 +33,7 @@ No command inherits a boundary: a confined command never reuses a session's sand
 | `Confined` | `confined` (default) | Rebuild the allowlisted environment and apply the host OS boundary (Seatbelt or bubblewrap).        |
 | `Inherit`  | `inherit`            | Explicitly retain the invoking environment; no OS boundary is added (`verify/criteria/confine.rs`). |
 
-The plan sets `command_confinement`; a stage may override it. `resolve_confinement` and `plan_confinement` centralize precedence. The macOS Seatbelt profile is described in [Seatbelt Completion Profile](seatbelt-completion-profile.md).
+The plan sets `command_confinement`; a stage may override it. `resolve_confinement` and `plan_confinement` centralize precedence. The macOS Seatbelt profile is described in [Seatbelt Completion Profile](stage-build-cache.md).
 
 ## What Goes Through `spawn_confined`
 
@@ -46,7 +46,7 @@ The principle is **locations and login identity yes, live credentials no**. In `
 `STAGE_HOST_ENV_ALLOWLIST` serves `apply_stage_environment` (`spawn_confined`, the native spawner's
 `spawn_in_terminal`, the tmux server commands) and `AGENT_SESSION_ENV_NAMES` serves the stage
 wrapper's `exec env -i` list; `HOST_ENV_ALLOWLIST` in `daemon/server/environment.rs` serves the daemon
-child ([Launching the Daemon](daemon-launch.md)).
+child ([Launching the Daemon](orchestrator-loop.md)).
 
 `STAGE_HOST_ENV_ALLOWLIST` forwards `HOME`, `PATH`; `USER` and `LOGNAME` (they name the operator, and
 on macOS the `claude` CLI finds its Keychain login by `$USER`, so a session without it reads "Not

@@ -268,7 +268,7 @@ the host's runtime directory.
 **2. Permission rules (file tools).** Rules use the absolute `//` form throughout, because
 the settings file lives outside the project and a single leading `/` would resolve against
 its directory (`architecture/execution-containment.md`, path syntax). Only `Edit(...)` rules
-bind file writes; `Write(...)` rules are inert (`mistakes/sandbox-write-rules-inert.md`).
+bind file writes; `Write(...)` rules are inert (`mistakes/sandbox-protected-hooks-dir.md`).
 
 - `allow`: `Edit` on each directory directly under `doc/` except `loom`, enumerated at spawn,
   plus `doc/product/**` and `doc/plans/**` whether or not they exist yet, plus `Edit` on

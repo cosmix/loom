@@ -185,7 +185,7 @@ helper` resolves only to `__init__.py`, so a namespace package refuses instead o
   `loom plan verify` check that warns when a worker brief names a file carrying a stage wiring pattern but does not quote
   the pattern.
 
-- Proposal (a recurrence of [A Ticket Whose Line Never Reached the Hook Was Leaked Forever](../mistakes/memory-relay-drain-gap.md)):
+- Proposal (a recurrence of [A Ticket Whose Line Never Reached the Hook Was Leaked Forever](../mistakes/status-broadcast-hardening.md#a-ticket-whose-line-never-reached-the-hook-was-leaked-forever-2026-09-18)):
   a shell loop of 45 `loom memory resolve` calls with stdout sent to `/dev/null` hit the 32-ticket cap after 32, because
   the relay hook reads each `LOOM_RELAY_V1` line from the Bash tool output. Either let `loom memory resolve` take several
   ids in one call, or make the command refuse to start when the session already holds more than a handful of unconsumed

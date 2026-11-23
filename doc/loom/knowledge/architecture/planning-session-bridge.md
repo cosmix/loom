@@ -237,7 +237,7 @@ new tab can repeat an item already in the snapshot ([concerns](../concerns/plann
 launch files and the closing message. Chat installation sets `ChecklistGuidance` (it refuses an offer id the checklist
 does not currently offer, then defers to `FixedGuidance`, kept separate because `FixedGuidance` unit tests pin
 acceptance of unoffered ids); `plan_server::guidance::install` then `set`s the shared `PlanGuidance`, which renders the
-plugin and brief ([Planning Session Guidance](planning-guidance.md)).
+plugin and brief ([Planning Session Guidance](planning-document-model.md)).
 `dispatch` validates the text before `take_authoring`, records the starter inside the guidance closure (the
 session directory name is the session id), serialises starts with `ChatState::starting` (a plain send to a
 running chat skips it), and `give_back` frees authoring a refused start took unless a chat is reserved or
@@ -344,7 +344,7 @@ Each of these creates an entry or fills the fields it lacks: an `Agent`/`Task` `
 ### Transport
 
 - **Bridge event.** `BridgeEvent::Background { id, tasks }` is sent when the table changes, coalesced to one per driver tick (a flag set by each change, flushed in the timers after `reevaluate`); `SubagentStopped` stays immediate. `SessionView` carries no running-subagent count; `ChatSnapshot`, `ChatDelta` and `EndedChat` carry the changed view.
-- **Plan server.** `plan_server/chat/background/` (`mod.rs`, `groups.rs`, `state.rs`) registers its own bridge listener and hub `on_open` hook for the chat session only, runs the `planner-tokens` thread (see [token-flow-sources](token-flow-sources.md#planner-token-pass)) and joins the table with the token rows by agent id outside the bridge mutex: a flow row with no table entry is dropped, a table row with no flow row shows no token figures. `PlanMessage::Background { session, tasks }` (`wire/background.rs`, fixture `web/src/plan/api/fixtures/background.json`) carries `{model, total, tokens_per_min, active}` per task, broadcasts when the table changes or an active agent's total or rate changes (at most once per 5 s pass), is replayed by `snapshots()`, and on `Ended` or an emptied table sends an empty frame. Strings from transcripts, meta files and `Stop` lists go through `inline_safe` before they leave. The web side is in [planner-web-shell](planner-web-shell.md#background-tasks-and-the-command-list).
+- **Plan server.** `plan_server/chat/background/` (`mod.rs`, `groups.rs`, `state.rs`) registers its own bridge listener and hub `on_open` hook for the chat session only, runs the `planner-tokens` thread (see [token-flow-sources](usage-evidence.md#planner-token-pass)) and joins the table with the token rows by agent id outside the bridge mutex: a flow row with no table entry is dropped, a table row with no flow row shows no token figures. `PlanMessage::Background { session, tasks }` (`wire/background.rs`, fixture `web/src/plan/api/fixtures/background.json`) carries `{model, total, tokens_per_min, active}` per task, broadcasts when the table changes or an active agent's total or rate changes (at most once per 5 s pass), is replayed by `snapshots()`, and on `Ended` or an emptied table sends an empty frame. Strings from transcripts, meta files and `Stop` lists go through `inline_safe` before they leave. The web side is in [planner-web-shell](planner-web-shell.md#background-tasks-and-the-command-list).
 
 ### Limits
 

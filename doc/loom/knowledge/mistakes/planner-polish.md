@@ -87,7 +87,7 @@
 
 **Prevention:** before briefing a fix that depends on an event target, read the test helper that synthesises the event. A helper that picks targets the browser cannot produce hides the defect and breaks the fix.
 
-**Fix:** the helper fires on the parent element of the text node holding the clicked character; `hrefAt` returns null for a `.cm-line` or `.cm-content` target and resolves side 1 only ([the rule](../architecture/live-preview-editor.md#live-preview-decorations)).
+**Fix:** the helper fires on the parent element of the text node holding the clicked character; `hrefAt` returns null for a `.cm-line` or `.cm-content` target and resolves side 1 only ([the rule](../architecture/planner-feature-screens.md#live-preview-decorations)).
 
 ## A commit used a Conventional Commits type the rules do not allow
 

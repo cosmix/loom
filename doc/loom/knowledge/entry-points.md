@@ -22,7 +22,7 @@ The full hook roster — every script in `loom-hooks/`, the event it binds to, w
 - `loom/src/models/forward_receipt.rs` (+ `payload.rs`, `transcript/argv.rs`), `loom/src/commands/hook/forward_receipt.rs` (reads the PostToolUse payload on stdin), `loom/src/commands/subagents/forward_jobs_wait.rs` — forward receipts and `loom subagents wait`
 - `loom/src/commands/hook/worker_brief.rs` (worker briefs filed at issue), `loom/src/commands/hook/pre_compact.rs` (prompt-record reset on compaction), `loom/src/quota/history.rs` — worker briefs, compaction reset, quota history
 - `loom-hooks/_read_ledger.sh`, `loom-hooks/_read_discipline.sh` — deny-once read gate, sibling-read ledger and read-guard rules ([Read Gate](architecture/read-gate.md); no Rust read-receipt path exists)
-- `loom/src/commands/ask/` (`mod.rs`, `backend.rs`, `run.rs`, `payload.rs`, `eval.rs`) — `loom ask` one-shot worker and `--eval` ([loom ask](architecture/loom-ask.md))
+- `loom/src/commands/ask/` (`mod.rs`, `backend.rs`, `run.rs`, `payload.rs`, `eval.rs`) — `loom ask` one-shot worker and `--eval` ([loom ask](architecture/read-gate.md))
 - `loom/src/commands/usage/sections/attribution/` — `loom usage` Attribution section ([Read Gate](architecture/read-gate.md#the-attribution-section-of-loom-usage))
 - `loom/src/map/views/markdown_outline.rs` — direct heading outline for `loom map --outline` of a Markdown file
 - `agents/loom-software-developer.md` — haiku implementer ([Subagent Hierarchy](patterns/subagent-hierarchy.md))
@@ -50,10 +50,10 @@ do not guarantee, which is narrower than the word "containment" suggests.
 
 ## Owned Waits and Completion Recovery Surfaces
 
-- `commands/subagents/wait/` — `lease.rs`, `lease_fs.rs`, `engine.rs`, `identity.rs`, `codex_binding.rs`, `model.rs`, `output.rs`, `mod.rs`: the owned `loom subagents watch --worker ...` implementation. `commands/subagents/forward_jobs_wait.rs` owns `loom subagents wait --receipt ...`. See [Owned Waits](architecture/owned-waits.md).
+- `commands/subagents/wait/` — `lease.rs`, `lease_fs.rs`, `engine.rs`, `identity.rs`, `codex_binding.rs`, `model.rs`, `output.rs`, `mod.rs`: the owned `loom subagents watch --worker ...` implementation. `commands/subagents/forward_jobs_wait.rs` owns `loom subagents wait --receipt ...`. See [Owned Waits](architecture/orchestrator-loop.md).
 - `subagent_lifecycle/` (top-level crate module, not under `orchestrator/monitor/`) — `store.rs` (`LifecycleIndex::outcome`, `append_locked`, `codex_event_id`), `lock.rs` (`JournalLock`/`claim_lock`). Per-worker lifecycle journal (`subagents/<stage>/lifecycle.jsonl`), consumed by `commands/subagents/classify/lifecycle.rs`.
 - `codex_lifecycle/` — `authorization.rs`, `jobs.rs`, `ledger.rs`, `reconcile.rs` (`reconcile_codex_jobs`, `companion_outcome`). Codex companion job identity/authorization and daemon reconciliation into `subagent_lifecycle`.
-- `handoff/completion/` — `attest.rs` (HMAC attestation), `checkpoint.rs`, `identity.rs` (`expected_stage_commit`, `stage_head_commit`), `mod.rs`. See [Completion Recovery](architecture/completion-recovery.md).
+- `handoff/completion/` — `attest.rs` (HMAC attestation), `checkpoint.rs`, `identity.rs` (`expected_stage_commit`, `stage_head_commit`), `mod.rs`. See [Completion Recovery](architecture/daemon-owned-commits.md).
 - `models/session/methods.rs` — `Session.exit_reason: Option<SessionExitReason>`; `record_heartbeat` now takes `progress_at` first (monotonic `last_active`).
 - `loom-hooks/_lifecycle.sh` — shared lifecycle-journal/heartbeat helpers (`loom_lifecycle_refresh_heartbeat`) used by `subagent-stop.sh` and `teammate-idle.sh`; `loom_heartbeat_prior_progress_at` (in `_common.sh`) carries forward the last validated `progress_at` on an observation-only tool call.
 
@@ -83,4 +83,4 @@ Each topic file holds the full section for its area; this file only points to th
 
 - `loom/src/plan_session/bridge/background.rs` (+ `background/entry.rs`, `inputs.rs`) — the background-task table; `loom/src/plan_server/chat/background/` and `loom/src/tokens/planner.rs` — its wire frame and the planner token pass; `loom/src/plan_session/commands/` (`list.rs`, `builtins.rs`, `side.rs`), `plan_server/commands/` and `plan_session/bridge/local.rs` — the slash command table, its side process, route and local settle; `loom/tests/fixtures/plan_session/probe-notes.md` — the Claude Code 2.1.321 facts they rest on; `web/src/plan/chat/background-line.tsx`, `background-list.tsx`, `command-menu.tsx`, `web/src/plan/state/commands-atom.ts` and `web/scripts/plan-chat-screens.mjs` — the idle line, task list, command menu and their browser screens.
 
-→ [Planner Web Shell and Screens](architecture/planner-web-shell.md), [Planner Feature Screens](architecture/planner-feature-screens.md), [Planner Uploads and Kickoff Drafts](architecture/planner-uploads-and-drafts.md), [Summary Store](architecture/summary-store.md#summary-backends-claude-and-codex)
+→ [Planner Web Shell and Screens](architecture/planner-web-shell.md), [Planner Feature Screens](architecture/planner-feature-screens.md), [Planner Uploads and Kickoff Drafts](architecture/planner-feature-screens.md), [Summary Store](architecture/summary-store.md#summary-backends-claude-and-codex)

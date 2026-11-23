@@ -160,7 +160,7 @@ whole-query symbol question such as `what does tokenize do` reaches `fn tokenize
 another way: `rank_source/intent.rs::classify` returns `SymbolQuestion` and
 `rank_source/routing.rs::admit_symbol_question` admits the exact node with reason
 `symbol-question` at `Low` confidence (see
-[Context Retrieval Routing](context-retrieval-routing.md)). The reason this floor is needed on one channel and not the other
+[Context Retrieval Routing](context-retrieval-state.md)). The reason this floor is needed on one channel and not the other
 is per-channel stopwording asymmetry: source documents are ~10-token scope and
 signature strings holding almost no prose, so the project vocabulary the
 knowledge channel drops as ubiquitous — `hooks`, `sessions`, `settings` —
@@ -394,4 +394,4 @@ explanation, under one `MAX_EXPANDED_TOKENS = 300` budget shared with expansion.
 carry caveats that cut the score by 0.6, stage briefs and the CLI attach at most two 12-line source windows, and the graph
 behind all of it is the persisted resolved view.
 
-→ [Context Retrieval Routing](context-retrieval-routing.md)
+→ [Context Retrieval Routing](context-retrieval-state.md)

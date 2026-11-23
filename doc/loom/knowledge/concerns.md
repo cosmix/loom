@@ -45,7 +45,7 @@ Mitigation is doctrine (bound the task, set `subagent_timeout_secs`), not a moni
 the global timeout was considered and rejected. The `loom status` badge shows such a stage as `Busy`
 (open tool call) and measures silence against the same per-stage budget as the monitor.
 
-Full detail: [codex-heartbeat-starvation.md](concerns/codex-heartbeat-starvation.md). Native backend gaps (eight qualification checks, exposure facts, unimplemented review suggestions): [native-codex-qualification](concerns/native-codex-qualification.md).
+Full detail: [native-codex-qualification.md](concerns/native-codex-qualification.md#long-codex-runs-starve-the-loom-heartbeat). Native backend gaps (eight qualification checks, exposure facts, unimplemented review suggestions): [native-codex-qualification](concerns/native-codex-qualification.md).
 
 ## Automatic-Knowledge Plan Followups
 
@@ -87,7 +87,7 @@ grouped by area in the backlog.
 
 ## Platform, Commit-Relay and Stall Gaps
 
-Remaining platform/runtime questions include live macOS branch coverage, process limits on hook tests, full daemon re-exec coverage, intentionally filtered session environment, synchronous commit and login-probe costs, merge-side authorization, and status/watch evidence. Hook stdin reads use the portable bounded helper; separate direct-command timeout fallbacks remain. A dedicated Linux capsule step requires sandbox availability, while general test jobs can still skip capability-gated cases. Open items on the busy line and `busy::while_busy` are in [Busy Status Follow-Ups](concerns/platform-and-commit-gaps.md#busy-status-follow-ups). The macOS lib test build swaps on the 7 GB runner, so the macOS suites run nightly: [CI macOS Test Build Time](concerns/ci-macos-test-build-time.md).
+Remaining platform/runtime questions include live macOS branch coverage, process limits on hook tests, full daemon re-exec coverage, intentionally filtered session environment, synchronous commit and login-probe costs, merge-side authorization, and status/watch evidence. Hook stdin reads use the portable bounded helper; separate direct-command timeout fallbacks remain. A dedicated Linux capsule step requires sandbox availability, while general test jobs can still skip capability-gated cases. Open items on the busy line and `busy::while_busy` are in [Busy Status Follow-Ups](concerns/platform-and-commit-gaps.md#busy-status-follow-ups). The macOS lib test build swaps on the 7 GB runner, so the macOS suites run nightly: [CI macOS Test Build Time](concerns/worktree-build-cold-start.md#the-lib-test-crates-rustc-needs-more-memory-than-the-macos-runner-has).
 
 → [Platform and Commit Gaps](concerns/platform-and-commit-gaps.md)
 
@@ -107,13 +107,13 @@ Open follow-ups from the token-accounting plans: git and bounded-runner hygiene,
 
 Open and fixed reviewer findings on the host-verification code, one bullet per defect with its file:line. The open ones cover the apply and recovery path, criteria confinement, observer git discovery, and skill and reference text that still describes the session sandbox as the criteria environment.
 
-→ [Host-Verification Review Suggestions](concerns/source-graph-review-backlog.md); dispute-guard and host-job test follow-ups: [dispute-guards-followups](concerns/dispute-guards-followups.md), [Host-Job Test Gaps](concerns/sandbox-and-confinement-gaps.md#host-job-test-gaps)
+→ [Host-Verification Review Suggestions](concerns/source-graph-review-backlog.md); dispute-guard and host-job test follow-ups: [dispute-guards-followups](concerns/contract-autonomy-followups.md#dispute-guards-open-follow-ups), [Host-Job Test Gaps](concerns/sandbox-and-confinement-gaps.md#host-job-test-gaps)
 
 ## Pressure Gaps
 
 `loom pressure`'s two real-invocation smokes are manual-only, its dry-run argv is not shell-quoted so it cannot be
 pasted into a shell, and repo-root resolution is duplicated in two places. The app pressure and run-lane backlog is in
-[Handoff Follow-ups](concerns/handoff-followups.md).
+[Handoff Follow-ups](concerns/runtime-and-session-safety.md#run-lane-backlog-server).
 
 ## Execution Graph and Forward Guard Gaps
 
@@ -155,7 +155,7 @@ The OS sandbox, attached session capsule and daemon ancestry checks carry author
 
 ## Typed Config Values: Known Gaps
 
-Accepted limitations and test-coverage gaps in the typed config read-path (TUI control-char stripping, no non-interactive unset, an untagged-enum wire limitation, a TUI test gap). See [Typed Config Values: Known Gaps](concerns/typed-config-values.md).
+Accepted limitations and test-coverage gaps in the typed config read-path (TUI control-char stripping, no non-interactive unset, an untagged-enum wire limitation, a TUI test gap). See [Typed Config Values: Known Gaps](concerns/planner-follow-ups-followups.md#typed-config-values-known-gaps).
 
 ## Verification v2 Follow-Ups
 
@@ -184,7 +184,7 @@ Open boundaries include native file-tool credential coverage in checkout-rooted 
 
 → [Sandbox and Confinement Gaps](concerns/sandbox-and-confinement-gaps.md), [Agent Rule-Bending Hardening](concerns/agent-rule-bending-hardening.md)
 
-A confined command on macOS has no IP networking unless its stage sets `sandbox.network.allow_local_binding`; the opt-in cannot hold binds to loopback. See [macOS Confined IP Networking](concerns/macos-confined-networking.md).
+A confined command on macOS has no IP networking unless its stage sets `sandbox.network.allow_local_binding`; the opt-in cannot hold binds to loopback. See [macOS Confined IP Networking](concerns/state-confinement-gaps.md#macos-confined-ip-networking-is-off-by-default).
 
 ## Dependency Findings Follow-Ups
 
@@ -204,7 +204,7 @@ The planning trace's open checks (journeys that need a real session or tmux, the
 
 A new stage worktree has no build state, so its first compile or install is cold in every ecosystem; the contract freeze pays it first (about 2 min 20 s of a 3.5-minute contract phase on loom). Each stage now has one build-cache root shared by its session, workers and host jobs, so dependencies are warm; compiled objects on a stage's first build, npm/uv/bun downloads on a first install and Maven older than 3.9 stay cold. Options, constraints (parallel stages, all languages, macOS and Linux, no copies, no worktree pool) and next steps:
 
-→ [Every Stage Worktree Builds From Cold](concerns/worktree-build-cold-start.md), [Stage Build Cache Gaps](concerns/stage-build-cache-gaps.md) (open reviewer suggestions, the xcrun residual)
+→ [Every Stage Worktree Builds From Cold](concerns/worktree-build-cold-start.md), [Stage Build Cache Gaps](concerns/state-confinement-gaps.md#open-reviewer-suggestions-from-the-stage-cache-plan) (open reviewer suggestions, the xcrun residual)
 
 ## Concept Mode Open Items
 
@@ -222,7 +222,7 @@ Open teardown, race, transcript-mapper, chat-wire and trust-entry items from the
 
 ## Plan Chat Follow-ups
 
-The chat plan left the live-session operator test unrun, a SHA-256 ref gap and git edge cases in the review server, reconnect, draft and layout-state defects in the chat model, accessibility notes, and a list of duplicated helpers and missing tests, each with its file. → [Plan Chat Follow-ups](concerns/plan-chat-followups.md) The planner UI repair left the Codex summary backend unrun live, raw server strings outside the Untrusted rule, duplicated helpers and unshot layout details. → [Planner UI Repair Follow-ups](concerns/planner-ui-repair-followups.md) The planner redesign left the pressure mark split between the spine and the Rust step mark, owner-watch limits (one start, one kill attempt, children not terminated), chat context-attach edges, journey-script and bundle-rule gaps, and tracked-bundle and sealed-summary rebuilds, in the same file under "Planner redesign follow-ups". Claude Code's TMPDIR stays writable in sandboxed sessions because a deny would break Bash exit codes and relayed loom commands. → [State Confinement Gaps](concerns/state-confinement-gaps.md)
+The chat plan left the live-session operator test unrun, a SHA-256 ref gap and git edge cases in the review server, reconnect, draft and layout-state defects in the chat model, accessibility notes, and a list of duplicated helpers and missing tests, each with its file. → [Plan Chat Follow-ups](concerns/planner-follow-ups-followups.md#chat-web-follow-ups) The planner UI repair left the Codex summary backend unrun live, raw server strings outside the Untrusted rule, duplicated helpers and unshot layout details. → [Planner UI Repair Follow-ups](concerns/planner-ui-repair-followups.md) The planner redesign left the pressure mark split between the spine and the Rust step mark, owner-watch limits (one start, one kill attempt, children not terminated), chat context-attach edges, journey-script and bundle-rule gaps, and tracked-bundle and sealed-summary rebuilds, in the same file under "Planner redesign follow-ups". Claude Code's TMPDIR stays writable in sandboxed sessions because a deny would break Bash exit codes and relayed loom commands. → [State Confinement Gaps](concerns/state-confinement-gaps.md)
 
 ## macOS Window Teardown Closes by Title and Is Unverified (GitHub #7)
 
@@ -230,7 +230,7 @@ Teardown closes an iTerm2 or Terminal.app window by its title. The iTerm2 spawn 
 
 ## Planner Review Fixes Follow-ups
 
-Operator checks no stage sandbox can run (rebuilt summaries, a real image read, a kickoff round trip, journeys J2-J5 and J8), one open question about server-written sends returned on end, and about forty unimplemented reviewer suggestions on uploads, drafts, summaries and the web screens. → [Planner UI Repair Follow-ups](concerns/planner-ui-repair-followups.md#planner-review-fixes-unchecked-here-and-reviewer-suggestions) Planner kickoff fixes: a proposed check for a stale embedded `web/dist`, the criterion-sandbox failures no local run reproduces, and the unimplemented reviewer suggestions on set aside, the confined Delete and the draft page. → [Planner Kickoff Fixes Follow-ups](concerns/planner-kickoff-fixes-followups.md)
+Operator checks no stage sandbox can run (rebuilt summaries, a real image read, a kickoff round trip, journeys J2-J5 and J8), one open question about server-written sends returned on end, and about forty unimplemented reviewer suggestions on uploads, drafts, summaries and the web screens. → [Planner UI Repair Follow-ups](concerns/planner-ui-repair-followups.md#planner-review-fixes-unchecked-here-and-reviewer-suggestions) Planner kickoff fixes: a proposed check for a stale embedded `web/dist`, the criterion-sandbox failures no local run reproduces, and the unimplemented reviewer suggestions on set aside, the confined Delete and the draft page. → [Planner Kickoff Fixes Follow-ups](concerns/planner-follow-ups-followups.md#reviewer-suggestions-not-implemented)
 
 ## Planner Polish Follow-ups
 

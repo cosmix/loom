@@ -15,7 +15,7 @@
 
 ## Rust Text Written by a Codex Unit Can Silently Break the Whole Crate Build
 
-Three distinct compile-breaking patterns, all found only because the orchestrator compiled right after each unit (a codex unit's own check is compile-only or skipped — see [Owned Waits § Codex unit verification limit](../architecture/owned-waits.md)):
+Three distinct compile-breaking patterns, all found only because the orchestrator compiled right after each unit (a codex unit's own check is compile-only or skipped — see [Owned Waits § Codex unit verification limit](../architecture/orchestrator-loop.md)):
 
 - **Un-escaped braces in `format!(concat!(...))`:** a regex quantifier like `[A-Za-z0-9._-]{1,64}` inside a `format!` string is parsed by rustc as a `{}` placeholder (`invalid format string ... expected }`). Briefs for doctrine/format! text must say to double every literal brace (`{{` `}}`).
 - **Bare CLI placeholders in doc comments:** a doc comment containing `<agent-id>` or `<unit-id>` unescaped is an unclosed HTML tag under `rustdoc` with warnings denied — the crate's own gate (fmt/build/clippy/tests) can be green while the repo's pre-commit hook (which also runs rustdoc) still rejects the commit. Write CLI placeholders in doc comments inside backticks: `` `<agent-id>` ``.
