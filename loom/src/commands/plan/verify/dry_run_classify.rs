@@ -18,6 +18,10 @@ pub enum DryOutcome {
     Passed,
     /// A red criterion: the expected state before the stage's work.
     Failed,
+    /// A red test run that printed its summary: every failing test already
+    /// exists at the base commit. The text is the end of the run's output,
+    /// which names them.
+    FailedTests(String),
 }
 
 /// How a finding is reported.
@@ -77,7 +81,9 @@ pub fn severity(outcome: &DryOutcome, stage_has_dependencies: bool) -> Option<Dr
         // A filter naming tests the stage itself or an earlier stage adds
         // selects nothing at base by design; the static Rust filter lint and
         // completion's zero-test guard cover a filter that stays empty.
-        DryOutcome::ZeroTests | DryOutcome::Failed => Some(DrySeverity::Note),
+        DryOutcome::ZeroTests | DryOutcome::Failed | DryOutcome::FailedTests(_) => {
+            Some(DrySeverity::Note)
+        }
         // An earlier stage may provide the program or script.
         DryOutcome::Missing(_) if stage_has_dependencies => Some(DrySeverity::Note),
         DryOutcome::Missing(_) => Some(DrySeverity::Error),

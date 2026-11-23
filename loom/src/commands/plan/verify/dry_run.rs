@@ -38,6 +38,7 @@ use crate::verify::criteria::{
 };
 use crate::verify::goal_backward::wiring_tests::WIRING_TEST_TIMEOUT;
 use crate::verify::impact_tests::base::BaseCheckout;
+use tail::summary_tail;
 
 /// Longest command text a finding quotes.
 const MAX_QUOTED: usize = 120;
@@ -235,7 +236,11 @@ fn settled(execute: &mut DryExecutor<'_>, command: &DryCommand) -> DryOutcome {
 fn outcome_of(execute: &mut DryExecutor<'_>, command: &DryCommand) -> DryOutcome {
     let (result, failures) = execute(command);
     let has_summary = has_test_summary(&command.command, &command.dir, &result);
-    classify_with(&result, &failures, has_summary)
+    let outcome = classify_with(&result, &failures, has_summary);
+    if outcome == DryOutcome::Failed && has_summary && !result.success {
+        return DryOutcome::FailedTests(summary_tail(&command.command, &command.dir, &result));
+    }
+    outcome
 }
 
 fn record(
@@ -303,7 +308,26 @@ fn describe(
         DryOutcome::Failed => {
             "fails at the base commit (expected before the stage's work)".to_string()
         }
+        DryOutcome::FailedTests(tail) => failed_tests_text(tail),
     }
+}
+
+/// The note for a test run that failed at the base commit: its failing tests
+/// exist there, so the failure is the stage's stated work or a test broken
+/// under this confinement. `tail` (the end of the output) follows on indented
+/// lines, which the one-line collapsing of the command text never touches.
+fn failed_tests_text(tail: &str) -> String {
+    let mut text = "fails at the base commit: tests that already exist there fail under this \
+                    confinement (expected only if fixing them is the stage's work)"
+        .to_string();
+    if !tail.is_empty() {
+        text.push_str("; the end of its output:");
+        for line in tail.lines() {
+            text.push_str("\n    ");
+            text.push_str(line);
+        }
+    }
+    text
 }
 
 /// The word of `command` (a leading `./` stripped) that one of the stage's
@@ -331,6 +355,8 @@ mod dry_run_real_tests;
 #[cfg(test)]
 #[path = "dry_run_tests.rs"]
 mod dry_run_tests;
+#[path = "dry_run_tail.rs"]
+mod tail;
 
 #[cfg(test)]
 mod display_tests {
