@@ -314,14 +314,14 @@ fn describe(
 
 /// The note for a test run that failed at the base commit: its failing tests
 /// exist there, so the failure is the stage's stated work or a test broken
-/// under this confinement. `tail` (the end of the output) follows on indented
-/// lines, which the one-line collapsing of the command text never touches.
+/// under this confinement. `tail` (the lines naming its failures, then the end of the
+/// output) follows on indented lines, which the one-line collapsing of the command text never touches.
 fn failed_tests_text(tail: &str) -> String {
     let mut text = "fails at the base commit: tests that already exist there fail under this \
                     confinement (expected only if fixing them is the stage's work)"
         .to_string();
     if !tail.is_empty() {
-        text.push_str("; the end of its output:");
+        text.push_str("; its failing lines and the end of its output:");
         for line in tail.lines() {
             text.push_str("\n    ");
             text.push_str(line);

@@ -63,24 +63,80 @@ fn a_failed_command_without_a_summary_keeps_the_old_text() {
     );
 }
 
+/// `cargo test --all-targets --no-fail-fast`: the first binary fails, the last passes.
+const TWO_BINARIES: &str = "running 2 tests\ntest a::passes ... ok\ntest a::broken ... FAILED\n\n\
+     failures:\n\nfailures:\n    a::broken\n\n\
+     test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out\n\n\
+     error: test failed, to rerun pass `--lib`\n\
+     running 3 tests\ntest b::one ... ok\ntest b::two ... ok\ntest b::three ... ok\n\n\
+     test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out\n";
+
 #[test]
-fn the_tail_keeps_twelve_lines_and_marks_the_cut() {
+fn a_failing_first_binary_is_named_though_the_last_one_passes() {
+    let excerpt = tail_of(TWO_BINARIES);
+    let lines: Vec<&str> = excerpt.lines().collect();
+    assert_eq!(lines[0], "test a::broken ... FAILED", "{excerpt}");
+    assert!(lines[1].starts_with("test result: FAILED."), "{excerpt}");
+    assert!(excerpt.contains("test b::three ... ok"), "{excerpt}");
+    assert!(excerpt.ends_with("0 filtered out"), "{excerpt}");
+    assert!(!excerpt.contains("a::passes"), "{excerpt}");
+}
+
+#[test]
+fn without_failure_lines_the_excerpt_is_the_last_six_lines() {
     let text: String = (1..=20).map(|n| format!("line {n}\n\n")).collect();
-    let tail = tail_of(&text);
-    let lines: Vec<&str> = tail.lines().collect();
-    assert_eq!(lines.len(), 12, "{tail}");
-    assert_eq!(lines[0], "…line 9");
-    assert_eq!(lines[11], "line 20");
+    let excerpt = tail_of(&text);
+    let lines: Vec<&str> = excerpt.lines().collect();
+    assert_eq!(lines.len(), 6, "{excerpt}");
+    assert_eq!((lines[0], lines[5]), ("line 15", "line 20"));
     assert_eq!(tail_of("a\n\nb\n"), "a\nb");
 }
 
 #[test]
-fn the_tail_keeps_at_most_1200_characters_from_the_end() {
-    let text = format!("{}\nlast line", "é".repeat(2_000));
-    let tail = tail_of(&text);
-    assert_eq!(tail.chars().count(), MAX_CHARS);
-    assert!(tail.starts_with("…é"));
-    assert!(tail.ends_with("\nlast line"));
+fn at_most_twenty_failure_lines_are_kept_and_the_rest_is_counted() {
+    let failures: String = (1..=27).map(|n| format!("FAIL t{n}\n")).collect();
+    let text = format!("{failures}ok 1\nok 2\nok 3\nok 4\nok 5\nok 6\n");
+    let excerpt = tail_of(&text);
+    let lines: Vec<&str> = excerpt.lines().collect();
+    assert_eq!(lines[0], "FAIL t1", "{excerpt}");
+    assert_eq!(lines[19], "FAIL t20", "{excerpt}");
+    assert_eq!(lines[20], "… 7 more lines containing FAIL left out");
+    assert_eq!(
+        &lines[21..],
+        ["ok 1", "ok 2", "ok 3", "ok 4", "ok 5", "ok 6"]
+    );
+}
+
+#[test]
+fn a_failure_line_past_the_cap_that_the_tail_prints_is_not_reported_as_left_out() {
+    let failures: String = (1..=22).map(|n| format!("FAIL t{n}\n")).collect();
+    let excerpt = tail_of(&format!("{failures}ok\n"));
+    assert!(!excerpt.contains("left out"), "{excerpt}");
+    assert_eq!(excerpt.lines().count(), 23, "{excerpt}");
+    assert!(excerpt.ends_with("FAIL t21\nFAIL t22\nok"), "{excerpt}");
+}
+
+#[test]
+fn no_line_appears_twice() {
+    let excerpt = tail_of("ok 1\ntest x ... FAILED\nok 2\ntest result: FAILED\n");
+    assert_eq!(
+        excerpt,
+        "test x ... FAILED\ntest result: FAILED\nok 1\nok 2"
+    );
+    let lines: Vec<&str> = excerpt.lines().collect();
+    let distinct: std::collections::HashSet<&str> = lines.iter().copied().collect();
+    assert_eq!(distinct.len(), lines.len(), "{excerpt}");
+}
+
+#[test]
+fn the_excerpt_keeps_at_most_2000_characters_and_marks_the_cut() {
+    let text = format!("FAIL {}\nlast line", "é".repeat(3_000));
+    let excerpt = tail_of(&text);
+    assert_eq!(excerpt.chars().count(), MAX_CHARS);
+    assert!(excerpt.starts_with("FAIL é"));
+    assert!(excerpt.ends_with('…'));
+    let fits = format!("FAIL {}", "é".repeat(500));
+    assert_eq!(tail_of(&fits), fits);
 }
 
 #[test]

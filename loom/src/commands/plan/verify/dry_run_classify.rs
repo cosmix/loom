@@ -19,8 +19,8 @@ pub enum DryOutcome {
     /// A red criterion: the expected state before the stage's work.
     Failed,
     /// A red test run that printed its summary: every failing test already
-    /// exists at the base commit. The text is the end of the run's output,
-    /// which names them.
+    /// exists at the base commit. The text is the run's failure lines and the
+    /// end of its output, which name them.
     FailedTests(String),
 }
 
