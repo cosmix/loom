@@ -5,11 +5,11 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use super::types::{Stage, StageStatus};
-use crate::git::{MergeBlock, StashReapply};
+use crate::git::MergeBlock;
 use crate::models::failure::{FailureInfo, FailureType};
 
-/// A stage's merge state, flattened into the stage file so `merge_block` and
-/// `merge_stash` stay top-level keys.
+/// A stage's merge state, flattened into the stage file so `merge_block` stays
+/// a top-level key.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MergeRecord {
     /// Why the target branch was not advanced; set while `MergeBlocked`.
@@ -19,23 +19,6 @@ pub struct MergeRecord {
         skip_serializing_if = "Option::is_none"
     )]
     pub block: Option<MergeBlock>,
-    /// What the merge did with the operator's stashed changes in the main
-    /// checkout; never cleared, it is the stage's merge note.
-    #[serde(
-        rename = "merge_stash",
-        default,
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub stash: Option<StashReapply>,
-    /// Every backup ref whose stashed changes a merge could not restore, in
-    /// the order recorded. Never shrinks: the status collector reports the
-    /// ones that still exist, and the operator deleting a ref closes it.
-    #[serde(
-        rename = "merge_unrestored_stashes",
-        default,
-        skip_serializing_if = "Vec::is_empty"
-    )]
-    pub unrestored: Vec<String>,
     /// When the stage entered `MergeConflict`; set while it is there, and
     /// moved into the conflict's `issue_history` entry when it leaves.
     #[serde(
@@ -65,6 +48,50 @@ fn is_zero(count: &u32) -> bool {
     *count == 0
 }
 
+impl MergeBlock {
+    /// Whether this block names a merge quarantine directory that still
+    /// exists, holding operator files a merge moved aside; an unreadable path
+    /// counts as present. No merge of the stage may run while it does, from
+    /// the daemon or the operator's commands: it would land over the paths
+    /// whose bytes the quarantine holds, and the block is the only pointer to
+    /// them. Deleting the directory releases the stage.
+    pub fn holds_displaced_files(&self) -> bool {
+        match self {
+            Self::CheckoutRestoreIncomplete { quarantine, .. } => !matches!(
+                std::fs::symlink_metadata(quarantine),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound
+            ),
+            _ => false,
+        }
+    }
+
+    /// Whether the block's own text already tells the operator what to do:
+    /// a held quarantine (no failures, a `detail`) carries its remedy in the
+    /// detail, so the generic recovery sentence would repeat it.
+    pub fn states_its_remedy(&self) -> bool {
+        matches!(
+            self,
+            Self::CheckoutRestoreIncomplete { failures, detail: Some(_), .. }
+                if failures.is_empty()
+        )
+    }
+
+    /// Who resumes this blocked merge, one sentence without a final period:
+    /// the daemon's retry, or the operator for a quarantine that holds files
+    /// ([`Self::holds_displaced_files`]), which no merge runs past.
+    pub fn retry_note(&self) -> &'static str {
+        if self.holds_displaced_files() && self.states_its_remedy() {
+            "No merge of this stage runs while the quarantine exists, not even the daemon's retry"
+        } else if self.holds_displaced_files() {
+            "No merge of this stage runs while the quarantine exists, not even the daemon's \
+             retry: move each file in it back to its path in the checkout, delete the \
+             directory, then rerun the merge"
+        } else {
+            "Loom retries the merge every tick"
+        }
+    }
+}
+
 impl Stage {
     /// Whether the stage is final: `Completed` and merged, by loom or by the
     /// operator's `loom stage complete --force-unsafe --assume-merged`. Loom
@@ -87,35 +114,9 @@ impl Stage {
             detected_at: Utc::now(),
             evidence: vec![sentence.clone()],
         });
-        if let MergeBlock::StashNotRestored { backup_ref } = &block {
-            self.record_merge_stash(StashReapply {
-                backup_ref: backup_ref.clone(),
-                restored: false,
-            });
-        }
         self.merge.block = Some(block);
         if self.status != StageStatus::MergeBlocked && self.try_mark_merge_blocked().is_err() {
             self.force_status_with_reason(StageStatus::MergeBlocked, &sentence);
-        }
-    }
-
-    /// Record what the merge did with the operator's stashed changes. Never
-    /// cleared: it stays as the stage's merge note. A restored note does not
-    /// replace an unrestored one, whose stash still holds work the checkout
-    /// lacks; a new unrestored note replaces any. Every unrestored backup ref
-    /// is also kept in `unrestored`, so a newer note never hides an older one.
-    pub fn record_merge_stash(&mut self, stash: StashReapply) {
-        if !stash.restored && !self.merge.unrestored.contains(&stash.backup_ref) {
-            self.merge.unrestored.push(stash.backup_ref.clone());
-        }
-        let keeps_unrestored = stash.restored
-            && self
-                .merge
-                .stash
-                .as_ref()
-                .is_some_and(|existing| !existing.restored);
-        if !keeps_unrestored {
-            self.merge.stash = Some(stash);
         }
     }
 

@@ -1,13 +1,11 @@
 //! Conservative discovery and cleanup of orphaned stage worktrees.
 
-use super::branch::branch_exists_strict;
-use super::{CleanupConfig, CleanupResult};
+use super::{CleanupOutcome, MergeLifecycle};
 use crate::fs::stage_files::find_stage_file;
-use crate::git::branch::{
-    branch_name_for_stage, branch_ref, commits_ahead_of, default_branch, is_ancestor_of,
-};
+use crate::git::branch::{branch_name_for_stage, branch_ref, default_branch};
+use crate::git::cleanup::{branch_exists_strict, CleanupConfig, CleanupResult};
+use crate::git::target_guard::merged_into_accepted;
 use crate::models::stage::{Stage, StageStatus};
-use crate::orchestrator::merge_lifecycle::{CleanupOutcome, MergeLifecycle};
 use crate::verify::transitions::parse_stage_from_markdown;
 use anyhow::{Context, Result};
 use colored::Colorize;
@@ -73,11 +71,10 @@ fn partition_worktrees(
     repo_root: &Path,
     work_dir: &Path,
 ) -> Result<(Vec<String>, usize)> {
-    let stages_dir = work_dir.join("stages");
     let mut orphaned = Vec::new();
     let mut active = 0;
     for stage_id in ids {
-        if is_orphan(stage_id, target, repo_root, &stages_dir)? {
+        if is_orphan(stage_id, target, repo_root, work_dir)? {
             orphaned.push(stage_id.clone());
         } else {
             active += 1;
@@ -86,9 +83,10 @@ fn partition_worktrees(
     Ok((orphaned, active))
 }
 
-fn is_orphan(stage_id: &str, target: &str, repo_root: &Path, stages_dir: &Path) -> Result<bool> {
-    let Some(stage_path) = find_stage_file(stages_dir, stage_id)? else {
-        let safe = branch_has_no_unmerged_work(stage_id, target, repo_root);
+fn is_orphan(stage_id: &str, target: &str, repo_root: &Path, work_dir: &Path) -> Result<bool> {
+    let stages_dir = work_dir.join("stages");
+    let Some(stage_path) = find_stage_file(&stages_dir, stage_id)? else {
+        let safe = branch_has_no_unmerged_work(stage_id, target, repo_root, work_dir);
         print_missing_stage_decision(stage_id, safe);
         return Ok(safe);
     };
@@ -114,7 +112,9 @@ fn is_orphan(stage_id: &str, target: &str, repo_root: &Path, stages_dir: &Path) 
             return Ok(false);
         }
     };
-    Ok(classify_stage(stage_id, &stage, target, repo_root))
+    Ok(classify_stage(
+        stage_id, &stage, target, repo_root, work_dir,
+    ))
 }
 
 fn print_missing_stage_decision(stage_id: &str, safe: bool) {
@@ -133,7 +133,13 @@ fn print_missing_stage_decision(stage_id: &str, safe: bool) {
     }
 }
 
-fn classify_stage(stage_id: &str, stage: &Stage, target: &str, repo_root: &Path) -> bool {
+fn classify_stage(
+    stage_id: &str,
+    stage: &Stage,
+    target: &str,
+    repo_root: &Path,
+    work_dir: &Path,
+) -> bool {
     let terminal = matches!(stage.status, StageStatus::Skipped)
         || (matches!(stage.status, StageStatus::Completed) && stage.merged);
     if !terminal {
@@ -146,9 +152,9 @@ fn classify_stage(stage_id: &str, stage: &Stage, target: &str, repo_root: &Path)
         return false;
     }
     let completed_is_merged = stage.completed_commit.as_deref().is_some_and(|commit| {
-        is_ancestor_of(commit, &branch_ref(target), repo_root).unwrap_or(false)
+        merged_into_accepted(repo_root, work_dir, target, commit).unwrap_or(false)
     });
-    let branch_is_merged = branch_has_no_unmerged_work(stage_id, target, repo_root);
+    let branch_is_merged = branch_has_no_unmerged_work(stage_id, target, repo_root, work_dir);
     let safe =
         branch_is_merged && (completed_is_merged || matches!(stage.status, StageStatus::Skipped));
     let label = if safe {
@@ -170,10 +176,19 @@ fn classify_stage(stage_id: &str, stage: &Stage, target: &str, repo_root: &Path)
     safe
 }
 
-fn branch_has_no_unmerged_work(stage_id: &str, target: &str, repo_root: &Path) -> bool {
+/// An unreadable guard record or any git failure keeps the worktree.
+fn branch_has_no_unmerged_work(
+    stage_id: &str,
+    target: &str,
+    repo_root: &Path,
+    work_dir: &Path,
+) -> bool {
     let branch = branch_name_for_stage(stage_id);
     matches!(branch_exists_strict(&branch, repo_root), Ok(true))
-        && matches!(commits_ahead_of(&branch, target, repo_root), Ok(0))
+        && matches!(
+            merged_into_accepted(repo_root, work_dir, target, &branch_ref(&branch)),
+            Ok(true)
+        )
 }
 
 fn clean_partition(
@@ -272,3 +287,6 @@ fn print_cleanup_result(stage_id: &str, result: &CleanupResult) {
 fn finish_cleanup() {
     println!("\n{} Cleanup pass finished.", "✓".green().bold());
 }
+
+#[cfg(test)]
+mod tests;

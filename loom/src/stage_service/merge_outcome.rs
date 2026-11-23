@@ -3,7 +3,7 @@
 use anyhow::{ensure, Result};
 use chrono::Utc;
 
-use crate::git::merge::{MergeBlock, MergeResult, StashReapply};
+use crate::git::merge::{MergeBlock, MergeResult};
 use crate::git::signing::CommitTreeError;
 use crate::models::failure::{FailureInfo, FailureType};
 use crate::models::stage::Stage;
@@ -15,7 +15,6 @@ pub(crate) enum MergeDisposition {
         files: u32,
         insertions: u32,
         deletions: u32,
-        stash: Option<StashReapply>,
     },
     AlreadyLanded,
     Conflict(Vec<String>),
@@ -32,12 +31,10 @@ impl From<MergeResult> for MergeDisposition {
                 files_changed,
                 insertions,
                 deletions,
-                stash,
             } => Self::Landed {
                 files: files_changed,
                 insertions,
                 deletions,
-                stash,
             },
             MergeResult::AlreadyUpToDate => Self::AlreadyLanded,
             MergeResult::Conflict { conflicting_files } => Self::Conflict(conflicting_files),

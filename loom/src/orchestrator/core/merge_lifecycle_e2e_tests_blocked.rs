@@ -1,6 +1,6 @@
 //! The block and clean-landing half of the merge lifecycle, end to end with
 //! real git: a typed block retried each tick, a target not checked out in the
-//! operator's checkout, a clean reapply of the operator's edit, deferred
+//! operator's checkout, an operator edit on a path the merge touches, deferred
 //! cleanup, and a daemon restart. After every step the operator's checkout is
 //! checked against a snapshot.
 
@@ -105,7 +105,7 @@ fn a_target_not_checked_out_in_the_operators_checkout_advances_by_ref_alone() {
 }
 
 #[test]
-fn an_operator_edit_that_reapplies_cleanly_survives_the_landing() {
+fn an_operator_edit_on_a_path_the_merge_touches_blocks_the_landing() {
     let repo = repo_with_worktree();
     let root = repo.path();
     commit_file(root, "multi.txt", &twenty_lines());
@@ -114,22 +114,23 @@ fn an_operator_edit_that_reapplies_cleanly_survives_the_landing() {
     commit_file(&worktree(root), "multi.txt", &stage_side);
     let operator_side = twenty_lines().replace("line 1\n", "operator edit\n");
     std::fs::write(root.join("multi.txt"), operator_side).unwrap();
-    let before = checkout(root);
+    let main_before = main_tip(root);
     let mut orchestrator = orchestrator_with_completed_stage(root);
 
-    assert!(orchestrator.try_auto_merge(ID));
+    assert!(!orchestrator.try_auto_merge(ID));
 
     let stage = on_disk(&orchestrator);
-    assert!(stage.merged);
-    let stash = stage.merge.stash.expect("the stash outcome is recorded");
-    assert!(stash.restored);
-    git(root, &["rev-parse", "--verify", &stash.backup_ref]);
-    let merged = text_of(root, "multi.txt");
-    assert!(merged.starts_with("operator edit\n") && merged.contains("stage edit"));
-    assert!(!crate::git::merge::merge_head_exists(root).unwrap());
-    assert_eq!(git(root, &["rev-parse", "HEAD"]), main_tip(root));
-    assert_ne!(git(root, &["rev-parse", "HEAD"]), before.head);
-    assert_eq!(git(root, &["status", "--porcelain"]), "M multi.txt");
+    assert_eq!(stage.status, StageStatus::MergeBlocked);
+    assert!(
+        matches!(
+            &stage.merge.block,
+            Some(MergeBlock::UncommittedOverlap { paths }) if paths == &["multi.txt"]
+        ),
+        "{:?}",
+        stage.merge.block
+    );
+    assert!(text_of(root, "multi.txt").starts_with("operator edit\n"));
+    assert_eq!(main_tip(root), main_before);
 }
 
 #[test]

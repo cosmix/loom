@@ -1,41 +1,65 @@
-//! Operator-facing reports for a merge that stashed changes, was blocked, or
-//! was held by the control-path gate.
+//! Operator-facing reports for a merge that was blocked or held by the
+//! control-path gate.
 
 use anyhow::Result;
 use std::path::Path;
 
-use crate::git::merge::{MergeBlock, StashReapply};
+use crate::git::merge::MergeBlock;
+use crate::models::stage::Stage;
 use crate::verify::transitions::update_stage;
 
-/// Tell the operator where their uncommitted tracked changes are when the
-/// merge stashed them, and record the outcome on the stage so `loom status`
-/// still shows unrestored changes later. Changes that were not reapplied are a
-/// warning: the merge did land.
-pub(in crate::commands::stage) fn note_merge_stash(
-    stage_id: &str,
-    work_dir: &Path,
-    stash: Option<StashReapply>,
-) {
-    let Some(stash) = stash else { return };
-    if stash.restored {
-        println!("  {}", stash.notice());
-    } else {
-        eprintln!("  WARNING: {}", stash.notice());
-    }
-    if let Err(error) = update_stage(stage_id, work_dir, |s| {
-        s.record_merge_stash(stash);
-        Ok(())
-    }) {
-        eprintln!("  Warning: could not record the stash outcome on stage '{stage_id}': {error:#}");
+/// Print why the merge is blocked and who retries it. No merge runs while a
+/// quarantine holds operator files, the daemon's retry included, so that
+/// block gets its own remedy.
+pub(in crate::commands::stage) fn report_merge_block(stage_id: &str, block: &MergeBlock) {
+    for line in merge_block_lines(stage_id, block) {
+        println!("{line}");
     }
 }
 
-/// Print why the merge is blocked and who retries it.
-pub(in crate::commands::stage) fn report_merge_block(stage_id: &str, block: &MergeBlock) {
-    println!("  Merge blocked: {block}");
-    println!(
+/// The lines [`report_merge_block`] prints, in order.
+fn merge_block_lines(stage_id: &str, block: &MergeBlock) -> Vec<String> {
+    let mut lines = vec![format!("  Merge blocked: {block}")];
+    if let MergeBlock::CheckoutRestoreIncomplete { quarantine, .. } = block {
+        lines.push(format!(
+            "  No merge of this stage runs while {} exists, not even the daemon's retry.",
+            quarantine.display()
+        ));
+        if !block.states_its_remedy() {
+            lines.push(format!(
+                "  Move each file in it back to its path in the checkout, delete the directory, \
+                 then run `loom stage merge {stage_id}` or let a running daemon retry it"
+            ));
+        }
+        return lines;
+    }
+    lines.push(format!(
         "  A running daemon retries the merge every tick; otherwise run `loom stage merge {stage_id}`"
+    ));
+    lines
+}
+
+/// The error a completion ends with once its merge was blocked and reported
+/// by [`report_merge_block`]. A quarantine that holds files keeps that
+/// report's remedy: `loom stage retry` would drop the block that points at it.
+pub(super) fn blocked_exit(stage: &Stage) -> String {
+    let id = &stage.id;
+    let head = format!(
+        "Merge blocked for stage '{id}'.\nThe stage has been marked MergeBlocked.\n\
+         This session should exit now."
     );
+    if stage
+        .merge
+        .block
+        .as_ref()
+        .is_some_and(MergeBlock::holds_displaced_files)
+    {
+        return format!(
+            "{head} Recover the quarantined files as reported above; do not run \
+             loom stage retry {id}, which drops the block that points at the quarantine."
+        );
+    }
+    format!("{head} Fix the issue and run: loom stage retry {id}")
 }
 
 /// Print why the control-path gate held the merge and how an operator
@@ -65,31 +89,4 @@ pub(in crate::commands::stage) fn route_held_to_review(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::models::stage::Stage;
-    use crate::verify::transitions::{load_stage, save_stage};
-
-    #[test]
-    fn note_merge_stash_records_the_outcome_and_ignores_none() {
-        let work_dir = tempfile::TempDir::new().unwrap();
-        let stage = Stage {
-            id: "s".to_string(),
-            ..Stage::default()
-        };
-        save_stage(&stage, work_dir.path()).unwrap();
-
-        note_merge_stash("s", work_dir.path(), None);
-        assert_eq!(load_stage("s", work_dir.path()).unwrap().merge.stash, None);
-
-        let lost = StashReapply {
-            backup_ref: "refs/loom/autostash/s-1".to_string(),
-            restored: false,
-        };
-        note_merge_stash("s", work_dir.path(), Some(lost.clone()));
-        assert_eq!(
-            load_stage("s", work_dir.path()).unwrap().merge.stash,
-            Some(lost)
-        );
-    }
-}
+mod tests;

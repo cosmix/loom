@@ -16,7 +16,7 @@ use super::super::resolver_spawn::test_fixtures::{
 use super::Landing;
 use crate::fs::stage_files::find_stage_file;
 use crate::git::signing::tests::fake_signer;
-use crate::git::{MergeBlock, StashReapply};
+use crate::git::MergeBlock;
 use crate::models::session::Session;
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::core::Orchestrator;
@@ -311,46 +311,6 @@ fn landing_a_control_path_branch_holds_it_for_human_review() {
         .unwrap()
         .contains(".claude/settings.json"));
     assert_eq!(main_tip(&repo), main_before);
-}
-
-#[test]
-fn a_landing_that_stashed_the_operators_changes_records_the_outcome() {
-    let (repo, mut orchestrator) = worktree_stage();
-    // The stage and the operator edit different lines of one tracked file, so
-    // the merge touches a dirty path, needs a stash, and the reapply is clean.
-    let lines: Vec<String> = (1..=20).map(|n| format!("line {n}\n")).collect();
-    commit_file(repo.path(), "multi.txt", &lines.concat());
-    git(&worktree(&repo), &["reset", "-q", "--hard", "main"]);
-    let stage_side = lines.concat().replace("line 20", "stage edit");
-    commit_file(&worktree(&repo), "multi.txt", &stage_side);
-    let operator_side = lines.concat().replace("line 1\n", "operator edit\n");
-    std::fs::write(repo.path().join("multi.txt"), &operator_side).unwrap();
-    record_verified_head(&orchestrator, &repo);
-
-    assert!(orchestrator.try_auto_merge(ID));
-
-    let stage = on_disk(&orchestrator);
-    assert!(stage.merged);
-    let stash = stage.merge.stash.expect("the stash outcome is recorded");
-    assert!(stash.restored);
-    assert!(stash.backup_ref.starts_with("refs/loom/autostash/"));
-    git(repo.path(), &["rev-parse", "--verify", &stash.backup_ref]);
-    let merged = std::fs::read_to_string(repo.path().join("multi.txt")).unwrap();
-    assert!(merged.starts_with("operator edit\n") && merged.contains("stage edit"));
-}
-
-#[test]
-fn note_merge_stash_persists_an_unrestored_stash_and_ignores_none() {
-    let (_repo, mut orchestrator) = worktree_stage();
-    orchestrator.note_merge_stash(ID, None);
-    assert_eq!(on_disk(&orchestrator).merge.stash, None);
-
-    let lost = StashReapply {
-        backup_ref: "refs/loom/autostash/s-1".to_string(),
-        restored: false,
-    };
-    orchestrator.note_merge_stash(ID, Some(lost.clone()));
-    assert_eq!(on_disk(&orchestrator).merge.stash, Some(lost));
 }
 
 #[test]

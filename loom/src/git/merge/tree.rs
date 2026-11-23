@@ -11,8 +11,6 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use super::stash_report::{restore_remedy, spare_copy_remedy};
-pub use super::stash_report::{RollbackChanges, StashReapply};
 use crate::git::branch::branch_ref;
 use crate::git::runner::{run_git, run_git_checked};
 use crate::git::signing;
@@ -31,8 +29,8 @@ pub enum TreeMerge {
     Conflict { tree: String, paths: Vec<String> },
 }
 
-/// Why the target branch was not advanced. `StashNotRestored` requires the
-/// operator to restore stashed checkout changes.
+/// Why the target branch was not advanced. `CheckoutRestoreIncomplete`
+/// needs the operator to put moved-aside files back.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum MergeBlock {
@@ -47,20 +45,17 @@ pub enum MergeBlock {
     /// The fast-forward was refused for a reason the checks did not predict
     /// and git named no paths; `detail` is git's message on one line.
     FastForwardRefused { detail: String },
-    /// The merge did not land and the operator's stashed changes could not
-    /// be put back: they are in `backup_ref`, and in a stash entry unless
-    /// something removed it.
-    StashNotRestored { backup_ref: String },
-    /// The reset after stashing failed with the checkout still as it was, so
-    /// the merge did not land and the changes never left. The stash entry and
-    /// `backup_ref` are spare copies for the operator to remove.
-    StashResetRefused { backup_ref: String },
-    /// Rollback could not restore every removed untracked file. The blob in
-    /// `source_rev` remains available for manual recovery.
+    /// The merge did not land and untracked files it moved aside could not
+    /// all be put back, or changed while being moved. Each listed file is in
+    /// `quarantine` at its checkout-relative path.
+    /// `detail` says what else went wrong when the merge did not land for a
+    /// reason the restore alone does not explain: a fast-forward git applied
+    /// to another branch.
     CheckoutRestoreIncomplete {
-        source_rev: String,
+        quarantine: PathBuf,
         failures: Vec<RestoreFailure>,
-        changes: RollbackChanges,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        detail: Option<String>,
     },
     /// The target guard holds the target: it moved outside loom from
     /// `accepted` to `observed`, and merges into it wait for the operator.
@@ -98,20 +93,11 @@ impl fmt::Display for MergeBlock {
                 f,
                 "git refused to fast-forward the main checkout: {detail}"
             ),
-            Self::StashNotRestored { backup_ref } => write!(
-                f,
-                "the merge did not land and your uncommitted changes could not be put back: they are in {backup_ref} and, unless it was removed, in a `git stash list` entry; {}",
-                restore_remedy(backup_ref)
-            ),
-            Self::StashResetRefused { backup_ref } => write!(
-                f,
-                "the merge did not land because clearing the checkout failed before changing anything: your uncommitted changes are still in the checkout; {}",
-                spare_copy_remedy(backup_ref)
-            ),
-            Self::CheckoutRestoreIncomplete { source_rev, failures, changes } => {
-                write!(f, "the merge did not land and checkout rollback is incomplete ({}); recover the removed files from git revision {source_rev} after inspecting the listed paths", failures.iter().map(|failure| format!("{}: {}", failure.path, failure.reason)).collect::<Vec<_>>().join(", "))?;
-                changes.fmt_note(f)
-            }
+            Self::CheckoutRestoreIncomplete {
+                quarantine,
+                failures,
+                detail,
+            } => fmt_restore_incomplete(f, quarantine, failures, detail.as_deref()),
             Self::TargetHeld {
                 target,
                 accepted,
@@ -121,7 +107,37 @@ impl fmt::Display for MergeBlock {
     }
 }
 
-/// One checkout path that rollback could not restore.
+/// The operator text of [`MergeBlock::CheckoutRestoreIncomplete`].
+fn fmt_restore_incomplete(
+    f: &mut fmt::Formatter<'_>,
+    quarantine: &std::path::Path,
+    failures: &[RestoreFailure],
+    detail: Option<&str>,
+) -> fmt::Result {
+    if let (true, Some(detail)) = (failures.is_empty(), detail) {
+        return write!(
+            f,
+            "the merge did not land: {detail} (quarantine: {})",
+            quarantine.display()
+        );
+    }
+    write!(
+        f,
+        "the merge did not land and untracked files it moved aside are kept in {} ({}); inspect each, move it back to its path in the checkout, then delete the directory",
+        quarantine.display(),
+        failures
+            .iter()
+            .map(|failure| format!("{}: {}", failure.path, failure.reason))
+            .collect::<Vec<_>>()
+            .join(", ")
+    )?;
+    match detail {
+        Some(detail) => write!(f, ". Also: {detail}"),
+        None => Ok(()),
+    }
+}
+
+/// One moved-aside checkout file that could not be put back.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RestoreFailure {
     pub path: String,
@@ -157,9 +173,8 @@ fn fmt_target_held(
 /// Result of [`advance_target`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Advance {
-    /// The target now points at the merge commit. `stash` is set when local
-    /// changes were stashed around the fast-forward.
-    Advanced { stash: Option<StashReapply> },
+    /// The target now points at the merge commit.
+    Advanced,
     /// The target was not advanced.
     Blocked(MergeBlock),
 }
@@ -258,7 +273,8 @@ impl<'a> PendingMerge<'a> {
 ///
 /// `repo` is the operator's main checkout. Where the target is checked out
 /// decides the mechanism: nowhere, `update-ref` guarded by the old tip; in
-/// `repo`, a fast-forward that keeps the operator's uncommitted work; in
+/// `repo`, a fast-forward that keeps the operator's uncommitted work or
+/// refuses when it overlaps the merge; in
 /// another worktree, a block. A ref update can be refused after commit creation
 /// if the target moves concurrently.
 pub fn advance_target(
@@ -269,7 +285,7 @@ pub fn advance_target(
 ) -> Result<Advance> {
     match checked_out_at(repo, target)? {
         Some(path) if same_path(&path, repo) => {
-            super::checkout_apply::advance_in_checkout(repo, stage_id, pending)
+            super::checkout_apply::advance_in_checkout(repo, target, stage_id, pending)
         }
         Some(path) => Ok(Advance::Blocked(MergeBlock::TargetCheckedOutElsewhere {
             path,
@@ -308,7 +324,7 @@ fn update_ref(
     let reason = format!("loom: merge loom/{stage_id}");
     let output = run_git(&["update-ref", "-m", &reason, &reference, &new, &old], repo)?;
     if output.status.success() {
-        return Ok(Advance::Advanced { stash: None });
+        return Ok(Advance::Advanced);
     }
     if rev_parse(repo, &reference)? != old {
         return Ok(Advance::Blocked(MergeBlock::TargetMoved));

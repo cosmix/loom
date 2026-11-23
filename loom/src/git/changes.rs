@@ -195,6 +195,19 @@ fn read_only_with(git: &WorktreeGit, args: &[&str], env: &[(&str, &OsStr)]) -> R
     Ok(output.stdout)
 }
 
+/// A listed path was not UTF-8. Callers that can refuse the change instead of
+/// failing find it with `downcast_ref` on the error chain.
+#[derive(Debug)]
+pub struct NonUtf8Path;
+
+impl std::fmt::Display for NonUtf8Path {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("git returned a non-UTF-8 path")
+    }
+}
+
+impl std::error::Error for NonUtf8Path {}
+
 /// The NUL-separated paths git listed, each required to be UTF-8.
 fn nul_paths(listed: &[u8]) -> Result<BTreeSet<String>> {
     listed
@@ -202,7 +215,7 @@ fn nul_paths(listed: &[u8]) -> Result<BTreeSet<String>> {
         .filter(|path| !path.is_empty())
         .map(|path| {
             std::str::from_utf8(path)
-                .context("git returned a non-UTF-8 path")
+                .map_err(|_| anyhow::Error::new(NonUtf8Path))
                 .map(str::to_owned)
         })
         .collect()

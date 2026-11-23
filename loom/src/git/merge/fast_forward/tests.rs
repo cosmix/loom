@@ -1,7 +1,7 @@
 use super::*;
+use crate::git::merge::checkout_files::displace_files;
 use crate::git::merge::test_support::{init_repo, rev, stage_branch};
 use crate::test_git::{commit_file, git};
-use std::os::unix::fs::symlink;
 
 fn overlap(paths: &[&str]) -> MergeBlock {
     MergeBlock::UncommittedOverlap {
@@ -60,7 +60,7 @@ fn a_refusal_naming_paths_is_an_overlap_and_changes_nothing() {
     let (old, new) = (rev(root, "main"), rev(root, "loom/s1"));
     std::fs::write(root.join("b.txt"), "mine").unwrap();
 
-    let advance = fast_forward(root, (&old, &new), &[], None).unwrap();
+    let advance = fast_forward(root, "main", (&old, &new), Displaced::default());
 
     assert_eq!(advance, Advance::Blocked(overlap(&["b.txt"])));
     assert_eq!(rev(root, "main"), old);
@@ -75,7 +75,7 @@ fn a_refusal_after_the_target_moved_is_target_moved() {
     let (old, new) = (rev(root, "main"), rev(root, "loom/s1"));
     commit_file(root, "c.txt", "moved", "main moves");
 
-    let advance = fast_forward(root, (&old, &new), &[], None).unwrap();
+    let advance = fast_forward(root, "main", (&old, &new), Displaced::default());
 
     assert_eq!(advance, Advance::Blocked(MergeBlock::TargetMoved));
 }
@@ -91,7 +91,7 @@ fn a_held_index_lock_refuses_and_moves_nothing() {
     let (old, new) = (rev(root, "main"), rev(root, "loom/s1"));
     std::fs::write(root.join(".git/index.lock"), "").unwrap();
 
-    let advance = fast_forward(root, (&old, &new), &[], None).unwrap();
+    let advance = fast_forward(root, "main", (&old, &new), Displaced::default());
 
     assert_eq!(rev(root, "main"), old);
     assert!(!root.join("b.txt").exists());
@@ -114,9 +114,9 @@ fn an_include_for_this_git_directory_shapes_the_files_the_fast_forward_writes() 
     let key = format!("includeIf.gitdir:{}/.git.path", root.display());
     git(&root, &["config", &key, include.to_str().unwrap()]);
 
-    let advance = fast_forward(&root, (&old, &new), &[], None).unwrap();
+    let advance = fast_forward(&root, "main", (&old, &new), Displaced::default());
 
-    assert_eq!(advance, Advance::Advanced { stash: None });
+    assert_eq!(advance, Advance::Advanced);
     assert_eq!(
         std::fs::read_to_string(root.join("b.txt")).unwrap(),
         "line\r\n"
@@ -132,121 +132,45 @@ fn a_refusal_without_paths_is_fast_forward_refused() {
     commit_file(root, "c.txt", "diverges", "main diverges");
     let old = rev(root, "main");
 
-    let advance = fast_forward(root, (&old, &new), &[], None).unwrap();
+    let advance = fast_forward(root, "main", (&old, &new), Displaced::default());
 
     let Advance::Blocked(MergeBlock::FastForwardRefused { detail }) = advance else {
         panic!("expected FastForwardRefused, got {advance:?}");
     };
     assert!(detail.contains("fast-forward"), "{detail}");
-    git(root, &["status", "--porcelain"]);
-}
-
-#[test]
-fn a_refused_fast_forward_reports_occupied_rollback_paths() {
-    let repo = init_repo();
-    let root = repo.path();
-    stage_branch(root, "s1", &[("a.txt", "branch a"), ("b.txt", "branch b")]);
-    let (old, new) = (rev(root, "main"), rev(root, "loom/s1"));
-    std::fs::write(root.join("a.txt"), "operator").unwrap();
-    std::fs::write(root.join("outside.txt"), "outside").unwrap();
-    symlink("outside.txt", root.join("b.txt")).unwrap();
-    let _guard = failpoint::inject(failpoint::Failures {
-        fast_forward: true,
-        ..Default::default()
-    });
-
-    let advance =
-        fast_forward(root, (&old, &new), &["a.txt".into(), "b.txt".into()], None).unwrap();
-
-    let Advance::Blocked(MergeBlock::CheckoutRestoreIncomplete {
-        source_rev,
-        failures,
-        changes,
-    }) = advance
-    else {
-        panic!("expected incomplete rollback, got {advance:?}");
-    };
-    assert_eq!(source_rev, new);
-    assert_eq!(
-        failures
-            .iter()
-            .map(|failure| failure.path.as_str())
-            .collect::<Vec<_>>(),
-        vec!["a.txt", "b.txt"]
-    );
-    assert_eq!(changes, RollbackChanges::NoBackup);
-    assert_eq!(std::fs::read(root.join("a.txt")).unwrap(), b"operator");
-    assert_eq!(std::fs::read(root.join("outside.txt")).unwrap(), b"outside");
     assert_eq!(rev(root, "main"), old);
-}
-
-/// A refused fast-forward with `f.txt` edited and stashed, and `a.txt`, which
-/// the merge replaces, occupied so that rollback cannot restore it.
-fn refused_with_a_stash_and_a_blocked_rollback(pop_fails: bool) -> (tempfile::TempDir, Advance) {
-    let repo = init_repo();
-    let root = repo.path();
-    commit_file(root, "f.txt", "base\n", "f");
-    stage_branch(root, "s1", &[("new.txt", "branch")]);
-    let (old, new) = (rev(root, "main"), rev(root, "loom/s1"));
-    std::fs::write(root.join("f.txt"), "edited\n").unwrap();
-    git(root, &["stash", "push", "-q"]);
-    std::fs::write(root.join("new.txt"), "operator").unwrap();
-    let _guard = failpoint::inject(failpoint::Failures {
-        fast_forward: true,
-        pop: pop_fails,
-        ..Default::default()
-    });
-    let backup = Some(StashedChanges {
-        commit: rev(root, "stash@{0}"),
-        backup_ref: "refs/loom/autostash/s1-1-abc".to_string(),
-    });
-    let advance = fast_forward(root, (&old, &new), &["new.txt".into()], backup).unwrap();
-    (repo, advance)
+    assert_eq!(git(root, &["status", "--porcelain"]).trim(), "");
 }
 
 #[test]
-fn a_popped_stash_is_not_reported_as_still_stashed() {
-    let (repo, advance) = refused_with_a_stash_and_a_blocked_rollback(false);
-    let Advance::Blocked(block) = advance else {
-        panic!("expected a block, got {advance:?}");
-    };
+fn a_refused_fast_forward_puts_displaced_files_back() {
+    let repo = init_repo();
+    let root = repo.path();
+    stage_branch(root, "s1", &[("a.txt", "branch a")]);
+    let (old, new) = (rev(root, "main"), rev(root, "loom/s1"));
+    std::fs::write(root.join("a.txt"), "branch a").unwrap();
+    let displaced = displace_files(
+        root,
+        "s1",
+        &rev(root, "loom/s1^{tree}"),
+        &["a.txt".to_string()],
+    )
+    .unwrap();
+    assert!(!root.join("a.txt").exists());
+    let _guard = failpoint::inject(failpoint::Failures {
+        fast_forward: true,
+        ..Default::default()
+    });
 
-    let text = block.to_string();
+    let advance = fast_forward(root, "main", (&old, &new), displaced);
 
-    assert_eq!(
-        std::fs::read(repo.path().join("f.txt")).unwrap(),
-        b"edited\n"
-    );
-    assert!(!text.contains("remain"), "{text}");
-    assert!(text.contains("put back in the checkout"), "{text}");
     assert!(
         matches!(
-            block,
-            MergeBlock::CheckoutRestoreIncomplete {
-                changes: RollbackChanges::Restored { .. },
-                ..
-            }
+            advance,
+            Advance::Blocked(MergeBlock::FastForwardRefused { .. })
         ),
-        "{block:?}"
+        "{advance:?}"
     );
-    assert!(text.contains("refs/loom/autostash/s1-1-abc"), "{text}");
-}
-
-#[test]
-fn a_stash_whose_pop_failed_is_reported_as_stashed() {
-    let (repo, advance) = refused_with_a_stash_and_a_blocked_rollback(true);
-    let Advance::Blocked(block) = advance else {
-        panic!("expected a block, got {advance:?}");
-    };
-
-    let text = block.to_string();
-
-    assert_eq!(std::fs::read(repo.path().join("f.txt")).unwrap(), b"base\n");
-    assert!(
-        text.contains("remain in refs/loom/autostash/s1-1-abc"),
-        "{text}"
-    );
-    assert!(text.contains("`git stash list` entry"), "{text}");
-    assert!(!text.contains("top"), "{text}");
-    assert!(text.contains("refs/loom/autostash/s1-1-abc"), "{text}");
+    assert_eq!(std::fs::read(root.join("a.txt")).unwrap(), b"branch a");
+    assert_eq!(rev(root, "main"), old);
 }

@@ -77,14 +77,13 @@ fn equal_untracked_overlap_is_removed() {
 }
 
 #[test]
-fn tracked_overlap_asks_for_a_reapply() {
+fn tracked_overlap_blocks() {
     let status = changed(".M", "merged.txt") + &untracked("added.txt");
     let touched = diff(&[("M", "merged.txt"), ("A", "added.txt")]);
     assert_eq!(
         classify(&status, &touched, &Fake::equal()),
-        Classification::Reapply {
-            tracked: vec!["merged.txt".to_string()],
-            remove_untracked: vec!["added.txt".to_string()],
+        Classification::Blocked {
+            paths: vec!["merged.txt".to_string()]
         }
     );
 }
@@ -95,9 +94,8 @@ fn staged_only_change_counts_as_tracked() {
     let touched = diff(&[("M", "merged.txt")]);
     assert_eq!(
         classify(&status, &touched, &Fake::default()),
-        Classification::Reapply {
-            tracked: vec!["merged.txt".to_string()],
-            remove_untracked: Vec::new(),
+        Classification::Blocked {
+            paths: vec!["merged.txt".to_string()]
         }
     );
 }
@@ -120,9 +118,8 @@ fn rename_in_the_checkout_counts_both_paths() {
     let touched = diff(&[("D", "old.txt")]);
     assert_eq!(
         classify(status, &touched, &Fake::default()),
-        Classification::Reapply {
-            tracked: vec!["old.txt".to_string()],
-            remove_untracked: Vec::new(),
+        Classification::Blocked {
+            paths: vec!["old.txt".to_string()]
         }
     );
 }
@@ -133,9 +130,8 @@ fn rename_in_the_merge_is_a_delete_plus_add() {
     let touched = diff(&[("D", "old.txt"), ("A", "renamed.txt")]);
     assert_eq!(
         classify(&status, &touched, &Fake::equal()),
-        Classification::Reapply {
-            tracked: vec!["old.txt".to_string()],
-            remove_untracked: vec!["renamed.txt".to_string()],
+        Classification::Blocked {
+            paths: vec!["old.txt".to_string()]
         }
     );
 }
@@ -146,9 +142,8 @@ fn paths_with_spaces_and_newlines_survive() {
     let touched = diff(&[("M", "dir/with space.txt"), ("A", "odd\nname.txt")]);
     assert_eq!(
         classify(&status, &touched, &Fake::equal()),
-        Classification::Reapply {
-            tracked: vec!["dir/with space.txt".to_string()],
-            remove_untracked: vec!["odd\nname.txt".to_string()],
+        Classification::Blocked {
+            paths: vec!["dir/with space.txt".to_string()]
         }
     );
 }
@@ -210,9 +205,8 @@ fn tracked_change_below_or_above_a_touched_path_is_a_tracked_overlap() {
     ] {
         assert_eq!(
             classify(&status, &touched, &Fake::default()),
-            Classification::Reapply {
-                tracked: vec![expected.to_string()],
-                remove_untracked: Vec::new(),
+            Classification::Blocked {
+                paths: vec![expected.to_string()]
             }
         );
     }

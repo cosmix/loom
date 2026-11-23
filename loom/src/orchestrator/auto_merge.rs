@@ -8,7 +8,7 @@
 use anyhow::{Context, Result};
 use std::path::Path;
 
-use crate::git::merge::{merge_stage, MergeBlock, MergeGate, MergeResult, StashReapply};
+use crate::git::merge::{merge_stage, MergeBlock, MergeGate, MergeResult};
 use crate::models::stage::Stage;
 
 /// Result of an auto-merge attempt.
@@ -23,9 +23,6 @@ pub enum AutoMergeResult {
         files_changed: u32,
         insertions: u32,
         deletions: u32,
-        /// The operator's stashed changes, when they were stashed around
-        /// the merge.
-        stash: Option<StashReapply>,
     },
     /// Already up to date (no changes needed)
     AlreadyUpToDate,
@@ -49,12 +46,10 @@ impl From<AutoMergeResult> for crate::stage_service::merge_outcome::MergeDisposi
                 files_changed,
                 insertions,
                 deletions,
-                stash,
             } => Self::Landed {
                 files: files_changed,
                 insertions,
                 deletions,
-                stash,
             },
             AutoMergeResult::AlreadyUpToDate => Self::AlreadyLanded,
             AutoMergeResult::Conflict { conflicting_files } => Self::Conflict(conflicting_files),
@@ -120,12 +115,10 @@ pub fn attempt_auto_merge(
             files_changed,
             insertions,
             deletions,
-            stash,
         } => AutoMergeResult::Success {
             files_changed,
             insertions,
             deletions,
-            stash,
         },
         MergeResult::AlreadyUpToDate => AutoMergeResult::AlreadyUpToDate,
         MergeResult::Conflict { conflicting_files } => {

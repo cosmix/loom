@@ -25,7 +25,6 @@ mod base;
 mod batch;
 mod branch;
 mod config;
-mod orphans;
 mod removal;
 pub(crate) mod worktree;
 mod worktree_failure;
@@ -50,7 +49,7 @@ pub use branch::cleanup_branch;
 // merge lifecycle can refuse cleanup on an unanswerable query.
 pub(crate) use branch::branch_exists_strict;
 pub use config::{CleanupConfig, CleanupResult};
-pub use orphans::cleanup_orphaned_worktrees;
+pub(crate) use removal::require_stage_contained;
 pub use removal::{
     cleanup_destructive_stage, cleanup_verified_stage, destructive_removal_confirmation,
     stage_resources_exist,

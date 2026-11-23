@@ -139,7 +139,8 @@ pub(super) fn settle_for_landing(landing: Landing, stage_id: &str, target: &str)
             paths.join(", ")
         )),
         Landing::Blocked(block) => Settle::Applied(Some(format!(
-            "resolution accepted; the merge is blocked: {block}. Loom retries it every tick"
+            "resolution accepted; the merge is blocked: {block}. {}",
+            block.retry_note()
         ))),
         Landing::Unproven => Settle::Refused(format!(
             "no ancestry proof that stage '{stage_id}' landed in '{target}'; merged stays false"

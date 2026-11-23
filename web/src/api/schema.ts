@@ -173,7 +173,6 @@ export const stageSummarySchema = z
     merge_assumed: z.boolean(),
     cleanup_warning: z.string().nullable().optional(),
     merge_block: z.string().nullable().optional(),
-    stash_warning: z.string().nullable().optional(),
     outgoing_session_exit_reason: outgoingSessionExitReasonSchema.optional(),
     completion_blocker: completionBlockerSchema.optional(),
     held: z.boolean(),

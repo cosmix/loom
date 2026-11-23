@@ -19,8 +19,8 @@ use crate::verify::transitions::{load_stage, update_stage};
 
 const ID: &str = "s";
 
-#[path = "blocked_retry_backup_ref_tests.rs"]
-mod backup_ref;
+#[path = "blocked_retry_displaced_tests.rs"]
+mod displaced;
 
 /// A stage `s` with a worktree on `loom/s` holding one commit, an
 /// orchestrator over it, and an untracked `stage.txt` in the main checkout

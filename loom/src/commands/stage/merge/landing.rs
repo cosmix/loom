@@ -16,7 +16,7 @@ use super::finish::finish_merge_and_report;
 use super::next_step::report_merge_error;
 use crate::commands::stage::progressive_complete::route_held_to_review;
 use crate::commands::stage::progressive_complete::{
-    note_merge_stash, report_merge_block, route_zero_commit_to_review, zero_commit_review_reason,
+    report_merge_block, route_zero_commit_to_review, zero_commit_review_reason,
 };
 
 /// The main repository root, followed out of a worktree through the state
@@ -43,6 +43,26 @@ pub(super) fn record_block(stage_id: &str, work_dir: &Path, block: MergeBlock) -
     })?;
     report_merge_block(stage_id, &block);
     Ok(())
+}
+
+/// Refuse to merge `stage` while its recorded block names a quarantine that
+/// still holds operator files ([`MergeBlock::holds_displaced_files`]): the
+/// merge would land over their paths and clear the block, the only record of
+/// where they are.
+pub(super) fn refuse_displaced_files(stage: &Stage) -> Result<()> {
+    match &stage.merge.block {
+        Some(block @ MergeBlock::CheckoutRestoreIncomplete { quarantine, .. })
+            if block.holds_displaced_files() =>
+        {
+            bail!(
+                "Stage '{}' cannot merge while {} holds files an earlier merge moved aside: \
+                 move each back to its path in the checkout, then delete the directory, then rerun",
+                stage.id,
+                quarantine.display()
+            )
+        }
+        _ => Ok(()),
+    }
 }
 
 /// Route the stage to human review because the control-path gate held its
@@ -82,11 +102,9 @@ pub(super) fn attempt_retried_merge(
             files: files_changed,
             insertions,
             deletions,
-            stash,
         }) => {
             println!("Merge successful!");
             println!("  {files_changed} files changed, +{insertions} -{deletions}");
-            note_merge_stash(stage_id, work_dir, stash);
             let done = format!("Stage '{stage_id}' merge complete! (Completed, merged: true)");
             complete_retried_merge(stage, work_dir, repo_root, target_branch, &done)
         }

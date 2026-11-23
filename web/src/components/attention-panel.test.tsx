@@ -149,13 +149,13 @@ describe("attention labels", () => {
     expect(within(automatic).getByText(/loom retries the merge automatically/)).toBeTruthy();
   });
 
-  it("lists unrestored stashed changes under needs attention as an error", () => {
+  it("lists a blocked stage under needs attention as an error", () => {
     const entry: Attention = {
       ...fixtureEntry("client"),
-      label: "STASH NOT RESTORED",
+      label: "BLOCKED",
       status: "blocked",
-      command: "git stash list",
-      note: "restore them with `git stash pop`",
+      command: "loom stage retry client",
+      note: null,
       automatic: false,
       failure_type: null,
       failure_label: null,
@@ -166,8 +166,8 @@ describe("attention labels", () => {
 
     renderPanel([entry]);
     const operator = screen.getByRole("region", { name: "needs attention" });
-    expect(within(operator).getByText("STASH NOT RESTORED")).toBeTruthy();
-    expect(within(operator).getByText("git stash list").tagName).toBe("CODE");
+    expect(within(operator).getByText("BLOCKED")).toBeTruthy();
+    expect(within(operator).getByText("loom stage retry client").tagName).toBe("CODE");
   });
 });
 

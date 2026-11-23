@@ -3,6 +3,7 @@
 
 use anyhow::{bail, Context, Result};
 use std::ffi::{OsStr, OsString};
+use std::os::fd::AsFd;
 use std::path::Path;
 
 use super::files::{append_head_reflog, is_present, swap, Stamp};
@@ -13,20 +14,39 @@ use super::{
 impl ScratchAdmin {
     /// Apply what the command changed to the real administrative directory.
     pub(in crate::git::worktree) fn publish(self) -> Result<()> {
+        let mut published = Vec::new();
+        match self.publish_changes(&mut published) {
+            Err(error) if !published.is_empty() => {
+                let names = published
+                    .iter()
+                    .map(|name| name.to_string_lossy())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                Err(error).context(format!("published before the failure: {names}"))
+            }
+            result => result,
+        }
+    }
+
+    fn publish_changes(&self, published: &mut Vec<OsString>) -> Result<()> {
         let created = self.created_names()?;
-        let index_may_move = self.publish_shared_indexes(&created)?;
+        let index_may_move = self.publish_shared_indexes(&created, published)?;
         for copy in &self.copied {
             let settled = is_shared_index(&copy.name) || (copy.name == INDEX && !index_may_move);
-            if !settled {
-                self.publish_copied(copy)?;
+            if !settled && self.publish_copied(copy)? {
+                published.push(copy.name.clone());
             }
         }
         for name in &self.linked {
-            self.publish_linked(name)?;
+            if self.publish_linked(name)? && !is_private(name) {
+                published.push(name.clone());
+            }
         }
         self.publish_reflog();
-        for name in created.iter().filter(|name| !is_shared_index(name)) {
-            self.publish_new(name)?;
+        for name in created.into_iter().filter(|name| !is_shared_index(name)) {
+            if self.publish_new(&name)? {
+                published.push(name);
+            }
         }
         Ok(())
     }
@@ -51,11 +71,15 @@ impl ScratchAdmin {
     /// concurrent git. Returns whether the index may follow: a failure drops it
     /// with the refresh of a command that only refreshes, and fails any other, since
     /// an `index` naming a missing file breaks every git in the worktree.
-    fn publish_shared_indexes(&self, created: &[OsString]) -> Result<bool> {
+    fn publish_shared_indexes(
+        &self,
+        created: &[OsString],
+        published: &mut Vec<OsString>,
+    ) -> Result<bool> {
         for name in created.iter().filter(|name| is_shared_index(name)) {
             let private = self.dir.path().join(name);
             match swap(&self.admin, &self.admin_path, name, None, Some(&private)) {
-                Ok(()) => {}
+                Ok(()) => published.push(name.clone()),
                 Err(_) if is_present(&self.admin, name) => {}
                 Err(error) if self.index_write_is_optional => {
                     tracing::debug!("dropped an index refresh: {error:#}");
@@ -67,11 +91,11 @@ impl ScratchAdmin {
         Ok(true)
     }
 
-    fn publish_copied(&self, copy: &Copied) -> Result<()> {
+    fn publish_copied(&self, copy: &Copied) -> Result<bool> {
         let private = self.dir.path().join(&copy.name);
         let now = Stamp::of_private(&private)?;
         if now == Some(copy.private) {
-            return Ok(());
+            return Ok(false);
         }
         let source = now.map(|_| private.as_path());
         let swapped = swap(
@@ -86,23 +110,28 @@ impl ScratchAdmin {
 
     /// A refresh that lost a race keeps the file a concurrent git just wrote;
     /// the next refresh repeats the work.
-    fn settle_swap(&self, name: &OsStr, swapped: Result<()>) -> Result<()> {
+    fn settle_swap(&self, name: &OsStr, swapped: Result<()>) -> Result<bool> {
         match swapped {
             Err(error) if self.index_write_is_optional && name == INDEX => {
                 tracing::debug!("dropped an index refresh: {error:#}");
-                Ok(())
+                Ok(false)
             }
-            other => other,
+            other => other.map(|()| true),
         }
     }
 
-    fn publish_linked(&self, name: &OsStr) -> Result<()> {
+    fn publish_linked(&self, name: &OsStr) -> Result<bool> {
         let private = self.dir.path().join(name);
         match std::fs::symlink_metadata(&private) {
-            Ok(meta) if meta.file_type().is_symlink() => Ok(()),
+            Ok(meta) if meta.file_type().is_symlink() => Ok(false),
             Ok(_) => self.publish_new(name),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                remove_dir(&self.admin_path.join(name))
+                crate::fs::no_follow_tree::remove_entry(self.admin.as_fd(), name, 0)
+                    .map_err(std::io::Error::from)
+                    .with_context(|| {
+                        format!("cannot remove {}", self.admin_path.join(name).display())
+                    })?;
+                Ok(true)
             }
             Err(error) => {
                 Err(error).with_context(|| format!("cannot inspect {}", private.display()))
@@ -110,7 +139,7 @@ impl ScratchAdmin {
         }
     }
 
-    fn publish_new(&self, name: &OsStr) -> Result<()> {
+    fn publish_new(&self, name: &OsStr) -> Result<bool> {
         let private = self.dir.path().join(name);
         let meta = std::fs::symlink_metadata(&private)
             .with_context(|| format!("cannot inspect {}", private.display()))?;
@@ -148,15 +177,4 @@ fn is_private(name: &OsStr) -> bool {
         .iter()
         .any(|own| name == *own)
         || Path::new(name).extension() == Some(OsStr::new("lock"))
-}
-
-/// Remove a directory whose private link git deleted.
-fn remove_dir(path: &Path) -> Result<()> {
-    let removed = match std::fs::symlink_metadata(path) {
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-        Err(error) => Err(error),
-        Ok(meta) if meta.is_dir() => std::fs::remove_dir_all(path),
-        Ok(_) => std::fs::remove_file(path),
-    };
-    removed.with_context(|| format!("cannot remove {}", path.display()))
 }

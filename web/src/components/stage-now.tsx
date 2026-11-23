@@ -18,7 +18,7 @@ function stateSentence(stage: StageSummary): string {
 }
 
 /// The entry as the now card shows it. An entry for something other than the
-/// failure (unrestored stash, failed cleanup, a completion blocker) carries no
+/// failure (a failed cleanup, a completion blocker) carries no
 /// evidence of its own, so the stage's live failure lends it its evidence.
 function withFailure(stage: StageSummary, entry: Attention): Attention {
   const failure = currentFailure(stage);

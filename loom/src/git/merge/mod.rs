@@ -2,7 +2,6 @@
 
 mod checkout_apply;
 mod checkout_files;
-mod checkout_stash;
 mod checkout_state;
 pub mod control_paths;
 mod fast_forward;
@@ -11,7 +10,6 @@ mod inputs;
 pub mod lock;
 mod operation;
 mod resolved;
-mod stash_report;
 mod status;
 mod tree;
 
@@ -38,8 +36,7 @@ pub use resolved::{check_resolved_worktree, has_merge_commit_since};
 pub use status::{build_merge_report, check_merge_state, MergeState, MergeStatusReport};
 pub(crate) use tree::rev_parse;
 pub use tree::{
-    advance_target, commit_merge, merge_tree, Advance, MergeBlock, PendingMerge, StashReapply,
-    TreeMerge,
+    advance_target, commit_merge, merge_tree, Advance, MergeBlock, PendingMerge, TreeMerge,
 };
 
 /// Result of a merge operation
@@ -53,9 +50,6 @@ pub enum MergeResult {
         insertions: u32,
         /// Number of deletions
         deletions: u32,
-        /// The operator's stashed changes, when they were stashed around
-        /// the merge.
-        stash: Option<StashReapply>,
     },
     /// Merge has conflicts that need resolution; nothing was changed.
     Conflict {
@@ -76,7 +70,8 @@ pub enum MergeResult {
 ///
 /// Steps, under the merge lock:
 /// 1. Refuse while the operator has a merge, cherry-pick, revert or rebase
-///    in progress in the checkout.
+///    in progress in the checkout, and while an earlier attempt's quarantine
+///    still holds this stage's files ([`MergeBlock::CheckoutRestoreIncomplete`]).
 /// 2. Refuse while the target guard holds the target
 ///    ([`MergeBlock::TargetHeld`]), for every gate mode: the bypass covers the
 ///    stage's own control paths, never a target that moved outside loom.
@@ -109,6 +104,9 @@ pub fn merge_stage(
             marker,
         }));
     }
+    if let Some(block) = checkout_files::held_block(repo_root, stage_id)? {
+        return Ok(MergeResult::Blocked(block));
+    }
 
     let (old, branch_tip) = merge_tips(stage_id, target_branch, repo_root)?;
     verify_completed_tip(stage_id, repo_root, work_dir, &branch_tip)?;
@@ -120,10 +118,8 @@ pub fn merge_stage(
     }
 
     if gate == MergeGate::Enforce {
-        // Fails closed: a diff that cannot be computed is an error, not a pass.
-        let label = branch_name_for_stage(stage_id);
-        if let Some(reason) = control_path_violation_as(repo_root, &old, &branch_tip, &label)? {
-            return Ok(MergeResult::Held { reason });
+        if let Some(refused) = enforce_gate(repo_root, stage_id, &old, &branch_tip)? {
+            return Ok(refused);
         }
     }
 
@@ -134,6 +130,33 @@ pub fn merge_stage(
         (&old, &branch_tip),
         gate,
     )
+}
+
+/// The [`MergeGate::Enforce`] check of the branch diff: `Some(Held)` for a
+/// control path, `Some(Blocked)` for a path the gate cannot spell as UTF-8
+/// (it cannot be checked, so the merge is refused), `None` when the diff is
+/// clean. Fails closed: a diff that cannot be computed is an error, not a pass.
+fn enforce_gate(
+    repo_root: &Path,
+    stage_id: &str,
+    old: &str,
+    branch_tip: &str,
+) -> Result<Option<MergeResult>> {
+    let label = branch_name_for_stage(stage_id);
+    match control_path_violation_as(repo_root, old, branch_tip, &label) {
+        Ok(Some(reason)) => Ok(Some(MergeResult::Held { reason })),
+        Ok(None) => Ok(None),
+        Err(error)
+            if error
+                .downcast_ref::<crate::git::changes::NonUtf8Path>()
+                .is_some() =>
+        {
+            Ok(Some(MergeResult::Blocked(MergeBlock::FastForwardRefused {
+                detail: "a path the merge touches is not valid UTF-8; merge it by hand".into(),
+            })))
+        }
+        Err(error) => Err(error),
+    }
 }
 
 /// Every landing pins the verified tip. Conflict resolution additionally keeps
@@ -228,16 +251,15 @@ fn merge_and_advance(
     let (files_changed, insertions, deletions) = parse_merge_stats(&shortstat);
     let mut pending = PendingMerge::new(repo_root, &merged_tree, [old, branch_tip], &msg);
 
-    let stash = match advance_target(repo_root, target_branch, stage_id, &mut pending)? {
-        Advance::Advanced { stash } => stash,
+    match advance_target(repo_root, target_branch, stage_id, &mut pending)? {
+        Advance::Advanced => {}
         Advance::Blocked(block) => return Ok(MergeResult::Blocked(block)),
-    };
+    }
     record_merge(work_dir, target_branch, old, &mut pending);
     Ok(MergeResult::Success {
         files_changed,
         insertions,
         deletions,
-        stash,
     })
 }
 
@@ -316,7 +338,7 @@ pub fn verify_merge_succeeded(
 }
 
 #[cfg(test)]
-mod checkout_gitlink_tests;
+mod landing_contract_tests;
 #[cfg(test)]
 mod stage_overlap_tests;
 #[cfg(test)]
