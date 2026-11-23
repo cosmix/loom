@@ -1,4 +1,8 @@
 use crate::process::sandbox_probe::skip_without_group_signals;
+use std::fs::File;
+use std::io::{Read, Write};
+use std::os::fd::AsFd;
+use std::os::unix::process::ExitStatusExt;
 use std::process::Command;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -7,7 +11,9 @@ use crate::process::is_process_alive;
 use crate::process::sandbox_probe::skip_without_pty;
 
 use super::protocol::WindowSize;
-use super::pty::PtyChild;
+use super::pty::{open_pty, PtyChild};
+use nix::fcntl::{fcntl, FcntlArg, FdFlag};
+use nix::poll::{poll, PollFd, PollFlags, PollTimeout};
 
 fn spawn_shell(script: &str) -> PtyChild {
     let mut command = Command::new("sh");
@@ -83,6 +89,51 @@ fn pty_child_resize_is_visible_to_stty() {
 }
 
 #[test]
+fn pty_master_is_close_on_exec() {
+    if skip_without_pty("pty_master_is_close_on_exec") {
+        return;
+    }
+    let (master, _slave) = open_pty(WindowSize { cols: 80, rows: 24 }).expect("open PTY");
+    let flags = fcntl(&master, FcntlArg::F_GETFD).expect("read descriptor flags");
+    assert!(FdFlag::from_bits_truncate(flags).contains(FdFlag::FD_CLOEXEC));
+}
+
+#[test]
+fn pty_slave_is_close_on_exec_and_peers_the_master() {
+    if skip_without_pty("pty_slave_is_close_on_exec_and_peers_the_master") {
+        return;
+    }
+    let (master, slave) = open_pty(WindowSize { cols: 80, rows: 24 }).expect("open PTY");
+    // `openpty(3)` on other platforms hands out a slave without the flag.
+    #[cfg(target_os = "linux")]
+    {
+        let flags = fcntl(&slave, FcntlArg::F_GETFD).expect("read descriptor flags");
+        assert!(FdFlag::from_bits_truncate(flags).contains(FdFlag::FD_CLOEXEC));
+    }
+    let mut slave = File::from(slave);
+    let mut master = File::from(master);
+    slave.write_all(b"peer-check\n").expect("write to slave");
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut seen = Vec::new();
+    while Instant::now() < deadline && !seen.windows(10).any(|part| part == b"peer-check") {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        let timeout = PollTimeout::try_from(remaining).unwrap_or(PollTimeout::MAX);
+        let mut fds = [PollFd::new(master.as_fd(), PollFlags::POLLIN)];
+        if poll(&mut fds, timeout).expect("poll master") == 0 {
+            break;
+        }
+        let mut bytes = [0u8; 256];
+        let count = master.read(&mut bytes).expect("read master");
+        seen.extend_from_slice(&bytes[..count]);
+    }
+    assert!(
+        seen.windows(10).any(|part| part == b"peer-check"),
+        "master saw {:?}",
+        String::from_utf8_lossy(&seen)
+    );
+}
+
+#[test]
 fn pty_child_shutdown_reaps_the_child() {
     let false = skip_without_group_signals("pty_child_shutdown_reaps_the_child") else {
         return;
@@ -92,12 +143,16 @@ fn pty_child_shutdown_reaps_the_child() {
     }
     let child = spawn_shell("sleep 30");
     let pid = child.pid();
-    let started = Instant::now();
-    child.shutdown();
-    // A clean hangup finishes in milliseconds; `shutdown`'s kill fallback
-    // takes 2 seconds. This bound must stay below that deadline, or the
-    // assertion passes whether the hangup worked or the child was killed.
-    assert!(started.elapsed() < Duration::from_secs(1));
+    let status = child.shutdown().expect("shutdown reaps the child");
+    // The hangup ends the shell with SIGHUP; had it not reached the child,
+    // the kill fallback would show SIGKILL. How the child ended says which
+    // path ran; a wall-clock bound cannot tell them apart without tying the
+    // test to the machine's load.
+    assert_eq!(
+        status.signal(),
+        Some(libc::SIGHUP),
+        "child {pid} ended as {status:?}, not by the hangup"
+    );
     assert!(!is_process_alive(pid), "child {pid} remains alive");
 }
 
