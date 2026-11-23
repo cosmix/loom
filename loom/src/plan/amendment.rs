@@ -52,7 +52,7 @@ use crate::plan::amendment_fields::{
     apply_patch_to_stage_def, current_field_len, parse_amendment_value, stage_field_matches,
     sync_stage_from_definition,
 };
-use crate::plan::parser::{extract_yaml_metadata_with_ranges, parse_and_validate};
+use crate::plan::parser::{extract_yaml_metadata_with_ranges, fence_len_for, parse_and_validate};
 use crate::plan::schema::{AcceptanceCriterion, ContractSpec, LoomMetadata, ReachableCheck};
 use crate::verify::transitions::{load_stage, update_stage};
 
@@ -235,10 +235,8 @@ pub(super) fn serialize_loom_metadata(metadata: &LoomMetadata) -> Result<String>
     crate::yaml::to_string(metadata).context("Failed to serialize loom metadata to YAML")
 }
 
-/// Splice a new YAML body into the original plan content, preserving every
-/// byte outside the YAML fence (including the opening fence and language
-/// hint, the closing fence, the metadata HTML comments, and all
-/// human-readable prose).
+/// Splice a new YAML body into the original plan content. Preserve the
+/// surrounding bytes except for backtick runs that need widening.
 pub(super) fn splice_metadata_yaml(
     original: &str,
     extracted: &crate::plan::parser::ExtractedMetadata,
@@ -260,6 +258,14 @@ pub(super) fn splice_metadata_yaml(
 
     let prefix = &original[..body_start];
     let suffix = &original[body_end..];
+    let wanted = fence_len_for(new_yaml_body, fence_len);
+    let widened;
+    let (prefix, suffix) = if wanted > fence_len {
+        widened = fence_width::widen_fences(prefix, fence_range.start, fence_len, suffix, wanted);
+        (widened.0.as_str(), widened.1.as_str())
+    } else {
+        (prefix, suffix)
+    };
 
     // The original YAML body was wrapped with leading/trailing newlines
     // (typically). Preserve a leading newline if present, otherwise add
@@ -279,8 +285,13 @@ pub(super) fn splice_metadata_yaml(
 }
 
 mod apply;
+#[cfg(test)]
+mod fence_tests;
+mod fence_width;
 mod journal;
 mod recovery;
+#[cfg(test)]
+mod relative_path_tests;
 #[cfg(test)]
 mod retry_tests;
 #[cfg(test)]

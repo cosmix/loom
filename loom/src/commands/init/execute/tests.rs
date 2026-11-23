@@ -1,7 +1,8 @@
 //! `loom init --clean` against a held target.
 
 use super::warn_on_long_socket_path;
-use super::{execute, stop_daemon_and_prune};
+use super::{execute, prepare_workspace, stop_daemon_and_prune};
+use crate::fs::permissions::scratch_home::ScratchHome;
 use crate::git::target_guard::test_support::held_repo;
 use crate::git::target_guard::RECORD_FILE;
 use crate::process::sandbox_probe::{skip_unless, skip_without_unix_socket};
@@ -24,6 +25,102 @@ impl Drop for CwdGuard {
     fn drop(&mut self) {
         std::env::set_current_dir(&self.0).unwrap();
     }
+}
+
+fn cyclic_plan(dir: &Path) -> PathBuf {
+    use crate::plan::schema::{AcceptanceCriterion, LoomConfig, LoomMetadata, StageDefinition};
+    let stage = |id: &str, dependency: &str| StageDefinition {
+        id: id.into(),
+        name: id.into(),
+        working_dir: ".".into(),
+        dependencies: vec![dependency.into()],
+        acceptance: vec![AcceptanceCriterion::Simple("true".into())],
+        ..Default::default()
+    };
+    let metadata = LoomMetadata {
+        loom: LoomConfig {
+            version: 1,
+            stages: vec![stage("a", "b"), stage("b", "a")],
+            ..Default::default()
+        },
+    };
+    let yaml = crate::yaml::to_string(&metadata).unwrap();
+    let path = dir.join("cycle-plan.md");
+    std::fs::write(
+        &path,
+        format!(
+            "# Cycle\n\n<!-- loom METADATA -->\n```yaml\n{yaml}```\n<!-- END loom METADATA -->\n"
+        ),
+    )
+    .unwrap();
+    path
+}
+
+#[test]
+#[serial]
+fn init_clean_refuses_a_cyclic_plan_and_keeps_the_old_run() {
+    let _home = ScratchHome::set();
+    let repo = crate::git::target_guard::test_support::repo();
+    std::fs::write(repo.work.join("config.toml"), "[plan]\n").unwrap();
+    let state_file = repo.work.join("keep.txt");
+    std::fs::write(&state_file, "state").unwrap();
+    let worktree_file = repo.root.join(".worktrees/stage-a/keep.txt");
+    std::fs::create_dir_all(worktree_file.parent().unwrap()).unwrap();
+    std::fs::write(&worktree_file, "work").unwrap();
+    let plan = cyclic_plan(&repo.root);
+    let _cwd = CwdGuard::enter(&repo.root);
+
+    let error = execute(Some(plan), true, None, true).unwrap_err();
+
+    assert!(
+        format!("{error:#}").contains("Circular dependency detected"),
+        "{error:#}"
+    );
+    assert!(state_file.is_file());
+    assert!(worktree_file.is_file());
+}
+
+#[test]
+#[serial]
+fn init_clean_from_a_subdirectory_refuses_like_the_root_does() {
+    let _home = ScratchHome::set();
+    let (repo, _, _) = held_repo(false);
+    let anchor = repo.work.join("main-checkout-identity.json");
+    if anchor.exists() {
+        std::fs::remove_file(anchor).unwrap();
+    }
+    let sessions = repo.work.join("sessions");
+    std::fs::create_dir_all(&sessions).unwrap();
+    let session = sessions.join("existing.md");
+    std::fs::write(&session, "preserve session").unwrap();
+    let subdirectory = repo.root.join("src");
+    std::fs::create_dir_all(&subdirectory).unwrap();
+    let _cwd = CwdGuard::enter(&subdirectory);
+
+    let error = execute(None, true, None, true).unwrap_err().to_string();
+
+    assert!(error.contains("Stop all sessions"), "{error}");
+    assert_eq!(
+        std::fs::read_to_string(session).unwrap(),
+        "preserve session"
+    );
+}
+
+#[test]
+fn prepare_workspace_bootstraps_a_repository_with_no_commits() {
+    let repo = crate::test_git::TestRepo::builder()
+        .branch("main")
+        .identity("t", "t@t.com")
+        .no_seed()
+        .create();
+
+    let branch = prepare_workspace(repo.path(), false, true, true).unwrap();
+
+    assert_eq!(branch.as_deref(), Some("main"));
+    assert_eq!(
+        prepare_workspace(repo.path(), false, true, false).unwrap(),
+        None
+    );
 }
 
 #[test]

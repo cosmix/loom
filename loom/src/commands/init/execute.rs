@@ -10,6 +10,7 @@ use colored::Colorize;
 use std::path::{Path, PathBuf};
 
 use super::backend::resolve_backend_choice;
+use super::base_branch::checked_out_branch;
 use super::cleanup::{
     cleanup_orphaned_sessions, cleanup_work_directory, cleanup_worktrees_directory,
     prune_stale_worktrees, remove_work_directory_on_failure, SessionReapMode,
@@ -73,14 +74,14 @@ pub fn execute(
     backend: Option<String>,
     no_repair: bool,
 ) -> Result<()> {
-    let repo_root = std::env::current_dir()?;
+    let repo_root = crate::commands::common::main_repo_root("init")?;
     for state in [repo_root.join(".loom/work"), repo_root.join(".work")] {
         if holds_orchestration_state(&state) {
             crate::git::worktree::require_main_identity_at(&repo_root, &state)?;
         }
     }
     let preflighted = preflight_plan_if_given(plan_path.as_deref())?;
-    prepare_workspace(&repo_root, clean, no_repair)?;
+    let base_branch = prepare_workspace(&repo_root, clean, no_repair, preflighted.is_some())?;
     let (work_dir, mut guard) = create_init_work_dir(&repo_root)?;
     if crate::git::worktree::main_identity_exists(work_dir.root()) {
         crate::git::worktree::require_main_identity_at(&repo_root, work_dir.root())?;
@@ -89,9 +90,10 @@ pub fn execute(
     }
     configure_workspace(&repo_root)?;
 
-    if let Some(preflighted) = preflighted {
+    if let (Some(preflighted), Some(base_branch)) = (preflighted, base_branch) {
         let backend = resolve_backend_choice(backend)?;
-        let stage_count = initialize_with_plan(&work_dir, &preflighted, &repo_root, backend)?;
+        let stage_count =
+            initialize_with_plan(&work_dir, &preflighted, &repo_root, &base_branch, backend)?;
         print_summary(plan_path.as_deref(), stage_count);
     } else {
         print_summary(None, 0);
@@ -104,7 +106,14 @@ pub fn execute(
     Ok(())
 }
 
-fn prepare_workspace(repo_root: &Path, clean: bool, no_repair: bool) -> Result<()> {
+/// Returns the checked-out branch when `needs_branch` is set. It is read before
+/// `--clean` deletes the previous run, so a detached HEAD refuses with that run intact.
+fn prepare_workspace(
+    repo_root: &Path,
+    clean: bool,
+    no_repair: bool,
+    needs_branch: bool,
+) -> Result<Option<String>> {
     let has_state = [repo_root.join(".loom/work"), repo_root.join(".work")]
         .iter()
         .any(|state| {
@@ -115,6 +124,11 @@ fn prepare_workspace(repo_root: &Path, clean: bool, no_repair: bool) -> Result<(
     } else {
         crate::git::ensure_repo_ready_for_worktrees(repo_root)?
     };
+
+    // After the bootstrap, which may create the first commit; before any deletion.
+    let base_branch = needs_branch
+        .then(|| checked_out_branch(repo_root))
+        .transpose()?;
 
     // Repair the workspace BEFORE the validator judges it - see `startup_repairs`.
     let repairs = startup_repairs(repo_root, no_repair)?;
@@ -133,7 +147,7 @@ fn prepare_workspace(repo_root: &Path, clean: bool, no_repair: bool) -> Result<(
 
     println!("\n{}", "Initialize".bold());
     println!("{}", "─".repeat(40).dimmed());
-    Ok(())
+    Ok(base_branch)
 }
 
 fn create_init_work_dir(repo_root: &Path) -> Result<(WorkDir, InitGuard)> {
@@ -144,7 +158,7 @@ fn create_init_work_dir(repo_root: &Path) -> Result<(WorkDir, InitGuard)> {
     // graph. A state directory that merely EXISTS but holds no such state — e.g. one a
     // stale LOOM_WORK_DIR pin made a hook materialize against a since-deleted
     // state directory (see `WorkDir::new`) — is adopted instead of refused.
-    let work_dir = WorkDir::new(".")?;
+    let work_dir = WorkDir::new(repo_root)?;
     let work_dir_path = work_dir.root();
     let adopting_empty_work_dir =
         work_dir_path.exists() && !holds_orchestration_state(work_dir_path);
@@ -205,8 +219,10 @@ fn cleanup_previous_run(repo_root: &Path, clean: bool) -> Result<()> {
     if clean {
         let work_dir = resolve_state_dir(repo_root);
         crate::orchestrator::terminal::tmux::viewer::retire_viewer(&work_dir)?;
-        cleanup_work_directory(repo_root)?;
+        // Worktrees first: removing one drains its memory and telemetry spools into the
+        // state directory, which must still be there.
         cleanup_worktrees_directory(repo_root)?;
+        cleanup_work_directory(repo_root)?;
     }
     Ok(())
 }

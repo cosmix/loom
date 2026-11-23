@@ -4,12 +4,16 @@ use anyhow::{Context, Result};
 use std::path::Path;
 
 mod extraction;
+mod fence;
+#[cfg(test)]
+mod fence_contract_tests;
 mod validation;
 
 // Re-export functions for internal use
 pub use extraction::{
     extract_plan_name, extract_yaml_metadata, extract_yaml_metadata_with_ranges, ExtractedMetadata,
 };
+pub(crate) use fence::fence_len_for;
 pub use validation::{parse_and_validate, parse_error_text, parse_metadata};
 
 /// Result of parsing a plan document

@@ -16,7 +16,9 @@ use super::validation_suite::warn_full_suite_outside_integration_verify;
 pub(super) mod acceptance_command;
 pub(crate) mod base_tree;
 pub(super) mod criterion_hazards;
+mod dependency_cycles;
 mod knowledge_recommendations;
+mod path_checks;
 mod preflight_commands;
 mod search_args;
 pub(crate) mod shell_lex;
@@ -24,6 +26,7 @@ pub(super) mod v2_fields;
 pub(crate) mod v2_lints;
 use criterion_hazards::criterion_needs_ungrantable_resource;
 pub use knowledge_recommendations::check_knowledge_recommendations;
+use path_checks::has_parent_component;
 
 /// Reject commands listed in `excluded_commands`: command-prefix exclusions run
 /// outside the host sandbox and cannot safely authorize extensible executors,
@@ -348,7 +351,7 @@ pub fn validate(metadata: &LoomMetadata) -> Result<(), Vec<ValidationError>> {
         }
 
         // Validate working_dir to prevent path traversal
-        if stage.working_dir.contains("..") {
+        if has_parent_component(&stage.working_dir) {
             errors.push(ValidationError {
                 message: "working_dir cannot contain path traversal (..)".to_string(),
                 stage_id: Some(stage.id.clone()),
@@ -400,7 +403,7 @@ pub fn validate(metadata: &LoomMetadata) -> Result<(), Vec<ValidationError>> {
             });
         }
         for (idx, artifact) in stage.artifacts.iter().enumerate() {
-            if artifact.contains("..") {
+            if has_parent_component(artifact) {
                 errors.push(ValidationError {
                     message: format!("Artifact #{} contains path traversal (..)", idx + 1),
                     stage_id: Some(stage.id.clone()),
@@ -417,7 +420,7 @@ pub fn validate(metadata: &LoomMetadata) -> Result<(), Vec<ValidationError>> {
         // Validate wiring checks
         for (idx, wiring) in stage.wiring.iter().enumerate() {
             // Validate source path
-            if wiring.source.contains("..") {
+            if has_parent_component(&wiring.source) {
                 errors.push(ValidationError {
                     message: format!("Wiring #{} source contains path traversal (..)", idx + 1),
                     stage_id: Some(stage.id.clone()),
@@ -542,7 +545,7 @@ pub fn validate(metadata: &LoomMetadata) -> Result<(), Vec<ValidationError>> {
                     stage_id: Some(stage.id.clone()),
                 });
             }
-            if rt.file.contains("..") {
+            if has_parent_component(&rt.file) {
                 errors.push(ValidationError {
                     message: "regression_test.file cannot contain path traversal (..)".to_string(),
                     stage_id: Some(stage.id.clone()),
@@ -601,11 +604,7 @@ pub fn validate(metadata: &LoomMetadata) -> Result<(), Vec<ValidationError>> {
         errors.push(ValidationError { message, stage_id });
     }
 
-    if errors.is_empty() {
-        Ok(())
-    } else {
-        Err(errors)
-    }
+    dependency_cycles::finish(&metadata.loom.stages, errors)
 }
 
 /// Warn about ungrantable-resource acceptance criteria and warning-level command hazards, then

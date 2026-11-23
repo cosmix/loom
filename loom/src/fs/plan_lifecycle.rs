@@ -207,14 +207,18 @@ pub fn mark_plan_done_if_all_merged(work_dir: &WorkDir) -> Result<Option<PathBuf
     if !already_done && !has_prefix(&current_path, IN_PROGRESS_PREFIX) {
         return Ok(None);
     }
-    if !all_stages_merged(work_dir)? || !current_path.exists() {
+    if !all_stages_merged(work_dir)? {
         return Ok(None);
     }
 
-    // Use the plan's project, never the daemon's or caller's ambient checkout.
+    // Use the plan's project, never the daemon's or caller's ambient checkout; a relative
+    // `source_path` is relative to it, whatever the working directory is.
     let root = work_dir
         .main_project_root()
         .context("Cannot determine plan project root")?;
+    if !root.join(&current_path).exists() {
+        return Ok(None);
+    }
     // Rebuild from final memories before archiving/renaming. Failure keeps IN_PROGRESS retryable.
     let review = crate::fs::plan_review::generate(work_dir.root(), &root, &root, false)
         .context("Failed to generate final plan review")?;
@@ -226,7 +230,7 @@ pub fn mark_plan_done_if_all_merged(work_dir: &WorkDir) -> Result<Option<PathBuf
     let without_prefix = remove_prefix_from_filename(&current_path, IN_PROGRESS_PREFIX);
     let new_path = add_prefix_to_filename(&without_prefix, DONE_PREFIX);
     archive_run_state_before_done(work_dir, &root)?;
-    rename_completed_plan(work_dir, &current_path, &new_path)?;
+    rename_completed_plan(work_dir, &root, &current_path, &new_path)?;
     Ok(Some(new_path))
 }
 
@@ -254,8 +258,14 @@ fn import_review_findings(root: &Path, plan: &Path, review: &Path) -> Result<()>
     Ok(())
 }
 
-fn rename_completed_plan(work_dir: &WorkDir, current_path: &Path, new_path: &Path) -> Result<()> {
-    match fs::symlink_metadata(new_path) {
+fn rename_completed_plan(
+    work_dir: &WorkDir,
+    root: &Path,
+    current_path: &Path,
+    new_path: &Path,
+) -> Result<()> {
+    let (current_abs, new_abs) = (root.join(current_path), root.join(new_path));
+    match fs::symlink_metadata(&new_abs) {
         Ok(_) => anyhow::bail!(
             "refusing to overwrite completed plan {}",
             new_path.display()
@@ -265,7 +275,7 @@ fn rename_completed_plan(work_dir: &WorkDir, current_path: &Path, new_path: &Pat
             return Err(error).with_context(|| format!("checking {}", new_path.display()))
         }
     }
-    fs::rename(current_path, new_path).with_context(|| {
+    fs::rename(&current_abs, &new_abs).with_context(|| {
         format!(
             "Failed to rename plan file from {} to {}",
             current_path.display(),
@@ -273,7 +283,7 @@ fn rename_completed_plan(work_dir: &WorkDir, current_path: &Path, new_path: &Pat
         )
     })?;
     if let Err(error) = update_plan_source_path(work_dir, new_path) {
-        return match fs::rename(new_path, current_path) {
+        return match fs::rename(&new_abs, &current_abs) {
             Ok(()) => Err(error.context("Plan rename rolled back after config update failed")),
             Err(rollback) => Err(error.context(format!(
                 "Plan moved to {} but rollback failed: {rollback}; repair the configured source path before retrying",
@@ -313,3 +323,6 @@ mod tests;
 
 #[cfg(test)]
 mod import_tests;
+
+#[cfg(test)]
+mod relative_root_tests;

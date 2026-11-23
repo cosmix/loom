@@ -13,6 +13,10 @@ mod plan_setup;
 #[cfg(test)]
 mod backend_tests;
 #[cfg(test)]
+mod cleanup_worktree_tests;
+#[cfg(test)]
+mod execute_contract_tests;
+#[cfg(test)]
 mod repair_tests;
 #[cfg(test)]
 mod tests;

@@ -6,7 +6,7 @@
 //! - Missing git pre-commit hook
 //! - Missing loom reference-transaction hook (the target guard's attestation)
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use colored::Colorize;
 use std::path::Path;
 
@@ -65,7 +65,7 @@ pub struct RepairResult {
 /// # Arguments
 /// * `fix` - If true, attempt to fix issues. If false, just report (dry-run)
 pub fn execute(fix: bool) -> Result<()> {
-    let repo_root = std::env::current_dir()?;
+    let repo_root = crate::commands::common::repo_toplevel()?;
 
     crate::utils::print_logo_header("Workspace Repair");
 
@@ -129,23 +129,8 @@ pub fn execute(fix: bool) -> Result<()> {
 
         let result = apply_fixes(&repo_root, &issues)?;
 
-        println!();
-        println!("{}", "Summary".bold());
-        println!("{}", "─".repeat(40).dimmed());
-        println!(
-            "  Issues found:  {}",
-            result.issues_found.to_string().bold()
-        );
-        println!(
-            "  Issues fixed:  {}",
-            result.issues_fixed.to_string().green().bold()
-        );
-        if result.issues_failed > 0 {
-            println!(
-                "  Issues failed: {}",
-                result.issues_failed.to_string().red().bold()
-            );
-        }
+        print_fix_summary(&result);
+        return outcome(&result);
     } else {
         let critical_count = issues
             .iter()
@@ -161,6 +146,34 @@ pub fn execute(fix: bool) -> Result<()> {
         }
     }
 
+    Ok(())
+}
+
+fn print_fix_summary(result: &RepairResult) {
+    println!();
+    println!("{}", "Summary".bold());
+    println!("{}", "─".repeat(40).dimmed());
+    println!(
+        "  Issues found:  {}",
+        result.issues_found.to_string().bold()
+    );
+    println!(
+        "  Issues fixed:  {}",
+        result.issues_fixed.to_string().green().bold()
+    );
+    if result.issues_failed > 0 {
+        println!(
+            "  Issues failed: {}",
+            result.issues_failed.to_string().red().bold()
+        );
+    }
+}
+
+/// A repair run that left a failed fix behind is a failed command.
+fn outcome(result: &RepairResult) -> Result<()> {
+    if result.issues_failed > 0 {
+        bail!("{} repair(s) failed", result.issues_failed);
+    }
     Ok(())
 }
 

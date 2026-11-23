@@ -10,7 +10,7 @@ use std::ops::Range;
 /// up to (but not including) the start of `<!-- END loom METADATA` marker.
 ///
 /// The `yaml_fence_range` covers from the opening backticks of the YAML
-/// fence to (but not including) the closing backticks of the same fence.
+/// fence to (but not including) the closing fence line.
 /// The body of the YAML (excluding the `yaml` language hint after the
 /// opening fence and excluding the closing fence) is what `yaml` returns.
 #[derive(Debug, Clone)]
@@ -99,13 +99,12 @@ pub fn extract_yaml_metadata_with_ranges(content: &str) -> Result<ExtractedMetad
 
     let yaml_content_start_in_section = yaml_start_in_section + fence_len + "yaml".len();
 
-    // Find the closing fence with the same number of backticks
-    let closing_fence = "`".repeat(fence_len);
-    let yaml_end_rel = metadata_section[yaml_content_start_in_section..]
-        .find(&closing_fence)
-        .ok_or_else(|| anyhow::anyhow!("No closing {closing_fence} for YAML block"))?;
-
-    let yaml_body_end_in_section = yaml_content_start_in_section + yaml_end_rel;
+    let yaml_body_end_in_section = super::fence::find_closing_fence(
+        metadata_section,
+        yaml_content_start_in_section,
+        fence_len,
+    )
+    .ok_or_else(|| anyhow::anyhow!("No closing {} for YAML block", "`".repeat(fence_len)))?;
     let yaml_content = &metadata_section[yaml_content_start_in_section..yaml_body_end_in_section];
 
     // Absolute byte ranges in `content`:

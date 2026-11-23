@@ -333,3 +333,25 @@ fn stage_audit_manual_findings_remain_manual() {
         RepairAction::Manual,
     );
 }
+
+#[test]
+fn a_failed_fix_makes_the_outcome_an_error() {
+    let root = tempfile::tempdir().unwrap();
+    let issue = DetectedIssue {
+        severity: Severity::Critical,
+        description: ".loom/work is a symlink".into(),
+        fix_description: String::new(),
+        action: RepairAction::Workspace(workspace::WorkspaceFix::WorkSymlink),
+    };
+    let result = apply_fixes(root.path(), &[issue]).unwrap();
+    assert_eq!(result.issues_failed, 1);
+    let error = outcome(&result).unwrap_err();
+    assert!(error.to_string().contains("1 repair(s) failed"), "{error}");
+
+    let clean = RepairResult {
+        issues_found: 1,
+        issues_fixed: 1,
+        issues_failed: 0,
+    };
+    assert!(outcome(&clean).is_ok());
+}

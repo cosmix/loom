@@ -294,3 +294,23 @@ impl Drop for HomeGuard {
         }
     }
 }
+
+#[cfg(unix)]
+#[test]
+fn fix_invalid_work_removes_a_socket() {
+    let root = tempfile::tempdir().unwrap();
+    let loom = root.path().join(".loom");
+    fs::create_dir_all(&loom).unwrap();
+    let socket = loom.join("work");
+    if crate::process::sandbox_probe::skip_without_unix_socket(
+        "fix_invalid_work_removes_a_socket",
+        &socket,
+    ) {
+        return;
+    }
+    drop(std::os::unix::net::UnixListener::bind(&socket).unwrap());
+
+    fix_invalid_work(root.path()).unwrap();
+
+    assert!(fs::symlink_metadata(&socket).is_err());
+}

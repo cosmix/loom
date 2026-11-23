@@ -393,7 +393,7 @@ fn done_rename_rolls_back_if_config_update_fails() {
         &remove_prefix_from_filename(&plan, IN_PROGRESS_PREFIX),
         DONE_PREFIX,
     );
-    assert!(rename_completed_plan(&work, &plan, &done).is_err());
+    assert!(rename_completed_plan(&work, temp.path(), &plan, &done).is_err());
     assert!(plan.exists());
     assert!(!done.exists());
 }

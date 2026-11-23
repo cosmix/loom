@@ -77,6 +77,47 @@ pub fn detect_stage_id_in(dir: &Path) -> Option<String> {
     Some(stage_id)
 }
 
+/// Top level of the git work tree containing the current directory.
+pub(crate) fn repo_toplevel() -> Result<PathBuf> {
+    Ok(repo_toplevel_in(&std::env::current_dir()?))
+}
+
+fn repo_toplevel_in(dir: &Path) -> PathBuf {
+    // Outside any work tree there is no repository to resolve: `loom init` creates one there
+    // (`ensure_repo_ready_for_worktrees`) and the other commands keep their cwd-relative behavior.
+    crate::git::revision::toplevel(dir).unwrap_or_else(|_| dir.to_path_buf())
+}
+
+/// Top level of the main checkout containing the current directory; refuses a linked worktree.
+///
+/// A missing identity anchor is not checked: `loom clean` is the remedy for state without one.
+pub(crate) fn main_repo_root(command: &str) -> Result<PathBuf> {
+    main_repo_root_in(command, &std::env::current_dir()?)
+}
+
+fn main_repo_root_in(command: &str, dir: &Path) -> Result<PathBuf> {
+    let Ok(root) = crate::git::revision::toplevel(dir) else {
+        return Ok(dir.to_path_buf());
+    };
+    let dirs = crate::git::runner::run_git_checked(
+        &[
+            "rev-parse",
+            "--path-format=absolute",
+            "--git-dir",
+            "--git-common-dir",
+        ],
+        &root,
+    )?;
+    let mut lines = dirs.lines();
+    if lines.next() != lines.next() {
+        bail!(
+            "loom {command} must run from the main checkout; {} is a linked worktree",
+            root.display()
+        );
+    }
+    Ok(root)
+}
+
 // Re-export truncate utilities from their canonical location in utils module.
 // These are used across multiple layers (commands, orchestrator, verify, fs).
 pub use crate::utils::{truncate, truncate_for_display};
@@ -84,6 +125,51 @@ pub use crate::utils::{truncate, truncate_for_display};
 #[cfg(test)]
 mod tests {
     use crate::test_git::TestRepo;
+    use tempfile::TempDir;
+
+    #[test]
+    fn repo_toplevel_in_resolves_a_subdirectory_and_falls_back_outside_a_repository() {
+        let repo = TestRepo::new();
+        let nested = repo.path().join("a/b");
+        std::fs::create_dir_all(&nested).unwrap();
+        assert_eq!(
+            super::repo_toplevel_in(&nested).canonicalize().unwrap(),
+            repo.path().canonicalize().unwrap()
+        );
+        let plain = TempDir::new().unwrap();
+        assert_eq!(super::repo_toplevel_in(plain.path()), plain.path());
+    }
+
+    #[test]
+    fn main_repo_root_refuses_a_linked_worktree_and_accepts_the_main_checkout() {
+        let repo = TestRepo::new();
+        let linked = repo.path().join(".worktrees/s1");
+        repo.git(&[
+            "worktree",
+            "add",
+            "-q",
+            linked.to_str().unwrap(),
+            "-b",
+            "loom/s1",
+        ]);
+        let error = super::main_repo_root_in("clean", &linked).unwrap_err();
+        assert!(error.to_string().contains("linked worktree"), "{error:#}");
+        let root = super::main_repo_root_in("clean", repo.path()).unwrap();
+        assert_eq!(
+            root.canonicalize().unwrap(),
+            repo.path().canonicalize().unwrap()
+        );
+    }
+
+    #[test]
+    fn main_repo_root_accepts_a_repository_with_no_commits() {
+        let repo = TestRepo::builder().branch("main").no_seed().create();
+        let root = super::main_repo_root_in("init", repo.path()).unwrap();
+        assert_eq!(
+            root.canonicalize().unwrap(),
+            repo.path().canonicalize().unwrap()
+        );
+    }
 
     #[test]
     fn stage_branch_with_same_named_tag_is_detected() {

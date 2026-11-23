@@ -1,5 +1,7 @@
 use super::transaction::{finish_pending, finish_recorded, inject_failure};
 use super::*;
+use crate::fs::safe_read::read_to_string_bounded;
+use crate::planning::discover::MAX_DOC_BYTES;
 
 /// Prepare an audited snapshot, then finish both live records under the version lock.
 pub fn apply_amendment(
@@ -32,11 +34,11 @@ fn checked_plan_path(plan_path: &Path, work_dir: &Path) -> Result<PathBuf> {
     } else {
         resolve_plan_path(work_dir)?
     };
+    // Atomic replacement requires an absolute target. Keep the final path
+    // component unresolved so the no-follow read can still reject a symlink.
+    let plan_path = std::path::absolute(plan_path)?;
     let root = resolve_project_root(work_dir, &plan_path).canonicalize()?;
-    let parent = plan_path
-        .parent()
-        .context("plan_path has no parent")?
-        .canonicalize()?;
+    let parent = plan_parent(&plan_path).canonicalize()?;
     if !parent.starts_with(&root) {
         bail!(
             "refusing replace — plan {} not under project_root {}",
@@ -47,13 +49,27 @@ fn checked_plan_path(plan_path: &Path, work_dir: &Path) -> Result<PathBuf> {
     Ok(plan_path)
 }
 
+fn plan_parent(plan_path: &Path) -> &Path {
+    plan_path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."))
+}
+
+fn read_plan(plan_path: &Path) -> Result<String> {
+    let name = plan_path
+        .file_name()
+        .context("plan_path has no file name")?;
+    read_to_string_bounded(plan_parent(plan_path), Path::new(name), MAX_DOC_BYTES)
+}
+
 fn prepare_content(
     plan_path: &Path,
     work_dir: &Path,
     rows: &[AuditRow],
     request: &AmendmentRequest,
 ) -> Result<String> {
-    let content = fs::read_to_string(plan_path)?;
+    let content = read_plan(plan_path)?;
     let extracted = extract_yaml_metadata_with_ranges(&content)?;
     let mut metadata = parse_and_validate(&extracted.yaml)?;
     let cap = metadata
