@@ -17,7 +17,6 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-use crate::context::fingerprint::fingerprint_tree;
 use crate::fs::knowledge::catalog::{self, Catalog, CatalogIssue};
 
 /// Summary of one catalog build, for `loom knowledge sync` output.
@@ -26,7 +25,7 @@ pub struct IngestReport {
     /// Root of the knowledge tree that was ingested.
     pub knowledge_root: PathBuf,
     /// Number of `*.md` files fingerprinted — knowledge files plus indexed
-    /// prose files, since [`fingerprint_tree`] folds both into one list.
+    /// prose files, since `catalog::build_with_fingerprints` reports both in one list.
     pub files: usize,
     /// Number of chunks the catalog was split into.
     pub chunks: usize,
@@ -39,8 +38,7 @@ pub struct IngestReport {
 /// Build a catalog from the knowledge tree. Pure and side-effect free: reads
 /// bytes, writes nothing.
 pub fn ingest(knowledge_root: &Path) -> Result<(Catalog, IngestReport)> {
-    let catalog = catalog::build(knowledge_root)?;
-    let fingerprints = fingerprint_tree(knowledge_root)?;
+    let (catalog, fingerprints) = catalog::build_with_fingerprints(knowledge_root)?;
 
     let report = IngestReport {
         knowledge_root: knowledge_root.to_path_buf(),

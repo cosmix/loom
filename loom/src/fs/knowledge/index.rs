@@ -7,6 +7,7 @@
 //! `KnowledgeDir::replace_section_target`), and created for the first time on a
 //! flat directory by `loom knowledge sync`.
 
+use super::read::read_knowledge_file;
 use super::types::{KnowledgeFile, INDEX_FILENAME};
 use anyhow::{Context, Result};
 use std::fs;
@@ -103,50 +104,26 @@ fn extract_title_and_blurb(content: &str, fallback_title: &str) -> (String, Stri
 
 /// Walk `<root>/<category>/*.md` for every [`KnowledgeFile`] category.
 ///
-/// Skips non-`.md` entries, subdirectories, and dotfiles. A missing category
-/// directory is simply skipped, not an error. Results are sorted by
-/// (category order as in [`KnowledgeFile::all`], then slug).
+/// Skips non-`.md` entries, subdirectories, symlinks and other non-regular
+/// entries, and dotfiles. A missing category directory is simply skipped, not
+/// an error. Results are sorted by (category order as in [`KnowledgeFile::all`],
+/// then slug).
 pub fn scan_topics(root: &Path) -> Result<Vec<TopicEntry>> {
     let mut topics = Vec::new();
 
     for category in KnowledgeFile::all() {
         let dir = root.join(category.dir_name());
-        if !dir.is_dir() {
+        if !fs::symlink_metadata(&dir).is_ok_and(|metadata| metadata.is_dir()) {
             continue;
         }
 
         let mut category_topics = Vec::new();
         let entries = fs::read_dir(&dir)
             .with_context(|| format!("Failed to read topic directory: {}", dir.display()))?;
-
         for entry in entries {
             let entry =
                 entry.with_context(|| format!("Failed to read entry in {}", dir.display()))?;
-            let path = entry.path();
-
-            if !path.is_file() {
-                continue;
-            }
-            let Some(file_name) = path.file_name().and_then(|n| n.to_str()) else {
-                continue;
-            };
-            if file_name.starts_with('.') || !file_name.ends_with(".md") {
-                continue;
-            }
-
-            let slug = file_name.trim_end_matches(".md").to_string();
-            let content = fs::read_to_string(&path)
-                .with_context(|| format!("Failed to read topic file: {}", path.display()))?;
-            let (title, blurb) = extract_title_and_blurb(&content, &slug);
-
-            category_topics.push(TopicEntry {
-                category: *category,
-                slug,
-                path,
-                title,
-                blurb,
-                line_count: content.lines().count(),
-            });
+            category_topics.extend(read_topic(root, *category, &entry)?);
         }
 
         category_topics.sort_by(|a, b| a.slug.cmp(&b.slug));
@@ -154,6 +131,41 @@ pub fn scan_topics(root: &Path) -> Result<Vec<TopicEntry>> {
     }
 
     Ok(topics)
+}
+
+/// The topic `entry` of `category`'s directory, or `None` for anything that is
+/// not a visible regular `.md` file. A symlink or other non-regular entry is
+/// never indexed, as in the catalog walker; `read_knowledge_file` would refuse
+/// it anyway.
+fn read_topic(
+    root: &Path,
+    category: KnowledgeFile,
+    entry: &fs::DirEntry,
+) -> Result<Option<TopicEntry>> {
+    if !entry.file_type().is_ok_and(|kind| kind.is_file()) {
+        return Ok(None);
+    }
+    let path = entry.path();
+    let Some(file_name) = path.file_name().and_then(|n| n.to_str()) else {
+        return Ok(None);
+    };
+    if file_name.starts_with('.') || !file_name.ends_with(".md") {
+        return Ok(None);
+    }
+
+    let slug = file_name.trim_end_matches(".md").to_string();
+    let bytes = read_knowledge_file(root, &Path::new(category.dir_name()).join(file_name))
+        .with_context(|| format!("Failed to read topic file: {}", path.display()))?;
+    let content = String::from_utf8_lossy(&bytes).into_owned();
+    let (title, blurb) = extract_title_and_blurb(&content, &slug);
+    Ok(Some(TopicEntry {
+        category,
+        slug,
+        path,
+        title,
+        blurb,
+        line_count: content.lines().count(),
+    }))
 }
 
 /// Render the `INDEX.md` content for `root`. Does not write anything.
@@ -176,20 +188,20 @@ pub fn generate_index(root: &Path) -> Result<String> {
     Ok(out)
 }
 
-/// One row per tier-1 summary file that exists on disk.
+/// One row per tier-1 summary file that exists on disk as a regular file.
 fn append_tier1_table(out: &mut String, root: &Path) -> Result<()> {
     out.push_str("## Tier 1 — Summaries\n\n");
     out.push_str("| File | Description | Lines |\n");
     out.push_str("| --- | --- | --- |\n");
     for file_type in KnowledgeFile::all() {
-        let path = root.join(file_type.filename());
-        if !path.exists() {
+        let is_regular = fs::symlink_metadata(root.join(file_type.filename()))
+            .is_ok_and(|metadata| metadata.file_type().is_file());
+        if !is_regular {
             continue;
         }
-        let line_count = fs::read_to_string(&path)
-            .with_context(|| format!("Failed to read {}", file_type.filename()))?
-            .lines()
-            .count();
+        let bytes = read_knowledge_file(root, Path::new(file_type.filename()))
+            .with_context(|| format!("Failed to read {}", file_type.filename()))?;
+        let line_count = String::from_utf8_lossy(&bytes).lines().count();
         out.push_str(&format!(
             "| [{name}]({name}) | {desc} | {line_count} |\n",
             name = file_type.filename(),
@@ -232,32 +244,36 @@ fn append_topic_tables(out: &mut String, topics: &[TopicEntry]) {
 
 /// Whether `<root>/INDEX.md` differs from what [`generate_index`] renders. A
 /// missing or unreadable index is an error; callers decide if it may be absent.
+/// The read is bounded and refuses a symlink or non-regular file.
 pub fn index_is_stale(root: &Path) -> Result<bool> {
-    let actual = fs::read_to_string(root.join(INDEX_FILENAME))
+    let actual = read_knowledge_file(root, Path::new(INDEX_FILENAME))
         .context("knowledge INDEX.md is missing or unreadable; run loom knowledge sync")?;
-    Ok(actual != generate_index(root)?)
+    Ok(actual != generate_index(root)?.as_bytes())
 }
 
 /// Crash-atomically write `<root>/INDEX.md`.
+///
+/// Generation, the comparison with the existing file and the publish all run
+/// under the directory lock, so a writer that waited for the lock renders the
+/// tree the previous lock holder left, never an older one.
 pub fn write_index(root: &Path) -> Result<()> {
-    let content = generate_index(root)?;
     let path = root.join(INDEX_FILENAME);
-    match fs::read(&path) {
-        Ok(existing) if existing == content.as_bytes() => return Ok(()),
-        Ok(_) => {}
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(error) => {
-            return Err(error).with_context(|| format!("Failed to read {}", path.display()));
+    crate::fs::locking::locked_dir_update(root, || {
+        let content = generate_index(root)?;
+        // A refused read (symlink, FIFO, oversized, unreadable) counts as
+        // "differs": the write replaces whatever occupies the name.
+        let current = read_knowledge_file(root, Path::new(INDEX_FILENAME));
+        if current.is_ok_and(|existing| existing == content.as_bytes()) {
+            return Ok(());
         }
-    }
-    crate::fs::locking::locked_write(&path, &content)
-        .with_context(|| format!("Failed to write {}", path.display()))
+        crate::fs::locking::atomic_write_locked(&path, &content)
+    })
+    .with_context(|| format!("Failed to write {}", path.display()))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fs::knowledge::dir::KnowledgeDir;
     use tempfile::TempDir;
 
     #[test]
@@ -325,73 +341,6 @@ mod tests {
             truncate_blurb(&blurb),
             format!("{}…", "x".repeat(MAX_BLURB_CHARS))
         );
-    }
-
-    #[test]
-    fn test_generate_index_lists_tier1_and_topics_with_marker() {
-        let temp = TempDir::new().unwrap();
-        let project_root = temp.path();
-        let knowledge = KnowledgeDir::new(project_root);
-        knowledge.initialize().unwrap();
-
-        let arch_dir = knowledge.root().join("architecture");
-        fs::create_dir_all(&arch_dir).unwrap();
-        fs::write(
-            arch_dir.join("merge-flow.md"),
-            "# Merge Flow\n\n> Merge details.\n",
-        )
-        .unwrap();
-
-        let content = generate_index(knowledge.root()).unwrap();
-        assert!(content.starts_with(GENERATED_MARKER));
-        assert!(content.contains("architecture.md"));
-        assert!(content.contains("architecture/merge-flow.md"));
-        assert!(content.contains("[merge-flow]"));
-        assert!(content.contains("Merge details."));
-        // The current header sentence, asserted positively. Superseded
-        // wordings are deliberately NOT quoted here to assert their absence:
-        // a stage truth check greps this file for exact sentences, and a
-        // negative assertion that spells one out would keep it alive in the
-        // source forever.
-        assert!(content.contains("Read this index first"));
-        assert!(content.contains("the tier-2 topics your task touches"));
-    }
-
-    #[test]
-    fn test_generate_index_separates_category_sections_with_blank_lines() {
-        let temp = TempDir::new().unwrap();
-        let knowledge = KnowledgeDir::new(temp.path());
-        knowledge.initialize().unwrap();
-
-        for (category, slug) in [("architecture", "merge-flow"), ("mistakes", "phantom")] {
-            let dir = knowledge.root().join(category);
-            fs::create_dir_all(&dir).unwrap();
-            fs::write(dir.join(format!("{slug}.md")), "# Title\n\n> Blurb.\n").unwrap();
-        }
-
-        let content = generate_index(knowledge.root()).unwrap();
-        // markdownlint MD022/MD058: a heading that follows a table row directly
-        // fails the pre-push markdown lint.
-        let lines: Vec<&str> = content.lines().collect();
-        for (index, line) in lines.iter().enumerate() {
-            if line.starts_with("###") {
-                assert_eq!(
-                    lines[index - 1],
-                    "",
-                    "heading {line} must be preceded by a blank line"
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn test_generate_index_omits_topics_section_when_empty() {
-        let temp = TempDir::new().unwrap();
-        let knowledge = KnowledgeDir::new(temp.path());
-        knowledge.initialize().unwrap();
-
-        let content = generate_index(knowledge.root()).unwrap();
-        assert!(!content.contains("Tier 2"));
     }
 }
 

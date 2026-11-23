@@ -35,6 +35,7 @@
 //! policy consistent.
 
 use crate::context::config::RetrievalConfig;
+use crate::context::fingerprint::{prose_fingerprint, FileFingerprint};
 use crate::context::schema::LifecycleState;
 use crate::context::source_graph::MAX_EXTRACTED_FILE_BYTES;
 use crate::fs::knowledge::chunker::{chunk_file, KnowledgeChunk};
@@ -220,9 +221,15 @@ impl ProseSources {
     /// rendering show the right path for each origin — but it is a real trap
     /// for a later reader who assumes every `KnowledgeChunk::file` resolves
     /// against the same root.
-    pub(crate) fn chunks(&self) -> Vec<KnowledgeChunk> {
+    ///
+    /// The fingerprints come from the same bytes the chunks do, one per
+    /// readable file whatever its lifecycle, so the structural revision
+    /// describes what was indexed.
+    pub(crate) fn chunks_and_fingerprints(&self) -> (Vec<KnowledgeChunk>, Vec<FileFingerprint>) {
         let mut chunks = Vec::new();
+        let mut fingerprints = Vec::new();
         self.for_each_file(|relative, bytes| {
+            fingerprints.push(prose_fingerprint(&relative, &bytes));
             let explicit = crate::fs::knowledge::frontmatter::file_state(&bytes);
             let Some(lifecycle) = prose_lifecycle(&relative, explicit) else {
                 return;
@@ -240,7 +247,7 @@ impl ProseSources {
                 chunks.push(chunk);
             }
         });
-        chunks
+        (chunks, fingerprints)
     }
 }
 

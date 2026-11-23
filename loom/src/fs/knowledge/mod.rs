@@ -14,12 +14,15 @@ pub mod chunker;
 pub mod dir;
 pub(crate) mod frontmatter;
 pub mod index;
+pub(crate) mod read;
 mod scaffold;
 mod scanner;
 pub mod splice;
 pub mod templates;
 pub mod types;
 
+#[cfg(test)]
+mod index_contract_tests;
 #[cfg(test)]
 mod tests;
 

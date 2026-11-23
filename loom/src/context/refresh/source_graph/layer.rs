@@ -187,17 +187,25 @@ fn deleted_paths(
         return BTreeSet::new();
     }
     let mut deleted = enumeration.deleted.iter().cloned().collect::<BTreeSet<_>>();
-    // A symlink or gitlink only becomes a tombstone when the base already
-    // holds a regular-file entry for the same path - the same predicate
-    // `persist_layer` applies when it prunes a tombstone the base never had -
-    // so a repo-native symlink never inflates `files_deleted`.
-    deleted.extend(
-        enumeration
-            .not_source
-            .iter()
-            .filter(|path| base.is_some_and(|base| base.files.contains_key(path.as_str())))
-            .cloned(),
-    );
+    // Every base entry the overlay no longer carries is tombstoned: a file
+    // removed from the index but kept on disk and ignored, a file that became a
+    // symlink or gitlink, or one an attribute now filters out. A layer used as
+    // `base` can hold tombstones itself, which need none.
+    if let Some(base) = base {
+        deleted.extend(
+            base.files
+                .iter()
+                .filter(|(path, entry)| {
+                    entry.coverage != FileCoverage::Deleted
+                        && !enumeration.known.contains_key(path.as_str())
+                        && enumeration
+                            .untracked
+                            .binary_search_by(|untracked| untracked.as_str().cmp(path.as_str()))
+                            .is_err()
+                })
+                .map(|(path, _)| path.clone()),
+        );
+    }
     deleted.extend(
         tree.dirty
             .keys()

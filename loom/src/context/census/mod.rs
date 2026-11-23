@@ -24,6 +24,7 @@ mod classify;
 mod report;
 mod subprojects;
 
+pub(crate) use classify::{attributes, attributes_at_head};
 use classify::{Class, Classified};
 pub use report::{
     CensusReport, ClassTotals, Count, CoverageSource, DialectCoverage, ParseStats, RootCensus,

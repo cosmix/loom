@@ -231,3 +231,45 @@ fn every_registered_extractor_has_a_compilable_query() {
         );
     }
 }
+
+/// The version pinned (`=x.y.z`) for `crate_name` in the crate manifest.
+fn manifest_pin(crate_name: &str) -> String {
+    let manifest: toml_edit::DocumentMut = include_str!("../../../Cargo.toml").parse().unwrap();
+    let version = manifest["dependencies"][crate_name]["version"]
+        .as_str()
+        .unwrap_or_else(|| panic!("no pinned version for {crate_name}"));
+    version.trim_start_matches('=').to_string()
+}
+
+/// Crate name and version, the first two words of a dialect's `grammar`.
+fn grammar_crate_and_version(grammar: &str) -> (&str, &str) {
+    let mut words = grammar.split_whitespace();
+    (words.next().unwrap(), words.next().unwrap())
+}
+
+#[test]
+fn grammar_versions_match_the_manifest_pins() {
+    for dialect in DIALECTS {
+        let (crate_name, version) = grammar_crate_and_version(dialect.grammar);
+        assert_eq!(
+            version,
+            manifest_pin(crate_name),
+            "{}: grammar text disagrees with the manifest pin",
+            dialect.id
+        );
+    }
+}
+
+#[cfg(feature = "source-graph")]
+#[test]
+fn extractor_grammar_versions_match_the_manifest_pins() {
+    for extractor in registry() {
+        let (crate_name, _) = grammar_crate_and_version(extractor.dialect().grammar);
+        assert_eq!(
+            extractor.cache_identity().grammar_version,
+            manifest_pin(crate_name),
+            "{}: cache identity disagrees with the manifest pin",
+            extractor.dialect().id
+        );
+    }
+}

@@ -16,9 +16,9 @@ const MAX_TIER_ONE_FILE_LINES: usize = 250;
 const MAX_TIER_TWO_SECTION_LINES: usize = 80;
 /// Maximum line count for a tier-2 topic file.
 const MAX_TIER_TWO_FILE_LINES: usize = 400;
-/// Maximum byte size for the generated tier-0 index: roughly 4k tokens for
-/// the first read of every session — the ceiling the hierarchy repair keeps under.
-pub(crate) const MAX_INDEX_BYTES: u64 = 16_384;
+/// Byte budget of the generated `INDEX.md`, which an agent reads at the start
+/// of every session. Sized for about 300 topic rows at today's row length.
+pub(crate) const MAX_INDEX_BYTES: u64 = 24_576;
 
 /// Flag a section whose line count (its `## ` heading line included,
 /// trailing blank lines excluded) exceeds its tier's section limit. A no-op

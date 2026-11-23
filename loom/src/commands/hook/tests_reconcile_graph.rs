@@ -79,7 +79,7 @@ fn reconcile_graph_leaves_a_finished_marker_after_a_successful_run() {
     let root = temp.path();
     let work_dir = WorkDir::new(root).unwrap();
     let store = ContextStore::open(&work_dir).unwrap();
-    let lock_path = reconcile_lock_path(&store);
+    let lock_path = reconcile_lock_path(&store, root);
 
     enter_checkout(root);
     std::env::remove_var("LOOM_RECONCILE_CLAIM");
@@ -108,7 +108,7 @@ fn reconcile_graph_with_no_resolvable_work_dir_creates_nothing() {
     let temp = TempDir::new().unwrap();
     let work_dir = WorkDir::new(temp.path()).unwrap();
     let store = ContextStore::open(&work_dir).unwrap();
-    let lock_path = reconcile_lock_path(&store);
+    let lock_path = reconcile_lock_path(&store, temp.path());
 
     std::env::remove_var("LOOM_STAGE_ID");
     std::env::set_var("LOOM_WORK_DIR", temp.path());
@@ -151,7 +151,7 @@ fn reconcile_graph_with_a_stale_loom_work_dir_pin_creates_nothing() {
         "a hint naming the state directory directly must resolve to itself"
     );
     let store = ContextStore::open(&work_dir).unwrap();
-    let lock_path = reconcile_lock_path(&store);
+    let lock_path = reconcile_lock_path(&store, root);
 
     std::env::remove_var("LOOM_STAGE_ID");
     std::env::set_var("LOOM_WORK_DIR", &stale_work_dir_path);
@@ -243,7 +243,7 @@ fn spawn_if_needed_does_nothing_when_the_pack_is_healthy() {
     let work_dir = WorkDir::new(root).unwrap();
     let store = ContextStore::open(&work_dir).unwrap();
     assert!(
-        !reconcile_lock_path(&store).exists(),
+        !reconcile_lock_path(&store, root).exists(),
         "a healthy pack must never claim the lock at all"
     );
 }
@@ -261,7 +261,7 @@ fn spawn_if_needed_leaves_a_young_live_lock_untouched() {
     // `loom map`'d repository — without this, `try_spawn` would refuse
     // before ever reaching the lock decision this test means to exercise.
     store.ensure().unwrap();
-    let lock_path = reconcile_lock_path(&store);
+    let lock_path = reconcile_lock_path(&store, root);
     // Our own pid: guaranteed alive for the duration of this test, so the
     // Skip branch is the only one `try_spawn` can take — no subprocess is
     // ever launched by this test.
@@ -297,7 +297,7 @@ fn spawn_is_refused_against_an_inferred_root_with_no_existing_cache() {
     let work_dir = WorkDir::new(root).unwrap();
     let store = ContextStore::open(&work_dir).unwrap();
     assert!(
-        !reconcile_lock_path(&store).exists(),
+        !reconcile_lock_path(&store, root).exists(),
         "an inferred root with no existing context cache must be refused \
          before the debounce lock is ever touched"
     );
@@ -320,7 +320,7 @@ fn spawn_is_allowed_against_an_inferred_root_that_already_has_a_cache() {
     spawn_if_needed(&degraded_pack(), root);
 
     assert!(
-        reconcile_lock_path(&store).exists(),
+        reconcile_lock_path(&store, root).exists(),
         "a root with an existing context cache must be allowed to spawn"
     );
 }
@@ -339,7 +339,7 @@ fn spawn_is_allowed_when_loom_work_dir_was_explicitly_set() {
     let work_dir = WorkDir::new(root).unwrap();
     let store = ContextStore::open(&work_dir).unwrap();
     assert!(
-        reconcile_lock_path(&store).exists(),
+        reconcile_lock_path(&store, root).exists(),
         "an explicitly set LOOM_WORK_DIR must never be refused as inferred, \
          regardless of whether a context cache already exists"
     );

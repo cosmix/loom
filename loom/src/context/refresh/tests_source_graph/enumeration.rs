@@ -241,3 +241,75 @@ fn a_file_staged_as_a_symlink_is_tombstoned_over_the_base() {
     );
     assert!(!leaked(resolved.nodes()));
 }
+
+#[test]
+fn a_path_marked_linguist_generated_never_enters_the_graph() {
+    let temp = init_repo();
+    let root = temp.path();
+    std::fs::create_dir_all(root.join("gen")).unwrap();
+    std::fs::create_dir_all(root.join("vendored")).unwrap();
+    std::fs::write(root.join("gen/bundle.js"), "var bundled = 1;\n").unwrap();
+    std::fs::write(root.join("vendored/x.rs"), "fn vendored() {}\n").unwrap();
+    std::fs::write(
+        root.join(".gitattributes"),
+        "gen/** linguist-generated\nvendored/** linguist-vendored\n",
+    )
+    .unwrap();
+    git_ok(
+        root,
+        &["add", "gen/bundle.js", "vendored/x.rs", ".gitattributes"],
+    );
+    git_ok(root, &["commit", "-m", "attributes"]);
+    let (store, graph_store) = stores(&temp);
+    let revision = head_sha(root);
+    reconcile_source_graph(&store, &graph_store, root, base_scope(root)).unwrap();
+
+    let base = graph_store.load_base(&revision).unwrap().unwrap();
+    assert!(base.files.contains_key("src.rs"));
+    assert!(!base.files.contains_key("gen/bundle.js"));
+    assert!(!base.files.contains_key("vendored/x.rs"));
+
+    std::fs::write(root.join("gen/extra.js"), "var extra = 2;\n").unwrap();
+    std::fs::write(root.join("vendored/y.rs"), "fn extra() {}\n").unwrap();
+    reconcile_source_graph(&store, &graph_store, root, overlay_scope("attributes")).unwrap();
+    let resolved = graph_store
+        .resolved(&revision, Some(("plan-contract", "attributes")))
+        .unwrap();
+    assert!(resolved.files.contains_key("src.rs"));
+    for path in [
+        "gen/bundle.js",
+        "gen/extra.js",
+        "vendored/x.rs",
+        "vendored/y.rs",
+    ] {
+        assert!(!resolved.files.contains_key(path), "{path}");
+    }
+}
+
+#[test]
+fn the_base_reads_attributes_from_head_not_from_an_uncommitted_gitattributes() {
+    let temp = init_repo();
+    let root = temp.path();
+    std::fs::create_dir_all(root.join("gen")).unwrap();
+    std::fs::write(root.join("gen/bundle.js"), "var bundled = 1;\n").unwrap();
+    git_ok(root, &["add", "gen/bundle.js"]);
+    git_ok(root, &["commit", "-m", "bundle"]);
+    std::fs::write(root.join(".gitattributes"), "gen/** linguist-generated\n").unwrap();
+    let (store, graph_store) = stores(&temp);
+    let uncommitted = head_sha(root);
+
+    reconcile_source_graph(&store, &graph_store, root, base_scope(root)).unwrap();
+    let base = graph_store.load_base(&uncommitted).unwrap().unwrap();
+    assert!(
+        base.files.contains_key("gen/bundle.js"),
+        "an uncommitted .gitattributes must not shape a base keyed by HEAD"
+    );
+
+    git_ok(root, &["add", ".gitattributes"]);
+    git_ok(root, &["commit", "-m", "attributes"]);
+    let committed = head_sha(root);
+    reconcile_source_graph(&store, &graph_store, root, base_scope(root)).unwrap();
+    let base = graph_store.load_base(&committed).unwrap().unwrap();
+    assert!(base.files.contains_key("src.rs"));
+    assert!(!base.files.contains_key("gen/bundle.js"));
+}

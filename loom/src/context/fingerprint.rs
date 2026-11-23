@@ -7,10 +7,11 @@
 //! changing its contents never triggers a rebuild.
 
 use crate::context::source_graph::body_hash;
-use anyhow::{Context, Result};
+use crate::fs::knowledge::catalog::curated_tree_fingerprints;
+use crate::fs::knowledge::read::read_knowledge_file;
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::fs;
 use std::path::{Path, PathBuf};
 
 /// Content identity of one knowledge file. Deliberately carries NO mtime and no
@@ -35,14 +36,11 @@ pub struct FileFingerprint {
 /// `path` is relative to `knowledge_root`; the returned [`FileFingerprint::path`]
 /// is that same relative path, unchanged.
 pub fn fingerprint_file(knowledge_root: &Path, path: &Path) -> Result<FileFingerprint> {
-    let full_path = knowledge_root.join(path);
-    let bytes =
-        fs::read(&full_path).with_context(|| format!("Failed to read {}", full_path.display()))?;
-
+    let bytes = read_knowledge_file(knowledge_root, path)?;
     Ok(fingerprint_bytes(path.to_path_buf(), &bytes))
 }
 
-fn fingerprint_bytes(path: PathBuf, bytes: &[u8]) -> FileFingerprint {
+pub(crate) fn fingerprint_bytes(path: PathBuf, bytes: &[u8]) -> FileFingerprint {
     FileFingerprint {
         path,
         content_hash: body_hash(bytes),
@@ -50,11 +48,13 @@ fn fingerprint_bytes(path: PathBuf, bytes: &[u8]) -> FileFingerprint {
     }
 }
 
-/// Fingerprint every `*.md` file under `knowledge_root`, recursively, sorted by
+/// Fingerprint every file the catalog walker indexes under `knowledge_root`
+/// plus its root `INDEX.md` (see `curated_tree_fingerprints`), sorted by
 /// relative path, extended with a fingerprint for every indexed prose file
 /// (see `prose_fingerprints`).
 ///
-/// Skips dotfiles and dot-directories at any depth. A missing `knowledge_root`
+/// Skips dotfiles and dot-directories at any depth, every nested `INDEX.md`,
+/// and a root `INDEX.md` that is not a regular file. A missing `knowledge_root`
 /// yields an empty `Vec`, not an error — a project without a knowledge tree yet
 /// is a valid, unbuilt state, not a failure. That early return runs BEFORE
 /// prose is added: with no knowledge tree the whole structural layer is
@@ -66,14 +66,7 @@ pub fn fingerprint_tree(knowledge_root: &Path) -> Result<Vec<FileFingerprint>> {
         return Ok(Vec::new());
     }
 
-    let mut relative_paths = Vec::new();
-    collect_markdown_files(knowledge_root, knowledge_root, &mut relative_paths)?;
-    relative_paths.sort();
-
-    let mut fingerprints: Vec<FileFingerprint> = relative_paths
-        .into_iter()
-        .map(|relative| fingerprint_file(knowledge_root, &relative))
-        .collect::<Result<_>>()?;
+    let mut fingerprints = curated_tree_fingerprints(knowledge_root)?;
     fingerprints.extend(prose_fingerprints(knowledge_root));
     Ok(fingerprints)
 }
@@ -91,7 +84,7 @@ pub fn fingerprint_tree(knowledge_root: &Path) -> Result<Vec<FileFingerprint>> {
 /// `evaluate`/`refresh` — return `Err` where they returned a value before
 /// prose existed. Hashes the bytes acquired by the shared prose boundary.
 fn prose_fingerprints(knowledge_root: &Path) -> Vec<FileFingerprint> {
-    use crate::fs::knowledge::catalog::prose::{self, PROSE_ID_PREFIX};
+    use crate::fs::knowledge::catalog::prose;
 
     let Some(sources) = prose::sources_for_knowledge_root(knowledge_root) else {
         return Vec::new();
@@ -99,50 +92,18 @@ fn prose_fingerprints(knowledge_root: &Path) -> Vec<FileFingerprint> {
 
     let mut fingerprints = Vec::new();
     sources.for_each_file(|relative, bytes| {
-        let path = PathBuf::from(format!("{PROSE_ID_PREFIX}{}", relative.display()));
-        fingerprints.push(fingerprint_bytes(path, &bytes));
+        fingerprints.push(prose_fingerprint(&relative, &bytes));
     });
     fingerprints
 }
 
-/// Recursively collect `*.md` files under `dir`, relative to `knowledge_root`,
-/// skipping any dotfile or dot-directory.
-fn collect_markdown_files(knowledge_root: &Path, dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
-    let entries =
-        fs::read_dir(dir).with_context(|| format!("Failed to read directory {}", dir.display()))?;
+/// Fingerprint of one prose file: the project-relative `relative` path under
+/// the `prose:` prefix, over the bytes the caller already read.
+pub(crate) fn prose_fingerprint(relative: &Path, bytes: &[u8]) -> FileFingerprint {
+    use crate::fs::knowledge::catalog::prose::PROSE_ID_PREFIX;
 
-    for entry in entries {
-        let entry = entry.with_context(|| format!("Failed to read entry in {}", dir.display()))?;
-        let name = entry.file_name();
-        let name = name.to_string_lossy();
-        if name.starts_with('.') {
-            continue;
-        }
-
-        let path = entry.path();
-        let file_type = entry
-            .file_type()
-            .with_context(|| format!("Failed to read file type for {}", path.display()))?;
-
-        if file_type.is_dir() {
-            collect_markdown_files(knowledge_root, &path, out)?;
-        } else if file_type.is_file() && name.ends_with(".md") {
-            let relative = path
-                .strip_prefix(knowledge_root)
-                .with_context(|| format!("Failed to relativize {}", path.display()))?;
-            // Rejoin with `/` explicitly so `FileFingerprint::path` never carries
-            // a platform-specific separator, matching its documented contract.
-            let normalized: PathBuf = relative
-                .components()
-                .map(|component| component.as_os_str().to_string_lossy().into_owned())
-                .collect::<Vec<_>>()
-                .join("/")
-                .into();
-            out.push(normalized);
-        }
-    }
-
-    Ok(())
+    let path = PathBuf::from(format!("{PROSE_ID_PREFIX}{}", relative.display()));
+    fingerprint_bytes(path, bytes)
 }
 
 /// Hex sha256 over the sorted `"<relative-path>:<content_hash>"` lines, each

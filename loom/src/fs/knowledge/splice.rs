@@ -24,8 +24,7 @@ pub enum SectionOutcome {
 /// `heading` in `base`, replacing everything up to (but excluding) the next
 /// heading of the same or shallower level, or EOF. Appends a new `##
 /// <heading>` section at EOF when no heading matches and all fences close.
-/// An unmatched fence rejects the edit. Shared by
-/// [`super::dir::KnowledgeDir::replace_section`] and
+/// An unmatched fence rejects the edit. Used by
 /// [`super::dir::KnowledgeDir::replace_section_target`].
 pub(crate) fn splice_section(
     base: String,

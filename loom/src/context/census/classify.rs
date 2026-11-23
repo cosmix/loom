@@ -91,9 +91,16 @@ pub(super) struct Classified {
 
 /// Paths git marks `linguist-vendored` or `linguist-generated`.
 #[derive(Default)]
-pub(super) struct Attributes {
+pub(crate) struct Attributes {
     vendored: HashSet<String>,
     generated: HashSet<String>,
+}
+
+impl Attributes {
+    /// Whether git marks `path` `linguist-vendored` or `linguist-generated`.
+    pub(crate) fn is_vendored_or_generated(&self, path: &str) -> bool {
+        self.vendored.contains(path) || self.generated.contains(path)
+    }
 }
 
 /// Every tracked path of `root` with its entry kind, from
@@ -141,14 +148,23 @@ pub(super) fn tracked_files(root: &Path) -> Result<Vec<Tracked>> {
         .collect())
 }
 
-/// Ask git once for the attributes of every path in `paths`.
+/// Ask git once for the attributes of every path in `paths`, read from the
+/// working tree's `.gitattributes` files.
 ///
 /// Paths go through a file on stdin, never argv, so thousands of long paths
 /// stay under `ARG_MAX`. A file has no writer to stall against a full stdout
 /// pipe, and the deadline covers the whole call: git blocked reading a
 /// `.gitattributes` that is a FIFO is killed when it runs out.
-pub(super) fn attributes(root: &Path, paths: &[&str]) -> Result<Attributes> {
+pub(crate) fn attributes(root: &Path, paths: &[&str]) -> Result<Attributes> {
     attributes_within(root, paths, GIT_READ_TIMEOUT)
+}
+
+/// [`attributes`] resolved from the `.gitattributes` files committed at
+/// `HEAD` (`git check-attr --source=HEAD`, git 2.40+), so an uncommitted
+/// edit to them changes nothing. For results keyed by `HEAD` and shared
+/// across checkouts.
+pub(crate) fn attributes_at_head(root: &Path, paths: &[&str]) -> Result<Attributes> {
+    attributes_from(root, paths, GIT_READ_TIMEOUT, Some("--source=HEAD"))
 }
 
 /// [`attributes`] under an explicit `timeout`.
@@ -157,16 +173,21 @@ pub(super) fn attributes_within(
     paths: &[&str],
     timeout: Duration,
 ) -> Result<Attributes> {
+    attributes_from(root, paths, timeout, None)
+}
+
+fn attributes_from(
+    root: &Path,
+    paths: &[&str],
+    timeout: Duration,
+    source: Option<&str>,
+) -> Result<Attributes> {
     if paths.is_empty() {
         return Ok(Attributes::default());
     }
-    let args = [
-        "check-attr",
-        "--stdin",
-        "-z",
-        "linguist-vendored",
-        "linguist-generated",
-    ];
+    let mut args = vec!["check-attr"];
+    args.extend(source);
+    args.extend(["--stdin", "-z", "linguist-vendored", "linguist-generated"]);
     let output = run_git_pinned_within(&args, Some(path_list(paths)?), root, timeout)?;
     if !output.status.success() {
         bail!(

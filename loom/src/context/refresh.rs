@@ -33,7 +33,6 @@ pub(crate) use crate::context::extract::BoxedExtractor;
 
 struct Evaluated {
     state: StoreState,
-    fingerprints: Vec<FileFingerprint>,
     catalog: Option<Catalog>,
 }
 
@@ -140,7 +139,6 @@ fn evaluate_inner(store: &ContextStore, knowledge_root: &Path) -> Result<Evaluat
             semantic,
             catalog_revision: stored.catalog_revision,
         },
-        fingerprints,
         catalog,
     })
 }
@@ -273,7 +271,6 @@ fn refresh_snapshot_inner(
         store,
         knowledge_root,
         state.semantic,
-        evaluated.fingerprints,
         tolerate_write_failure,
     )?;
     if !structural_only {
@@ -294,18 +291,17 @@ fn rebuild_and_persist(
     store: &ContextStore,
     knowledge_root: &Path,
     semantic: Freshness,
-    fingerprints: Vec<FileFingerprint>,
     tolerate_write_failure: bool,
 ) -> Result<(RefreshOutcome, Catalog)> {
-    // Persist the SAME revision `evaluate` compares against — the tree revision.
-    // `catalog.revision` is a different hash over a different subject (chunk ids
-    // and their content hashes, not file paths and their bytes); storing it here
-    // would compare two hash domains that can never be equal, making every
-    // refresh rebuild from scratch. The catalog keeps its own revision inside
-    // catalog.json as the catalog's identity.
-    let current_revision = tree_revision(&fingerprints);
+    #[cfg(test)]
+    run_test_hook(&BEFORE_BUILD);
 
-    let catalog = catalog::build(knowledge_root)?;
+    // The revision comes from the bytes the build indexed, not from the
+    // pre-pass `evaluate` ran, so an edit between the two cannot leave new
+    // chunks under an old revision. It is the tree revision, the hash domain
+    // `evaluate` compares; `catalog.revision` stays the catalog's own identity.
+    let (catalog, fingerprints) = catalog::build_with_fingerprints(knowledge_root)?;
+    let current_revision = tree_revision(&fingerprints);
     let report = IngestReport {
         knowledge_root: knowledge_root.to_path_buf(),
         files: fingerprints.len(),
@@ -324,11 +320,7 @@ fn rebuild_and_persist(
 
     structural_snapshot::publish(store, &catalog, &mut structural, tolerate_write_failure)?;
     #[cfg(test)]
-    AFTER_PUBLISH.with(|hook| {
-        if let Some(hook) = hook.borrow_mut().take() {
-            hook();
-        }
-    });
+    run_test_hook(&AFTER_PUBLISH);
 
     Ok((
         RefreshOutcome {
@@ -343,9 +335,28 @@ fn rebuild_and_persist(
 
 #[cfg(test)]
 thread_local! {
+    static BEFORE_BUILD: std::cell::RefCell<Option<Box<dyn FnOnce()>>> = std::cell::RefCell::new(None);
     static AFTER_PUBLISH: std::cell::RefCell<Option<Box<dyn FnOnce()>>> = std::cell::RefCell::new(None);
 }
 
+/// The slot a one-shot test hook is installed in.
+#[cfg(test)]
+type TestHookSlot = std::thread::LocalKey<std::cell::RefCell<Option<Box<dyn FnOnce()>>>>;
+
+/// Run and clear a one-shot test hook, if one is installed.
+#[cfg(test)]
+fn run_test_hook(slot: &'static TestHookSlot) {
+    slot.with(|hook| {
+        if let Some(hook) = hook.borrow_mut().take() {
+            hook();
+        }
+    });
+}
+
+#[cfg(test)]
+mod freshness_contract_tests;
+#[cfg(test)]
+mod source_graph_contract_tests;
 #[cfg(test)]
 #[path = "refresh/tests_freshness.rs"]
 mod tests_freshness;

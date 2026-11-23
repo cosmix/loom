@@ -10,16 +10,16 @@
 //! access and no randomness here; a [`ContextPack`] is a pure function of the
 //! bytes on disk and the [`StageQuery`].
 
+mod capture;
 mod channels;
 mod graph;
 mod request;
 pub(crate) mod windows;
 
-use crate::context::config::RetrievalConfig;
-use crate::context::fuse::fuse;
+pub(crate) use capture::{capture, retrieve_with, Captured};
+
 use crate::context::graph_store::ResolvedGraph;
 use crate::context::local_overlay::OverlayScope;
-use crate::context::pack::pack;
 use crate::context::refresh::{evaluate, refresh_snapshot};
 use crate::context::schema::{
     Channel, ContextPack, Freshness, LifecyclePolicy, RequiredRepresentation,
@@ -294,42 +294,8 @@ pub(crate) fn reject_unknown_require_ids(
 /// signal generation, the prompt hook — must degrade rather than propagate: log
 /// at `tracing::debug` and carry on with no pack.
 pub fn retrieve_for_stage(query: &StageQuery, budget_tokens: usize) -> Result<ContextPack> {
-    let roots = resolve_roots_optional(&query.work_dir_hint)?;
-    let knowledge_root = roots.knowledge_root.as_deref();
-
-    let config = RetrievalConfig::load(&roots.main_project_root);
-
-    let (catalog, mut state) = resolve_catalog(&roots.store, knowledge_root)?;
-
-    let graph_load = graph::load_resolved_graph(
-        &query.work_dir_hint,
-        &roots.store,
-        &state.semantic.revision,
-        &query.overlay,
-    );
-    graph_load.apply_freshness(&mut state);
-    let graph = graph_load.graph;
-
-    request::check_require_ids(query, &catalog, graph.as_ref())?;
-
-    let ranked =
-        channels::rank_stage_channels(query, &catalog, graph.as_ref(), &config, roots.store.root());
-    let fused = fuse(&ranked.lists);
-
-    let request = request::build_pack_request(
-        query,
-        budget_tokens,
-        state,
-        ranked.dropped_terms,
-        ranked.surviving_terms,
-        graph_load.degraded,
-    );
-    let mut retrieved = pack(&request, &fused, &catalog.chunks, graph.as_ref());
-    if let (Some(graph), Some(project_root)) = (graph.as_ref(), graph_load.project_root.as_deref())
-    {
-        windows::attach_windows(&mut retrieved, graph, project_root, query.surface);
-    }
-    Ok(retrieved)
+    let captured = capture(query)?;
+    retrieve_with(&captured, query, budget_tokens)
 }
 
 #[cfg(test)]

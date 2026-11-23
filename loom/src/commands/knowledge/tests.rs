@@ -269,6 +269,18 @@ fn test_strip_repeated_heading() {
 }
 
 #[test]
+fn test_strip_repeated_heading_accepts_crlf_line_ends() {
+    assert_eq!(
+        strip_repeated_heading("## Merge Flow\r\n\r\nBody\r\n", "Merge Flow"),
+        "Body"
+    );
+    assert_eq!(
+        strip_repeated_heading("## Merge Flow Extra\r\nBody", "Merge Flow"),
+        "## Merge Flow Extra\r\nBody"
+    );
+}
+
+#[test]
 #[serial]
 fn test_replace_section_corrects_in_place() {
     let (_temp_dir, test_dir) = setup_test_env();

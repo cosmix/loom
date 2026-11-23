@@ -216,18 +216,12 @@ impl GraphStore {
 
     /// Write a stage's overlay, replacing any previous one.
     ///
-    /// Each stage owns its overlay writes. Atomic replacement protects
-    /// concurrent readers from observing a torn write.
+    /// The layer is stored as given: pruning a tombstone the base lacks is the
+    /// caller's job (`persist_layer`), which already holds the base. Each stage
+    /// owns its overlay writes. Atomic replacement protects concurrent readers
+    /// from observing a torn write.
     pub fn save_overlay(&self, plan: &str, stage: &str, layer: &GraphLayer) -> Result<()> {
-        let mut persisted = layer.clone();
-        let base = self.load_base(&layer.revision)?;
-        persisted.files.retain(|path, entry| {
-            entry.coverage != FileCoverage::Deleted
-                || base
-                    .as_ref()
-                    .is_some_and(|base| base.files.contains_key(path))
-        });
-        self.write_or_fall_back(&self.overlay_path(plan, stage), &persisted)
+        self.write_or_fall_back(&self.overlay_path(plan, stage), layer)
             .map(|_| ())
     }
 

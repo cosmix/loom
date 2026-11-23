@@ -228,6 +228,7 @@ fn readmit(
 /// Restore up to `RESCUE_LIMIT` rare dropped terms when the query is
 /// over-stopworded. The frequency ceiling excludes ubiquitous terms, including
 /// short tokens, and uses the same document frequencies as exact-match gating.
+/// An English function word is never restored, however rare it is in the corpus.
 fn rescue_rarest(
     dropped: &[String],
     document_frequencies: &BTreeMap<String, usize>,
@@ -239,6 +240,7 @@ fn rescue_rarest(
         .iter()
         .map(|term| (document_frequencies.get(term).copied().unwrap_or(0), term))
         .filter(|(frequency, _)| *frequency as f32 <= ceiling)
+        .filter(|(_, term)| !is_function_word(term))
         .collect();
     // Document frequency ascending, then the term itself, because df alone does
     // not order ties and two runs over identical bytes must rescue an identical

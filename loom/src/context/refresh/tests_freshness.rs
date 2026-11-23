@@ -176,3 +176,70 @@ fn refresh_fingerprints_the_tree_once_per_call() {
 
     assert_eq!(take_fingerprint_pass_count(), 1);
 }
+
+#[test]
+fn rebuilt_revision_matches_the_pre_pass_revision_with_index_and_prose() {
+    let (temp, knowledge_root, _first) = init_repo_with_knowledge_root();
+    crate::fs::knowledge::index::write_index(&knowledge_root).unwrap();
+    std::fs::write(
+        temp.path().join("doc/design.md"),
+        "# Design\n\nA prose design note.\n",
+    )
+    .unwrap();
+    let store = ContextStore::with_root(temp.path().join("cache"));
+
+    let outcome = refresh(&store, &knowledge_root, true).unwrap();
+
+    assert!(outcome.rebuilt);
+    let pre_pass = tree_revision(&fingerprint_tree(&knowledge_root).unwrap());
+    assert_eq!(outcome.structural.revision, pre_pass);
+    let state = evaluate(&store, &knowledge_root).unwrap();
+    assert!(!state.structural.stale, "{:?}", state.structural);
+}
+
+#[test]
+fn a_nested_index_md_leaves_the_refreshed_revision_equal_to_the_evaluated_one() {
+    let (temp, knowledge_root, _first) = init_repo_with_knowledge_root();
+    std::fs::create_dir_all(knowledge_root.join("architecture")).unwrap();
+    std::fs::write(
+        knowledge_root.join("architecture/INDEX.md"),
+        "# nested index\n",
+    )
+    .unwrap();
+    std::fs::write(knowledge_root.join("architecture/topic.md"), "# Topic\n").unwrap();
+    let store = ContextStore::with_root(temp.path().join("cache"));
+
+    let outcome = refresh(&store, &knowledge_root, true).unwrap();
+
+    let fingerprints = fingerprint_tree(&knowledge_root).unwrap();
+    assert!(
+        !fingerprints
+            .iter()
+            .any(|print| print.path == Path::new("architecture/INDEX.md")),
+        "a nested INDEX.md is not part of the fingerprinted set"
+    );
+    assert_eq!(outcome.structural.revision, tree_revision(&fingerprints));
+    let state = evaluate(&store, &knowledge_root).unwrap();
+    assert_eq!(state.structural.revision, outcome.structural.revision);
+    assert!(!state.structural.stale, "{:?}", state.structural);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_symlinked_root_index_md_is_skipped_and_does_not_fail_refresh() {
+    let (temp, knowledge_root, _first) = init_repo_with_knowledge_root();
+    let target = temp.path().join("elsewhere.md");
+    std::fs::write(&target, "# not an index\n").unwrap();
+    std::os::unix::fs::symlink(&target, knowledge_root.join("INDEX.md")).unwrap();
+    let store = ContextStore::with_root(temp.path().join("cache"));
+
+    let outcome = refresh(&store, &knowledge_root, true).unwrap();
+
+    let fingerprints = fingerprint_tree(&knowledge_root).unwrap();
+    assert!(!fingerprints
+        .iter()
+        .any(|print| print.path == Path::new("INDEX.md")));
+    assert_eq!(outcome.structural.revision, tree_revision(&fingerprints));
+    let state = evaluate(&store, &knowledge_root).unwrap();
+    assert!(!state.structural.stale, "{:?}", state.structural);
+}

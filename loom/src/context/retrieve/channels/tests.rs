@@ -100,6 +100,44 @@ fn knowledge_channel_dropped_terms_surface_through_rank_channels() {
 }
 
 #[test]
+fn a_function_word_between_the_drop_and_rescue_ceilings_is_not_rescued() {
+    // 24 chunks: the ubiquity floor is max(24 * 0.10, 5) = 5 and the rescue
+    // ceiling 24 * 0.25 = 6. Each of the four terms below sits in 6 chunks, so
+    // all are dropped and all are rescue candidates; only "latency" is not a
+    // function word.
+    let mut bodies: Vec<String> = Vec::new();
+    for word in ["which", "would", "should", "latency"] {
+        bodies.extend((0..6).map(|_| word.to_string()));
+    }
+    bodies.extend((0..8).map(|index| format!("filler{index}")));
+    bodies[0].push_str(" zebra");
+    let catalog = Catalog {
+        revision: "test".to_string(),
+        chunks: bodies
+            .iter()
+            .enumerate()
+            .map(|(index, body)| chunk(&format!("c{index}.md#topic#0"), body))
+            .collect(),
+        issues: Vec::new(),
+    };
+    let rank_query = RankQuery {
+        text: "zebra which would should latency".to_string(),
+        ..RankQuery::default()
+    };
+
+    let got = rank_channels(
+        &[Channel::Knowledge],
+        &rank_query,
+        &catalog,
+        None,
+        &RetrievalConfig::default(),
+    );
+
+    assert_eq!(got.surviving_terms, vec!["zebra", "latency"]);
+    assert_eq!(got.dropped_terms, vec!["which", "would", "should"]);
+}
+
+#[test]
 fn apply_lifecycle_policy_keeps_explicitly_required_ineligible_chunks() {
     let mut superseded = chunk("old", "rare wording");
     superseded.state = LifecycleState::Superseded;

@@ -4,7 +4,11 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 mod evidence;
+mod index_budget;
 mod source_refs;
+/// One byte past the generated index's budget.
+const OVER_INDEX_BUDGET: usize = size::MAX_INDEX_BYTES as usize + 1;
+
 fn section(heading: &str, body_lines: usize) -> String {
     format!("## {heading}\n{}", "detail\n".repeat(body_lines))
 }
@@ -17,7 +21,7 @@ fn small_sections(count: usize) -> String {
 
 fn write_ordering_fixture(root: &Path) {
     fs::create_dir_all(root.join("topics")).unwrap();
-    fs::write(root.join("INDEX.md"), "x".repeat(16_385)).unwrap();
+    fs::write(root.join("INDEX.md"), "x".repeat(OVER_INDEX_BUDGET)).unwrap();
     fs::write(
         root.join("a.md"),
         format!(
@@ -176,7 +180,9 @@ fn rule_9_sorts_issues_by_file_kind_and_payload() {
     assert_eq!(
         build(&root).unwrap().issues,
         vec![
-            CatalogIssue::OversizedIndex { bytes: 16_385 },
+            CatalogIssue::OversizedIndex {
+                bytes: OVER_INDEX_BUDGET as u64
+            },
             CatalogIssue::DuplicateHeading {
                 file: PathBuf::from("a.md"),
                 heading: "repeat".to_string(),
@@ -337,45 +343,6 @@ fn rule_17_does_not_report_oversized_tier2_topics() {
             CatalogIssue::OversizedSection { .. } | CatalogIssue::OversizedFile { .. }
         )
     }));
-}
-
-#[test]
-fn rule_18_reports_only_indexes_over_the_byte_limit() {
-    let oversized = TempDir::new().unwrap();
-    fs::write(oversized.path().join("INDEX.md"), "x".repeat(16_385)).unwrap();
-    assert_eq!(
-        build(oversized.path()).unwrap().issues,
-        vec![CatalogIssue::OversizedIndex { bytes: 16_385 }]
-    );
-
-    let small = TempDir::new().unwrap();
-    fs::write(small.path().join("INDEX.md"), "small index").unwrap();
-    assert!(!build(small.path())
-        .unwrap()
-        .issues
-        .iter()
-        .any(|issue| matches!(issue, CatalogIssue::OversizedIndex { .. })));
-}
-
-/// Write an `INDEX.md` of exactly `bytes` bytes and assert its size.
-fn index_of_exactly(root: &Path, bytes: usize) {
-    let path = root.join("INDEX.md");
-    fs::write(&path, "x".repeat(bytes)).unwrap();
-    assert_eq!(fs::metadata(&path).unwrap().len(), bytes as u64);
-}
-
-#[test]
-fn rule_19_reports_index_only_strictly_over_the_byte_boundary() {
-    let at = TempDir::new().unwrap();
-    index_of_exactly(at.path(), 16_384);
-    assert!(build(at.path()).unwrap().issues.is_empty());
-
-    let over = TempDir::new().unwrap();
-    index_of_exactly(over.path(), 16_385);
-    assert_eq!(
-        build(over.path()).unwrap().issues,
-        vec![CatalogIssue::OversizedIndex { bytes: 16_385 }]
-    );
 }
 
 #[test]

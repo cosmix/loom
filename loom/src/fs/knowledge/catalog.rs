@@ -1,6 +1,8 @@
 //! Build a deterministic catalog over the whole knowledge tree.
 
+use crate::context::fingerprint::{fingerprint_bytes, FileFingerprint};
 use crate::fs::knowledge::chunker::{self, KnowledgeChunk};
+use crate::fs::knowledge::read::read_knowledge_file;
 use crate::fs::lexical::normalize_lexically;
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
@@ -10,6 +12,7 @@ use std::path::{Path, PathBuf};
 
 mod baseline;
 mod evidence;
+mod fingerprints;
 mod headings;
 mod issue;
 mod order;
@@ -21,10 +24,14 @@ mod tests_prose;
 
 pub use baseline::{render as render_baseline, BaselineComparison, CheckBaseline};
 pub use evidence::{evidence_summary, EvidenceSummary};
+pub(crate) use fingerprints::{build_with_fingerprints, curated_tree_fingerprints};
 use headings::HeadingTally;
 pub use issue::{CatalogIssue, EvidenceUnavailableReason};
 use order::compare_issues;
 use source_roots::{cargo_package_source_roots, ProjectFileIndex, SourceRefContext};
+
+/// Chunks, sorted issues and per-file fingerprints of the curated tree.
+type CuratedBuild = (Vec<KnowledgeChunk>, Vec<CatalogIssue>, Vec<FileFingerprint>);
 
 /// Deterministic retrieval data and non-mutating knowledge-base diagnostics.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -91,10 +98,9 @@ fn process_file(
     evidence_collector: Option<&mut evidence::EvidenceCollector>,
     headings: &mut HeadingTally,
     issues: &mut Vec<CatalogIssue>,
-) -> anyhow::Result<Vec<KnowledgeChunk>> {
-    let absolute_path = root.join(relative_path);
-    let bytes = fs::read(&absolute_path)
-        .with_context(|| format!("Failed to read knowledge file: {}", absolute_path.display()))?;
+) -> anyhow::Result<(Vec<KnowledgeChunk>, FileFingerprint)> {
+    let bytes = read_knowledge_file(root, relative_path)?;
+    let fingerprint = fingerprint_bytes(PathBuf::from(display_path(relative_path)), &bytes);
     let content = String::from_utf8_lossy(&bytes);
     let (frontmatter, body_content) =
         crate::fs::knowledge::frontmatter::split_frontmatter(&content);
@@ -119,7 +125,7 @@ fn process_file(
         evidence::changed_since_verified(collector, relative_path, &frontmatter);
     }
 
-    Ok(file_chunks)
+    Ok((file_chunks, fingerprint))
 }
 
 fn collect_unverifiable_references(
@@ -155,23 +161,7 @@ fn collect_unverifiable_references(
 /// with every chunk indexed from the project's configured prose roots (see
 /// `prose`).
 pub fn build(root: &Path) -> anyhow::Result<Catalog> {
-    let (mut chunks, issues) = build_curated(root, true)?;
-
-    // Prose is appended to the SAME chunk list the curated tree produced, so
-    // one BM25 corpus covers both and `revision_for` below folds prose edits
-    // into the catalog's own revision. Prose contributes no `issues`: the
-    // duplicate-heading, generic-blurb, broken-link and missing-source-ref
-    // diagnostics are contracts on the CURATED tree, and reporting them for
-    // arbitrary project docs would bury the ones an author can act on.
-    if let Some(sources) = prose::sources_for_knowledge_root(root) {
-        chunks.extend(sources.chunks());
-    }
-
-    Ok(Catalog {
-        revision: revision_for(&chunks),
-        chunks,
-        issues,
-    })
+    build_with_fingerprints(root).map(|(catalog, _)| catalog)
 }
 
 /// [`build`]'s issues that are not [`CatalogIssue::is_review_only`]: the
@@ -182,17 +172,15 @@ pub fn build(root: &Path) -> anyhow::Result<Catalog> {
 /// review-only issues, and prose indexing, which reports none. Reads the tree;
 /// runs no process and writes nothing.
 pub(crate) fn structural_issues(root: &Path) -> anyhow::Result<Vec<CatalogIssue>> {
-    let (_, mut issues) = build_curated(root, false)?;
+    let (_, mut issues, _) = build_curated(root, false)?;
     issues.retain(|issue| !issue.is_review_only());
     Ok(issues)
 }
 
-/// The curated tree's chunks and its sorted issues. `collect_evidence` runs
-/// the git-backed verification-point checks over declared frontmatter sources.
-fn build_curated(
-    root: &Path,
-    collect_evidence: bool,
-) -> anyhow::Result<(Vec<KnowledgeChunk>, Vec<CatalogIssue>)> {
+/// The curated tree's chunks, its sorted issues and one fingerprint per file
+/// read. `collect_evidence` runs the git-backed verification-point checks over
+/// declared frontmatter sources.
+fn build_curated(root: &Path, collect_evidence: bool) -> anyhow::Result<CuratedBuild> {
     let files = markdown_files(root)?;
     let (project_root, cargo_source_roots, project_files) = source_ref_inputs(root);
     let source_refs =
@@ -201,10 +189,11 @@ fn build_curated(
         collect_evidence.then(|| evidence::EvidenceCollector::new(project_root.as_deref()));
     let mut chunks = Vec::new();
     let mut issues = Vec::new();
+    let mut fingerprints = Vec::new();
     let mut headings = HeadingTally::default();
 
     for relative_path in files {
-        let file_chunks = process_file(
+        let (file_chunks, fingerprint) = process_file(
             root,
             &relative_path,
             &source_refs,
@@ -213,6 +202,7 @@ fn build_curated(
             &mut issues,
         )?;
         chunks.extend(file_chunks);
+        fingerprints.push(fingerprint);
     }
 
     headings.push_issues(&mut issues);
@@ -225,7 +215,7 @@ fn build_curated(
     }
 
     issues.sort_by(compare_issues);
-    Ok((chunks, issues))
+    Ok((chunks, issues, fingerprints))
 }
 
 fn source_ref_inputs(root: &Path) -> (Option<PathBuf>, Vec<PathBuf>, ProjectFileIndex) {

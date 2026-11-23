@@ -66,15 +66,8 @@ fn rebuild_and_persist_and_persist_semantic_freshness_do_not_revert_each_others_
     // a concurrent semantic update landed — the old bug wrote this straight
     // back to disk, reverting whatever `semantic` actually held.
     let stale_semantic = freshness("stale-snapshot-from-evaluate");
-    let fingerprints = crate::context::fingerprint::fingerprint_tree(&knowledge_root).unwrap();
-    crate::context::refresh::rebuild_and_persist(
-        &store,
-        &knowledge_root,
-        stale_semantic,
-        fingerprints,
-        false,
-    )
-    .unwrap();
+    crate::context::refresh::rebuild_and_persist(&store, &knowledge_root, stale_semantic, false)
+        .unwrap();
 
     let after_rebuild = store.load_state().unwrap();
     assert_eq!(

@@ -5,7 +5,10 @@
 use super::cases::{load_cases_file, CASES_RELATIVE_PATH};
 use crate::commands::hook::user_prompt::delivered;
 use crate::context::config::RetrievalConfig;
+use crate::context::refresh::SnapshotAction;
 use crate::context::retrieve::{retrieve_for_stage, StageQuery};
+use crate::test_git::TestRepo;
+use serial_test::serial;
 use std::fs;
 use std::path::Path;
 use tempfile::TempDir;
@@ -79,4 +82,50 @@ fn the_farewell_abstains() {
 fn a_prompt_naming_a_section_still_emits() {
     let project = project();
     assert!(emits(project.path(), "genuine-win-phantom-merges"));
+}
+
+/// A committed bundle whose minified symbol `iS` is the exact-symbol match for
+/// the farewell's dropped word "is".
+const BUNDLE: &str = "function iS(e){return e}\nexport{iS};\n";
+
+/// A git repo holding the two knowledge files of [`project`] and a committed
+/// bundle under `web/dist`, with a local source-graph snapshot built over it.
+/// `attributes` is the `.gitattributes` content committed before the snapshot.
+fn bundled_project(attributes: Option<&str>) -> TempDir {
+    let repo = TestRepo::builder().no_seed().create();
+    repo.commit_file(
+        "doc/loom/knowledge/conventions.md",
+        CONVENTIONS,
+        "conventions",
+    );
+    repo.commit_file("doc/loom/knowledge/mistakes.md", MISTAKES, "mistakes");
+    if let Some(attributes) = attributes {
+        repo.commit_file(".gitattributes", attributes, "attributes");
+    }
+    repo.commit_file("web/dist/assets/flow.js", BUNDLE, "bundle");
+
+    let work = repo.path().join(".loom/work");
+    fs::create_dir_all(&work).unwrap();
+    crate::git::worktree::capture_main_identity(repo.path(), &work).unwrap();
+    let outcome = super::ensure_local_snapshot(repo.path()).unwrap();
+    assert_ne!(
+        outcome.action,
+        SnapshotAction::Unavailable,
+        "{}",
+        outcome.reason
+    );
+    repo.into_temp_dir()
+}
+
+#[test]
+#[serial]
+fn a_generated_bundle_symbol_does_not_make_the_farewell_emit() {
+    let ungated = bundled_project(None);
+    assert!(
+        emits(ungated.path(), "farewell-abstains"),
+        "without the attribute the bundle's symbol must reach the emit floor"
+    );
+
+    let gated = bundled_project(Some("web/dist/** linguist-generated\n"));
+    assert!(!emits(gated.path(), "farewell-abstains"));
 }

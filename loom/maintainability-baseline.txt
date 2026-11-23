@@ -100,7 +100,6 @@ function src/sandbox/settings/tests.rs test_deny_write_parent_traversal_not_in_o
 function src/sandbox/settings/tests.rs test_generate_settings_emits_network_block 53
 function src/sandbox/settings/tests_read_denies.rs test_build_settings_adds_resolved_work_symlink_permissions_nested_layout 74
 function src/sandbox/settings/tests_read_denies.rs test_build_settings_main_repo_drops_stale_escape_from_existing 67
-function src/skills/matcher.rs match_skills 55
 function src/verify/goal_backward/artifacts.rs verify_artifacts 60
 function src/verify/goal_backward/artifacts.rs verify_regression_test 52
 function tests/completion_flow.rs test_acceptance_failure_creates_correct_status 64

@@ -77,6 +77,8 @@ pub fn extract_frontmatter_raw(content: &str) -> Result<&str> {
 
 /// Split at exact `---` delimiter lines with matching indentation and optional trailing whitespace.
 pub(crate) fn split_frontmatter_raw(content: &str) -> Result<(&str, &str)> {
+    // Editors on Windows prepend a byte-order mark; it is not part of the delimiter line.
+    let content = content.strip_prefix('\u{FEFF}').unwrap_or(content);
     let first_newline = content.find('\n').unwrap_or(content.len());
     let first_line = &content[..first_newline];
     if first_line.trim() != "---" {
@@ -121,6 +123,18 @@ pub fn extract_yaml_frontmatter(content: &str) -> Result<serde_json::Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_leading_byte_order_mark_is_skipped() {
+        let split = split_frontmatter_raw("\u{FEFF}---\nname: x\n---\nbody").unwrap();
+        assert_eq!(split, ("name: x\n", "body"));
+    }
+
+    #[test]
+    fn a_byte_order_mark_that_is_not_first_is_not_stripped() {
+        assert!(split_frontmatter_raw("\n\u{FEFF}---\nname: x\n---\nbody").is_err());
+        assert!(split_frontmatter_raw("\u{FEFF}\u{FEFF}---\nname: x\n---\nbody").is_err());
+    }
 
     #[test]
     fn test_extract_valid_frontmatter() {

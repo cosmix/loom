@@ -31,8 +31,8 @@ fn test_replace_section_targets_nested_h3_heading() {
     .unwrap();
 
     let outcome = knowledge
-        .replace_section(
-            KnowledgeFile::Patterns,
+        .replace_section_target(
+            &KnowledgeTarget::Tier1(KnowledgeFile::Patterns),
             "Individual finding",
             "corrected text",
         )
@@ -57,7 +57,11 @@ fn test_replace_section_reports_appended_outcome_for_absent_heading() {
     knowledge.initialize().unwrap();
 
     let outcome = knowledge
-        .replace_section(KnowledgeFile::Patterns, "New Heading", "content")
+        .replace_section_target(
+            &KnowledgeTarget::Tier1(KnowledgeFile::Patterns),
+            "New Heading",
+            "content",
+        )
         .unwrap();
 
     assert_eq!(outcome, SectionOutcome::Appended);
@@ -70,10 +74,17 @@ fn test_replace_section_reports_replaced_outcome_for_h2() {
     knowledge.initialize().unwrap();
 
     knowledge
-        .append(KnowledgeFile::Patterns, "## Section A\n\nOriginal")
+        .append_target(
+            &KnowledgeTarget::Tier1(KnowledgeFile::Patterns),
+            "## Section A\n\nOriginal",
+        )
         .unwrap();
     let outcome = knowledge
-        .replace_section(KnowledgeFile::Patterns, "Section A", "Updated")
+        .replace_section_target(
+            &KnowledgeTarget::Tier1(KnowledgeFile::Patterns),
+            "Section A",
+            "Updated",
+        )
         .unwrap();
 
     assert_eq!(outcome, SectionOutcome::Replaced { level: 2 });
@@ -110,7 +121,7 @@ fn test_append_target_new_topic_with_own_title_skips_scaffold() {
     assert!(content.contains("> My real one-line blurb."));
     assert!(!content.contains("Topic notes for the"));
 
-    let index = knowledge.read_index().unwrap();
+    let index = std::fs::read_to_string(knowledge.index_path()).unwrap();
     assert!(index.contains("[admin1-overlay](architecture/admin1-overlay.md)"));
     assert!(index.contains("My real one-line blurb."));
 }
