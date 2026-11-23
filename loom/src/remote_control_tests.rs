@@ -1,5 +1,10 @@
 use super::*;
 use serial_test::serial;
+use std::ffi::OsString;
+use std::io::Write;
+use std::os::unix::fs::OpenOptionsExt;
+use std::path::PathBuf;
+use std::sync::mpsc::channel;
 
 #[test]
 fn default_config_mode_is_auto() {
@@ -201,4 +206,141 @@ fn eligibility_reason_carries_only_a_bounded_plain_auth_method() {
     );
     assert_eq!(method_label(&hostile).chars().count(), MAX_METHOD_CHARS);
     assert_eq!(method_label("claude.ai-2_x"), "claude.ai-2_x");
+}
+
+#[test]
+#[serial]
+fn a_poisoned_latch_still_latches() {
+    DISABLED_FOR_PROCESS.clear_poison();
+    reset_disabled_for_process();
+    let poisoner = std::thread::spawn(|| {
+        let _held = DISABLED_FOR_PROCESS.lock().unwrap();
+        panic!("poison the latch");
+    });
+    assert!(poisoner.join().is_err());
+
+    assert!(!disabled_for_process());
+    disable_for_this_process("x");
+    assert!(disabled_for_process());
+
+    DISABLED_FOR_PROCESS.clear_poison();
+    reset_disabled_for_process();
+}
+
+/// Writes an executable `claude` stand-in into `dir` that reports `version`.
+fn fake_claude(dir: &Path, version: &str) -> PathBuf {
+    let script = format!(
+        "#!/bin/sh\n\
+         case \"$1\" in\n\
+         --version) echo \"{version} (Claude Code)\" ;;\n\
+         --help) echo \"  --remote-control [name]\" ;;\n\
+         auth) echo '{{\"loggedIn\": true, \"authMethod\": \"claude.ai\"}}' ;;\n\
+         esac\n"
+    );
+    let path = dir.join("claude");
+    // Replace through a rename so a running copy never sees a half-written script, and retry
+    // once when another thread's fork still holds the previous file open for writing.
+    let staged = dir.join("claude.new");
+    for attempt in 0..2 {
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o755)
+            .open(&staged)
+            .unwrap();
+        file.write_all(script.as_bytes()).unwrap();
+        file.sync_all().unwrap();
+        drop(file);
+        match std::fs::rename(&staged, &path) {
+            Ok(()) => break,
+            Err(error) if attempt == 0 => drop(error),
+            Err(error) => panic!("replacing the fake claude: {error}"),
+        }
+    }
+    path
+}
+
+/// Points `PATH` at one directory for the life of the guard.
+struct PathGuard(Option<OsString>);
+
+impl PathGuard {
+    fn only(dir: &Path) -> Self {
+        let previous = std::env::var_os("PATH");
+        std::env::set_var("PATH", dir);
+        Self(previous)
+    }
+}
+
+impl Drop for PathGuard {
+    fn drop(&mut self) {
+        match self.0.take() {
+            Some(path) => std::env::set_var("PATH", path),
+            None => std::env::remove_var("PATH"),
+        }
+    }
+}
+
+#[test]
+#[serial]
+fn resolve_follows_a_replaced_binary() {
+    let bin = tempfile::tempdir().unwrap();
+    let work_dir = tempfile::tempdir().unwrap();
+    fake_claude(bin.path(), "2.1.60");
+    let _path = PathGuard::only(bin.path());
+    reset_disabled_for_process();
+
+    assert!(resolve(work_dir.path()));
+    fake_claude(bin.path(), "2.0.0");
+    assert!(!resolve(work_dir.path()));
+    fake_claude(bin.path(), "2.1.60");
+    assert!(resolve(work_dir.path()));
+}
+
+#[test]
+#[serial]
+fn preflight_reports_the_replaced_version() {
+    let bin = tempfile::tempdir().unwrap();
+    let path = fake_claude(bin.path(), "2.1.60");
+    let _path = PathGuard::only(bin.path());
+
+    assert_eq!(preflight(&path), RemoteControlStatus::Enabled);
+    fake_claude(bin.path(), "2.0.0");
+    match preflight(&path) {
+        RemoteControlStatus::Disabled { reason } => assert!(reason.contains("2.0.0"), "{reason}"),
+        RemoteControlStatus::Enabled => panic!("a replaced, older claude still passes"),
+    }
+}
+
+#[test]
+fn memo_reprobes_on_expiry_key_change_and_survives_a_panicking_probe() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("binary");
+    std::fs::write(&file, "one").unwrap();
+    let ttl = Duration::from_secs(60);
+    let start = Instant::now();
+    let memo: Memo<u32> = Memo::new();
+
+    assert_eq!(memo.get(&file, Some(ttl), start, || 1), 1);
+    assert_eq!(memo.get(&file, Some(ttl), start + ttl / 2, || 2), 1);
+    let later = start + ttl + Duration::from_secs(1);
+    assert_eq!(memo.get(&file, Some(ttl), later, || 3), 3);
+
+    let forever: Memo<u32> = Memo::new();
+    assert_eq!(forever.get(&file, None, start, || 10), 10);
+    assert_eq!(forever.get(&file, None, later, || 11), 10);
+    std::fs::write(&file, "longer content").unwrap();
+    assert_eq!(forever.get(&file, None, later, || 12), 12);
+
+    let (sent, _received) = channel::<()>();
+    let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _keep = &sent;
+        forever.get(&dir.path().join("other"), None, later, || panic!("probe"))
+    }));
+    assert!(panicked.is_err());
+    assert_eq!(forever.get(&file, None, later, || 13), 12);
+    assert_eq!(
+        forever.get(&dir.path().join("other"), None, later, || 14),
+        14
+    );
 }

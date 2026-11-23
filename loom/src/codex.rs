@@ -323,8 +323,9 @@ pub fn codex_lane_status() -> Result<()> {
 /// Memoized legacy forwarder lane [`codex_lane_status`], process-lifetime cached.
 ///
 /// Installation state (the codex CLI and plugin) is invariant for the
-/// lifetime of a daemon process, exactly like Remote Control's
-/// `cached_preflight_enabled()` (`doc/loom/knowledge/patterns/remote-control.md`).
+/// lifetime of a daemon process, unlike Remote Control's version and login
+/// probes, which re-probe on a binary change or after a TTL
+/// (`remote_control::memo::Memo`).
 pub fn codex_lane_available() -> bool {
     static CACHE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *CACHE.get_or_init(|| codex_lane_status().is_ok())

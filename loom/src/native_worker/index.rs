@@ -155,7 +155,7 @@ fn fold_message(
 
 type LoadedUnit = (NativeUnitState, Vec<EventRecord>);
 
-fn list_invocations(dir: &Path) -> Vec<Result<fs::DirEntry, StoreError>> {
+pub(super) fn list_invocations(dir: &Path) -> Vec<Result<fs::DirEntry, StoreError>> {
     // A symlinked stage is damaged state, including when its target is absent.
     match fs::symlink_metadata(dir) {
         Ok(metadata) if !metadata.is_dir() || metadata.is_symlink() => {

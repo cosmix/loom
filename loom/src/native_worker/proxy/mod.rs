@@ -2,7 +2,11 @@
 
 pub mod allow;
 #[cfg(test)]
+mod drop_contract_tests;
+#[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_drop;
 mod tunnel;
 
 pub(crate) use tunnel::splice;
@@ -65,14 +69,26 @@ struct Shared {
     limits: Limits,
     connector: Connector,
     active: AtomicUsize,
-    live: Mutex<HashMap<u64, UnixStream>>,
+    live: Mutex<HashMap<u64, Live>>,
     stop: AtomicBool,
 }
 
+/// The sockets of one open connection that the shutdown sweep closes.
+struct Live {
+    client: UnixStream,
+    upstream: Option<TcpStream>,
+}
+
 impl Shared {
-    fn serve(&self, client: UnixStream) {
+    fn serve(&self, registration: &Registration, client: UnixStream) {
         let allowed: Vec<&str> = self.allowed.iter().map(String::as_str).collect();
-        tunnel::serve(client, &allowed, &self.limits, &self.connector);
+        tunnel::serve(
+            client,
+            &allowed,
+            &self.limits,
+            &self.connector,
+            &|upstream| registration.attach_upstream(upstream),
+        );
     }
 }
 
@@ -226,14 +242,13 @@ fn admit(mut stream: UnixStream, id: u64, shared: &Arc<Shared>) -> Option<JoinHa
     thread::Builder::new()
         .name(format!("proxy-conn-{id}"))
         .spawn(move || {
-            let _registration = registration;
-            worker.serve(stream);
+            worker.serve(&registration, stream);
         })
         .ok()
 }
 
-/// Counts a live connection and keeps a clone of its client socket for shutdown; dropping it
-/// (also while a handler unwinds) undoes both.
+/// Counts a live connection and keeps clones of its client and upstream sockets for shutdown;
+/// dropping it (also while a handler unwinds) undoes both.
 struct Registration {
     shared: Arc<Shared>,
     id: u64,
@@ -242,11 +257,34 @@ struct Registration {
 impl Registration {
     fn new(shared: &Arc<Shared>, id: u64, client: UnixStream) -> Self {
         shared.active.fetch_add(1, Ordering::SeqCst);
-        lock(&shared.live).insert(id, client);
+        lock(&shared.live).insert(
+            id,
+            Live {
+                client,
+                upstream: None,
+            },
+        );
         Self {
             shared: Arc::clone(shared),
             id,
         }
+    }
+
+    /// Registers the upstream socket for the shutdown sweep. False when the proxy is already
+    /// stopping (the sweep may have run) or the socket cannot be duplicated: the caller must then
+    /// close the upstream itself.
+    fn attach_upstream(&self, upstream: &TcpStream) -> bool {
+        let mut live = lock(&self.shared.live);
+        // The stop flag is read under the lock: the sweep takes the same lock after setting it,
+        // so an upstream attached here is always seen by the sweep.
+        if self.shared.stop.load(Ordering::SeqCst) {
+            return false;
+        }
+        let (Some(entry), Ok(clone)) = (live.get_mut(&self.id), upstream.try_clone()) else {
+            return false;
+        };
+        entry.upstream = Some(clone);
+        true
     }
 }
 
@@ -263,7 +301,8 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 
 impl Drop for ProxyHandle {
     /// The accept thread is joined first so no client registers after the shutdown sweep; the
-    /// sweep unblocks every handler, whose tunnel then closes its upstream.
+    /// sweep shuts down the client and the upstream socket of every open tunnel, which unblocks
+    /// both copy threads however long the idle timeout is.
     fn drop(&mut self) {
         self.shared.stop.store(true, Ordering::SeqCst);
         let handlers = self
@@ -271,8 +310,11 @@ impl Drop for ProxyHandle {
             .take()
             .and_then(|accept| accept.join().ok())
             .unwrap_or_default();
-        for client in lock(&self.shared.live).values() {
-            let _ = client.shutdown(Shutdown::Both);
+        for live in lock(&self.shared.live).values() {
+            let _ = live.client.shutdown(Shutdown::Both);
+            if let Some(upstream) = &live.upstream {
+                let _ = upstream.shutdown(Shutdown::Both);
+            }
         }
         for handler in handlers {
             let _ = handler.join();

@@ -4,16 +4,25 @@
 //! accepted ([`AccessPolicy::new`]), then threaded into every accepted
 //! connection alongside that connection's own `local_addr` for `Host`
 //! validation - a wildcard bind's accepted local endpoint varies per client,
-//! even though the listener's own bind address never changes. Loopback mode
-//! keeps the dashboard's original relaxed behaviour exactly; every other
-//! bind - including a wildcard bind an individual client happens to reach
-//! over loopback - runs the strict remote policy for the lifetime of the
-//! server.
+//! even though the listener's own bind address never changes.
+//!
+//! A loopback bind requires `Host` to be a loopback name (`localhost`,
+//! `127.0.0.1`, `[::1]`) in the strict authority grammar, with any port, and a
+//! present `Origin` to be `http://` or `https://` followed by that same `Host`.
+//! It compares `Origin` with the request's own `Host`, never with the
+//! listening port: a loopback dashboard is reached through forwarded local
+//! ports (`ssh -L 8080:127.0.0.1:7373 host`), so the port a browser uses
+//! legitimately differs from the one the server listens on, and tunnelled
+//! access is a requirement. A page on another local port still fails, because
+//! its `Origin` differs from the dashboard's `Host`. Every other bind -
+//! including a wildcard bind an individual client happens to reach over
+//! loopback - runs the strict remote policy, where both headers must name the
+//! accepted socket exactly, for the lifetime of the server.
 
-use std::net::{IpAddr, Ipv6Addr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 
 use super::auth::Auth;
-use super::http::{self, RequestHead};
+use super::http::RequestHead;
 
 /// Whether an `Origin` header may be absent on an otherwise-permitted route.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -66,10 +75,13 @@ impl AccessPolicy {
     }
 
     /// Validate `Host` against `local`, the socket address this particular
-    /// connection was actually accepted on.
+    /// connection was actually accepted on. On a loopback bind this is the
+    /// DNS-rebinding gate: `Host` must be a loopback name, whatever its port,
+    /// and an absent one is refused (HTTP/1.1 mandates it, RFC 9112 section
+    /// 3.2).
     pub fn host_allowed(&self, local: SocketAddr, head: &RequestHead) -> bool {
         if !self.remote {
-            return http::host_allowed(head.host.as_deref());
+            return head.host.as_deref().is_some_and(loopback_host);
         }
         match head.host.as_deref() {
             None => false,
@@ -89,10 +101,10 @@ impl AccessPolicy {
     ) -> bool {
         let require = requirement == OriginRequirement::Required;
         if !self.remote {
-            return if require {
-                http::origin_allowed_strict(head.origin.as_deref())
-            } else {
-                http::origin_allowed(head.origin.as_deref())
+            return match (head.origin.as_deref(), head.host.as_deref()) {
+                (None, _) => !require,
+                (Some(origin), Some(host)) => loopback_host(host) && same_origin(origin, host),
+                (Some(_), None) => false,
             };
         }
         match head.origin.as_deref() {
@@ -101,6 +113,32 @@ impl AccessPolicy {
                 .is_some_and(|candidate| authority_matches(candidate, local)),
         }
     }
+}
+
+/// Whether `host` is a loopback name in the strict authority grammar. The port
+/// is never compared: it is whatever a tunnel mapped. A port-less `Host` is
+/// accepted only as one of the three bare loopback names.
+fn loopback_host(host: &str) -> bool {
+    match parse_authority(host) {
+        Some((Authority::Localhost, _)) => true,
+        Some((Authority::Literal(ip), _)) => {
+            ip == IpAddr::V4(Ipv4Addr::LOCALHOST) || ip == IpAddr::V6(Ipv6Addr::LOCALHOST)
+        }
+        None => ["localhost", "127.0.0.1", "[::1]"]
+            .iter()
+            .any(|bare| host.eq_ignore_ascii_case(bare)),
+    }
+}
+
+/// Whether `origin` is `http://` or `https://` followed by exactly `host`
+/// (ASCII case-insensitive) and nothing else, so a path, query, fragment,
+/// userinfo, `null` or any other scheme fails.
+pub(crate) fn same_origin(origin: &str, host: &str) -> bool {
+    let Some((scheme, authority)) = origin.split_once("://") else {
+        return false;
+    };
+    (scheme.eq_ignore_ascii_case("http") || scheme.eq_ignore_ascii_case("https"))
+        && authority.eq_ignore_ascii_case(host)
 }
 
 /// A parsed remote authority: either a literal address or the exact

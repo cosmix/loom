@@ -116,3 +116,28 @@ fn ownership_drop_retires_group_after_leader_exit() {
     drop(owner);
     guard.assert_retired();
 }
+
+#[test]
+fn wait_leaves_the_leader_unreaped_until_retire() {
+    use super::{process_is_zombie, process_start_time};
+    use std::os::unix::process::CommandExt;
+
+    let child = std::process::Command::new("sh")
+        .args(["-c", "exit 3"])
+        .process_group(0)
+        .spawn()
+        .unwrap();
+    let pid = child.id();
+    let mut owner = OwnedProcess::new(child);
+
+    let status = owner
+        .wait(Duration::from_secs(10))
+        .unwrap()
+        .expect("the child exits within the timeout");
+    assert_eq!(status.code(), Some(3));
+    assert!(process_is_zombie(pid), "wait reaped the leader");
+    assert!(process_start_time(pid).is_some(), "the pid was released");
+
+    owner.retire();
+    assert!(process_start_time(pid).is_none(), "retire did not reap");
+}

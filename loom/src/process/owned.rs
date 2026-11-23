@@ -75,8 +75,10 @@ impl OwnedProcess {
         &mut self.child
     }
 
+    /// Waits up to `timeout` for the leader to exit without reaping it: the leader stays a
+    /// zombie, so its pid and group id cannot be reused until [`Self::retire`] or drop reaps it.
     pub(crate) fn wait(&mut self, timeout: Duration) -> std::io::Result<Option<ExitStatus>> {
-        wait_with_deadline(&mut self.child, timeout)
+        self.wait_unreaped(timeout)
     }
 
     pub(crate) fn try_wait(&mut self) -> std::io::Result<Option<ExitStatus>> {
@@ -87,7 +89,7 @@ impl OwnedProcess {
     /// (`waitid` with `WNOWAIT`): while it stays a zombie its pid, and the
     /// id of the group it leads, cannot be reused, so [`Self::retire`] and a
     /// group scan still name only this child's group. `None` at the timeout.
-    #[cfg(target_os = "macos")]
+    #[cfg(unix)]
     pub(crate) fn wait_unreaped(
         &mut self,
         timeout: Duration,
@@ -113,11 +115,12 @@ impl OwnedProcess {
                     error => return Err(error),
                 }
             }
-            if info.si_pid != 0 {
+            let (pid, code, status) = child_event(&info);
+            if pid != 0 {
                 // A wait status: the exit code in bits 8-15, or the signal.
-                let raw = match info.si_code {
-                    libc::CLD_EXITED => (info.si_status & 0xff) << 8,
-                    _ => info.si_status & 0x7f,
+                let raw = match code {
+                    libc::CLD_EXITED => (status & 0xff) << 8,
+                    _ => status & 0x7f,
                 };
                 return Ok(Some(ExitStatus::from_raw(raw)));
             }
@@ -141,7 +144,12 @@ impl OwnedProcess {
             } else {
                 let _ = self.child.kill();
             }
-            let _ = self.wait(deadline.saturating_duration_since(Instant::now()));
+            // The leader is still a zombie here (see `wait`), so the group id named by
+            // `kill_group` cannot have been reused; this reaps it.
+            let _ = wait_with_deadline(
+                &mut self.child,
+                deadline.saturating_duration_since(Instant::now()),
+            );
         }
         deadline
     }
@@ -185,13 +193,28 @@ pub(crate) fn wait_with_deadline(
     }
 }
 
-/// `SIGKILL` to the group `child` leads, then to `child` itself. Prefer calling
-/// it before the child is reaped: once the leader is reaped and its group is
-/// empty, its id may be reused by an unrelated group. A caller that sweeps
-/// descendants after the leader exited accepts that window.
+/// `SIGKILL` to the group `child` leads, then to `child` itself. Call it before
+/// the child is reaped: once the leader is reaped and its group is empty, its id
+/// may be reused by an unrelated group. The bounded runners signal before they
+/// reap (`OwnedProcess::wait` leaves the leader a zombie); the window remains
+/// only for a caller that never used `wait`.
 pub(crate) fn kill_group(child: &mut Child) {
     signal_group(child, nix::sys::signal::Signal::SIGKILL);
     let _ = child.kill();
+}
+
+/// `(pid, code, status)` of the child event `waitid` stored in `info`; a pid of 0 means no
+/// child had changed state.
+#[cfg(target_os = "linux")]
+fn child_event(info: &libc::siginfo_t) -> (libc::pid_t, libc::c_int, libc::c_int) {
+    // SAFETY: `info` was filled by a `waitid` call for a child that returned success, so the
+    // `sigchld` union members are the ones the kernel wrote.
+    unsafe { (info.si_pid(), info.si_code, info.si_status()) }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn child_event(info: &libc::siginfo_t) -> (libc::pid_t, libc::c_int, libc::c_int) {
+    (info.si_pid, info.si_code, info.si_status)
 }
 
 fn signal_group(child: &Child, signal: nix::sys::signal::Signal) {
@@ -262,7 +285,6 @@ mod tests {
         assert!(!mark.exists(), "SIGKILL leaves no chance to trap");
     }
 
-    #[cfg(target_os = "macos")]
     #[test]
     fn wait_unreaped_reports_the_exit_and_leaves_the_leader_a_zombie() {
         use crate::process::{process_is_zombie, process_start_time};

@@ -8,7 +8,8 @@ use serde::{Deserialize, Serialize};
 pub use super::ids::{
     EOF_GRACE_SECS, INTERRUPT_GRACE_SECS, MAX_ACTIVE_PER_STAGE, MAX_BRIEF_BYTES, MAX_FRAME_BYTES,
     MAX_MESSAGE_BYTES, MAX_QUEUED_MESSAGES, MAX_RECORD_BYTES, NATIVE_DEADLINE_SECS,
-    PROGRESS_EVENT_INTERVAL_SECS, REAP_GRACE_SECS, REPORT_DEFAULT_BYTES,
+    PROGRESS_EVENT_INTERVAL_SECS, REAP_GRACE_SECS, REPORT_DEFAULT_BYTES, SETTLEMENT_RESERVE_BYTES,
+    SETTLEMENT_TEXT_BYTES,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -126,6 +127,46 @@ pub enum NativeEvent {
     OwnershipUnverified {
         detail: String,
     },
+}
+
+impl NativeEvent {
+    /// Whether the event settles the invocation; these may use the journal's reserve.
+    pub fn is_settlement(&self) -> bool {
+        matches!(
+            self,
+            Self::Terminal { .. }
+                | Self::OwnershipReleased { .. }
+                | Self::OwnershipUnverified { .. }
+        )
+    }
+
+    /// Cuts the free text of a settlement event so its JSON-escaped form is at most
+    /// `SETTLEMENT_TEXT_BYTES` (control characters escape to six bytes), keeping
+    /// each settlement record near that size however the text is spelled. A settling
+    /// invocation writes at most three such records (terminal, release, operator
+    /// release), which `SETTLEMENT_RESERVE_BYTES` holds. Other events are unchanged.
+    pub fn clamp_settlement_text(mut self) -> Self {
+        let text = match &mut self {
+            Self::Terminal { reason, .. } => reason,
+            Self::OwnershipReleased { by } => by,
+            Self::OwnershipUnverified { detail } => detail,
+            _ => return self,
+        };
+        let mut escaped = 0;
+        let cut = text.char_indices().find_map(|(index, ch)| {
+            escaped += json_escaped_len(ch);
+            (escaped > SETTLEMENT_TEXT_BYTES).then_some(index)
+        });
+        if let Some(cut) = cut {
+            text.truncate(cut);
+        }
+        self
+    }
+}
+
+/// Bytes `ch` takes inside a JSON string literal, as `serde_json` writes it.
+fn json_escaped_len(ch: char) -> usize {
+    serde_json::to_string(&ch).map_or(ch.len_utf8(), |json| json.len() - 2)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

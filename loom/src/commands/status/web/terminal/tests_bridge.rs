@@ -12,7 +12,7 @@ use crate::process::sandbox_probe::{
     loopback_bindable, skip_unless, skip_without_group_signals, skip_without_pty,
 };
 
-use super::bridge;
+use super::bridge::{self, Timing};
 use super::protocol::{
     parse_client_frame, ClientFrame, Mode, WindowSize, CLOSE_ENDED, CLOSE_SERVER_STOPPING,
     CLOSE_TOO_LARGE,
@@ -20,6 +20,7 @@ use super::protocol::{
 use super::pty::PtyChild;
 use crate::commands::status::web::MAX_INBOUND_BYTES;
 mod backpressure;
+mod liveness;
 mod sockets;
 mod spin;
 
@@ -32,7 +33,7 @@ struct Fixture {
 }
 
 fn start_bridge(script: impl Into<String>, mode: Mode) -> Fixture {
-    start_bridge_with(script, mode, None, bridge::GATE_STALL_TIMEOUT)
+    start_bridge_with(script, mode, None, Timing::DEFAULT)
 }
 
 /// `socket_bytes` shrinks both ends' kernel buffers. Left at `None` the
@@ -41,15 +42,14 @@ fn start_bridge(script: impl Into<String>, mode: Mode) -> Fixture {
 /// bridge's writes after a bounded amount: tens of kilobytes on Linux, about
 /// 330 KB on macOS (`sockets::stalled_client_capacity` measures it).
 ///
-/// `stall_timeout` is the bridge's give-up deadline for an input queue that
-/// never drains. Everything but the test for that deadline passes
-/// `GATE_STALL_TIMEOUT`, which is far longer than any test here runs and so
-/// cannot fire.
+/// `timing` holds the bridge's give-up deadlines. Everything but the tests for
+/// those deadlines passes `Timing::DEFAULT`, which is far longer than any test
+/// here runs and so cannot fire.
 fn start_bridge_with(
     script: impl Into<String>,
     mode: Mode,
     socket_bytes: Option<libc::c_int>,
-    stall_timeout: Duration,
+    timing: Timing,
 ) -> Fixture {
     let script = script.into();
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind bridge listener");
@@ -66,7 +66,7 @@ fn start_bridge_with(
         command.args(["-c", script.as_str()]);
         let child = PtyChild::spawn(&mut command, WindowSize { cols: 80, rows: 24 })
             .expect("spawn PTY child");
-        bridge::run_with(socket, child, mode, server_running.as_ref(), stall_timeout);
+        bridge::run_with(socket, child, mode, server_running.as_ref(), timing);
     });
     let request = format!("ws://127.0.0.1:{port}/")
         .into_client_request()
@@ -204,7 +204,7 @@ fn join_within(handle: JoinHandle<()>, timeout: Duration) {
     handle.join().expect("bridge server thread");
 }
 
-/// Mirrors `bridge.rs`'s private `MAX_PENDING_INPUT` (64 KiB, `bridge.rs:25`).
+/// Mirrors `bridge.rs`'s private `MAX_PENDING_INPUT` (64 KiB).
 const MAX_PENDING_INPUT: usize = 64 * 1024;
 
 /// Mirrors tungstenite's own `WebSocketConfig::read_buffer_size` default

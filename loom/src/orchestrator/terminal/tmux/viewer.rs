@@ -25,6 +25,7 @@ use super::{socket_name, socket_path_for, TmuxBackend};
 mod retire;
 mod start_lock;
 
+pub(in crate::orchestrator::terminal::tmux) use retire::remove_stale_socket;
 pub(crate) use retire::retire_viewer;
 
 /// tmux session name of the tiled viewer. Fixed; the SOCKET is what varies per

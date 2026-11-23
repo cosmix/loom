@@ -12,7 +12,7 @@ use crate::test_private_dirs::{create_dirs, private_tempdir};
 
 const STAGE: &str = "recover-unit";
 
-fn record(work: &Path) -> PathBuf {
+pub(super) fn record(work: &Path) -> PathBuf {
     let manifest = NativeManifest {
         v: 1,
         stage_id: STAGE.to_string(),
@@ -291,6 +291,33 @@ fn a_started_spawn_failure_whose_settle_append_failed_stays_unverified() {
     );
     assert!(
         matches!(&tail[1], NativeEvent::OwnershipUnverified { .. }),
+        "{tail:?}"
+    );
+}
+
+#[test]
+fn a_full_journal_is_still_settled() {
+    let tmp = tempfile::TempDir::new().expect("temp dir");
+    let dir = record(tmp.path());
+    let mut log = EventLog::open(&dir).expect("log");
+    for size in [1 << 20, 64 << 10, 4 << 10, 200] {
+        loop {
+            let event = NativeEvent::ServerRequestRefused {
+                method: "m".repeat(size),
+            };
+            match log.append(event) {
+                Ok(_) => {}
+                Err(StoreError::TooLarge(_)) => break,
+                Err(error) => panic!("filling the journal: {error}"),
+            }
+        }
+    }
+    drop(log);
+    settle_lost_supervisor(&dir).expect("a full journal settles");
+    let tail = tail(&dir);
+    assert!(matches!(&tail[0], NativeEvent::Terminal { .. }), "{tail:?}");
+    assert!(
+        matches!(&tail[1], NativeEvent::OwnershipReleased { .. }),
         "{tail:?}"
     );
 }

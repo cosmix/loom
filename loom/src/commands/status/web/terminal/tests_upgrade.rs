@@ -7,6 +7,7 @@ use crate::commands::status::web::{self, ServeOptions};
 use tungstenite::client::IntoClientRequest;
 
 mod admission;
+mod attach;
 mod bootstrap;
 mod shutdown;
 

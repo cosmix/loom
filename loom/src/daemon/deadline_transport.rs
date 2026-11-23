@@ -138,6 +138,10 @@ fn nonblocking_socket() -> io::Result<OwnedFd> {
     }
     // SAFETY: raw is a fresh descriptor returned by socket above.
     let fd = unsafe { OwnedFd::from_raw_fd(raw) };
+    // SAFETY: fcntl changes only the flags of this valid, owned descriptor.
+    if unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_SETFD, libc::FD_CLOEXEC) } < 0 {
+        return Err(io::Error::last_os_error());
+    }
     // SAFETY: fcntl reads the status flags of this valid, owned descriptor.
     let flags = unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_GETFL) };
     if flags < 0 {
@@ -201,6 +205,23 @@ mod tests {
     #[cfg(target_os = "linux")]
     use std::os::unix::net::UnixListener;
     use std::thread;
+
+    #[test]
+    fn nonblocking_socket_is_close_on_exec() {
+        let dir = tempfile::tempdir().unwrap();
+        if crate::process::sandbox_probe::skip_unless(
+            crate::process::sandbox_probe::unix_socket_bindable(dir.path()),
+            "nonblocking_socket_is_close_on_exec",
+            "cannot create an AF_UNIX socket",
+        ) {
+            return;
+        }
+        let fd = nonblocking_socket().unwrap();
+        // SAFETY: fcntl reads the flags of this valid, owned descriptor.
+        let flags = unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_GETFD) };
+        assert!(flags >= 0);
+        assert_ne!(flags & libc::FD_CLOEXEC, 0);
+    }
 
     #[test]
     fn saturated_writer_observes_whole_exchange_deadline() {

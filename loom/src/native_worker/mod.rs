@@ -20,4 +20,8 @@ mod core_contract_tests;
 #[cfg(test)]
 mod ingress_contract_tests;
 #[cfg(test)]
+mod runner_recover_contract_tests;
+#[cfg(test)]
 mod runtime_contract_tests;
+#[cfg(test)]
+mod store_contract_tests;

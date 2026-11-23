@@ -1,6 +1,6 @@
 //! Fan-out of text frames to every subscribed WebSocket connection.
 
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{mpsc, Arc, Mutex, PoisonError};
 
 /// Delivers each published frame to every live subscriber.
 ///
@@ -25,7 +25,10 @@ impl Hub {
     /// Register a subscriber, its queue primed with `primer`, if any.
     pub fn subscribe(&self, primer: Option<Arc<String>>) -> mpsc::Receiver<Arc<String>> {
         let (sender, receiver) = mpsc::sync_channel(self.queue_depth);
-        let mut subscribers = self.subscribers.lock().expect("hub subscribers poisoned");
+        let mut subscribers = self
+            .subscribers
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
         if let Some(frame) = primer {
             let _ = sender.try_send(frame);
         }
@@ -36,7 +39,10 @@ impl Hub {
     /// Queue `frame` for every subscriber, dropping each one whose queue is
     /// full or whose receiver is gone.
     pub fn publish(&self, frame: Arc<String>) {
-        let mut subscribers = self.subscribers.lock().expect("hub subscribers poisoned");
+        let mut subscribers = self
+            .subscribers
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
         subscribers.retain(|sender| sender.try_send(Arc::clone(&frame)).is_ok());
     }
 }
@@ -71,5 +77,20 @@ mod tests {
         hub.publish(Arc::new("after".to_owned()));
         assert_eq!(receiver.try_recv().expect("queued frame").as_str(), "kept");
         assert_eq!(receiver.try_recv(), Err(TryRecvError::Disconnected));
+    }
+
+    #[test]
+    fn a_poisoned_hub_still_publishes_and_subscribes() {
+        let hub = Arc::new(Hub::new(2));
+        let poisoner = Arc::clone(&hub);
+        let joined = std::thread::spawn(move || {
+            let _held = poisoner.subscribers.lock().unwrap();
+            panic!("poison the subscriber list");
+        })
+        .join();
+        assert!(joined.is_err());
+        let receiver = hub.subscribe(None);
+        hub.publish(Arc::new("frame".to_owned()));
+        assert_eq!(receiver.try_recv().expect("frame").as_str(), "frame");
     }
 }

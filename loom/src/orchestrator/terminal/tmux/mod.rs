@@ -308,14 +308,17 @@ pub fn await_tmux_session_pid(
 /// linger with no process behind it), while removing the file without killing
 /// the server would strand the server AND lose the only handle to it.
 ///
-/// A failed server kill is uncertainty: retain the socket (the only remaining
-/// control handle) and propagate the error to the fail-closed handoff path.
+/// After a failed kill, remove the socket under tmux's start lock if the current
+/// user owns it and no process is listening. Otherwise return an error and keep it.
 pub(crate) fn teardown_socket(socket: &str) -> Result<()> {
     let socket_path = socket_path_for(socket);
     if !socket_path.exists() {
         return Ok(());
     }
     if !kill_socket_server(&socket_path) {
+        if viewer::remove_stale_socket(&socket_path)? {
+            return Ok(());
+        }
         anyhow::bail!("tmux kill-server failed for {}", socket_path.display());
     }
     match std::fs::remove_file(&socket_path) {
@@ -359,5 +362,7 @@ mod tests;
 mod tests_history;
 #[cfg(test)]
 mod tests_history_support;
+#[cfg(test)]
+mod tests_socket_teardown;
 #[cfg(test)]
 mod tests_spawn;

@@ -71,7 +71,7 @@ fn default_loopback_compatibility_is_unchanged() {
     assert!(policy.origin_allowed(local, &head(None, None), OriginRequirement::Optional));
     assert!(policy.origin_allowed(
         local,
-        &head(None, Some("http://127.0.0.1:7373")),
+        &head(Some("127.0.0.1:7373"), Some("http://127.0.0.1:7373")),
         OriginRequirement::Optional
     ));
     assert!(!policy.origin_allowed(local, &head(None, None), OriginRequirement::Required));
@@ -190,4 +190,84 @@ fn remote_write_auth_checks_the_dashboard_cookie() {
     assert!(!policy.authenticated(None));
     assert!(!policy.authenticated(Some("loom_dashboard_7373=wrong")));
     assert!(policy.authenticated(Some(&format!("loom_dashboard_7373={REMOTE_TOKEN}"))));
+}
+
+#[test]
+fn loopback_origin_must_equal_the_request_host() {
+    let policy = loopback_policy();
+    let local = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 7373);
+    let allowed = |host: &str, origin: &str| {
+        policy.origin_allowed(
+            local,
+            &head(Some(host), Some(origin)),
+            OriginRequirement::Required,
+        )
+    };
+    for (host, origin) in [
+        ("127.0.0.1:7373", "http://127.0.0.1:7373"),
+        ("localhost:7373", "http://localhost:7373"),
+        ("localhost:7373", "http://LocalHost:7373"),
+        // A tunnel on another local port: neither header names the listener.
+        ("localhost:8080", "http://localhost:8080"),
+        ("localhost", "http://localhost"),
+        ("[::1]:9000", "http://[::1]:9000"),
+        ("localhost:8443", "https://localhost:8443"),
+    ] {
+        assert!(allowed(host, origin), "Host {host} must accept {origin}");
+    }
+    for (host, origin) in [
+        ("127.0.0.1:7373", "http://localhost:3000"),
+        ("127.0.0.1:7373", "http://127.0.0.1:5173"),
+        ("localhost:8080", "http://localhost:3000"),
+        ("127.0.0.1:7373", "http://localhost:7373"),
+        ("localhost:7373", "http://evil.example"),
+        ("localhost:7373", "null"),
+        ("localhost:7373", "http://localhost:7373/x"),
+        ("localhost:7373", "ftp://localhost:7373"),
+        ("evil.example:7373", "http://evil.example:7373"),
+    ] {
+        assert!(!allowed(host, origin), "Host {host} must refuse {origin}");
+    }
+    let no_host = head(None, Some("http://localhost:7373"));
+    assert!(!policy.origin_allowed(local, &no_host, OriginRequirement::Required));
+    assert!(policy.origin_allowed(
+        local,
+        &head(Some("localhost:7373"), None),
+        OriginRequirement::Optional
+    ));
+}
+
+#[test]
+fn loopback_host_uses_the_strict_authority_grammar() {
+    let policy = loopback_policy();
+    let local = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 7373);
+    for host in [
+        "127.0.0.1",
+        "LOCALHOST",
+        "[::1]",
+        "127.0.0.1:41599",
+        "[::1]:7373",
+        "localhost:7373",
+    ] {
+        assert!(
+            policy.host_allowed(local, &head(Some(host), None)),
+            "{host}"
+        );
+    }
+    for host in [
+        "[::1].evil.com",
+        "[::1].evil.com:7373",
+        "[::1",
+        "127.0.0.1:80@evil.com",
+        "evil.example",
+        "127.0.0.1.evil.example",
+        "loom.test:7373",
+        "::1",
+    ] {
+        assert!(
+            !policy.host_allowed(local, &head(Some(host), None)),
+            "{host}"
+        );
+    }
+    assert!(!policy.host_allowed(local, &head(None, None)));
 }

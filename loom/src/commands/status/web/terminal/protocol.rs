@@ -95,3 +95,14 @@ pub(super) const CLOSE_UNKNOWN_STAGE: u16 = 4004;
 pub(super) const CLOSE_REFUSED: u16 = 4008;
 /// The stage exists and may become attachable. The page retries.
 pub(super) const CLOSE_NOT_YET: u16 = 4009;
+/// The stage session could not be resolved, or its tmux attach client could
+/// not be started. Matched literally by `web/src/api/terminal.ts`.
+pub(super) const CLOSE_ATTACH_FAILED: u16 = 4010;
+/// Every terminal slot is taken. Sent after the handshake completes, so the
+/// browser can tell it from a bad cookie. Matched literally by
+/// `web/src/api/terminal.ts`.
+pub(super) const CLOSE_BUSY: u16 = 4011;
+/// The one text frame sent once the tmux client is attached, ahead of any
+/// terminal output (binary frames). Matched literally by
+/// `web/src/api/terminal.ts`.
+pub(super) const READY_FRAME: &str = r#"{"ready":true}"#;

@@ -1,17 +1,17 @@
-//! Shutdown behaviour: a stopped server refuses a new upgrade outright, and a
+//! Shutdown behaviour: a stopped server closes a new upgrade with 1001, and a
 //! shutdown already in flight still drains the terminal it was holding before
 //! it finishes.
 
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::commands::status::web::tests::{body, skip_without_loopback, workspace};
+use crate::commands::status::web::tests::{skip_without_loopback, workspace};
 use crate::commands::status::web::{self, ServeOptions, TerminalLane, MAX_INBOUND_BYTES};
 use crate::web_server::access::AccessPolicy;
 use crate::web_server::limits::{acquire_terminal_slot, Limits};
@@ -34,12 +34,9 @@ fn join_within(handle: thread::JoinHandle<()>, timeout: Duration) {
     handle.join().expect("bridge thread");
 }
 
-#[test]
-fn terminal_upgrade_after_stop_is_503() {
-    if skip_without_loopback("terminal_upgrade_after_stop_is_503") {
-        return;
-    }
-    let (_temp, base) = workspace();
+/// Drives one upgrade through `handle_upgrade` with the server already
+/// stopped, returning everything the client read until the server closed.
+fn upgrade_on_a_stopped_server(base: &Path) -> Vec<u8> {
     let token = "a".repeat(64);
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
@@ -72,17 +69,37 @@ fn terminal_upgrade_after_stop_is_503() {
     web::terminal::handle_upgrade(
         server,
         &head,
-        &base,
+        base,
         Some(&lane),
         &running,
         &limits,
         &policy,
         local,
     );
-    let mut response = String::new();
-    client.read_to_string(&mut response).unwrap();
-    assert!(response.starts_with("HTTP/1.1 503"), "{response}");
-    assert_eq!(body(&response), "server stopping");
+    let mut response = Vec::new();
+    client.read_to_end(&mut response).unwrap();
+    response
+}
+
+#[test]
+fn terminal_upgrade_after_stop_closes_1001() {
+    if skip_without_loopback("terminal_upgrade_after_stop_closes_1001") {
+        return;
+    }
+    let (_temp, base) = workspace();
+    let response = upgrade_on_a_stopped_server(&base);
+    // The handshake completes (101), then one unmasked server close frame:
+    // FIN + close opcode, the payload length, status 1001, the reason.
+    assert!(response.starts_with(b"HTTP/1.1 101"), "{response:?}");
+    let header_end = response
+        .windows(4)
+        .position(|part| part == b"\r\n\r\n")
+        .expect("end of the handshake response")
+        + 4;
+    let reason = b"server stopping";
+    let mut frame = vec![0x88, 2 + reason.len() as u8, 0x03, 0xE9];
+    frame.extend_from_slice(reason);
+    assert_eq!(&response[header_end..], frame.as_slice());
 }
 
 /// Everything [`a_late_upgrade_after_shutdown_spawns_no_child`] needs to drive
@@ -169,7 +186,8 @@ fn attach_live_terminal(server: &RunningServer) -> LiveTerminal {
 /// Flips `running` false, waits for the server and the bridge thread to both
 /// stop, then sends a terminal upgrade on a connection that was already open
 /// before shutdown completed - and asserts it spawns no child: an empty or
-/// 503 response, and the terminal slot back at zero.
+/// 503 or 101 (handshake, then a 1001 close) response, and the terminal slot
+/// back at zero.
 fn shut_down_and_assert_slot_freed(server: RunningServer, terminal: LiveTerminal) {
     let RunningServer {
         port,
@@ -208,11 +226,15 @@ fn shut_down_and_assert_slot_freed(server: RunningServer, terminal: LiveTerminal
         )
         .as_bytes(),
     );
-    let mut response = String::new();
-    let _ = client.read_to_string(&mut response);
+    // Read as bytes: a completed handshake is followed by a binary close frame,
+    // which is not UTF-8.
+    let mut response = Vec::new();
+    let _ = client.read_to_end(&mut response);
     assert!(
-        response.is_empty() || response.starts_with("HTTP/1.1 503"),
-        "{response}"
+        response.is_empty()
+            || response.starts_with(b"HTTP/1.1 503")
+            || response.starts_with(b"HTTP/1.1 101"),
+        "{response:?}"
     );
     assert_eq!(limits.terminal_count(), 0);
 }

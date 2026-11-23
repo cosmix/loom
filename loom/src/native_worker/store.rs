@@ -19,7 +19,7 @@ use super::ids::{
 };
 use super::model::{
     BoundaryIdentity, CancelRequest, ControlMessage, EventRecord, NativeEvent, NativeManifest,
-    ReportInfo, MAX_BRIEF_BYTES, MAX_MESSAGE_BYTES, MAX_RECORD_BYTES,
+    ReportInfo, MAX_BRIEF_BYTES, MAX_MESSAGE_BYTES, MAX_RECORD_BYTES, SETTLEMENT_RESERVE_BYTES,
 };
 use super::store_io::{io_err, open_append, publish, read_json, read_regular, write_json};
 
@@ -210,6 +210,11 @@ pub fn read_events(dir: &Path) -> Result<Vec<EventRecord>, StoreError> {
             text.lines().count()
         )));
     }
+    parse_events(text)
+}
+
+/// Parses complete journal lines; each must be a record whose `seq` continues the run.
+pub(super) fn parse_events(text: &str) -> Result<Vec<EventRecord>, StoreError> {
     text.lines()
         .enumerate()
         .map(|(index, line)| {
@@ -255,6 +260,14 @@ impl EventLog {
                 "event log poisoned by a failed append".into(),
             ));
         }
+        // Clamp before serialising: cutting the text afterwards would not shrink the line.
+        let event = event.clamp_settlement_text();
+        // Only settlement records may use the reserve, so a full journal still settles.
+        let cap = if event.is_settlement() {
+            MAX_RECORD_BYTES
+        } else {
+            MAX_RECORD_BYTES - SETTLEMENT_RESERVE_BYTES
+        };
         let record = EventRecord {
             seq: self.next_seq,
             at: Utc::now(),
@@ -263,7 +276,7 @@ impl EventLog {
         let mut line = serde_json::to_string(&record)
             .map_err(|error| StoreError::Corrupt(error.to_string()))?;
         line.push('\n');
-        if self.bytes + line.len() as u64 > MAX_RECORD_BYTES {
+        if self.bytes + line.len() as u64 > cap {
             return Err(StoreError::TooLarge("events.jsonl"));
         }
         let result = self
@@ -336,6 +349,10 @@ fn validate_creation(manifest: &NativeManifest, brief: &[u8]) -> Result<(), Stor
     }
     Ok(())
 }
+
+#[path = "store_repair.rs"]
+mod repair;
+pub use repair::{has_torn_tail, repair_torn_tail};
 
 #[cfg(test)]
 #[path = "store_tests.rs"]

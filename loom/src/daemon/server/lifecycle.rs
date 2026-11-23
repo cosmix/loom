@@ -33,6 +33,11 @@ use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
+mod fds;
+mod threads;
+
+use threads::ServerThreads;
+
 impl DaemonServer {
     /// Start the daemon from `loom run`: re-execute the loom binary as `loom
     /// run --daemon-child` and wait until it reports ready (`launch`).
@@ -108,13 +113,10 @@ impl DaemonServer {
         let log_file = open_private_output(&self.work_dir, Path::new("orchestrator.log"))
             .context("Failed to create log file")?;
 
-        // SAFETY: Using libc::dup2 directly with raw fds to avoid ownership issues.
-        // fds 1 and 2 are the readiness pipe this freshly exec'd daemon child was
-        // started with, and `log_file` is open, so both calls swap valid descriptors.
-        unsafe {
-            libc::dup2(log_file.as_raw_fd(), 1);
-            libc::dup2(log_file.as_raw_fd(), 2);
-        }
+        fds::redirect_fd(log_file.as_raw_fd(), 1)
+            .context("redirecting daemon stdout to orchestrator.log")?;
+        fds::redirect_fd(log_file.as_raw_fd(), 2)
+            .context("redirecting daemon stderr to orchestrator.log")?;
         Ok(())
     }
 
@@ -279,53 +281,6 @@ impl DaemonServer {
                 .with_context(|| format!("Failed to remove daemon control file {relative}"))?;
         }
         Ok(())
-    }
-}
-
-/// The daemon's background threads, joined at shutdown.
-struct ServerThreads {
-    orchestrator: Option<thread::JoinHandle<()>>,
-    log_tail: Option<thread::JoinHandle<()>>,
-    status_broadcast: thread::JoinHandle<()>,
-    quota_poller: thread::JoinHandle<()>,
-    /// Shared with the scheduler, which joins it first when the run ends.
-    token_tracker: Arc<TokenTracker>,
-}
-
-impl ServerThreads {
-    /// Waits for each thread in turn, the orchestrator first, giving each at
-    /// most five seconds; one still running then is abandoned, as the process
-    /// is exiting.
-    fn join(self) {
-        let threads = [
-            (self.orchestrator, "orchestrator"),
-            (self.log_tail, "log_tail"),
-            (Some(self.status_broadcast), "status_broadcast"),
-            (Some(self.quota_poller), "quota_poller"),
-        ];
-        for (handle, name) in threads {
-            if let Some(handle) = handle {
-                wait_with_timeout(handle, name);
-            }
-        }
-        // Taken only after the orchestrator was waited for: a scheduler that
-        // is ending the tracker takes it first and joins it itself.
-        if let Some(handle) = self.token_tracker.take_thread() {
-            wait_with_timeout(handle, "token_tracker");
-        }
-    }
-}
-
-fn wait_with_timeout(handle: thread::JoinHandle<()>, name: &str) {
-    let join_timeout = Duration::from_secs(5);
-    let start = Instant::now();
-    while !handle.is_finished() && start.elapsed() < join_timeout {
-        thread::sleep(Duration::from_millis(50));
-    }
-    if handle.is_finished() {
-        let _ = handle.join();
-    } else {
-        eprintln!("Warning: {name} thread did not terminate within timeout");
     }
 }
 

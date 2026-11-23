@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 use tempfile::TempDir;
 use tungstenite::{Message, WebSocket};
 
-use super::super::bridge::GATE_STALL_TIMEOUT;
+use super::super::bridge::Timing;
 use super::super::protocol::{Mode, CLOSE_REFUSED, CLOSE_SERVER_STOPPING};
 use super::sockets::stalled_client_capacity;
 use super::{
@@ -129,7 +129,7 @@ fn bridge_survives_a_client_that_stops_reading() {
         "head -c 102400 /dev/zero | tr '\\0' 'x'; printf 'END\\n'",
         Mode::Control,
         Some(8 * 1024),
-        GATE_STALL_TIMEOUT,
+        Timing::DEFAULT,
     );
     thread::sleep(Duration::from_millis(750));
     assert!(wait_for_binary_progressing(
@@ -168,9 +168,14 @@ fn bridge_gives_up_on_a_child_that_never_drains() {
     }
     // `sleep 30` never reads its stdin, so once the PTY's line buffer is full
     // nothing this client sends is ever consumed and the gate, once shut,
-    // stays shut. One second stands in for `GATE_STALL_TIMEOUT`: short enough
-    // to be a test, long enough that the flood below finishes well inside it.
-    let mut fixture = start_bridge_with("sleep 30", Mode::Control, None, Duration::from_secs(1));
+    // stays shut. One second stands in for the default stall timeout: short
+    // enough to be a test, long enough that the flood below finishes well
+    // inside it.
+    let timing = Timing {
+        stall: Duration::from_secs(1),
+        ..Timing::DEFAULT
+    };
+    let mut fixture = start_bridge_with("sleep 30", Mode::Control, None, timing);
     // Half the deadline, so a flood that somehow outlasted it would be
     // reported as itself rather than as a close code that never arrived.
     flood_within(
@@ -216,7 +221,7 @@ fn bridge_leaves_pty_output_upstream_while_the_client_is_stalled() {
         script.clone(),
         Mode::Control,
         Some(8 * 1024),
-        GATE_STALL_TIMEOUT,
+        Timing::DEFAULT,
     );
     // This client never reads, so nothing here may touch `stalled.socket`
     // until the watch is over.
@@ -239,7 +244,7 @@ fn bridge_leaves_pty_output_upstream_while_the_client_is_stalled() {
 /// and the marker appears. Without this the stalled assertion would also pass
 /// against a script that could never write the marker at all.
 fn assert_reading_client_reaches_marker(script: String, finished: &Path) {
-    let mut reading = start_bridge_with(script, Mode::Control, Some(8 * 1024), GATE_STALL_TIMEOUT);
+    let mut reading = start_bridge_with(script, Mode::Control, Some(8 * 1024), Timing::DEFAULT);
     assert!(wait_for_binary_progressing(
         &mut reading.socket,
         b"DONE",

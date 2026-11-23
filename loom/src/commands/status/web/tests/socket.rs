@@ -20,7 +20,6 @@ use crate::fs::work_dir::WorkDir;
 use crate::models::stage::Stage;
 use crate::verify::transitions::create_stage;
 use crate::web_server::http;
-use crate::web_server::limits::MAX_CONNECTIONS;
 
 fn split_request(port: u16, first: &str, headers: &str) -> TcpStream {
     let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("connect split request");
@@ -175,10 +174,17 @@ fn index_serves_embedded_page() {
 /// Complete a WebSocket handshake against a test server.
 fn connect_websocket(port: u16) -> tungstenite::WebSocket<TcpStream> {
     let url = format!("ws://127.0.0.1:{port}/ws");
-    let request = url
+    let mut request = url
         .as_str()
         .into_client_request()
         .expect("build WebSocket request");
+    // `/ws` requires an `Origin` equal to the request's `Host`.
+    request.headers_mut().insert(
+        "Origin",
+        format!("http://127.0.0.1:{port}")
+            .parse()
+            .expect("Origin header value"),
+    );
     let stream = TcpStream::connect(("127.0.0.1", port)).expect("connect WebSocket");
     let (mut socket, _) =
         tungstenite::client(request, stream).expect("complete WebSocket handshake");
@@ -314,7 +320,8 @@ fn handshake_survives_a_split_head() {
     let (_temp, base) = workspace();
     let (port, running) = start(base);
     let headers = concat!(
-        "Host: localhost\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n",
+        "Host: localhost\r\nOrigin: http://localhost\r\n",
+        "Upgrade: websocket\r\nConnection: Upgrade\r\n",
         "Sec-WebSocket-Version: 13\r\n",
         "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
     );
@@ -338,37 +345,6 @@ fn split_head_get_is_routed_normally() {
     stop(running);
     assert!(response.starts_with("HTTP/1.1 200"));
     assert_security_headers(&response);
-}
-
-#[test]
-fn a_connection_past_the_cap_is_answered_503() {
-    if skip_without_loopback("a_connection_past_the_cap_is_answered_503") {
-        return;
-    }
-    let (_temp, base) = workspace();
-    let (port, running) = start(base);
-
-    // Silent clients hold their slots for the whole head timeout, and the
-    // accept loop takes connections in the order they were opened, so the
-    // request below always arrives at a full pool.
-    let held = (0..MAX_CONNECTIONS)
-        .map(|index| {
-            TcpStream::connect(("127.0.0.1", port))
-                .unwrap_or_else(|error| panic!("hold connection {index}: {error}"))
-        })
-        .collect::<Vec<_>>();
-    let response = request(port, "GET / HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n");
-    drop(held);
-    stop(running);
-
-    assert!(
-        response.starts_with("HTTP/1.1 503 Service Unavailable"),
-        "{response}"
-    );
-    assert!(
-        body(&response).contains("connection limit reached"),
-        "{response}"
-    );
 }
 
 /// A quiet tree must still produce traffic: every collect sends a `tick`, so a

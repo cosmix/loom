@@ -50,6 +50,20 @@ pub(crate) fn retire_viewer(work_dir: &Path) -> Result<bool> {
     Ok(true)
 }
 
+pub(in crate::orchestrator::terminal::tmux) fn remove_stale_socket(path: &Path) -> Result<bool> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(true),
+        Err(error) => return Err(error.into()),
+    };
+    // SAFETY: getuid() is always safe to call and cannot fail.
+    let uid = unsafe { libc::getuid() };
+    if !metadata.file_type().is_socket() || metadata.uid() != uid || !has_no_listener(path) {
+        return Ok(false);
+    }
+    Ok(remove_dead_socket(path, &metadata)?.is_some())
+}
+
 /// Whether connecting to `path` is refused, the test tmux's own client applies
 /// before it replaces a stale socket with a new server. Any other outcome, a
 /// connection included, leaves the socket to the session check.

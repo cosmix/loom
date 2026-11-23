@@ -25,6 +25,9 @@ use crate::native_worker::store_io::read_json;
 use crate::native_worker::supervisor::{prove_and_reclaim, unprovable_spawn};
 use crate::process::{verify_process_identity, IdentityStatus, ProcessIdentity};
 
+#[path = "runner_repair.rs"]
+mod repair;
+
 /// How long an admitted record may stay without `supervisor.json`.
 const CLAIM_GRACE: Duration = Duration::from_secs(30);
 const CLAIM_FILE: &str = "supervisor.json";
@@ -225,6 +228,24 @@ pub(super) fn run_pass(
     steps
 }
 
+/// The stage's units. Healthy stages pay nothing extra: torn journal tails are
+/// repaired, and the units reloaded, only once a record failed to load. Held
+/// invocations are never repaired.
+fn load_units(
+    work_dir: &Path,
+    stage_id: &str,
+    held: &HashSet<String>,
+    found: &mut Vec<Warning>,
+) -> Vec<Result<NativeUnitState, StoreError>> {
+    let units = index::stage_units(work_dir, stage_id);
+    if units.iter().any(Result::is_err)
+        && repair::repair_lost_tails(work_dir, stage_id, held, found)
+    {
+        return index::stage_units(work_dir, stage_id);
+    }
+    units
+}
+
 fn pass_stage(
     pass: &Pass<'_>,
     stage_id: &str,
@@ -233,7 +254,7 @@ fn pass_stage(
     found: &mut Vec<Warning>,
 ) {
     let mut corrupt = 0usize;
-    for unit in index::stage_units(pass.work_dir, stage_id) {
+    for unit in load_units(pass.work_dir, stage_id, pass.held, found) {
         let Ok(state) = unit else {
             corrupt += 1;
             continue;

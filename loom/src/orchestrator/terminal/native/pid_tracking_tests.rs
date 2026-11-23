@@ -2,6 +2,29 @@ use super::*;
 use tempfile::TempDir;
 
 #[test]
+fn cwd_from_lsof_fields_reads_the_cwd_field_whole() {
+    let cwd = Path::new("/Users/a b/work tree");
+    assert_eq!(
+        cwd_from_lsof_fields("p123\nfcwd\nn/Users/a b/work tree\nf4\nn/tmp/cwd-notes.txt\n")
+            .as_deref(),
+        Some(cwd),
+    );
+    assert_eq!(
+        cwd_from_lsof_fields("p123\nf4\nn/tmp/cwd-notes.txt\nfcwd\nn/Users/a b/work tree\n")
+            .as_deref(),
+        Some(cwd),
+    );
+    assert_eq!(
+        cwd_from_lsof_fields("p123\nf4\nn/tmp/cwd-notes.txt\n"),
+        None
+    );
+    assert_eq!(
+        cwd_from_lsof_fields("p123\nfcwd\nn\nf4\nn/tmp/cwd-notes.txt\n"),
+        None
+    );
+}
+
+#[test]
 fn rewriting_process_identity_preserves_owner_metadata() {
     let temp = TempDir::new().unwrap();
     create_pid_dir(temp.path()).unwrap();

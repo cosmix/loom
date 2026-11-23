@@ -2,8 +2,11 @@
 //! pass before a PTY child is ever spawned - feature flag, `Origin`, the
 //! token cookie, the stage/mode path shape, and the terminal capacity cap.
 
+use tungstenite::protocol::frame::coding::CloseCode;
+use tungstenite::Message;
+
 use crate::commands::status::web::tests::{
-    body, request, skip_without_loopback, start, start_with, stop, workspace,
+    request, skip_without_loopback, start, start_with, stop, workspace,
 };
 use crate::web_server::limits::{acquire_terminal_slot, MAX_TERMINALS};
 
@@ -148,18 +151,22 @@ fn terminal_slots_are_capped() {
         .map(|_| acquire_terminal_slot(&limits).unwrap())
         .collect::<Vec<_>>();
     let token = "a".repeat(64);
-    let response = request(
-        port,
-        &terminal_request(
-            port,
-            Some(&cookie(port, &token)),
-            Some(&format!("http://127.0.0.1:{port}")),
-        ),
-    );
-    assert!(response.starts_with("HTTP/1.1 503") && body(&response) == "terminal limit reached");
+    // The handshake completes, then the server says why it is closing: an
+    // HTTP 503 here would read in the browser as a rejected cookie.
+    let busy = connect_terminal(port, &token).read();
     drop(held);
-    drop(connect_terminal(port, &token));
+    // The stage `missing` does not exist, so a usable slot ends in 4004.
+    let unknown = connect_terminal(port, &token).read();
     stop(running);
+    let Ok(Message::Close(Some(busy))) = busy else {
+        panic!("expected a close frame, got {busy:?}");
+    };
+    assert_eq!(busy.code, CloseCode::Library(4011));
+    assert_eq!(busy.reason.as_str(), "terminal limit reached");
+    let Ok(Message::Close(Some(unknown))) = unknown else {
+        panic!("expected a close frame, got {unknown:?}");
+    };
+    assert_eq!(unknown.code, CloseCode::Library(4004));
 }
 
 #[test]

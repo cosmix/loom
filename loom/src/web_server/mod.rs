@@ -11,6 +11,8 @@
 //! [`http`].
 
 pub mod access;
+#[cfg(test)]
+mod access_contract_tests;
 pub mod assets;
 pub mod auth;
 pub(crate) mod bootstrap;
