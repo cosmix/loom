@@ -12,7 +12,7 @@
 | [entry-points.md](entry-points.md) | Key files agents should read first | 86 |
 | [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 200 |
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 230 |
-| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 248 |
+| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 252 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 116 |
 | [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 245 |
 
@@ -33,14 +33,14 @@
 | [context-retrieval-routing](architecture/context-retrieval-routing.md) |  | 75 |
 | [context-retrieval-state](architecture/context-retrieval-state.md) | Layers | 179 |
 | [contract-collection](architecture/contract-collection.md) |  | 70 |
-| [contract-phase](architecture/contract-phase.md) | Freeze | 282 |
+| [contract-phase](architecture/contract-phase.md) | Freeze | 281 |
 | [contract-trial](architecture/contract-trial.md) | loom check --contracts, replacement trial receipt, overlay undo, env-red refusal | 24 |
 | [core-abstractions](architecture/core-abstractions.md) | Graph | 129 |
 | [criterion-narrowing-evidence](architecture/criterion-narrowing-evidence.md) | base-run evidence, leaves_out narrowing rules, hand-offs | 36 |
 | [daemon-launch](architecture/daemon-launch.md) |  | 71 |
 | [daemon-owned-commits](architecture/daemon-owned-commits.md) |  | 151 |
 | [directory-structure](architecture/directory-structure.md) | Tree | 50 |
-| [execution-containment](architecture/execution-containment.md) |  | 398 |
+| [execution-containment](architecture/execution-containment.md) |  | 399 |
 | [hook-system](architecture/hook-system.md) |  | 342 |
 | [knowledge-bootstrap](architecture/knowledge-bootstrap.md) | KB | 83 |
 | [knowledge-hierarchy](architecture/knowledge-hierarchy.md) | KB fs | 264 |
@@ -176,7 +176,7 @@
 | [merge-in-operator-checkout](mistakes/merge-in-operator-checkout.md) |  | 70 |
 | [native-macos-delivery](mistakes/native-macos-delivery.md) | macOS boundary delivery slips: lint scope, pinned fields, shared TMPDIR | 25 |
 | [native-worker-tunnel-half-close](mistakes/native-worker-tunnel-half-close.md) | Tunnel splice cut replies when a client half-closed after its request | 13 |
-| [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Shared | 351 |
+| [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Shared | 361 |
 | [phantom-merges](mistakes/phantom-merges.md) | Merges | 347 |
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Pins | 332 |
 | [plan-authoring](mistakes/plan-authoring.md) |  | 347 |
@@ -205,6 +205,7 @@
 | [seatbelt-loopback-grant](mistakes/seatbelt-loopback-grant.md) | Seatbelt localhost listener re-added as if it held binds to loopback | 25 |
 | [session-identity-env](mistakes/session-identity-env.md) | Env | 126 |
 | [sessions-and-liveness](mistakes/sessions-and-liveness.md) |  | 399 |
+| [shared-main-checkout](mistakes/shared-main-checkout.md) | Agents sharing the main checkout with other writers: stash and reset hazards | 10 |
 | [shell-command-matchers](mistakes/shell-command-matchers.md) |  | 295 |
 | [source-graph-delivery](mistakes/source-graph-delivery.md) | Misses | 182 |
 | [spurious-waiting-for-input](mistakes/spurious-waiting-for-input.md) | Idle | 53 |
