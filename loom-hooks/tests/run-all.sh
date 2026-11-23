@@ -265,6 +265,7 @@ run_test "post-tool-use: commit reminder is tokenized - heredoc body ignored, re
 run_test "loom-relay: kind derivation per loom command segment, no control kinds for subagents" "$SCRIPT_DIR/loom-relay-kinds.sh"
 run_test "loom-relay: fast path, jq and LOOM_HOOK_PATH gates, helper call contract" "$SCRIPT_DIR/loom-relay-gates.sh"
 run_test "loom-relay-guard: refuses a relayed loom command whose stdout would be hidden" "$SCRIPT_DIR/loom-relay-guard.sh"
+run_test "loom-relay-guard: writes the call marker a relayed control ticket needs" "$SCRIPT_DIR/loom-relay-guard-call-marker.sh"
 run_test "loom-relay-stop: one block per stranded control ticket" "$SCRIPT_DIR/loom-relay-stop.sh"
 
 START=$SECONDS

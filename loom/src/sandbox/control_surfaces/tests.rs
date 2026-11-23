@@ -98,6 +98,12 @@ fn names_every_control_surface() {
         "Edit",
         "Bash(cp x .claude/settings.json)",
         "Bash(rm -rf /opt/loom-hooks/old)",
+        "Edit(~/foo/../.codex/hooks.json)",
+        "Bash(cp x ../.codex/config.toml)",
+        "Edit(//home/op/x/../.claude/settings.json)",
+        "Edit(.codex/config.toml)",
+        "Edit(~/x/../.claude.json)",
+        "Bash(cp x ~/y/../.claude.json)",
     ] {
         assert!(surfaces.names(rule), "{rule} must be dropped");
     }

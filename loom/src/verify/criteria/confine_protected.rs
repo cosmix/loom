@@ -46,20 +46,25 @@ const CHECKOUT_CONTROL_ENTRIES: [&str; 3] = [".git", ".worktrees", ".claude"];
 
 /// Canonical paths inside a confined tree, each bound over it after the tree.
 #[derive(Debug, Default, PartialEq, Eq)]
-pub(super) struct Protected {
+pub(in crate::verify::criteria) struct Protected {
     /// Read-only: the state root and [`CHECKOUT_CONTROL_ENTRIES`].
-    pub(super) read_only: Vec<PathBuf>,
+    pub(in crate::verify::criteria) read_only: Vec<PathBuf>,
+    /// Directories strictly between the tree and a read-only path, each bound
+    /// onto itself, outermost first. The kernel refuses to rename a mount
+    /// point (`EBUSY`), and a renamed ancestor would carry the read-only path
+    /// out from under its bind.
+    pub(in crate::verify::criteria) pinned: Vec<PathBuf>,
     /// Regular files whose content is hidden: the state root's secrets.
-    pub(super) hidden_files: Vec<PathBuf>,
+    pub(in crate::verify::criteria) hidden_files: Vec<PathBuf>,
     /// Directories whose content is hidden: the terminal histories.
-    pub(super) hidden_dirs: Vec<PathBuf>,
+    pub(in crate::verify::criteria) hidden_dirs: Vec<PathBuf>,
 }
 
 /// What the canonical `tree` protects: nothing unless it holds the state root
 /// its project keeps at `.loom/work` (or the legacy `.work`). A stage
 /// worktree's `.loom/work` is a symlink to the main checkout's, outside the
 /// tree and so outside the confinement altogether.
-pub(super) fn protected(tree: &Path) -> Protected {
+pub(in crate::verify::criteria) fn protected(tree: &Path) -> Protected {
     let Some(state_root) = resolve_state_root(tree).filter(|root| root.starts_with(tree)) else {
         return Protected::default();
     };
@@ -70,7 +75,8 @@ pub(super) fn protected(tree: &Path) -> Protected {
                 .map(|entry| tree.join(entry)),
         )
         .filter(|path| path.symlink_metadata().is_ok_and(|meta| !meta.is_symlink()))
-        .collect();
+        .collect::<Vec<PathBuf>>();
+    let pinned = pinned_parents(tree, &read_only);
     let hidden_files = STATE_ROOT_SECRET_FILES
         .iter()
         .map(|name| state_root.join(name))
@@ -85,17 +91,50 @@ pub(super) fn protected(tree: &Path) -> Protected {
         .collect();
     Protected {
         read_only,
+        pinned,
         hidden_files,
         hidden_dirs,
     }
 }
 
+/// The real directories strictly between `tree` and each of `read_only`,
+/// outermost first, without duplicates: `<tree>/.loom` for `<tree>/.loom/work`.
+fn pinned_parents(tree: &Path, read_only: &[PathBuf]) -> Vec<PathBuf> {
+    let mut pinned: Vec<PathBuf> = Vec::new();
+    for path in read_only {
+        let mut parents: Vec<&Path> = path
+            .ancestors()
+            .skip(1)
+            .take_while(|ancestor| *ancestor != tree)
+            .filter(|ancestor| {
+                ancestor
+                    .symlink_metadata()
+                    .is_ok_and(|meta| meta.is_dir() && !meta.is_symlink())
+            })
+            .collect();
+        parents.reverse();
+        for parent in parents {
+            if !pinned.iter().any(|known| known == parent) {
+                pinned.push(parent.to_path_buf());
+            }
+        }
+    }
+    pinned
+}
+
 /// Bubblewrap arguments that apply `protected` over the tree's read-write
-/// bind, so they must follow it: each read-only path bound onto itself, each
-/// secret file covered by `/dev/null`, each hidden directory by an empty
-/// read-only tmpfs.
+/// bind, so they must follow it: each pinned directory bound writable onto
+/// itself, before the read-only binds (a later self-bind would cover them),
+/// each read-only path bound onto itself, each secret file covered by
+/// `/dev/null`, each hidden directory by an empty read-only tmpfs.
 #[cfg(target_os = "linux")]
-pub(super) fn bind(command: &mut std::process::Command, protected: &Protected) {
+pub(in crate::verify::criteria) fn bind(
+    command: &mut std::process::Command,
+    protected: &Protected,
+) {
+    for path in &protected.pinned {
+        command.arg("--bind").arg(path).arg(path);
+    }
     for path in &protected.read_only {
         command.arg("--ro-bind").arg(path).arg(path);
     }
@@ -108,10 +147,18 @@ pub(super) fn bind(command: &mut std::process::Command, protected: &Protected) {
 }
 
 /// Seatbelt rules that apply `protected`; they must follow the rules allowing
-/// the tree, since a later rule wins.
+/// the tree, since a later rule wins. A pinned directory is denied by
+/// `literal`, which stops renaming it and leaves its other children writable.
+/// Unmeasured on a Seatbelt host.
 #[cfg(target_os = "macos")]
-pub(super) fn seatbelt_rules(protected: &Protected, quote: impl Fn(&Path) -> String) -> String {
+pub(in crate::verify::criteria) fn seatbelt_rules(
+    protected: &Protected,
+    quote: impl Fn(&Path) -> String,
+) -> String {
     let mut rules = String::new();
+    for path in &protected.pinned {
+        rules.push_str(&format!("(deny file-write* (literal {}))", quote(path)));
+    }
     for path in &protected.read_only {
         rules.push_str(&format!("(deny file-write* (subpath {}))", quote(path)));
     }

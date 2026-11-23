@@ -58,6 +58,13 @@ impl RelayLine {
     /// Extract every whole `LOOM_RELAY_V1` line from `text`, keyed by id
     /// (first occurrence wins), capped at [`MAX_LINES_PER_CALL`].
     pub fn extract(text: &str) -> Vec<RelayLine> {
+        Self::extract_where(text, |_| true)
+    }
+
+    /// Like [`extract`](Self::extract), but only lines `keep` accepts count
+    /// toward the [`MAX_LINES_PER_CALL`] cap, so lines it rejects (forged
+    /// lines with no ticket behind them) cannot crowd out a real one.
+    pub fn extract_where(text: &str, mut keep: impl FnMut(&RelayLine) -> bool) -> Vec<RelayLine> {
         let mut seen = HashSet::new();
         let mut lines = Vec::new();
         for raw in text.split('\n') {
@@ -65,7 +72,7 @@ impl RelayLine {
                 break;
             }
             if let Some(parsed) = RelayLine::parse(raw) {
-                if seen.insert(parsed.id.clone()) {
+                if seen.insert(parsed.id.clone()) && keep(&parsed) {
                     lines.push(parsed);
                 }
             }

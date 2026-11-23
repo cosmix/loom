@@ -38,15 +38,15 @@ fn env_for(root: &Path, session_id: &str) -> RelayEnv {
 }
 
 /// A Running session of [`STAGE`] whose PID evidence names this test process.
-struct Fixture {
+pub(super) struct Fixture {
     root: TempDir,
-    work_dir: PathBuf,
-    session: Session,
-    env: RelayEnv,
+    pub(super) work_dir: PathBuf,
+    pub(super) session: Session,
+    pub(super) env: RelayEnv,
 }
 
 impl Fixture {
-    fn new() -> Self {
+    pub(super) fn new() -> Self {
         let root = TempDir::new().unwrap();
         let work_dir = root.path().join("work");
         std::fs::create_dir_all(work_dir.join("sessions")).unwrap();
@@ -64,21 +64,21 @@ impl Fixture {
         }
     }
 
-    fn relay(&self, payload: &[u8], allowed: &[RequestKind]) -> Option<String> {
+    pub(super) fn relay(&self, payload: &[u8], allowed: &[RequestKind]) -> Option<String> {
         relay_payload(payload, &self.env, &self.work_dir, allowed)
     }
 
-    fn inbox(&self) -> PathBuf {
+    pub(super) fn inbox(&self) -> PathBuf {
         self.work_dir.join("inbox").join(&self.session.id)
     }
 
-    fn ticket_exists(&self, line: &RelayLine) -> bool {
+    pub(super) fn ticket_exists(&self, line: &RelayLine) -> bool {
         ticket_path(&self.env.scratch_dir, line).exists()
     }
 }
 
 /// Write a ticket the way the CLI does; return its line and exact bytes.
-fn write_ticket(scratch_dir: &Path, kind: RequestKind) -> (RelayLine, Vec<u8>) {
+pub(super) fn write_ticket(scratch_dir: &Path, kind: RequestKind) -> (RelayLine, Vec<u8>) {
     let ticket = Ticket {
         v: 1,
         id: new_request_id(),
@@ -114,7 +114,7 @@ fn bash_payload(stdout: &str, agent_type: Option<&str>) -> Vec<u8> {
     payload.to_string().into_bytes()
 }
 
-fn json_entries(dir: &Path) -> usize {
+pub(super) fn json_entries(dir: &Path) -> usize {
     std::fs::read_dir(dir).map_or(0, |entries| {
         entries
             .filter(|entry| {

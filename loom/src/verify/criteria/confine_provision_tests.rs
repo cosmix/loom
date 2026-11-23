@@ -42,7 +42,7 @@ fn the_provision_rules_parse() {
     };
     let mut profile = String::from("(version 1)(allow default)");
     profile.push_str(&provision_network_rules(&grants).unwrap());
-    profile.push_str(&sccache_socket_rule(root).unwrap());
+    profile.push_str(&scratch_socket_rule(&root.join("scratch")).unwrap());
     let status = Command::new("/usr/bin/sandbox-exec")
         .arg("-p")
         .arg(&profile)

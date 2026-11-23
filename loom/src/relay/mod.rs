@@ -32,7 +32,8 @@ pub use ticket::Ticket;
 
 /// Bound on one relay line: `LOOM_RELAY_V1 kind=... id=... sha256=... bytes=...`.
 pub const MAX_LINE_BYTES: usize = 160;
-/// At most this many relay lines are extracted from one tool call's output.
+/// At most this many ticketed relay lines are relayed from one tool call's
+/// output; lines without a ticket file do not count.
 pub const MAX_LINES_PER_CALL: usize = 16;
 /// A session may accumulate at most this many CLI tickets the relay hook has
 /// not yet picked up before the CLI refuses to write another.
@@ -43,7 +44,8 @@ pub const MAX_UNCONSUMED_TICKETS: usize = 32;
 /// which keeps the directory bounded; no ticket is ever deleted by the CLI.
 pub const MAX_SCRATCH_TICKETS: usize = 128;
 /// The daemon refuses to relay past this many pending (undrained) inbox
-/// entries for one session.
+/// entries for one session. A soft cap: concurrent relay hooks each count
+/// before any links, so the inbox can overshoot by the number of writers.
 pub const MAX_PENDING_ENTRIES: usize = 128;
 /// A persisted-output file the relay hook reads in place of inline stdout is
 /// capped at this size.

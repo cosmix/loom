@@ -51,7 +51,7 @@ fn a_ticket_matching_its_line_is_returned() {
     let (bytes, line) = encoded(RequestKind::Memory);
     std::fs::write(ticket_at(dir.path(), &line), &bytes).unwrap();
 
-    let ticket = read_verified(dir.path(), &line, uid()).unwrap();
+    let (ticket, _) = read_verified(dir.path(), &line, uid()).unwrap();
     assert_eq!(ticket.id, line.id);
     assert_eq!(ticket.payload, json!({"content": "note"}));
 }

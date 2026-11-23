@@ -68,12 +68,16 @@ pub(crate) mod output;
 pub(crate) mod pid_namespace;
 mod probe;
 mod process_table;
+#[cfg(test)]
+mod proxy_credentials_contract_tests;
 mod result;
 mod runner;
 mod runner_results;
 #[cfg(test)]
 mod seatbelt_grant_contract_tests;
 mod spawn_observer;
+#[cfg(test)]
+mod state_root_parent_contract_tests;
 mod zero_tests;
 
 #[cfg(test)]

@@ -1,5 +1,10 @@
 use super::*;
+use std::ffi::CString;
+use std::os::unix::ffi::OsStrExt;
+use std::os::unix::fs::symlink;
+use std::sync::mpsc;
 use std::thread;
+use std::time::Duration;
 
 #[test]
 fn test_locked_write_and_read() {
@@ -9,6 +14,49 @@ fn test_locked_write_and_read() {
     locked_write(&path, "hello world").unwrap();
     let content = locked_read(&path).unwrap();
     assert_eq!(content, "hello world");
+}
+
+#[test]
+fn test_locked_read_refuses_a_symlinked_file() {
+    let temp = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let outside_file = outside.path().join("real.md");
+    std::fs::write(&outside_file, b"outside content").unwrap();
+    let link = temp.path().join("linked.md");
+    symlink(&outside_file, &link).unwrap();
+
+    assert!(locked_read(&link).is_err());
+}
+
+#[test]
+fn test_locked_update_refuses_a_symlinked_file_and_leaves_the_target() {
+    let temp = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let outside_file = outside.path().join("real.md");
+    std::fs::write(&outside_file, b"outside content").unwrap();
+    let link = temp.path().join("linked.md");
+    symlink(&outside_file, &link).unwrap();
+
+    assert!(locked_update(&link, |_| Ok("updated content".to_string())).is_err());
+    assert_eq!(std::fs::read_link(&link).unwrap(), outside_file);
+    assert_eq!(std::fs::read(outside_file).unwrap(), b"outside content");
+}
+
+#[test]
+fn test_locked_read_refuses_a_fifo_without_blocking() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("pipe");
+    let fifo = CString::new(path.as_os_str().as_bytes()).unwrap();
+    // SAFETY: fifo is a valid NUL-terminated pathname.
+    assert_eq!(unsafe { libc::mkfifo(fifo.as_ptr(), 0o600) }, 0);
+
+    let (sender, receiver) = mpsc::channel();
+    thread::spawn(move || sender.send(locked_read(&path)).unwrap());
+
+    let result = receiver
+        .recv_timeout(Duration::from_secs(5))
+        .expect("locked_read blocked on a FIFO");
+    assert!(result.is_err());
 }
 
 #[test]

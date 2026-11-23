@@ -8,12 +8,12 @@ use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
 use super::*;
-use crate::daemon::ContractRunReport;
 use crate::fs::work_dir::WorkDir;
 use crate::models::dispute::{DisputeKind, FileReplacement, MAX_REPLACEMENT_BYTES};
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::adjudication::read_request;
 use crate::plan::schema::ContractSpec;
+use crate::stage_service::ContractRunReport;
 use crate::utils::sha256_hex;
 use crate::verify::contracts::store::{
     write_freeze, FreezeRecord, FrozenContract, FrozenFile, FREEZE_RECORD_VERSION,

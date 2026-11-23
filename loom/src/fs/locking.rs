@@ -23,10 +23,12 @@
 
 use anyhow::{Context, Result};
 use fs2::FileExt;
-use std::fs::File;
-use std::io::{BufReader, Read};
+use std::fs::{File, OpenOptions};
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::Path;
+
+/// Maximum size of a data file read while holding the directory lock.
+const MAX_LOCKED_FILE_BYTES: usize = 64 * 1024 * 1024;
 
 /// Serialize Loom plan writers across inode-replacing publication.
 ///
@@ -183,6 +185,20 @@ pub fn atomic_write_locked(path: &Path, content: &str) -> Result<()> {
     super::cache_io::atomic_write(path, content)
 }
 
+fn open_no_follow(path: &Path) -> std::io::Result<File> {
+    // Opening a FIFO must return so the regular-file check can reject it.
+    OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(path)
+}
+
+fn read_opened(file: File, path: &Path) -> Result<String> {
+    let bytes = crate::fs::safe_read::read_open_bounded(file, path, MAX_LOCKED_FILE_BYTES)?;
+    String::from_utf8(bytes)
+        .with_context(|| format!("Failed to read file: {}: not valid UTF-8", path.display()))
+}
+
 /// Read file contents with a shared (read) lock.
 ///
 /// Acquires a shared lock on the parent directory before reading, allowing
@@ -195,12 +211,8 @@ pub fn locked_read(path: &Path) -> Result<String> {
     // under us mid-read.
     let _dir_lock = lock_parent_dir(path, false)?;
     let file =
-        File::open(path).with_context(|| format!("Failed to open file: {}", path.display()))?;
-    let mut content = String::new();
-    BufReader::new(&file)
-        .read_to_string(&mut content)
-        .with_context(|| format!("Failed to read file: {}", path.display()))?;
-    Ok(content)
+        open_no_follow(path).with_context(|| format!("Failed to open file: {}", path.display()))?;
+    read_opened(file, path)
 }
 
 /// Read-modify-write with an exclusive lock held throughout.
@@ -226,14 +238,8 @@ where
 {
     let _dir_lock = lock_parent_dir(path, true)?;
 
-    let content = match File::open(path) {
-        Ok(file) => {
-            let mut buf = String::new();
-            BufReader::new(&file)
-                .read_to_string(&mut buf)
-                .with_context(|| format!("Failed to read file: {}", path.display()))?;
-            buf
-        }
+    let content = match open_no_follow(path) {
+        Ok(file) => read_opened(file, path)?,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
         Err(e) => {
             return Err(e)

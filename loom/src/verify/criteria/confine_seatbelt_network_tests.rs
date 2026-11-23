@@ -23,10 +23,11 @@ fn socket_deny(base: &Path) -> String {
     format!("(deny network-outbound (remote unix-socket (path-regex #\"{prefix}\")))")
 }
 
-/// The rule letting a command reach the `h.sock` server of `root`.
-fn socket_allow(root: &Path) -> String {
-    let socket = serde_json::to_string(&root.join("h.sock").to_string_lossy()).unwrap();
-    format!("(allow network-outbound (remote unix-socket (path-literal {socket})))")
+/// The rule letting a command reach the sockets below its `scratch`, where
+/// the host job's sccache server listens.
+fn scratch_allow(scratch: &Path) -> String {
+    let scratch = serde_json::to_string(&scratch.to_string_lossy()).unwrap();
+    format!("(allow network-outbound (remote unix-socket (subpath {scratch})))")
 }
 
 /// A tree and a cache root laid out as the impact base comparison's
@@ -53,6 +54,11 @@ fn layout() -> Layout {
 }
 
 fn render(layout: &Layout, network: NetworkAccess) -> String {
+    render_with_scratch(layout, network).0
+}
+
+/// The profile and the path of the command scratch it was rendered for.
+fn render_with_scratch(layout: &Layout, network: NetworkAccess) -> (String, PathBuf) {
     let mut original = Command::new("/bin/sh");
     original.current_dir(&layout.tree);
     let scratch = CargoScratch::prepare(&original, &layout.tree, false, false).unwrap();
@@ -60,7 +66,8 @@ fn render(layout: &Layout, network: NetworkAccess) -> String {
         cache_root: Some(&layout.cache_root),
         ..Grants::default()
     };
-    profile(&original, &layout.tree, &scratch, network, &grants).unwrap()
+    let profile = profile(&original, &layout.tree, &scratch, network, &grants).unwrap();
+    (profile, scratch.path().to_path_buf())
 }
 
 // The cache bases come from the process's HOME and XDG_CACHE_HOME, which a
@@ -87,10 +94,10 @@ fn the_process_cache_bases_are_the_stage_cache_and_base_run_parents() {
 fn provisioning_with_a_base_cache_denies_every_process_cache_base_before_its_own_socket() {
     let _env = crate::test_cache_env::CacheEnv::pin();
     let layout = layout();
-    let profile = render(&layout, NetworkAccess::Provision);
+    let (profile, scratch) = render_with_scratch(&layout, NetworkAccess::Provision);
     let allow = profile
-        .find(&socket_allow(&layout.cache_root))
-        .expect("the granted root's own socket stays reachable");
+        .find(&scratch_allow(&scratch))
+        .expect("the command's own scratch stays reachable");
     let granted_parent = layout.cache_root.parent().unwrap().to_path_buf();
     let mut bases = process_cache_bases().unwrap();
     bases.push(granted_parent);
@@ -98,7 +105,7 @@ fn provisioning_with_a_base_cache_denies_every_process_cache_base_before_its_own
         let deny = profile.find(&socket_deny(base));
         assert!(
             deny.is_some_and(|deny| deny < allow),
-            "a socket deny for {base:?} must precede the granted socket in {profile}"
+            "a socket deny for {base:?} must precede the scratch grant in {profile}"
         );
     }
 }

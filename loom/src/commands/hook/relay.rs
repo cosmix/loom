@@ -11,8 +11,12 @@
 //! The tool output is never trusted. A line only selects a ticket, and a
 //! ticket only counts when it sits in this session's own scratch directory and
 //! matches the line's size and hash. Attribution comes from the environment,
-//! never from the ticket. Every refusal is reported; a line with no ticket
-//! behind it (a test fixture, an echoed transcript) is dropped silently.
+//! never from the ticket. A control ticket also needs the lead's call marker
+//! (`loom-relay-guard.sh`) and a modification time inside the call, so a
+//! ticket planted earlier is never relayed as the lead's; a control ticket
+//! refused because a subagent printed it is deleted. Every refusal is
+//! reported; a line with no ticket behind it (a test fixture, an echoed
+//! transcript) is dropped silently.
 //!
 //! Output that never reaches the hook would otherwise strand a ticket on disk
 //! for good, so each call also sweeps the leftovers its session accumulated
@@ -35,6 +39,7 @@ use crate::relay::{
     RequestKind, Ticket, MAX_PENDING_ENTRIES,
 };
 
+mod admission;
 mod output;
 mod sweep;
 mod ticket_check;
@@ -160,15 +165,27 @@ fn relay_payload(
     if value.get("tool_name").and_then(Value::as_str) != Some("Bash") {
         return None;
     }
-    let collected = output::collect(&value, &env.projects_root);
-    let ticketed: Vec<RelayLine> = RelayLine::extract(&collected.text)
-        .into_iter()
-        .filter(|line| {
-            ticket_path(&env.scratch_dir, line)
-                .symlink_metadata()
-                .is_ok()
-        })
-        .collect();
+    let reply = relay_bash_call(&value, env, work_dir, allowed);
+    admission::discard_call_marker(
+        &env.scratch_dir,
+        value.get("tool_use_id").and_then(Value::as_str),
+    );
+    reply
+}
+
+/// Relay one Bash call's ticketed lines and the leftovers its session holds.
+fn relay_bash_call(
+    value: &Value,
+    env: &RelayEnv,
+    work_dir: &Path,
+    allowed: &[RequestKind],
+) -> Option<String> {
+    let collected = output::collect(value, &env.projects_root);
+    let ticketed = RelayLine::extract_where(&collected.text, |line| {
+        ticket_path(&env.scratch_dir, line)
+            .symlink_metadata()
+            .is_ok()
+    });
     let leftover = sweep::candidates(&env.scratch_dir, &ticketed, allowed);
 
     let mut report = Vec::new();
@@ -179,7 +196,7 @@ fn relay_payload(
     }
     if !ticketed.is_empty() || !leftover.is_empty() {
         report.extend(relay_requests(
-            &ticketed, &leftover, &value, env, work_dir, allowed,
+            &ticketed, &leftover, value, env, work_dir, allowed,
         ));
     }
     (!report.is_empty()).then(|| report.join("\n"))
@@ -210,7 +227,7 @@ fn relay_requests(
         env,
         work_dir,
         allowed,
-        agent: agent_role(payload),
+        agent: admission::agent_role(payload),
         tool_use_id: payload
             .get("tool_use_id")
             .and_then(Value::as_str)
@@ -275,20 +292,6 @@ struct Request<'a> {
 }
 
 impl Request<'_> {
-    /// Admit, verify, write and consume one ticketed line; one reply line.
-    fn relay_one(&self, line: &RelayLine) -> String {
-        let label = label(line);
-        if let Err(reason) = self.admit(line.kind) {
-            return format!("LOOM relay: refused {label}: {reason}");
-        }
-        match ticket_check::read_verified(&self.env.scratch_dir, line, self.env.uid) {
-            Err(error) => format!("LOOM relay: refused {label}: {error:#}"),
-            Ok(ticket) => match self.record(ticket, sweep::Source::Line) {
-                sweep::Recorded::Reply(reply) | sweep::Recorded::Full(reply) => reply,
-            },
-        }
-    }
-
     /// Write one verified ticket into this session's inbox and consume its
     /// file. Shared by the line path and the sweep, which differ only in how
     /// the ticket was found and so in how the reply words it.
@@ -326,39 +329,6 @@ impl Request<'_> {
             )),
         }
     }
-
-    /// Control kinds never come from a subagent, and a kind the Bash command
-    /// did not run the writer for is not relayed.
-    fn admit(&self, kind: RequestKind) -> Result<(), String> {
-        if self.agent == AgentRole::Subagent && kind.is_control() {
-            let control_kinds = RequestKind::all()
-                .into_iter()
-                .filter(|control_kind| control_kind.is_control())
-                .map(|control_kind| control_kind.to_string())
-                .collect::<Vec<_>>()
-                .join(", ");
-            return Err(format!(
-                "control requests ({control_kinds}) are never relayed from a subagent. Ask \
-                 the main agent to run the command"
-            ));
-        }
-        if !self.allowed.contains(&kind) {
-            return Err(format!(
-                "this Bash call did not run the loom command that writes {kind} requests, so \
-                 its line was not relayed. Run that loom command on its own, with its stdout \
-                 unfiltered"
-            ));
-        }
-        Ok(())
-    }
-}
-
-/// A payload carrying a non-empty `agent_type` came from a subagent.
-fn agent_role(payload: &Value) -> AgentRole {
-    match payload.get("agent_type").and_then(Value::as_str) {
-        Some(agent_type) if !agent_type.is_empty() => AgentRole::Subagent,
-        _ => AgentRole::Main,
-    }
 }
 
 /// `<kind> <first 8 id characters>`, the id prefix the CLI prints.
@@ -380,5 +350,7 @@ fn hook_reply(message: &str) -> String {
     .to_string()
 }
 
+#[cfg(test)]
+mod provenance_contract_tests;
 #[cfg(test)]
 mod tests;

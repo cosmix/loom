@@ -5,7 +5,7 @@ use super::claude_files::{
     expected_parent_transcript, plain_absolute, transcript_evidence, validate_current_binding,
     validate_parent_transcript, validate_transcript_layout,
 };
-use crate::commands::subagents::ledger::StartedAgentTypeIndex;
+use crate::provider_data::ledger::StartedAgentTypeIndex;
 use crate::subagent_lifecycle::model::{
     LifecycleProducer, LifecycleRecord, LifecycleState, WorkerIdentity, LIFECYCLE_VERSION,
 };

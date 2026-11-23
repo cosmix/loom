@@ -3,7 +3,6 @@
 
 pub(crate) mod acceptance_runner;
 mod adjudicate;
-pub(crate) mod admin_hmac;
 pub(crate) mod admin_proof;
 pub(crate) mod amend;
 pub mod commit;

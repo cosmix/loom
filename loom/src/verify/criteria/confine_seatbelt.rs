@@ -71,8 +71,8 @@ fn seatbelt_path_rules(
 
 /// Rules naming single paths, after the root rules they refine: the tree's
 /// protected paths, the directories above it listed, the Cargo files there
-/// hidden and each `package.json` there readable, files hidden in the host's Cargo and Maven homes, and the stage
-/// cache's host-job sccache socket.
+/// hidden and each `package.json` there readable, files hidden in the host's Cargo and Maven homes, and the
+/// command's own scratch sockets (the host job's sccache socket lives there).
 fn named_rules(
     original: &Command,
     tree: &Path,
@@ -90,9 +90,6 @@ fn named_rules(
             &HIDDEN_IN_M2.map(|name| home.join(".m2").join(name)),
         )?);
         profile.push_str(&git_config_rules(&home)?);
-    }
-    if let Some(root) = grants.cache_root {
-        profile.push_str(&sccache_socket_rule(root)?);
     }
     profile.push_str(&scratch_socket_rule(scratch.path())?);
     Ok(profile)
@@ -164,24 +161,6 @@ fn scratch_socket_rule(scratch: &Path) -> Result<String> {
     Ok(rules)
 }
 
-/// The host-job sccache server socket in the stage cache root
-/// (`SCCACHE_SERVER_UDS`), the only Unix socket a confined command may bind or
-/// connect to: the session's and the workers' servers run compilers outside
-/// this boundary. The variable names the canonical root, which a process can
-/// also reach through a `/private` or firmlink spelling, so each spelling gets
-/// the rule.
-fn sccache_socket_rule(root: &Path) -> Result<String> {
-    let mut rules = String::new();
-    for socket in ancestors::seatbelt_spellings(&root.join("h.sock")) {
-        let socket = quote(&socket)?;
-        rules.push_str(&format!(
-            "(allow network-bind network-outbound (local unix-socket (path-literal {socket})))\
-             (allow network-outbound (remote unix-socket (path-literal {socket})))"
-        ));
-    }
-    Ok(rules)
-}
-
 /// The directories below this process's cache base holding other consumers'
 /// sccache servers: `<cache base>/loom/stage-cache`, every stage's cache root,
 /// and `<cache base>/loom/stage-base`, every base run's cache. Derived as
@@ -205,8 +184,8 @@ fn process_cache_bases() -> Result<Vec<PathBuf>> {
 /// compilers outside this boundary. The granted root's parent alone would miss
 /// them for a cache outside `<cache base>/loom/stage-cache` (a base run's, or
 /// the impact base comparison's temporary one). These denials precede the
-/// path rules, so [`sccache_socket_rule`]'s later grant of the granted root's
-/// own `h.sock` still wins.
+/// path rules, so [`scratch_socket_rule`]'s later grant of the command's own
+/// scratch, where the host-job sccache socket is, still wins.
 fn provision_network_rules(grants: &Grants<'_>) -> Result<String> {
     let mut rules = String::from("(allow network-outbound)");
     let mut bases = process_cache_bases()?;

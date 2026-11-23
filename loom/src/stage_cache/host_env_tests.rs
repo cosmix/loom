@@ -63,6 +63,7 @@ fn a_goproxy_with_userinfo_is_dropped_whichever_entry_carries_it() {
         "https://proxy.example,https://user:secret@other.example|direct",
         "user:token@proxy.corp.example,direct",
         "direct,token@proxy.corp.example/path",
+        "user:pw@proxy.example/x?next=https://a",
     ] {
         assert_eq!(proxy_for(credential), default, "{credential}");
     }
@@ -140,4 +141,34 @@ fn a_symlinked_seed_is_named_by_its_canonical_path() {
     let expected = format!("file://{},off", seed.display());
     assert_eq!(var(&env, "GOPROXY"), Some(expected));
     assert_eq!(super::seed_read_roots(&host, &[]), vec![seed]);
+}
+
+/// A proxy URL with userinfo is a credential: dropped from the command, never
+/// stripped; a credential-free proxy and `NO_PROXY` stay.
+#[test]
+fn credentialed_proxy_variables_are_removed_from_a_command() {
+    let mut command = std::process::Command::new("/bin/sh");
+    command.env_clear();
+    command
+        .env("HTTPS_PROXY", "http://u:p@proxy.example:8080")
+        .env("https_proxy", "u:p@proxy.example:8080")
+        .env("ALL_PROXY", "socks5://u:p@proxy.example:1080")
+        .env("HTTP_PROXY", "http://proxy.example:8080")
+        .env("NO_PROXY", "localhost");
+    super::drop_credentialed_proxies(&mut command);
+    let value = |name: &str| {
+        command
+            .get_envs()
+            .find(|(key, _)| *key == name)
+            .and_then(|(_, value)| value)
+            .map(|value| value.to_string_lossy().into_owned())
+    };
+    for name in ["HTTPS_PROXY", "https_proxy", "ALL_PROXY"] {
+        assert_eq!(value(name), None, "{name}");
+    }
+    assert_eq!(
+        value("HTTP_PROXY").as_deref(),
+        Some("http://proxy.example:8080")
+    );
+    assert_eq!(value("NO_PROXY").as_deref(), Some("localhost"));
 }

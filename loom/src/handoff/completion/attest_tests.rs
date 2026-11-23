@@ -103,6 +103,28 @@ fn attestation_key_refuses_group_readable_file() {
 }
 
 #[test]
+fn attestation_key_refuses_group_writable_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join(ATTESTATION_KEY_FILE);
+    std::fs::write(&path, [7; 32]).unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o620)).unwrap();
+
+    let error = attestation_key(dir.path()).err().expect("expected refusal");
+    assert!(error.to_string().contains("writable by group or other"));
+}
+
+#[test]
+fn attestation_key_refuses_world_writable_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join(ATTESTATION_KEY_FILE);
+    std::fs::write(&path, [7; 32]).unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o602)).unwrap();
+
+    let error = attestation_key(dir.path()).err().expect("expected refusal");
+    assert!(error.to_string().contains("writable by group or other"));
+}
+
+#[test]
 fn every_attestation_kind_round_trips() {
     let key = AttestationKey::from_bytes([3; 32]);
     let mut evidence = evidence();

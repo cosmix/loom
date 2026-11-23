@@ -27,6 +27,10 @@ use super::helpers::test_support::git_repo::{self, git, TestRepo};
 use super::relay_scratch::{create_scratch_dir, tempdir_outside_tmp};
 
 const MESSAGE: &str = "test(e2e): commit a.txt";
+/// The `tool_use_id` of the hook call; `loom-relay-guard.sh` writes
+/// `.pre-<id>` before a control call, and the relay refuses a control ticket
+/// without it.
+const TOOL_USE_ID: &str = "toolu_e2e";
 const FAKE_SIGNER: &str = r#"#!/bin/sh
 cat >/dev/null
 fd=2
@@ -171,6 +175,8 @@ fn stage_and_request_commit(fx: &Fixture) -> Staged {
     let head = git(&fx.worktree_path, &["rev-parse", "HEAD"]);
     let tree = git(&fx.worktree_path, &["write-tree"]);
 
+    fs::write(fx.scratch_dir.join(format!(".pre-{TOOL_USE_ID}")), b"")
+        .expect("write the call marker");
     let mut command = fx.session_loom();
     command.args(["stage", "commit", &fx.stage_id, "-m", MESSAGE]);
     let output = command
@@ -199,6 +205,7 @@ fn stage_and_request_commit(fx: &Fixture) -> Staged {
 fn run_hook(fx: &Fixture, staged: &Staged) -> Output {
     let payload = serde_json::json!({
         "tool_name": "Bash",
+        "tool_use_id": TOOL_USE_ID,
         "tool_input": {"command": format!("loom stage commit {} -m \"{MESSAGE}\"", fx.stage_id)},
         "tool_response": {
             "stdout": String::from_utf8_lossy(&staged.output.stdout),

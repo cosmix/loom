@@ -3,9 +3,11 @@ use super::{
 };
 use crate::fs::{safe_read, safe_replace};
 use anyhow::{bail, Context, Result};
+use std::ffi::OsStr;
 use std::io;
+use std::os::unix::ffi::OsStrExt;
 use std::os::unix::io::{AsRawFd, FromRawFd, OwnedFd, RawFd};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 mod tree;
 pub use tree::{safe_remove_empty_dir_in_workdir, safe_remove_tree_in_workdir};
@@ -111,6 +113,14 @@ pub fn safe_rename_in_workdir(dirfd: RawFd, from: &Path, to: &Path) -> Result<()
     Ok(())
 }
 
+fn components_path(components: &[Vec<u8>]) -> PathBuf {
+    let mut path = PathBuf::new();
+    for component in components {
+        path.push(OsStr::from_bytes(component));
+    }
+    path
+}
+
 fn parent_dirfd_for(dirfd: RawFd, components: &[Vec<u8>]) -> Result<OwnedFd> {
     if components.len() == 1 {
         // SAFETY: dup duplicates a valid fd, returning a fresh owned fd.
@@ -123,12 +133,7 @@ fn parent_dirfd_for(dirfd: RawFd, components: &[Vec<u8>]) -> Result<OwnedFd> {
         return Ok(unsafe { OwnedFd::from_raw_fd(dup) });
     }
     let parent_components = &components[..components.len() - 1];
-    let parent_path = parent_components
-        .iter()
-        .map(|c| String::from_utf8_lossy(c).into_owned())
-        .collect::<Vec<_>>()
-        .join("/");
-    open_dir_safely(dirfd, Path::new(&parent_path))
+    open_dir_safely(dirfd, &components_path(parent_components))
 }
 
 /// Atomically replace a file beneath `project_root` through an anchored parent.
@@ -179,13 +184,9 @@ pub fn safe_write_with_mode_in_workdir(
 /// components and absolute prefixes.
 pub fn safe_remove_in_workdir(dirfd: RawFd, relpath: &Path) -> Result<()> {
     let components = validate_relpath(relpath)?;
-    let parent = components[..components.len() - 1]
-        .iter()
-        .map(|c| String::from_utf8_lossy(c).into_owned())
-        .collect::<Vec<_>>()
-        .join("/");
+    let parent = components_path(&components[..components.len() - 1]);
     let final_name = components.last().unwrap();
-    let parent_fd = if parent.is_empty() {
+    let parent_fd = if parent.as_os_str().is_empty() {
         // SAFETY: dup duplicates a valid fd, returning a fresh owned fd.
         let dup = unsafe { libc::dup(dirfd) };
         if dup < 0 {
@@ -195,7 +196,7 @@ pub fn safe_remove_in_workdir(dirfd: RawFd, relpath: &Path) -> Result<()> {
         // is transferred exactly once to `OwnedFd`.
         unsafe { OwnedFd::from_raw_fd(dup) }
     } else {
-        open_dir_safely(dirfd, Path::new(&parent))?
+        open_dir_safely(dirfd, &parent)?
     };
     let c = path_to_cstring(final_name)?;
     // SAFETY: parent_fd is valid; c is NUL-terminated.
@@ -265,3 +266,6 @@ fn enforce_size_limit(content: &[u8]) -> Result<&[u8]> {
     }
     Ok(content)
 }
+
+#[cfg(all(test, not(target_os = "macos")))]
+mod non_utf8_tests;

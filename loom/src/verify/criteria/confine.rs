@@ -330,8 +330,9 @@ fn prepare(
 /// boundary denies. Every confined command gets them, a stage cache or not:
 /// through the shim, each `cc` starts an `xcodebuild` lookup, and a cold
 /// build with C dependencies outruns its timeout.
-fn apply_confined_environment(command: &mut Command) -> Result<()> {
+pub(super) fn apply_confined_environment(command: &mut Command) -> Result<()> {
     crate::process::apply_stage_environment(command);
+    crate::stage_cache::drop_credentialed_proxies(command);
     let executable = std::env::current_exe().context("resolve the running Loom executable")?;
     let directory = executable
         .parent()
@@ -340,7 +341,7 @@ fn apply_confined_environment(command: &mut Command) -> Result<()> {
         .get_envs()
         .find_map(|(key, value)| (key == "PATH").then_some(value).flatten())
         .map(OsStr::to_os_string);
-    // `detect` looks the tools up once per process and caches the answer.
+    // `detect` caches a found answer and retries a failed one after a minute.
     let developer = DeveloperTools::detect()
         .map(|tools| tools.environment(host_path.as_ref()))
         .unwrap_or_default();

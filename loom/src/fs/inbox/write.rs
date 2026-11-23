@@ -54,6 +54,9 @@ pub fn write_entry(work_dir: &Path, entry: &InboxEntry) -> Result<WriteOutcome> 
     safe_create_dir_all_in_workdir(raw, &tmp_rel, 0o700)?;
 
     let session_dir = session_inbox(work_dir, &entry.session_id)?;
+    // A soft cap: concurrent relay hooks of one session each count before any
+    // links, so the inbox can overshoot by the number of concurrent writers.
+    // Nothing downstream needs the exact bound.
     if count_json_entries(&session_dir)? >= MAX_PENDING_ENTRIES {
         return Ok(WriteOutcome::Capacity);
     }

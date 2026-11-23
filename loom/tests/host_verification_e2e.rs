@@ -80,8 +80,15 @@ fn daemon_env() -> DaemonEnv {
     }
 }
 
+/// The `tool_use_id` of every hook call here; `loom-relay-guard.sh` writes
+/// `.pre-<id>` before a control call, and the relay refuses a control ticket
+/// without it.
+const TOOL_USE_ID: &str = "toolu_e2e";
+
 /// `loom stage complete stage-a` as the stage session.
 fn complete_in_session(fx: &Fixture) -> Output {
+    std::fs::write(fx.scratch_dir.join(format!(".pre-{TOOL_USE_ID}")), b"")
+        .expect("write the call marker");
     fx.session_loom()
         .args(["stage", "complete", STAGE])
         .stdin(Stdio::null())
@@ -100,6 +107,7 @@ fn first_line(output: &Output) -> String {
 fn run_hook(fx: &Fixture, output: &Output) -> Output {
     let payload = serde_json::json!({
         "tool_name": "Bash",
+        "tool_use_id": TOOL_USE_ID,
         "tool_input": {"command": format!("loom stage complete {STAGE}")},
         "tool_response": {
             "stdout": String::from_utf8_lossy(&output.stdout),

@@ -48,6 +48,7 @@ fn a_tree_holding_its_state_root_protects_it_and_the_control_entries() {
     let control = [".git", ".worktrees", ".claude"].map(|entry| root.join(entry));
     let read_only: Vec<PathBuf> = std::iter::once(state.clone()).chain(control).collect();
     assert_eq!(found.read_only, read_only);
+    assert_eq!(found.pinned, vec![root.join(".loom")]);
     let secrets: Vec<PathBuf> = STATE_ROOT_SECRET_FILES
         .iter()
         .map(|name| state.join(name))
@@ -108,6 +109,29 @@ fn bubblewrap_mounts_the_journals_where_the_link_reaches_them() {
     );
 }
 
+/// Bubblewrap pins the state root's parent with a writable self-bind before
+/// the state root's read-only bind: a later self-bind would cover it.
+#[cfg(target_os = "linux")]
+#[test]
+fn bubblewrap_pins_the_state_roots_parent_before_its_read_only_bind() {
+    let (_tmp, root) = checkout();
+    let mut command = std::process::Command::new("bwrap");
+    super::bind(&mut command, &protected(&root));
+    let args: Vec<String> = command
+        .get_args()
+        .map(|arg| arg.to_string_lossy().into_owned())
+        .collect();
+    let position = |flag: &str, path: PathBuf| {
+        let path = path.to_string_lossy().into_owned();
+        args.windows(3)
+            .position(|w| w[0] == flag && w[1] == path && w[2] == path)
+            .unwrap_or_else(|| panic!("no {flag} {path} in {args:?}"))
+    };
+    let pin = position("--bind", root.join(".loom"));
+    let read_only = position("--ro-bind", root.join(".loom/work"));
+    assert!(pin < read_only, "{args:?}");
+}
+
 /// Each check prints a word only when it got through; a refused write or
 /// read prints nothing, so stdout lists exactly what the command could do.
 fn canary() -> String {
@@ -123,7 +147,9 @@ fn canary() -> String {
          echo \"SECRETS[$(cat {} 2>/dev/null)]\"; \
          echo \"HISTORY[$(cat .loom/work/terminal-history/* 2>/dev/null)]\"; \
          echo \"CONFIG[$(cat .loom/work/config.toml)]\"; \
-         printf note > doc/loom/knowledge/note.md && echo KNOWLEDGE_WRITTEN",
+         printf note > doc/loom/knowledge/note.md && echo KNOWLEDGE_WRITTEN; \
+         mv .loom .loomx 2>/dev/null && echo STATE_PARENT_MOVED; \
+         true",
         secrets.join(" ")
     )
 }
@@ -175,6 +201,8 @@ fn a_knowledge_criterion_cannot_change_the_state_root_or_read_its_secrets() {
 fn assert_only_knowledge_written(root: &std::path::Path) {
     let state = root.join(".loom/work");
     assert!(!state.join("planted").exists());
+    assert!(state.join("config.toml").is_file());
+    assert!(!root.join(".loomx").exists());
     assert_eq!(
         fs::read_to_string(state.join("config.toml")).unwrap(),
         "[plan]\n"
