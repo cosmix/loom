@@ -1,5 +1,6 @@
 //! Pressure review execution and configuration.
 
+mod baseline;
 pub mod codex;
 pub mod config_guard;
 pub mod driver;

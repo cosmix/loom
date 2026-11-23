@@ -39,7 +39,7 @@ impl Rebuilds {
                 id, kind, outcome, ..
             } => self.session_gone(bridge, id, kind, outcome),
             BridgeEvent::Team { id, teammates } => self.team_changed(id, teammates),
-            BridgeEvent::Background { .. } => {}
+            BridgeEvent::Background { .. } | BridgeEvent::InputReturned { .. } => {}
         }
     }
 

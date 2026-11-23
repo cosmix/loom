@@ -13,9 +13,15 @@ fn resolve_repo_root_in(dir: &Path) -> Result<PathBuf> {
     crate::git::revision::toplevel(dir)
 }
 
-/// Temp path Codex's captured output is written to (per driver process).
-pub(super) fn codex_log_path() -> PathBuf {
-    std::env::temp_dir().join(format!("loom-pressure-codex-{}.log", std::process::id()))
+/// Path Codex's captured output is written to (per driver process), inside the repository's own
+/// pressure directory and never the shared temp directory, where another user could plant a
+/// link at the predictable name.
+pub(super) fn codex_log_path(repo_root: &Path) -> PathBuf {
+    repo_root
+        .join(".loom")
+        .join("work")
+        .join("pressure")
+        .join(format!("codex-{}.log", std::process::id()))
 }
 
 /// Marker path the foreground Claude agent creates as its final action to
@@ -36,11 +42,20 @@ pub(super) fn claude_marker_path(repo_root: &Path) -> PathBuf {
 
 #[cfg(test)]
 mod tests {
-    use super::resolve_repo_root_in;
+    use super::{codex_log_path, resolve_repo_root_in};
+    use std::path::Path;
 
     #[test]
     fn rejects_directory_outside_repository() {
         let dir = tempfile::tempdir().unwrap();
         assert!(resolve_repo_root_in(dir.path()).is_err());
+    }
+
+    #[test]
+    fn the_codex_log_is_in_the_repository_pressure_directory() {
+        let repo = Path::new("/repo");
+        let log = codex_log_path(repo);
+        assert!(log.starts_with("/repo/.loom/work/pressure"), "{log:?}");
+        assert!(!log.starts_with(std::env::temp_dir()), "{log:?}");
     }
 }

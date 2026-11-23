@@ -85,6 +85,9 @@ fn accept_start(req: &ApiRequest<'_>) -> Result<(), ApiResponse> {
         ));
     }
     let request: RunStartRequest = req.json()?;
+    let guard = child::jobs(req.ctx)
+        .begin(RunJob::Start)
+        .ok_or_else(|| ApiResponse::error(409, "busy", "another run job is in progress"))?;
     let state = super::state::state_view(req.ctx)
         .map_err(|error| ApiResponse::error(500, "internal", &error.to_string()))?;
     let steps = admit(&state, &request).map_err(|code| {
@@ -97,9 +100,6 @@ fn accept_start(req: &ApiRequest<'_>) -> Result<(), ApiResponse> {
         };
         ApiResponse::error(409, code, message)
     })?;
-    let guard = child::jobs(req.ctx)
-        .begin(RunJob::Start)
-        .ok_or_else(|| ApiResponse::error(409, "busy", "another run job is in progress"))?;
     let ctx = req
         .ctx
         .extensions()

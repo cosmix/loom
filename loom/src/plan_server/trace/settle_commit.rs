@@ -15,7 +15,7 @@ use std::time::Duration;
 use anyhow::{ensure, Context, Result};
 
 use crate::git::runner::run_git;
-use crate::git::user_git::{literal, run_literal, user_git, IndexBefore};
+use crate::git::user_git::{literal, run_literal, untracked, user_git, IndexBefore};
 use crate::models::dispute::truncate_to_byte_limit;
 use crate::process::{run_bounded_terminating_output, ProcessTimeoutError};
 
@@ -116,8 +116,20 @@ pub(super) fn committed_bytes(root: &Path, sha: &str, path: &Path) -> Result<Opt
     let path = path
         .to_str()
         .with_context(|| format!("{} is not UTF-8", path.display()))?;
-    let output = run_git(&["cat-file", "blob", &format!("{sha}:./{path}")], root)?;
-    Ok(output.status.success().then_some(output.stdout))
+    let path = format!("./{path}");
+    let tree = run_git(&["ls-tree", "-z", sha, "--", &path], root)?;
+    ensure!(tree.status.success(), "{}", refusal("git ls-tree", &tree));
+    // The entry starts with mode, type and object ID, followed by a tab and the path.
+    if tree.stdout.split(|byte| *byte == b' ').nth(1) != Some(b"blob") {
+        return Ok(None);
+    }
+    let output = run_git(&["cat-file", "blob", &format!("{sha}:{path}")], root)?;
+    ensure!(
+        output.status.success(),
+        "{}",
+        refusal("git cat-file", &output)
+    );
+    Ok(Some(output.stdout))
 }
 
 /// Up to `git add` nothing has changed, so an error ends the settle there; from it on, every
@@ -236,18 +248,6 @@ fn differs_from_head(root: &Path, paths: &[&str]) -> Result<bool> {
         "--",
     ];
     Ok(!listed(root, "git status", &status, paths)?.is_empty())
-}
-
-/// The paths among `paths` git does not track (nor ignore), relative to `root` as given.
-fn untracked(root: &Path, paths: &[&str]) -> Result<Vec<String>> {
-    let others = ["ls-files", "-z", "--others", "--exclude-standard", "--"];
-    let listing = listed(root, "git ls-files", &others, paths)?;
-    let listing = String::from_utf8(listing).context("git listed a non-UTF-8 path")?;
-    Ok(listing
-        .split('\0')
-        .filter(|path| !path.is_empty())
-        .map(str::to_owned)
-        .collect())
 }
 
 /// What `step` (`args` over `paths`) prints, once it succeeded.

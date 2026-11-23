@@ -35,9 +35,8 @@ pub(super) fn claude_args(slash: &str, marker: &Path, model: &str, effort: &str)
 
 /// Print the last `max_bytes` of a log file to stderr (for surfacing failures).
 pub(super) fn print_log_tail(log_path: &Path, max_bytes: usize) {
-    if let Ok(bytes) = std::fs::read(log_path) {
-        let start = bytes.len().saturating_sub(max_bytes);
-        eprintln!("{}", String::from_utf8_lossy(&bytes[start..]));
+    if let Some(bytes) = crate::pressure::codex_run::log_tail(log_path, max_bytes as u64) {
+        eprintln!("{}", String::from_utf8_lossy(&bytes));
     }
 }
 

@@ -111,6 +111,28 @@ fn default_models() -> PressureModels {
 }
 
 #[test]
+fn test_render_dry_run_quotes_arguments_with_spaces() {
+    let repo = Path::new("/repo");
+    let out = render_dry_run(
+        1,
+        "doc/plans/PLAN-foo.md",
+        &PathBuf::from("/repo/doc/plans/codex-PLAN-foo.md"),
+        repo,
+        &PathBuf::from("/repo/.loom/work/pressure/claude-1.done"),
+        &PathBuf::from("/repo/.loom/work/pressure/codex-1.log"),
+        &default_models(),
+    );
+    let codex = out
+        .lines()
+        .find(|line| line.trim_start().starts_with("codex "))
+        .unwrap();
+    assert!(
+        codex.ends_with("-C /repo '$pressure doc/plans/PLAN-foo.md'"),
+        "{codex}"
+    );
+}
+
+#[test]
 fn test_render_dry_run_shows_real_argv() {
     let report = PathBuf::from("/repo/doc/plans/codex-PLAN-foo.md");
     let repo = Path::new("/repo");
@@ -133,7 +155,7 @@ fn test_render_dry_run_shows_real_argv() {
     assert!(out.contains("/pressure doc/plans/PLAN-foo.md"));
     assert!(out.contains(
         "codex exec --sandbox workspace-write -m gpt-6.2-sol -c model_reasoning_effort=xhigh \
-         -C /repo $pressure doc/plans/PLAN-foo.md"
+         -C /repo '$pressure doc/plans/PLAN-foo.md'"
     ));
     assert!(out.contains("/address doc/plans/PLAN-foo.md"));
     assert!(out.contains("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1"));

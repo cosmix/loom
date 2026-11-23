@@ -95,10 +95,7 @@ fn a_failed_record_and_teardown_after_the_spawn_keep_the_only_handle() {
     assert_eq!(failure.map(|f| f.kind), Some(FailureKind::Spawn));
     let next = h.request(Authoring, OPENING, false);
     h.bridge.start_session(next).unwrap();
-    assert!(
-        s.dir.record().is_file(),
-        "the next start removed the record"
-    );
+    assert!(s.dir.record().exists(), "the next start removed the record");
     h.host.fail_teardown(false);
     wait_until("the directory removed", || !s.dir.path().exists());
 }

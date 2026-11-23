@@ -11,7 +11,6 @@ use super::registry::ChildRecord;
 use super::session::{Phase, Queued, Session};
 use super::{Bridge, BridgeConfig, BridgeError, BridgeEvent, EndCause, EndMode, SendOutcome};
 use crate::plan_session::attachments::{parse_unwrapped, Attachment};
-use crate::plan_session::input::{check_delivered, sanitize};
 use crate::plan_session::kind::SessionKind;
 use crate::plan_session::model::{ChatDelta, DenyReason, NoticeKind, SessionState};
 use crate::plan_session::permission::{write_answer, Answer, Behavior};
@@ -134,20 +133,6 @@ impl Bridge {
             }
         }
         failed
-    }
-
-    /// `text` is the formatted message (attachment block included); `attachments` its chips.
-    pub fn send(
-        &self,
-        id: &str,
-        text: String,
-        attachments: Vec<Attachment>,
-    ) -> Result<SendOutcome, BridgeError> {
-        let text = sanitize(&text);
-        check_delivered(&text).map_err(BridgeError::Input)?;
-        let sent = self.with_session(id, |session, step| session.send(text, attachments, step));
-        self.flush();
-        sent.unwrap_or(Err(BridgeError::NoSession))
     }
 
     /// Remove a queued message; the one being delivered is no longer queued.
@@ -290,7 +275,7 @@ impl Bridge {
 
 impl Session {
     /// Neither ending nor ended: sends and withdrawals are taken.
-    fn accepts_input(&self) -> bool {
+    pub(super) fn accepts_input(&self) -> bool {
         let ended = matches!(self.state(), SessionState::Ended | SessionState::Failed);
         let torn = matches!(self.phase, Phase::TearingDown);
         self.flow.end.is_none() && self.active() && !torn && !ended

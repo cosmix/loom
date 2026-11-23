@@ -27,7 +27,7 @@
 //! sandbox's writable root (the child's cwd is `repo_root`), so the marker is
 //! re-homed there instead.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use colored::Colorize;
 use std::path::Path;
 
@@ -84,6 +84,11 @@ fn render_dry_run(
     out
 }
 
+/// `args` as one shell-quoted display line: an argument holding spaces or `$` stays one word.
+fn words(args: &[String]) -> String {
+    crate::testrun::command::shell_words(args.iter().map(String::as_str))
+}
+
 /// Render the dry-run preview lines for one step (numbered `n`), appending to
 /// `out`. Split out of [`render_dry_run`] purely to keep that function under
 /// the maintainability line limit.
@@ -107,17 +112,32 @@ fn render_dry_run_step(
             ));
             out.push_str(&format!(
                 "       {AGENT_TEAMS_ENV}=1 claude {}\n",
-                claude_args(&claude, marker, &models.claude, &models.claude_effort).join(" ")
+                words(&claude_args(
+                    &claude,
+                    marker,
+                    &models.claude,
+                    &models.claude_effort
+                ))
             ));
             out.push_str(&format!(
                 "       codex {}\n",
-                codex_args(repo_root, &codex, &models.codex, &models.codex_effort).join(" ")
+                words(&codex_args(
+                    repo_root,
+                    &codex,
+                    &models.codex,
+                    &models.codex_effort
+                ))
             ));
         }
         Step::Address(slash) => {
             out.push_str(&format!(
                 "  {n}. {AGENT_TEAMS_ENV}=1 claude {}\n",
-                claude_args(&slash, marker, &models.address, &models.address_effort).join(" ")
+                words(&claude_args(
+                    &slash,
+                    marker,
+                    &models.address,
+                    &models.address_effort
+                ))
             ));
         }
     }
@@ -206,7 +226,7 @@ pub fn execute(args: PressureArgs) -> Result<()> {
     let resolved = resolve_plan_path(&args.plan, &repo_root)?;
     let report = codex_report_path(&resolved.fs_path);
     let marker = claude_marker_path(&repo_root);
-    let codex_log = codex_log_path();
+    let codex_log = codex_log_path(&repo_root);
 
     if args.dry_run {
         print!(
@@ -222,6 +242,9 @@ pub fn execute(args: PressureArgs) -> Result<()> {
             )
         );
         return Ok(());
+    }
+    if let Some(dir) = codex_log.parent() {
+        std::fs::create_dir_all(dir).with_context(|| format!("cannot create {}", dir.display()))?;
     }
     let claude_path = find_claude_path()?;
     let codex_path = find_codex_path()?;

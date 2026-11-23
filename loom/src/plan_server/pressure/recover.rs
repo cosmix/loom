@@ -6,10 +6,17 @@
 //! Missing evidence never destroys: a process whose start time cannot be verified is left alone.
 
 use std::path::{Component, Path};
+use std::thread;
+use std::time::{Duration, Instant};
 
+use super::baseline;
+use super::codex::{CONFIG_CHANGED, NOT_EXITED};
+use super::config_guard::{changed, snapshot};
 use crate::plan_server::lifecycle::safe;
 use crate::plan_session::bridge::RecoveryReport;
 use crate::plan_session::kind::SessionKind;
+use crate::planning::guidance::StartBlocks;
+use crate::planning::runtime::RuntimePaths;
 use crate::pressure::paths::codex_report_path;
 use crate::process::{
     terminate_verified, verify_process_identity, IdentityStatus, ProcessIdentity,
@@ -89,5 +96,98 @@ fn delete_report(root: &Path, plan: &Path) {
     let report = codex_report_path(&root.join(plan));
     if let Err(error) = crate::claude::remove_if_exists(&report) {
         tracing::warn!(%error, "cannot delete an interrupted run's Codex report");
+    }
+}
+
+/// How often a Codex recovery just signalled is looked at.
+const EXIT_POLL: Duration = Duration::from_millis(100);
+
+/// The configuration check the last server never made: when a baseline file exists, wait for
+/// the recovered Codex children to exit (recovery has only signalled them), compare, and block
+/// later launches on a change. The terminal line, or `None` when no baseline exists or nothing
+/// changed. A run that started during the wait does not cancel the check: the block is still
+/// written, and only the new run's baseline file stays. A block that could not be saved keeps
+/// the baseline for the next start.
+pub(super) fn check_baseline(
+    root: &Path,
+    runtime: &RuntimePaths,
+    report: &RecoveryReport,
+    grace: Duration,
+) -> Option<String> {
+    let (seen, before) = match baseline::load(runtime) {
+        Ok(None) => return None,
+        Ok(Some(seen)) => {
+            let parsed = seen.snapshot();
+            (Some(seen), parsed)
+        }
+        Err(error) => (None, Err(error)),
+    };
+    if codex_still_running(report, grace) {
+        return block_and_report(runtime, seen.as_ref(), NOT_EXITED.to_owned(), &[]);
+    }
+    let compared = before.and_then(|before| {
+        let after = snapshot(root)?;
+        Ok(changed(&before, &after))
+    });
+    let (reason, paths) = match compared {
+        Ok(paths) if paths.is_empty() => {
+            if let Err(error) = baseline::settle(runtime, seen.as_ref(), || Ok(())) {
+                tracing::warn!(%error, "cannot remove the configuration baseline");
+            }
+            return None;
+        }
+        Ok(paths) => (format!("{CONFIG_CHANGED}: {}", paths.join(", ")), paths),
+        Err(error) => {
+            let why = format!("cannot be checked after the last server stopped ({error:#})");
+            (format!("{CONFIG_CHANGED}: {why}"), Vec::new())
+        }
+    };
+    block_and_report(runtime, seen.as_ref(), reason, &paths)
+}
+
+/// Wait up to `grace` for every Codex child of a recovered pressure session to leave;
+/// `true` when one is still alive or cannot be verified.
+fn codex_still_running(report: &RecoveryReport, grace: Duration) -> bool {
+    let children: Vec<ProcessIdentity> = report
+        .torn_down
+        .iter()
+        .chain(&report.closed)
+        .filter(|session| matches!(session.kind, SessionKind::Pressure { .. }))
+        .flat_map(|session| &session.children)
+        .filter(|child| child.label == "codex")
+        .map(|child| child.identity())
+        .collect();
+    let deadline = Instant::now() + grace;
+    loop {
+        let alive = children
+            .iter()
+            .any(|identity| !matches!(verify_process_identity(*identity), IdentityStatus::Dead));
+        if !alive {
+            return false;
+        }
+        if Instant::now() >= deadline {
+            return true;
+        }
+        thread::sleep(EXIT_POLL);
+    }
+}
+
+/// Persist the block; the baseline goes only once the block is saved, so a failed save is
+/// checked again at the next start. A baseline another run replaced meanwhile is left in place,
+/// but the block is still written.
+fn block_and_report(
+    runtime: &RuntimePaths,
+    seen: Option<&baseline::Loaded>,
+    reason: String,
+    changed: &[String],
+) -> Option<String> {
+    match baseline::settle(runtime, seen, || {
+        StartBlocks::block(runtime, &reason, changed)
+    }) {
+        Ok(_) => Some(format!("pressure run: {}", safe(&reason))),
+        Err(error) => Some(format!(
+            "pressure run: the configuration block was not saved: {}",
+            safe(&format!("{error:#}"))
+        )),
     }
 }

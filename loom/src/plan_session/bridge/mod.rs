@@ -24,6 +24,7 @@ mod launch;
 mod local;
 mod opening;
 mod owner;
+mod pending;
 mod publish;
 mod rebuilding;
 mod recovery;
@@ -50,6 +51,10 @@ mod fixture_replay;
 #[cfg(test)]
 mod harness;
 #[cfg(test)]
+mod pending_contract_tests;
+#[cfg(test)]
+mod record_contract_tests;
+#[cfg(test)]
 mod slash_contract_tests;
 #[cfg(test)]
 mod tests;
@@ -73,6 +78,8 @@ mod tests_lifecycle;
 mod tests_match_key;
 #[cfg(test)]
 mod tests_opening;
+#[cfg(test)]
+mod tests_pending;
 #[cfg(test)]
 mod tests_permission;
 #[cfg(test)]
@@ -105,7 +112,8 @@ pub use self::error::BridgeError;
 use self::host::SessionHost;
 pub use self::launch::{GuidanceFn, LaunchGuidance, StartRequest};
 pub use self::opening::OPENING_NOT_SUBMITTED;
-use self::registry::{transcripts_of, ChildRecord, Feeds};
+pub use self::recovery::{RecoveredSession, RecoveryReport};
+use self::registry::{transcripts_of, Feeds};
 use self::session::Inner;
 use super::kind::SessionKind;
 use super::model::{ChangedFile, ChatDelta, ChatSnapshot, SessionState};
@@ -169,6 +177,12 @@ pub enum BridgeEvent {
         id: String,
         teammates: Vec<team::TeammateStatus>,
     },
+    /// Recovery found input the last server accepted and never saw confirmed: return it to
+    /// the holder, never replay it.
+    InputReturned {
+        id: String,
+        texts: Vec<String>,
+    },
     Ended {
         id: String,
         kind: SessionKind,
@@ -220,21 +234,6 @@ pub trait TurnPins: Send + Sync {
     /// The paths the turn changed, with their hash at the turn's start.
     fn end_turn(&self, turn: &str) -> Vec<(String, Option<String>)>;
 }
-/// A session recovery ended.
-#[derive(Debug, Clone, PartialEq)]
-pub struct RecoveredSession {
-    pub id: String,
-    pub kind: SessionKind,
-    pub children: Vec<ChildRecord>,
-}
-/// What `recover` found in the sessions directory.
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct RecoveryReport {
-    pub closed: Vec<RecoveredSession>,
-    pub torn_down: Vec<RecoveredSession>,
-    /// `(id, socket, why)`; the socket is empty when no record named one.
-    pub left_alone: Vec<(String, String, String)>,
-}
 /// A session's transcripts, for plan 10's cost reader.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Transcripts {
@@ -252,6 +251,8 @@ pub struct Bridge {
     listeners: Mutex<Vec<Listener<BridgeEvent>>>,
     chat_listeners: Mutex<Vec<Listener<ChatDelta>>>,
     flushing: AtomicBool,
+    /// Orders `pending.json` writes; taken before the bridge lock, never inside it.
+    pending_io: Mutex<()>,
 }
 impl Bridge {
     pub fn new(
@@ -267,6 +268,7 @@ impl Bridge {
             listeners: Mutex::default(),
             chat_listeners: Mutex::default(),
             flushing: AtomicBool::new(false),
+            pending_io: Mutex::new(()),
         })
     }
     /// The driver thread: one tick every `config.tick` until `stop` is set.

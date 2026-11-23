@@ -58,6 +58,12 @@ fn the_open_chat_ends_first_and_its_queue_returns_to_the_holder() {
     );
     wait_until("the queued texts", || !returned(&tab.frames()).is_empty());
     assert_eq!(returned(&tab.frames()), [json!(["one", "two"])]);
+    let frames = tab.frames();
+    let returned_frames = frames.iter().filter(|f| f["frame"] == "queue_returned");
+    assert!(returned_frames.clone().count() > 0);
+    assert!(returned_frames
+        .into_iter()
+        .all(|f| f["cause"] == "pressure"));
     let runs = tab
         .frames()
         .into_iter()

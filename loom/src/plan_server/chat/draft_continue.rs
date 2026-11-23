@@ -5,7 +5,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use super::dispatch::{bridge, chat_state, launch, take_authoring, ChatOwner, Outcome};
-use super::draft_cmd::{known_draft, on_confirm, writable, SIZE_MISMATCH};
+use super::draft_cmd::{known_draft, writable, SIZE_MISMATCH};
 use super::drafts::{self, Draft, Seed};
 use super::kickoff_cmd::record_owner;
 use super::lock;
@@ -67,6 +67,7 @@ fn continue_draft(
         attachments: inputs,
         shape: draft.shape.clone(),
         size: draft.size,
+        target: target.map(str::to_owned),
     };
     if let Err(error) = drafts::create(ctx, state, &id, seed) {
         // A running session with no draft is lost at the next restart: end it and refuse.
@@ -75,9 +76,8 @@ fn continue_draft(
         }
         return Err(error);
     }
-    if let (Some(grant), Some(target)) = (&grant, target) {
+    if let (Some(grant), Some(_)) = (&grant, target) {
         record_owner(bridge, &id, grant.size, &grant.name);
-        on_confirm(ctx, state, &id, target);
     }
     announce_seeded(ctx, state, &id, draft, target);
     drafts::remove(ctx, state, &draft.session);

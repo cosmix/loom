@@ -59,10 +59,9 @@ pub(crate) fn now() -> u64 {
         .map_or(0, |elapsed| elapsed.as_secs())
 }
 
-/// Store `body` under the first [`ID_LEN`] hex characters of its sha256, with the extension of
-/// `media_type`. A file already stored under that id is kept and counts nothing against the
-/// cap; the sidecar is written anew either way, so `name` and `stored_at` are the latest
-/// upload's.
+/// Store `body` under the first [`ID_LEN`] hex characters of its sha256. The first media type
+/// of a content id wins, preserving the file and its extension. Reusing a file needs no room
+/// under the cap, and the sidecar keeps the latest upload's `name` and `stored_at`.
 pub(super) fn put(
     runtime_dir: &Path,
     name: &str,
@@ -88,19 +87,26 @@ pub(super) fn put_within(
     let dir = runtime_dir.join(ATTACHMENTS_DIR);
     let dirfd = safe_open_dirfd(&dir)?;
     let id = crate::utils::sha256_hex(body)[..ID_LEN].to_owned();
+    let existing = stored::locate(&dir, &id);
     let data_name = format!("{id}.{ext}");
-    let present = is_regular_no_follow(&dir.join(&data_name));
+    let present = existing.is_some() || is_regular_no_follow(&dir.join(&data_name));
     if !present {
-        let used = stored_bytes(&dir).context("cannot measure the attachment store")?;
-        if used.saturating_add(body.len() as u64) > cap {
-            return Err(StoreError::Full);
+        let fits = || -> Result<bool> {
+            let used = stored_bytes(&dir).context("cannot measure the attachment store")?;
+            Ok(used.saturating_add(body.len() as u64) <= cap)
+        };
+        if !fits()? {
+            sweep_locked(&dir, &dirfd, now);
+            if !fits()? {
+                return Err(StoreError::Full);
+            }
         }
         publish_in_dir(&dirfd, OsStr::new(&data_name), body, FILE_MODE, true)
             .with_context(|| format!("cannot write {data_name}"))?;
     }
     let sidecar = Sidecar {
         name: name.to_owned(),
-        media_type: media_type.to_owned(),
+        media_type: existing.map_or_else(|| media_type.to_owned(), |(_, stored)| stored.media_type),
         bytes: body.len() as u64,
         stored_at: now,
     };
@@ -164,11 +170,15 @@ pub(super) struct Swept {
 /// directory is an empty store; a file that will not go is counted and logged, never an error.
 pub(super) fn sweep(dir: &Path, now: u64) -> Swept {
     let _lock = lock();
-    let mut swept = Swept::default();
     // The dirfd refuses a symlinked store directory, and every removal goes through it.
     let Ok(dirfd) = safe_open_dirfd(dir) else {
-        return swept;
+        return Swept::default();
     };
+    sweep_locked(dir, &dirfd, now)
+}
+
+fn sweep_locked(dir: &Path, dirfd: &OwnedFd, now: u64) -> Swept {
+    let mut swept = Swept::default();
     let Ok(entries) = fs::read_dir(dir) else {
         return swept;
     };

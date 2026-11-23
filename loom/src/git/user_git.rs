@@ -64,6 +64,22 @@ pub(crate) fn run_literal<S: AsRef<str>>(
     run_pathspecs(root, args, &literal(paths))
 }
 
+/// The paths among `paths` git does not track or ignore, relative to `root`.
+pub(crate) fn untracked(root: &Path, paths: &[&str]) -> Result<Vec<String>> {
+    let args = ["ls-files", "-z", "--others", "--exclude-standard", "--"];
+    names("git ls-files", run_literal(root, &args, paths)).map_err(Error::msg)
+}
+
+/// Remove index entries added for paths that were untracked before the commit attempt.
+pub(crate) fn unstage(root: &Path, added: &[String]) -> Result<(), String> {
+    if added.is_empty() {
+        return Ok(());
+    }
+    // `-f`: the entries are ours, whatever a hook did to the files meanwhile.
+    let args = ["rm", "--cached", "-q", "-f", "--ignore-unmatch", "--"];
+    checked("git rm --cached", run_literal(root, &args, added)).map(|_| ())
+}
+
 /// Loom's own git in `root` with `args`, then `pathspecs` with their magic as written.
 fn run_pathspecs(root: &Path, args: &[&str], pathspecs: &[String]) -> Result<Output> {
     let mut argv = args.to_vec();
@@ -149,9 +165,11 @@ impl IndexBefore {
                 }
             };
         let targets: Vec<&String> = ours.iter().chain(&others).collect();
-        let reset = run_pathspecs(root, &["reset", "-q", "--"], &top_literal(&targets));
-        if let Err(failed) = checked("git reset", reset) {
-            failures.push(failed);
+        if !targets.is_empty() {
+            let reset = run_pathspecs(root, &["reset", "-q", "--"], &top_literal(&targets));
+            if let Err(failed) = checked("git reset", reset) {
+                failures.push(failed);
+            }
         }
         let kept = differing(root, commit, &staged).unwrap_or_else(|failed| {
             failures.push(failed);

@@ -4,7 +4,6 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::io::ErrorKind;
-use std::os::fd::AsRawFd;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -14,8 +13,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::Transcripts;
-use crate::fs::safe_fs::{safe_locked_write_in_workdir, safe_open_dirfd};
 use crate::fs::safe_read::read_bounded;
+use crate::fs::safe_replace::replace_private;
 use crate::plan_session::kind::{SessionDir, SessionKind};
 use crate::plan_session::spool::{SpoolEvent, SpoolReader, Tail};
 use crate::process::{terminate_verified, ProcessIdentity};
@@ -82,11 +81,11 @@ impl ChildRecord {
     }
 }
 
-/// Replace `session.json` whole, under an exclusive lock, refusing symlinks (mode 0600).
+/// Replace `session.json` atomically (temp file and rename, mode 0600); a symlink at the path
+/// is replaced, never followed.
 pub fn write_record(dir: &SessionDir, record: &SessionRecord) -> anyhow::Result<()> {
     let bytes = serde_json::to_vec_pretty(record)?;
-    let fd = safe_open_dirfd(dir.path())?;
-    safe_locked_write_in_workdir(fd.as_raw_fd(), Path::new(RECORD), &bytes)
+    replace_private(dir.path(), Path::new(RECORD), &bytes)
         .with_context(|| format!("cannot write {}", dir.record().display()))
 }
 
