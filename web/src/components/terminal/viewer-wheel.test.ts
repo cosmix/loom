@@ -23,9 +23,12 @@ function viewer(readOnly = true) {
     deltaY: number,
     deltaMode: number = WheelEvent.DOM_DELTA_LINE,
     at: number = (clock += 16),
+    wheelDeltaY?: number,
   ) => {
     const event = new WheelEvent("wheel", { deltaY, deltaMode, bubbles: true, cancelable: true });
     Object.defineProperty(event, "timeStamp", { value: at });
+    if (wheelDeltaY !== undefined)
+      Object.defineProperty(event, "wheelDeltaY", { value: wheelDeltaY });
     clock = at;
     child.dispatchEvent(event);
     return event;
@@ -85,6 +88,50 @@ describe("viewer wheel", () => {
     expect(scroll).toHaveBeenCalledOnce();
     wheel(1);
     expect(scroll.mock.calls).toEqual([[{ pages: -1 }], [{ pages: 1 }]]);
+  });
+
+  it("scrolls trackpad input in proportion to the movement", async () => {
+    const { terminal, scroll, write, wheel } = viewer();
+    terminal.resize(80, 24);
+    await write("\x1b[?1049h");
+    const touch = (lines: number, at?: number) =>
+      wheel(lines, WheelEvent.DOM_DELTA_LINE, at, -lines * 3);
+    // Lead is 6 lines per page. Opposite jitter nets out instead of dropping the lead.
+    touch(2);
+    touch(-1);
+    touch(3);
+    touch(2);
+    expect(scroll.mock.calls).toEqual([[{ pages: 1 }]]);
+    // Fast events accelerate: 8 lines (x3) is four pages, where 1:1 would be one.
+    // The long pause starts a new gesture, so the remainder is zero.
+    touch(8, 20_000);
+    expect(scroll).toHaveBeenLastCalledWith({ pages: 4 });
+    // A huge delta is bounded to one frame and leaves no late scroll behind.
+    touch(500);
+    expect(scroll).toHaveBeenLastCalledWith({ pages: 5 });
+    const calls = scroll.mock.calls.length;
+    touch(1);
+    expect(scroll).toHaveBeenCalledTimes(calls);
+    // Continuous momentum events keep paging with no pause and no time budget.
+    for (let t = 20_100; t < 21_200; t += 100) touch(6, t);
+    expect(scroll.mock.calls.length).toBeGreaterThan(calls + 8);
+  });
+
+  it("leaves classic wheel ticks on the original rules", async () => {
+    const { terminal, scroll, write, wheel } = viewer();
+    terminal.resize(80, 24);
+    await write("\x1b[?1049h");
+    const tick = (lines: number, at?: number) =>
+      wheel(lines, WheelEvent.DOM_DELTA_LINE, at, -Math.sign(lines) * 120);
+    tick(-6, 20_000);
+    expect(scroll).toHaveBeenCalledTimes(1);
+    // Events 200 ms apart are one gesture: the budget does not renew by time.
+    for (let i = 1; i <= 6; i += 1) tick(-24, 20_000 + i * 200);
+    expect(scroll).toHaveBeenCalledTimes(3);
+    // Reversal drops the remainder rather than netting it.
+    tick(-20, 20_000 + 1_400);
+    tick(30, 20_000 + 1_500);
+    expect(scroll).toHaveBeenCalledTimes(3);
   });
 
   it("prevents a zero-delta wheel in View mode without paging", async () => {

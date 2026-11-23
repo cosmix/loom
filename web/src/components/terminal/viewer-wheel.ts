@@ -6,7 +6,12 @@ export interface TerminalScroll {
 
 /** Turns line-sized scroll movement into local scrolling or bounded page requests. */
 export interface ViewerPager {
-  move(lines: number): void;
+  /**
+   * `smooth` marks trackpad-style input: it scrolls in proportion to the movement,
+   * one page per lead distance, instead of the wheel's bounded gesture budget.
+   * Mouse wheels (`smooth` false) keep the original rules.
+   */
+  move(lines: number, smooth?: boolean): void;
   /** Drop the sub-page remainder and the gesture's page count, e.g. when a new gesture starts. */
   reset(): void;
 }
@@ -21,6 +26,17 @@ export function terminalLineHeight(terminal: Terminal, host: HTMLElement): numbe
 export const GESTURE_GAP_MS = 250;
 /** Most pages one wheel gesture may send. */
 export const MAX_PAGES_PER_GESTURE = 3;
+/** Most pages one scroll frame may carry (the bridge rejects more, `protocol.rs`). */
+export const MAX_PAGES_PER_FRAME = 5;
+/** Trackpad acceleration: an event moving this many lines gains one extra multiple of itself. */
+export const ACCEL_LINES = 4;
+/** Largest trackpad acceleration multiplier. */
+export const MAX_ACCEL = 4;
+
+/** Fast trackpad events travel further than slow ones; slow ones stay near 1:1. */
+export function accelerate(lines: number): number {
+  return lines * Math.min(MAX_ACCEL, 1 + Math.abs(lines) / ACCEL_LINES);
+}
 
 export interface ViewerPagerOptions {
   /**
@@ -43,9 +59,10 @@ export function createViewerPager(
       remainder = 0;
       sent = 0;
     },
-    move(delta) {
-      if (Math.sign(delta) !== Math.sign(remainder)) remainder = 0;
-      remainder += delta;
+    move(delta, smooth = false) {
+      if (!(gesture && smooth) && Math.sign(delta) !== Math.sign(remainder)) remainder = 0;
+      remainder +=
+        gesture && smooth && terminal.buffer.active.type !== "normal" ? accelerate(delta) : delta;
       if (terminal.buffer.active.type === "normal") {
         const lines = Math.trunc(remainder);
         remainder -= lines;
@@ -64,14 +81,37 @@ export function createViewerPager(
         if (pages !== 0) scroll({ pages });
         return;
       }
-      const needed = sent === 0 ? Math.max(3, Math.ceil(pageSize / 4)) : pageSize;
-      if (sent >= MAX_PAGES_PER_GESTURE || Math.abs(remainder) < needed) return;
+      const lead = Math.max(3, Math.ceil(pageSize / 4));
+      if (smooth) {
+        // Net movement, so opposite jitter cancels; one page per lead distance.
+        const pages = Math.max(
+          -MAX_PAGES_PER_FRAME,
+          Math.min(MAX_PAGES_PER_FRAME, Math.trunc(remainder / lead)),
+        );
+        // Movement beyond one frame is dropped, not queued as a late scroll.
+        const cap = MAX_PAGES_PER_FRAME * lead;
+        remainder = Math.max(-cap, Math.min(cap, remainder - pages * lead)) % lead;
+        if (pages !== 0) scroll({ pages });
+        return;
+      }
+      const needed = sent === 0 ? lead : pageSize;
+      if (sent >= MAX_PAGES_PER_GESTURE) return;
+      if (Math.abs(remainder) < needed) return;
       const pages = Math.sign(remainder);
       remainder -= pages * needed;
       sent += 1;
       scroll({ pages });
     },
   };
+}
+
+/**
+ * Trackpads report `wheelDeltaY` as a multiple of the pixel delta; a classic wheel
+ * reports whole 120-unit ticks. Absent (non-Chromium) means a classic wheel.
+ */
+function isSmoothWheel(event: WheelEvent): boolean {
+  const ticks = (event as WheelEvent & { wheelDeltaY?: number }).wheelDeltaY;
+  return typeof ticks === "number" && ticks !== 0 && ticks % 120 !== 0;
 }
 
 /** Forward only wheel gestures while stdin remains disabled. */
@@ -104,6 +144,7 @@ export function installViewerWheel(
         : event.deltaMode === WheelEvent.DOM_DELTA_LINE
           ? event.deltaY
           : event.deltaY / terminalLineHeight(terminal, host),
+      isSmoothWheel(event),
     );
   };
   host.addEventListener("wheel", onWheel, { capture: true, passive: false });
