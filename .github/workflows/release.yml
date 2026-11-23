@@ -12,9 +12,13 @@ on:
         default: false
         type: boolean
 
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
   MINISIGN_VERSION: "0.11"
+  MINISIGN_LINUX_SHA256: "f0a0954413df8531befed169e447a66da6868d79052ed7e892e50a4291af7ae0"
 
 jobs:
   release-contract:
@@ -22,7 +26,7 @@ jobs:
     outputs:
       matrix: ${{ steps.contract.outputs.matrix }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Read supported release targets
         id: contract
         shell: bash
@@ -43,38 +47,49 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
 
       - name: Check release asset contract
         shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+          BINARY_NAME: ${{ matrix.binary_name }}
         run: |
           LOOM_INSTALL_LIB_ONLY=1 source ./install.sh
-          expected=$(printf '%s\n' "$RELEASE_ASSETS" | awk -F, -v target='${{ matrix.target }}' '$1 == target {print $4}')
-          test "$expected" = '${{ matrix.binary_name }}'
+          expected=$(printf '%s\n' "$RELEASE_ASSETS" | awk -F, -v target="$TARGET" '$1 == target {print $4}')
+          test "$expected" = "$BINARY_NAME"
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
         with:
+          toolchain: stable
           targets: ${{ matrix.target }}
 
       # No cache: a cache saved under a tag ref is invisible to every later
       # tag, and main never builds the release profile.
       - name: Build release binary
         working-directory: loom
-        run: cargo build --release --target ${{ matrix.target }}
+        env:
+          TARGET: ${{ matrix.target }}
+        run: cargo build --release --target "$TARGET"
 
       - name: Strip binary
-        run: strip loom/target/${{ matrix.target }}/release/loom
+        env:
+          TARGET: ${{ matrix.target }}
+        run: strip "loom/target/$TARGET/release/loom"
 
       - name: Rename binary
+        env:
+          TARGET: ${{ matrix.target }}
+          BINARY_NAME: ${{ matrix.binary_name }}
         run: |
-          cp loom/target/${{ matrix.target }}/release/loom ${{ matrix.binary_name }}
-          chmod +x ${{ matrix.binary_name }}
+          cp "loom/target/$TARGET/release/loom" "$BINARY_NAME"
+          chmod +x "$BINARY_NAME"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: ${{ matrix.binary_name }}
           path: ${{ matrix.binary_name }}
@@ -85,10 +100,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+        with:
+          toolchain: stable
 
       # The suite runs again here because the tag commit builds a release
       # version, which some tests branch on. The flake check is left to CI on
@@ -110,7 +127,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download linux binary artifact
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: loom-linux-x86_64
 
@@ -136,12 +153,12 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           path: artifacts
 
@@ -156,7 +173,8 @@ jobs:
 
       - name: Install minisign
         run: |
-          curl -sL "https://github.com/jedisct1/minisign/releases/download/${MINISIGN_VERSION}/minisign-${MINISIGN_VERSION}-linux.tar.gz" -o minisign.tar.gz
+          curl -fsSL "https://github.com/jedisct1/minisign/releases/download/${MINISIGN_VERSION}/minisign-${MINISIGN_VERSION}-linux.tar.gz" -o minisign.tar.gz
+          echo "${MINISIGN_LINUX_SHA256}  minisign.tar.gz" | sha256sum -c -
           tar -xzf minisign.tar.gz
           sudo mv minisign-linux/x86_64/minisign /usr/local/bin/
           rm -rf minisign.tar.gz minisign-linux
@@ -213,8 +231,10 @@ jobs:
 
       - name: Extract version from tag
         id: version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             VERSION="dev-$(date +%Y%m%d-%H%M%S)"
             TAG="dev-build"
           else
@@ -228,8 +248,10 @@ jobs:
 
       - name: Extract changelog section
         id: changelog
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          if bash scripts/changelog-section.sh CHANGELOG.md "${{ steps.version.outputs.version }}" > changelog_section.md; then
+          if bash scripts/changelog-section.sh CHANGELOG.md "$VERSION" > changelog_section.md; then
             echo "found=true" >> "$GITHUB_OUTPUT"
           else
             echo "found=false" >> "$GITHUB_OUTPUT"
@@ -241,13 +263,15 @@ jobs:
       # "## What's Changed" section after this body. Adding one here duplicates it.
       - name: Generate release notes
         id: release_notes
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          TAG: ${{ steps.version.outputs.tag }}
+          REPO: ${{ github.repository }}
+          CHANGELOG_FOUND: ${{ steps.changelog.outputs.found }}
         run: |
-          cat > release_notes.md << 'RELEASE_NOTES_EOF'
-          ## loom ${{ steps.version.outputs.version }}
+          printf '## loom %s\n\n' "$VERSION" > release_notes.md
 
-          RELEASE_NOTES_EOF
-
-          if [ "${{ steps.changelog.outputs.found }}" = "true" ]; then
+          if [ "$CHANGELOG_FOUND" = "true" ]; then
             cat changelog_section.md >> release_notes.md
             echo "" >> release_notes.md
           fi
@@ -256,17 +280,19 @@ jobs:
           ### Install
 
           ```bash
-          curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/install.sh | bash
+          RELEASE_NOTES_EOF
+          printf 'curl -fsSL https://raw.githubusercontent.com/%s/main/install.sh | bash\n' "$REPO" >> release_notes.md
+          cat >> release_notes.md << 'RELEASE_NOTES_EOF'
           ```
 
           Installs the signed binary for your platform to `~/.local/bin/loom` and runs `loom install-assets`, which writes loom's agents, skills, commands and hooks into `~/.claude/` and `~/.codex/` — the binary alone is not a working install. Requires `jq` and `minisign`.
 
-          Pinned downloads, WSL2 notes, signature verification with minisign and `SHA256SUMS.txt` checksums: [Installation](https://github.com/${{ github.repository }}/blob/${{ steps.version.outputs.tag }}/README.md#1-install-loom). Signed binaries and `.minisig` files are attached below.
           RELEASE_NOTES_EOF
+          printf 'Pinned downloads, WSL2 notes, signature verification with minisign and `SHA256SUMS.txt` checksums: [Installation](https://github.com/%s/blob/%s/README.md#1-install-loom). Signed binaries and `.minisig` files are attached below.\n' "$REPO" "$TAG" >> release_notes.md
 
       - name: Create GitHub Release
         if: ${{ startsWith(github.ref, 'refs/tags/') && (github.event_name != 'workflow_dispatch' || !inputs.dry_run) }}
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3
         with:
           name: loom ${{ steps.version.outputs.version }}
           tag_name: ${{ steps.version.outputs.tag }}

@@ -52,7 +52,7 @@ sys.exit(int(os.environ.get('BUILD_EXIT', '0')))
         path.write_text(content)
         path.chmod(0o755)
 
-    def run_install(self, **overrides):
+    def run_install(self, args=("--skills", "all"), **overrides):
         env = dict(os.environ)
         for key in BUILD_ENV:
             env.pop(key, None)
@@ -65,7 +65,7 @@ sys.exit(int(os.environ.get('BUILD_EXIT', '0')))
             **overrides,
         )
         return subprocess.run(
-            ["bash", str(self.root / "dev-install.sh"), "--skills", "all"],
+            ["bash", str(self.root / "dev-install.sh"), *args],
             env=env, capture_output=True, text=True, timeout=10,
         )
 
@@ -116,6 +116,13 @@ sys.exit(int(os.environ.get('BUILD_EXIT', '0')))
         result = self.run_install(INSTALL_EXIT="9")
         self.assertEqual(result.returncode, 9, result.stderr)
         self.assertFalse((self.root / "signals.trace").exists())
+
+    def test_help_neither_builds_nor_signals(self):
+        result = self.run_install(args=("--help",))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse((self.root / "build.json").exists())
+        self.assertFalse((self.root / "signals.trace").exists())
+        self.assertIn("--help", (self.root / "install.trace").read_text())
 
 
 if __name__ == "__main__":

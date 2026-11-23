@@ -26,7 +26,7 @@ Escalate to `loom-senior-software-engineer` when:
 - Cross-system design is required
 - Choosing between frameworks/tools
 
-## Skills to Leverage
+## Skills to Use
 
 When the brief names skills for this stage, load those first. Otherwise, use these for specialized tasks:
 

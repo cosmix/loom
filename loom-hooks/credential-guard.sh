@@ -43,25 +43,9 @@ source "$(dirname "$0")/_common.sh"
 loom_require_jq "credential-guard.sh"
 
 source "$(dirname "${BASH_SOURCE[0]}")/_bounded.sh"
-INPUT_JSON=$(loom_read_input 5 2>/dev/null || true)
+loom_read_payload_or_block 5 credential-guard.sh
 
 TOOL_NAME=$(printf '%s' "$INPUT_JSON" | jq -r '.tool_name // empty' 2>/dev/null || true)
-
-if [[ -n "$INPUT_JSON" && -z "$TOOL_NAME" ]]; then
-	cat >&2 <<EOF
-
-============================================================
-  LOOM: BLOCKED - File operation metadata could not be parsed
-============================================================
-
-Reason: received non-empty tool input that did not contain a valid tool name.
-
-Retry the file operation so the credential policy can validate its path.
-============================================================
-
-EOF
-	exit 2
-fi
 
 case "$TOOL_NAME" in
 Read | Glob | Grep | Edit | MultiEdit | Write | NotebookEdit) ;;
@@ -572,7 +556,7 @@ deny_read_blocks() {
 		[[ -n "$expanded" ]] || continue
 
 		split_pattern "$expanded"
-		canonical_prefix=$(canonical_existing "$SPLIT_PREFIX" 2>/dev/null || true)
+		canonical_prefix=$(canonical_target "$SPLIT_PREFIX" 2>/dev/null || true)
 		[[ -n "$canonical_prefix" ]] || canonical_prefix="$SPLIT_PREFIX"
 
 		if pattern_matches "$target" "$canonical_prefix" "$SPLIT_REMAINDER"; then

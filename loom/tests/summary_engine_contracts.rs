@@ -6,6 +6,7 @@ use loom::fs::work_dir::PlanConfig;
 use loom::plan_server::summaries::codex_spawner::codex_summary_args;
 use loom::planning::summary::config::SummaryModels;
 use loom::user_config::UserConfig;
+use serial_test::serial;
 use tempfile::TempDir;
 
 /// `UserConfig::load` with `LOOM_HOME` pointing at a home whose `config.toml` is empty.
@@ -23,6 +24,7 @@ fn empty_user_config() -> UserConfig {
 }
 
 #[test]
+#[serial]
 fn summary_models_default_to_haiku_for_documents_and_sonnet_for_overviews() {
     let resolved = SummaryModels::resolve(&PlanConfig::default(), &empty_user_config());
     assert_eq!(resolved.document_model, "haiku", "{resolved:?}");

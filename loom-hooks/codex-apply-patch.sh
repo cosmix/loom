@@ -22,7 +22,11 @@ if ! command -v jq &>/dev/null; then
 fi
 
 source "$(dirname "${BASH_SOURCE[0]}")/_bounded.sh"
-INPUT_JSON=$(loom_read_input 5 2>/dev/null || true)
+if [[ "$MODE" == "pre" ]]; then
+	loom_read_payload_or_block 5 codex-apply-patch.sh
+else
+	INPUT_JSON=$(loom_read_input 5 2>/dev/null || true)
+fi
 
 TOOL_NAME=$(printf '%s' "$INPUT_JSON" | jq -r '.tool_name // empty' 2>/dev/null || true)
 [[ "$TOOL_NAME" == "apply_patch" ]] || exit 0

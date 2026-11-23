@@ -9,6 +9,9 @@ on:
   # A manual run skips the path filter and runs every job.
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 # A newer push to the same branch or pull request supersedes the running one.
 concurrency:
   group: ci-${{ github.ref }}
@@ -36,12 +39,12 @@ jobs:
       shell: ${{ github.event_name == 'workflow_dispatch' && 'true' || steps.filter.outputs.shell }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Filter changed paths
         id: filter
         if: github.event_name != 'workflow_dispatch'
-        uses: dorny/paths-filter@v4
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
         with:
           filters: |
             rust:
@@ -53,6 +56,7 @@ jobs:
               - "commands/**"
               - "skills/**"
               - "codex/skills/**"
+              - "plan-plugin/**"
               - "loom-hooks/**"
               - "web/dist/**"
               - "web/src/api/**"
@@ -71,6 +75,7 @@ jobs:
               - "scripts/**"
               - "install.sh"
               - "dev-install.sh"
+              - "doc/loom/knowledge/**"
               - "loom/.githooks/**"
               - "loom/tests/completion_shell_paths.sh"
               - "skills/loom-auth/SKILL.md"
@@ -86,15 +91,16 @@ jobs:
     if: needs.changes.outputs.rust == 'true'
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
         with:
+          toolchain: stable
           components: clippy, rustfmt
 
       - name: Cache Cargo dependencies
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           workspaces: loom
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -134,33 +140,35 @@ jobs:
             cargo-args: --test '*'
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+        with:
+          toolchain: stable
 
       # One dependency cache for every test and flake-check job on this OS: a
       # job that passes refreshes it for the jobs that failed.
       - name: Cache Cargo dependencies
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           workspaces: loom
           shared-key: tests
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version: stable
 
       - name: Set up Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
         with:
           distribution: temurin
           java-version: "21"
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
         with:
           gradle-version: "8.10.2"
 
@@ -174,15 +182,15 @@ jobs:
           esac
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "22"
 
       - name: Set up Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
 
       # The uv and bun confinement tests skip when their tool is not on PATH
       # and fail when the variable naming it points at no file. Naming both
@@ -193,7 +201,7 @@ jobs:
           echo "LOOM_TEST_BUN_BIN=$(command -v bun)" >> "$GITHUB_ENV"
 
       - name: Set up sccache
-        uses: mozilla-actions/sccache-action@v0.0.9
+        uses: mozilla-actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad # v0.0.9
 
       - name: Install ccache
         run: |
@@ -248,13 +256,15 @@ jobs:
     if: needs.changes.outputs.rust == 'true'
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+        with:
+          toolchain: stable
 
       - name: Cache Cargo dependencies
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           workspaces: loom
           shared-key: tests
@@ -273,13 +283,15 @@ jobs:
     timeout-minutes: 90
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+        with:
+          toolchain: stable
 
       - name: Cache Cargo dependencies
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           workspaces: loom
           shared-key: tests
@@ -299,15 +311,16 @@ jobs:
     if: needs.changes.outputs.rust == 'true'
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
         with:
+          toolchain: stable
           components: clippy
 
       - name: Cache Cargo dependencies
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           workspaces: loom
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -330,7 +343,7 @@ jobs:
     if: needs.changes.outputs.shell == 'true'
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Parse every shell hook
         run: ./scripts/check-hook-syntax.sh
@@ -344,12 +357,17 @@ jobs:
           sudo ln -sf "$(command -v fdfind)" /usr/local/bin/fd
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+        with:
+          toolchain: stable
 
       # The real-binary hook tests skip without a current binary; a skip here
       # would be a silent pass, so the steps below require one.
       - name: Build the loom binary
         run: cargo build --locked --bin loom --manifest-path loom/Cargo.toml
+
+      - name: Knowledge check
+        run: loom/target/debug/loom knowledge check --strict --baseline doc/loom/knowledge/check-baseline.txt
 
       - name: Run the hook tests
         run: LOOM_HOOK_TEST_REQUIRE_BINARY=1 bash loom-hooks/tests/run-all.sh
@@ -365,11 +383,17 @@ jobs:
       - name: Development installer regression
         run: python3 -m unittest discover -s scripts/tests -p test_dev_install.py
 
+      - name: Installer regression
+        run: python3 -m unittest discover -s scripts/tests -p test_install.py
+
+      - name: Workflow regression
+        run: python3 -m unittest discover -s scripts/tests -p test_workflows.py
+
       - name: Changelog section priority regression
         run: bash scripts/tests/changelog-section-priority.sh
 
       - name: Install bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
 
       # The skill examples build against tokio offline, from the registry cache.
       # loom enables no tokio macros, so its own fetch leaves tokio-macros out;
@@ -394,9 +418,7 @@ jobs:
             *SKIP*) echo "expected every completion check to run"; exit 1 ;;
           esac
 
-  # The hooks target macOS's bash 3.2, but the runner image puts a Homebrew
-  # bash 5 first on PATH; the symlink and the version check make the job run
-  # under 3.2 and fail rather than pass under 5.
+  # Use the system bash 3.2 and require the real-binary hook test on macOS.
   hooks-macos:
     name: Hook tests (macos)
     runs-on: macos-latest
@@ -404,7 +426,7 @@ jobs:
     if: needs.changes.outputs.shell == 'true'
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install hook test tools
         run: brew install ripgrep fd jq
@@ -425,15 +447,23 @@ jobs:
             *) echo "expected bash 3.2, got $version"; exit 1 ;;
           esac
 
-      # The three checks below run independently of each other, but only
-      # when bash 3.2 is confirmed: under bash 5 they would pass vacuously.
+      - name: Install Rust toolchain
+        if: ${{ !cancelled() && steps.bash32.outcome == 'success' }}
+        uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+        with:
+          toolchain: stable
+
+      - name: Build the loom binary
+        if: ${{ !cancelled() && steps.bash32.outcome == 'success' }}
+        run: cargo build --locked --bin loom --manifest-path loom/Cargo.toml
+
       - name: Parse every shell hook
         if: ${{ !cancelled() && steps.bash32.outcome == 'success' }}
         run: ./scripts/check-hook-syntax.sh
 
       - name: Run the hook tests
         if: ${{ !cancelled() && steps.bash32.outcome == 'success' }}
-        run: bash loom-hooks/tests/run-all.sh
+        run: LOOM_HOOK_TEST_REQUIRE_BINARY=1 bash loom-hooks/tests/run-all.sh
 
       - name: Pre-commit partial-staging regression
         if: ${{ !cancelled() && steps.bash32.outcome == 'success' }}
@@ -448,10 +478,12 @@ jobs:
       contents: read
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+        with:
+          toolchain: stable
 
       # cargo audit directly: rustsec/audit-check fails on pull_request events
       # whenever an informational warning exists, because it cannot update the
@@ -469,9 +501,9 @@ jobs:
     if: needs.changes.outputs.rust == 'true'
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: EmbarkStudios/cargo-deny-action@v2
+      - uses: EmbarkStudios/cargo-deny-action@17aeb3c839e42274e2b8adf721c8c65edfdc74dd # v2
         with:
           manifest-path: loom/Cargo.toml
           command: check
@@ -483,10 +515,10 @@ jobs:
     if: needs.changes.outputs.web == 'true'
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
 
       - name: Install dependencies
         working-directory: web

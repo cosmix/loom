@@ -101,4 +101,24 @@ run_handoff_case
 [[ $(jq -r '.payload.completed' "$EVENTS_FILE" | tail -n 1) == false ]]
 [[ $(wc -l <"$HANDOFF_LOG" | tr -d ' ') == 2 ]]
 
+# The handoff call is time-bounded: shims named timeout and gtimeout log their
+# arguments (-k 1 <seconds> command...) and then run the command.
+SHIMS="$TMPDIR_TEST/shims"
+mkdir -p "$SHIMS"
+for shim in timeout gtimeout; do
+    printf '%s\n' '#!/usr/bin/env bash' 'printf "%s\n" "$*" >>"$SHIM_LOG"' 'shift 3' 'exec "$@"' >"$SHIMS/$shim"
+    chmod +x "$SHIMS/$shim"
+done
+export SHIM_LOG="$TMPDIR_TEST/shim.log"
+printf '%s\n' '---' 'status: Executing' '---' >"$LOOM_WORK_DIR/stages/01-$LOOM_STAGE_ID.md"
+rm -f "$LOOM_WORK_DIR/stages/$LOOM_STAGE_ID.md"
+printf '{}' | LOOM_HOOK_PATH="$SHIMS:$PATH" LOOM_BIN="$STUB" LOOM_WORK_DIR="$LOOM_WORK_DIR" \
+    LOOM_STAGE_ID="$LOOM_STAGE_ID" LOOM_SESSION_ID="$LOOM_SESSION_ID" bash "$HOOK"
+# The stdin read is bounded too; only the handoff call is under test.
+BOUNDED=$(grep ' handoff ' "$SHIM_LOG" || true)
+[[ $(printf '%s\n' "$BOUNDED" | wc -l | tr -d ' ') == 1 && "$BOUNDED" == "-k 1 30 $STUB handoff "* ]] || {
+    echo "FAIL: expected one handoff call bounded by 30 s, got: $(cat "$SHIM_LOG")"
+    exit 1
+}
+
 echo "PASS: session-end records the SessionEnd reason from stdin"

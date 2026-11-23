@@ -28,6 +28,9 @@ INPUT_JSON=$(loom_read_input 1 2>/dev/null || true)
 if [ -z "$LOOM_STAGE_ID" ] || [ -z "$LOOM_SESSION_ID" ]; then
 	exit 0
 fi
+# Identifiers are interpolated into JSON and a notification: refuse any outside
+# the id class (validate_id in loom/src/validation.rs).
+case "$LOOM_STAGE_ID$LOOM_SESSION_ID" in *[!A-Za-z0-9_-]*) exit 0 ;; esac
 
 # Verify this really is a PostToolUse call for AskUserQuestion before acting
 # on it. Missing jq, or absent fields, fails open - behave as before this

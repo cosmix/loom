@@ -14,11 +14,7 @@ set -euo pipefail
 # loom_tokenize_command: the shared argv tokenizer git-add-guard.sh scans with.
 source "$(dirname "$0")/_common.sh"
 source "$(dirname "$0")/_post-tool-heartbeat.sh"
-
-read_input() {
-	source "$(dirname "${BASH_SOURCE[0]}")/_bounded.sh"
-	loom_read_input 1 2>/dev/null || true
-}
+source "$(dirname "${BASH_SOURCE[0]}")/_bounded.sh"
 
 # fail_closed <reason> [<prefix>] - Print the refusal (after <prefix>) and exit 2.
 fail_closed() {
@@ -311,14 +307,12 @@ emit_pinned_allow() {
 	printf '%s\n' "$out"
 }
 
-INPUT_JSON=$(read_input)
-[[ -n "$INPUT_JSON" ]] || exit 0
-[[ "$(printf '%s' "$INPUT_JSON" | jq -r '.tool_name // empty')" == Bash ]] || exit 0
-
 STAGE_ID=${LOOM_STAGE_ID:-}
 SESSION_ID=${LOOM_SESSION_ID:-}
 WORKTREE_PATH=${LOOM_WORKTREE_PATH:-}
 [[ -n "$STAGE_ID" && -n "$SESSION_ID" ]] || exit 0
+loom_read_payload_or_block 1 loom-control-complete.sh
+[[ "$(printf '%s' "$INPUT_JSON" | jq -r '.tool_name // empty')" == Bash ]] || exit 0
 # Membership, not presence (same rule as loom_current_worktree in _common.sh).
 # A loom worktree is `<repo>/.worktrees/<stage-id>`. Anchored at the end: the
 # wrapper exports the worktree ROOT, and a repo that itself lives under an
@@ -369,7 +363,7 @@ if [[ "$COMMAND" == "$PINNED_COMMAND" ]]; then
 		emit_pinned_allow "loom: pinned completion command"
 		exit 0
 	fi
-	loom_write_completion_heartbeat || true
+	loom_is_subagent "$INPUT_JSON" || loom_write_completion_heartbeat || true
 	exit 0
 fi
 if completion_caller_is_main && completion_rewrite_matches; then

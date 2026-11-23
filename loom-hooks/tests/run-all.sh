@@ -162,7 +162,7 @@ run_test "loom-control-complete: admitted completion marks the heartbeat until a
 run_test "session-start: compact source emits re-anchor" "$SCRIPT_DIR/session-start-compact.sh"
 run_test "session-end: records the SessionEnd reason from stdin" "$SCRIPT_DIR/session-end-reason.sh"
 run_test "ask-user hooks: act only on AskUserQuestion, record the trigger" "$SCRIPT_DIR/ask-user-hooks.sh"
-run_test "worktree-file-guard: malformed non-empty input is blocked" "$SCRIPT_DIR/worktree-file-guard-truncated-input.sh"
+run_test "worktree-file-guard: empty and malformed input are blocked" "$SCRIPT_DIR/worktree-file-guard-truncated-input.sh"
 run_test "worktree-file-guard: MultiEdit honours the worktree boundary" "$SCRIPT_DIR/worktree-file-guard-multiedit.sh"
 run_test "worktree-file-guard: the session scratchpad is open, its surroundings stay blocked" "$SCRIPT_DIR/worktree-file-guard-scratchpad.sh"
 run_test "worktree guards: an inherited LOOM_WORKTREE_PATH binds only its own session" "$SCRIPT_DIR/worktree-guards-inherited-env.sh"
@@ -200,6 +200,10 @@ run_test "codex-forward-result: correlated direct lifecycle evidence" "$SCRIPT_D
 run_test "codex apply_patch: file guards and no post-patch recording" "$SCRIPT_DIR/codex-apply-patch.sh"
 run_test "codex-forward-guard: quoted and escaped prompts round-trip" "$SCRIPT_DIR/codex-forward-guard-quoting.sh"
 run_test "codex-forward-guard: enforcement needs unforgeable stage evidence" "$SCRIPT_DIR/codex-forward-guard-stage-evidence.sh"
+run_test "codex-forward: task-output channel confinement under a real sandbox runtime" "$SCRIPT_DIR/codex-forward-channel-confinement.sh"
+run_test "codex-forward: the confinement probe skips without a runtime unless one is required" "$SCRIPT_DIR/codex-forward-channel-confinement-gate.sh"
+run_test "blocking guards: empty, truncated and tool_name-less input are refused, advisory hooks allow" "$SCRIPT_DIR/blocking-guards-bad-payload.sh"
+run_test "pre-compact: both handoff calls are time-bounded" "$SCRIPT_DIR/pre-compact-handoff-bounded.sh"
 run_test "git-add-guard: quoted prose allowed, real args blocked" "$SCRIPT_DIR/git-add-guard-quoting.sh"
 run_test "_common: token helpers scan argv values, not quoted prose" "$SCRIPT_DIR/common-token-helpers.sh"
 run_test "commit-filter: quoted prose about git is allowed, real commits blocked" "$SCRIPT_DIR/commit-filter-quoted-payload.sh"
@@ -267,6 +271,19 @@ run_test "loom-relay: fast path, jq and LOOM_HOOK_PATH gates, helper call contra
 run_test "loom-relay-guard: refuses a relayed loom command whose stdout would be hidden" "$SCRIPT_DIR/loom-relay-guard.sh"
 run_test "loom-relay-guard: writes the call marker a relayed control ticket needs" "$SCRIPT_DIR/loom-relay-guard-call-marker.sh"
 run_test "loom-relay-stop: one block per stranded control ticket" "$SCRIPT_DIR/loom-relay-stop.sh"
+
+# Roster guard: every test script in this directory must be registered above.
+for path in "$SCRIPT_DIR"/*.sh; do
+	name=${path##*/}
+	case "$name" in _* | run-all.sh) continue ;; esac
+	case " ${SCRIPTS[*]} " in
+	*" $SCRIPT_DIR/$name "*) ;;
+	*)
+		echo "run-all.sh: $name is not registered"
+		exit 1
+		;;
+	esac
+done
 
 START=$SECONDS
 run_all_jobs

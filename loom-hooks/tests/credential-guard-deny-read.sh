@@ -12,11 +12,12 @@ trap 'rm -rf "$TMPROOT"' EXIT
 # A throwaway HOME - the real one is never touched by this test.
 FAKE_HOME="$TMPROOT/home"
 PROJECT="$TMPROOT/project"
-mkdir -p "$FAKE_HOME/.ssh/keys" "$PROJECT/.claude" "$PROJECT/src" "$PROJECT/secrets"
+mkdir -p "$FAKE_HOME/.ssh/keys" "$PROJECT/.claude" "$PROJECT/src" "$PROJECT/secrets" "$TMPROOT/real"
+ln -s "$TMPROOT/real" "$PROJECT/link"
 printf 'private-key\n' >"$FAKE_HOME/.ssh/id_rsa"
 printf 'fn main() {}\n' >"$PROJECT/src/main.rs"
 printf 'deploy-key\n' >"$PROJECT/secrets/deploy.pem"
-printf '{"sandbox":{"filesystem":{"denyRead":["~/.ssh/**","secrets/*.pem"]}}}\n' \
+printf '{"sandbox":{"filesystem":{"denyRead":["~/.ssh/**","secrets/*.pem","link/missing/secret.json"]}}}\n' \
 	>"$PROJECT/.claude/settings.local.json"
 
 check() {
@@ -50,5 +51,9 @@ check "Glob rooted inside a denied directory is blocked" \
 	2 "$(glob_payload "$FAKE_HOME/.ssh/keys")"
 check "Glob rooted above a denied directory still runs" \
 	0 "$(glob_payload "$PROJECT")"
+check "Write under a denied path whose ancestor is a symlink is blocked" \
+	2 "$(printf '{"tool_name":"Write","tool_input":{"file_path":"%s"}}' "$PROJECT/link/missing/secret.json")"
+check "Write beside a denied path behind the same symlink is allowed" \
+	0 "$(printf '{"tool_name":"Write","tool_input":{"file_path":"%s"}}' "$PROJECT/link/other/secret.json")"
 
 exit "$FAILED"

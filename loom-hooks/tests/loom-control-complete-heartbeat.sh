@@ -52,6 +52,22 @@ run_pre() {
 	set -e
 }
 
+# run_pre_as <command> <jq payload fragment> [env assignment...] - Run the
+# PreToolUse branch with extra payload fields and environment; sets HOOK_RC.
+run_pre_as() {
+	local command="$1" fragment="$2" payload
+	shift 2
+	payload=$(jq -n --arg command "$command" "{tool_name:\"Bash\",tool_input:{command:\$command}} + $fragment")
+	set +e
+	printf '%s' "$payload" |
+		env PATH="$TMP/bin:/usr/bin:/bin" HOME="$TMP" LOOM_CONTROL_TESTING=1 \
+			LOOM_CONTROL_TEST_BIN="$TMP/bin/loom" LOOM_STAGE_ID=build-api \
+			LOOM_SESSION_ID=session-123 LOOM_WORKTREE_PATH="$WORKTREE" \
+			LOOM_WORK_DIR="$WORK" "$@" bash "$HOOK" >/dev/null 2>&1
+	HOOK_RC=$?
+	set -e
+}
+
 write_prior() {
 	jq -n --arg session "$1" '{stage_id:"build-api", session_id:$session,
 		timestamp:"2026-10-20T10:00:00.000Z", progress_at:"2026-10-20T10:00:00.000Z",
@@ -69,6 +85,19 @@ jq -e --arg activity "$ACTIVITY" '.activity == $activity and .session_id == "ses
 	and .timestamp != "2026-10-20T10:00:00.000Z" and .context_tokens == 4242
 	and .transcript_path == "/t.jsonl" and .subagent == false' "$HEARTBEAT" >/dev/null ||
 	fail "admitted completion did not mark the heartbeat: $(cat "$HEARTBEAT")"
+
+# A subagent caller (live session: LOOM_MAIN_AGENT_PID names a live ancestor)
+# never marks the completion as running; a caller of unknown role still does.
+write_prior session-123
+run_pre_as "$PINNED" '{agent_type:"loom-software-engineer"}' LOOM_MAIN_AGENT_PID=$$
+[[ "$HOOK_RC" == 0 ]] || fail "a subagent's pinned command was not passed through (rc $HOOK_RC)"
+jq -e '.activity == "Tool executed: Read"' "$HEARTBEAT" >/dev/null ||
+	fail "a subagent marked the completion heartbeat: $(cat "$HEARTBEAT")"
+write_prior session-123
+run_pre_as "$PINNED" '{}'
+[[ "$HOOK_RC" == 0 ]] || fail "a caller of unknown role was not passed through (rc $HOOK_RC)"
+jq -e --arg activity "$ACTIVITY" '.activity == $activity' "$HEARTBEAT" >/dev/null ||
+	fail "a caller of unknown role did not mark the heartbeat: $(cat "$HEARTBEAT")"
 
 # A rejected completion attempt leaves the heartbeat alone.
 write_prior session-123

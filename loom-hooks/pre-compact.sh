@@ -74,7 +74,7 @@ if [[ -f "$PENDING_FLAG" ]]; then
 	# Create handoff (captures updated memory)
 	HANDOFF_FILE=""
 	if command -v "${LOOM_BIN:-loom}" &>/dev/null; then
-		if HANDOFF_OUTPUT=$(LOOM_HOOK_CONTEXT=1 "${LOOM_BIN:-loom}" handoff --stage "${LOOM_STAGE_ID}" --session "${LOOM_SESSION_ID}" --trigger precompact 2>&1); then
+		if HANDOFF_OUTPUT=$(LOOM_HOOK_CONTEXT=1 loom_run_bounded 30 "${LOOM_BIN:-loom}" handoff --stage "${LOOM_STAGE_ID}" --session "${LOOM_SESSION_ID}" --trigger precompact 2>&1); then
 			HANDOFF_FILE=$(echo "$HANDOFF_OUTPUT" | grep -oE '[^/]+\.md$' || echo "")
 		fi
 	fi
@@ -102,7 +102,7 @@ else
 	# Create initial handoff
 	HANDOFF_FILE=""
 	if command -v "${LOOM_BIN:-loom}" &>/dev/null; then
-		if HANDOFF_OUTPUT=$(LOOM_HOOK_CONTEXT=1 "${LOOM_BIN:-loom}" handoff --stage "${LOOM_STAGE_ID}" --session "${LOOM_SESSION_ID}" --trigger precompact 2>&1); then
+		if HANDOFF_OUTPUT=$(LOOM_HOOK_CONTEXT=1 loom_run_bounded 30 "${LOOM_BIN:-loom}" handoff --stage "${LOOM_STAGE_ID}" --session "${LOOM_SESSION_ID}" --trigger precompact 2>&1); then
 			HANDOFF_FILE=$(echo "$HANDOFF_OUTPUT" | grep -oE '[^/]+\.md$' || echo "")
 		fi
 	fi

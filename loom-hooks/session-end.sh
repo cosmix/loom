@@ -65,7 +65,7 @@ esac
 
 # If not completed and loom is available, try to create handoff
 if [[ "$COMPLETED" != "true" ]] && command -v "${LOOM_BIN:-loom}" &>/dev/null; then
-	LOOM_HOOK_CONTEXT=1 "${LOOM_BIN:-loom}" handoff --stage "${LOOM_STAGE_ID}" --session "${LOOM_SESSION_ID}" --trigger session_end 2>/dev/null || true
+	LOOM_HOOK_CONTEXT=1 loom_run_bounded 30 "${LOOM_BIN:-loom}" handoff --stage "${LOOM_STAGE_ID}" --session "${LOOM_SESSION_ID}" --trigger session_end 2>/dev/null || true
 fi
 
 # Extract the reason Claude Code ended the session (clear/resume/logout/

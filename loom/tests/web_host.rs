@@ -13,25 +13,13 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use loom::fs::work_dir::WorkDir;
+use serial_test::serial;
+
+#[path = "test_support/mod.rs"]
+mod test_support;
 
 /// Path to the `loom` binary this test run built.
 const LOOM: &str = env!("CARGO_BIN_EXE_loom");
-
-/// Every `LOOM_*` variable a spawned loom session may export, cleared so this
-/// test process's own environment never leaks into the child under test.
-const RELAY_ENV_VARS: &[&str] = &[
-    "LOOM_SESSION_ID",
-    "LOOM_STAGE_ID",
-    "LOOM_WORK_DIR",
-    "LOOM_WORKTREE_PATH",
-    "LOOM_MAIN_AGENT_PID",
-    "LOOM_SESSION_TYPE",
-    "LOOM_MERGE_SESSION",
-    "LOOM_SCRATCH_DIR",
-    "LOOM_BIN",
-    "LOOM_HOOK_PATH",
-    "LOOM_HOOK_CONTEXT",
-];
 
 const STARTUP_DEADLINE: Duration = Duration::from_secs(10);
 
@@ -61,9 +49,7 @@ fn workspace() -> (tempfile::TempDir, PathBuf, tempfile::TempDir) {
 
 fn loom_cmd(base: &Path, home: &Path, args: &[&str]) -> Command {
     let mut command = Command::new(LOOM);
-    for var in RELAY_ENV_VARS {
-        command.env_remove(var);
-    }
+    test_support::clear_loom_env(&mut command);
     command.env("LOOM_HOME", home);
     command.current_dir(base);
     command.args(args);
@@ -188,6 +174,7 @@ fn cookie_value(response: &str) -> String {
 
 #[cfg(unix)]
 #[test]
+#[serial]
 fn startup_failure_and_timeout_are_errors_with_diagnostics() {
     for (script, expected) in [
         (
@@ -218,6 +205,7 @@ fn startup_failure_and_timeout_are_errors_with_diagnostics() {
 /// remote-mode contract against the real binary: viewing needs no cookie, the
 /// bootstrap redirect sets one, and a settings write without it is refused.
 #[test]
+#[serial]
 fn remote_wildcard_dashboard_serves_viewing_without_the_cookie() {
     let (_temp, base, home) = workspace();
     const NAME: &str = "remote_wildcard_dashboard_serves_viewing_without_the_cookie";
@@ -231,8 +219,10 @@ fn remote_wildcard_dashboard_serves_viewing_without_the_cookie() {
                     | std::io::ErrorKind::Unsupported
             ) =>
         {
-            eprintln!("SKIP {NAME}: wildcard bind unavailable: {error}");
-            return;
+            let why = format!("wildcard bind unavailable: {error}");
+            if loom::process::sandbox_probe::skip_unless(false, NAME, &why) {
+                return;
+            }
         }
         Err(error) => panic!("wildcard bind probe failed: {error}"),
     }
@@ -261,4 +251,30 @@ fn remote_wildcard_dashboard_serves_viewing_without_the_cookie() {
         ),
     );
     assert!(write.starts_with("HTTP/1.1 401"), "{write}");
+}
+
+/// The scrub covers every `LOOM_*` variable of the parent, not a fixed list,
+/// and the scratch `LOOM_HOME` is set after it.
+#[test]
+#[serial]
+fn loom_cmd_clears_every_loom_variable() {
+    let previous = std::env::var_os("LOOM_ADMIN_SECRET");
+    std::env::set_var("LOOM_ADMIN_SECRET", "sentinel");
+    let (_temp, base, home) = workspace();
+    let command = loom_cmd(&base, home.path(), &[]);
+    match previous {
+        Some(value) => std::env::set_var("LOOM_ADMIN_SECRET", value),
+        None => std::env::remove_var("LOOM_ADMIN_SECRET"),
+    }
+    let envs: Vec<_> = command.get_envs().collect();
+    assert!(
+        envs.iter()
+            .any(|(key, value)| *key == "LOOM_ADMIN_SECRET" && value.is_none()),
+        "LOOM_ADMIN_SECRET must be removed from the child: {envs:?}"
+    );
+    assert!(
+        envs.iter()
+            .any(|(key, value)| *key == "LOOM_HOME" && value.is_some()),
+        "LOOM_HOME must point at the scratch home: {envs:?}"
+    );
 }

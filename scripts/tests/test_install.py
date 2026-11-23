@@ -30,12 +30,12 @@ class InstallerTests(unittest.TestCase):
         local.chmod(0o755)
         self.trace = self.root / "trace"
 
-    def run_install(self, body, **overrides):
+    def run_install(self, body, input_text=None, **overrides):
         env = dict(os.environ, HOME=str(self.root), TRACE=str(self.trace),
                    CANDIDATE=str(self.candidate), INSTALLER=str(INSTALLER), **overrides)
         return subprocess.run(
             ["bash", "-c", 'LOOM_INSTALL_LIB_ONLY=1 source "$INSTALLER"\n' + body],
-            env=env, capture_output=True, text=True, timeout=10,
+            env=env, capture_output=True, text=True, timeout=10, input=input_text,
         )
 
     def assert_preserved(self, result):
@@ -120,6 +120,23 @@ install_loom_remote
         body = self.remote_body(False).replace("printf 'signature' > \"$2\"", "return 1")
         self.assert_preserved(self.run_install(body))
         self.assertFalse(self.trace.exists())
+
+    def test_declined_overwrite_exits_nonzero(self):
+        (self.root / ".claude/agents").mkdir(parents=True)
+        declined = self.run_install("confirm_overwrites", input_text="n\n")
+        self.assertNotEqual(declined.returncode, 0, declined.stdout)
+        self.assertIn("cancelled", declined.stdout)
+        accepted = self.run_install("confirm_overwrites", input_text="y\n")
+        self.assertEqual(accepted.returncode, 0, accepted.stderr)
+
+    def test_summary_warns_when_local_bin_is_not_on_path(self):
+        missing = self.run_install("print_summary", PATH="/usr/bin:/bin")
+        self.assertEqual(missing.returncode, 0, missing.stderr)
+        self.assertIn("export PATH=", missing.stdout)
+        present = self.run_install(
+            "print_summary", PATH=f"{self.root}/.local/bin:/usr/bin:/bin")
+        self.assertEqual(present.returncode, 0, present.stderr)
+        self.assertNotIn("export PATH=", present.stdout)
 
 
 if __name__ == "__main__":
