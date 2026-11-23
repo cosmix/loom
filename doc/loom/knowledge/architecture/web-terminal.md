@@ -90,13 +90,15 @@ runtime. Per iteration: check `running`, check `gate_stalled`, `poll_ready`, dra
 (`pump_pty`), drain socket→PTY (`pump_socket`, gated), drain the pending-input queue into the
 PTY (`drain_pending`), check `socket_gone`.
 
-- **Non-blocking master.** `PtyChild::spawn` (`pty.rs::spawn`) sets `O_NONBLOCK` on the master
-  fd via `fcntl` after `openpty` (which never sets it) — `read`/`write_some` translate
-  `EAGAIN` to `Ok(None)`/`Ok(0)` rather than blocking the bridge thread. It also sets
-  `FD_CLOEXEC` on the master (openpty gives that to neither end): left unset, the master
-  survives into the tmux child across `spawn`'s fork+exec, so `shutdown`'s `drop(master)`
-  never closes the last reference and the slave never sees a hangup — see
-  mistakes/web-terminal.md.
+- **Non-blocking, close-on-exec master.** `PtyChild::spawn` (`pty.rs::spawn`) sets
+  `O_NONBLOCK` on the master fd via `fcntl` — `read`/`write_some` translate `EAGAIN` to
+  `Ok(None)`/`Ok(0)` rather than blocking the bridge thread. `pty.rs::open_pty` opens both
+  ends close-on-exec in the opening call on Linux: `posix_openpt(O_CLOEXEC)` for the master,
+  and `open_slave` takes the slave of that master from the kernel with `TIOCGPTPEER`, falling
+  back to the `ptsname_r` path when the ioctl is refused. A master any child keeps across its
+  exec stops `shutdown`'s `drop(master)` from hanging up the slave — see
+  mistakes/web-terminal.md. The non-Linux variant uses `openpty` and sets `FD_CLOEXEC`
+  afterwards.
 - **Bounded pending-input queue.** `MAX_PENDING_INPUT = 64 KiB` staged in a
   `VecDeque<u8>` between the socket and the PTY. `poll_ready` narrows the TCP
   event mask to `POLLIN` only while `pending < MAX_PENDING_INPUT`; at the cap it asks for
@@ -117,8 +119,8 @@ MiB` on the WebSocket's own outbound buffer.
   that is alive but has wedged the PTY, where no readiness flag or FIN is ever sent.
 - **Shutdown drain.** `finish` closes the WebSocket (4008 with reason for
   `Stop::Stalled`, matching what `terminal.ts` already labels "refused") then calls
-  `PtyChild::shutdown` (`pty.rs::shutdown`): drop the master (now hangs up the slave correctly
-  with `FD_CLOEXEC` set), poll `try_wait` up to 2s, then `kill`+`wait`. A terminal slot, its
+  `PtyChild::shutdown` (`pty.rs::shutdown`): drop the master (which hangs up the slave), poll
+  `try_wait` up to 2s, then `kill`+`wait`; it returns the child's exit status. A terminal slot, its
   PTY, and its tmux child stay held for up to that 2s even on a clean close — see
   concerns/web-dashboard-latent-issues.md.
 

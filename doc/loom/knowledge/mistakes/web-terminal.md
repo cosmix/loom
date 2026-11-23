@@ -14,19 +14,33 @@ never the fast path. `nix::pty::openpty` wraps libc `openpty(3)`, which has no f
 and opens the master **without** `O_CLOEXEC`. The `fcntl` at `pty.rs::spawn` set `O_NONBLOCK`
 (a file-status flag) but never touched the descriptor flags, so the master survived into the
 tmux child across `Command::spawn`'s fork+exec. With the child holding its own copy,
-`shutdown`'s `drop(master)` (`pty.rs::write_some` at the time) was never the last reference, the slave
-never saw a hangup, the child never got `SIGHUP`, and every terminal close burned the full 2s
-deadline before `SIGKILL`. Ironically the surrounding code already carried a comment about
-dropping the three slave clones so the master would see the child's hangup — the master was
-the fd nobody CLOEXEC'd, defeating exactly that mechanism.
+`shutdown`'s `drop(master)` was never the last reference, the slave never saw a hangup, the
+child never got `SIGHUP`, and every terminal close burned the full 2s deadline before
+`SIGKILL`.
 
 **Why:** `openpty` gives `O_CLOEXEC` on neither end, and a timing assertion whose own budget
 (`elapsed < 3s`) exceeds the fallback deadline cannot distinguish the fast path from the slow
 one — it passed either way.
 
-**Prevention:** after any `openpty`/`posix_openpt`-style call, `fcntl(F_SETFD(FD_CLOEXEC))` the
-master explicitly — never assume it. When timing a "did the fast path fire" behaviour, assert
-strictly _below_ the fallback deadline, not merely under some larger ceiling.
+**The first fix left a window (2026-11-23):** setting `FD_CLOEXEC` with `fcntl` after `openpty`
+returns leaves the master open without the flag for an instant. A child that another thread
+forks in that instant keeps the master across its own exec, so the hangup waits until that
+unrelated process exits; past 2 s the close pays the `SIGKILL` fallback. In the test binary
+this showed as `pty_child_shutdown_reaps_the_child` failing its sub-second bound about once in
+several hundred shutdowns, and it was filed as a load flake. A scan of `/proc/*/fd` during a
+slow shutdown named the foreign holder of the `ptmx` descriptor.
+
+**Prevention:** a descriptor that must not reach children is created close-on-exec, in the
+call that opens it; a flag set afterwards is a race in any multi-threaded process that spawns.
+For a PTY on Linux that is `posix_openpt(O_CLOEXEC)` for the master and `TIOCGPTPEER` with
+`O_CLOEXEC` for the slave. A test that asks which path ended a child asserts the exit signal
+(`SIGHUP` against `SIGKILL`); elapsed time cannot tell a delayed hangup from a kill and ties
+the test to the machine's load. A flake that "passes alone" still has a cause: find the holder
+before filing it under load.
+
+**Fix:** `pty.rs::open_pty` (Linux) and `open_slave`; `PtyChild::shutdown` returns the exit
+status and the test asserts `SIGHUP`. The non-Linux `open_pty` still sets the flag after
+`openpty` ([concern](../concerns/web-dashboard-latent-issues.md)).
 
 ## A Backpressure Gate Made a Half-Closed Browser Invisible, and Two Fixes for It Failed First (2026-09-09)
 
@@ -140,3 +154,13 @@ in the shared setup file, not per-test.
 **Why:** `speaking_for` substituted a live stand-in for the ended worker only in merge states, so `session_alive` described the dead worker during `NeedsAdjudication`. `terminal_history_session` skipped judge sessions on the claim that `loom attach` skips them, which the tree never did (`matches_for_stage` filters on stage id only). The status summary and the web terminal resolver chose sessions by different rules.
 **Prevention:** every session kind the daemon spawns for a stage must be covered where the summary picks the speaking session, with a test per kind that an ended worker plus a live session of that kind reports `session_alive`. Check a comment that cites another command's behaviour against that command.
 **Fix:** `speaking_for` has a `NeedsAdjudication` branch for the live judge; `terminal_history_session` counts judges; tests in `collector_resolver_tests.rs` and `stopped.rs`.
+
+## Claude Code fullscreen mode is a rendering setting
+
+**What happened:** A review of GitHub #35 blurred Claude Code’s configured fullscreen rendering mode with tmux’s observed alternate-screen state, and treated a synthetic timing case as evidence of a remaining Claude Code defect.
+
+**Why:** The tmux test uses a shell stand-in to switch terminal buffers. It does not exercise Claude Code configured with `tui: fullscreen`.
+
+**Prevention:** Distinguish the configured rendering mode, the terminal buffer observed by Loom, and the window geometry. Verify product behavior with Claude Code before treating a timing scenario from a stand-in as a reproduced defect.
+
+**Fix:** Describe the implemented last-screen labeling for observed alternate-screen captures and report the proposed timing case as unverified in Claude Code.

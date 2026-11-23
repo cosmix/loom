@@ -94,3 +94,7 @@ The conflicted card prints the word once: `ActivityLine` (the first line of the 
 ## The Bundle Is Over 500 kB and the Gate Hides the Warning
 
 The dashboard bundle is split: `web/vite.config.ts` `codeSplitting` groups (`react`, `zod`, `router`, `flow`, `markdown`, `cm-view`, `cm-lang`) keep `web/dist/assets/index.js` near 190 kB, and `loom/src/web_server/assets.rs` serves any `web/dist` path, so a new chunk needs no server change. `plan.js` is the chunk that sits near the 500 kB warning (about 412 kB with edit mode lazy); the rule that keeps it there is in [Plan Web](../conventions/plan-web.md#live-preview-editor-rules). The dist criterion runs vite with `--logLevel error`, so the gate never prints the warning; raising `build.chunkSizeWarningLimit` would only hide it.
+
+## The PTY Master Has a Close-on-Exec Window Outside Linux
+
+The non-Linux `pty.rs::open_pty` calls `openpty(3)` and sets `FD_CLOEXEC` on the master afterwards. A child forked on another thread between the two keeps the master across its exec, and a terminal close then waits for that process or pays the 2 s kill fallback ([mistake](../mistakes/web-terminal.md)). Closing it needs `posix_openpt` with `O_CLOEXEC` verified on macOS, where `ptsname_r` and `TIOCGPTPEER` do not exist; the slave there is also not close-on-exec.

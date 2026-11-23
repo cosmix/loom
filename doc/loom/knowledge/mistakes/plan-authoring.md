@@ -313,3 +313,11 @@ knowledge-distill the rewrite, or the stage changes it. Raise a cap to the measu
 **Prevention:** When a fix would stop a way of reaching or using the product that works today, look first for a rule that closes the finding without it, starting with sibling code that solves the same problem. If none exists, ask before writing the brief; never record the loss as a decision to confirm afterwards.
 
 **Fix:** The brief compares a loopback `Origin` with the request's `Host`; see architecture/web-dashboard.md, Tunnelled and VPN Access Is a Requirement.
+
+## A Brief Named Another Plan's Untracked Brief and Pulled It Into the Plan Inputs
+
+**What happened:** a brief of a pending plan named, as an example in prose, the path of a brief belonging to a different plan. The run preflight follows every brief path a brief names, and the paths those briefs name in turn, so two foreign untracked files became inputs of this plan and `loom run` would have refused to start until they were committed. `loom plan verify` listed them only inside a long note of uncommitted inputs.
+
+**Prevention:** a brief names a path under `doc/plans/briefs/` only when a worker must read that file. Describe any other brief in words. After `loom plan verify`, list the inputs that lie outside the plan's own briefs directory; there should be none the plan does not need.
+
+**Fix:** the mention was reworded and the plan's inputs are its own file and briefs.

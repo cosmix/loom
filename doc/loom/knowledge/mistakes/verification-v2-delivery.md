@@ -234,7 +234,7 @@ tests parent, `rg` the name in sibling files that glob-import `super::*`.
 ## Tests That Flaked Under Load or Race
 
 - `commands/hook/reconcile_graph/tests_wants_rebuild.rs::cancel_signals_a_holder_that_is_the_reconciler` failed about half its runs: `fake_reconciler` returned before the child exec'd `sh`, so `/proc/<pid>/cmdline` still held the test binary's argv and `is_reconciler` said no. The helper now polls `cancel::process_argv` until the argv holds `hook`. Prevention: a test that reads a child's `/proc` identity waits for the exec, it does not assume it.
-- `commands::status::web::terminal::tests_pty::pty_child_shutdown_reaps_the_child` asserts a sub-second reap and failed once under the full `commands::status::` run beside other cargo jobs; it passes alone. Rerun it in isolation before blaming the change.
+- `commands::status::web::terminal::tests_pty::pty_child_shutdown_reaps_the_child` asserted a sub-second reap and failed once under the full `commands::status::` run beside other cargo jobs. It was filed here as a load flake to rerun in isolation; the cause was a PTY master a foreign child kept across its exec ([mistake](web-terminal.md)). Prevention: a test that passes alone and fails beside others has a cause to find, and "rerun it alone" is not a diagnosis.
 
 ## A Single Fact Mirrored in Three Places
 

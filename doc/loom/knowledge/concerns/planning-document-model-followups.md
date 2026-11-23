@@ -168,3 +168,7 @@ Known limits of `loom/src/plan_server/summaries/` and `web/src/plan/summaries/`,
 - `trace.contracts.test.tsx` "Mark settled" (`findByRole`, the default 1 s timeout) and `editor/live-preview.test.ts` failed once each in the 366-file vitest run of the completion check and pass alone: load-sensitive tests, not defects of the stages that ran them.
 
 **Hook proposals for recurrences:** subagents ran `git mv` against a brief that forbids git writes ([again](../mistakes/planner-follow-ups-delivery.md#small-slips-that-recurred-in-this-plan)); a PreToolUse check refusing `git mv` and `git rm` in a subagent Bash call would stop it. The backgrounded `loom check` proposal is in [planning-guidance-followups](planning-guidance-followups.md).
+
+## Planning-Server Tests Resolve Paths From the Ambient `LOOM_HOME`
+
+`ServerOptions` carries no loom directory: the server resolves its runtime directory from `LOOM_HOME` at start (`planning/runtime.rs`), and `#[serial]` tests change that variable in-process. A non-serial test that resolves the directory itself and then starts a server can see two different homes; the two drafts tests avoid it with `#[serial_test::parallel]` ([mistake](../mistakes/test-hermeticity.md)). With `LOOM_HOME` unset, planning-server tests still read operator state: the quota snapshot in `summaries/rebuilds/panel.rs` and `user_config::loom_user_dir()` fall back to the real `~/.loom`. Passing the loom directory through `ServerOptions` would close both.

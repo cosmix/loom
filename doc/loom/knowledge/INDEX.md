@@ -88,7 +88,7 @@
 | [usage-evidence](architecture/usage-evidence.md) |  | 136 |
 | [verification-v2-gates](architecture/verification-v2-gates.md) | Gates | 265 |
 | [web-dashboard](architecture/web-dashboard.md) | Web | 137 |
-| [web-terminal](architecture/web-terminal.md) |  | 181 |
+| [web-terminal](architecture/web-terminal.md) |  | 183 |
 
 ### entry-points
 
@@ -178,7 +178,7 @@
 | [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Shared | 351 |
 | [phantom-merges](mistakes/phantom-merges.md) | Merges | 347 |
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Pins | 332 |
-| [plan-authoring](mistakes/plan-authoring.md) |  | 315 |
+| [plan-authoring](mistakes/plan-authoring.md) |  | 323 |
 | [plan-server-delivery](mistakes/plan-server-delivery.md) | Slips | 376 |
 | [planner-design-brainstorm](mistakes/planner-design-brainstorm.md) | Stubs | 134 |
 | [planner-follow-ups-delivery](mistakes/planner-follow-ups-delivery.md) | Slips | 196 |
@@ -214,7 +214,7 @@
 | [subagent-liveness-and-watch](mistakes/subagent-liveness-and-watch.md) |  | 387 |
 | [subagent-orchestration](mistakes/subagent-orchestration.md) | Agents | 397 |
 | [test-concurrency-and-fixtures](mistakes/test-concurrency-and-fixtures.md) | Races | 398 |
-| [test-hermeticity](mistakes/test-hermeticity.md) | Tests that reached real network, keychain or home state | 13 |
+| [test-hermeticity](mistakes/test-hermeticity.md) | Tests that reached real network, keychain or home state | 33 |
 | [test-sweep-and-fixture-discipline](mistakes/test-sweep-and-fixture-discipline.md) |  | 398 |
 | [testing-and-lint](mistakes/testing-and-lint.md) |  | 408 |
 | [tests-that-cannot-fail](mistakes/tests-that-cannot-fail.md) |  | 392 |
@@ -226,7 +226,7 @@
 | [visibility-and-reachability](mistakes/visibility-and-reachability.md) |  | 141 |
 | [web-dashboard](mistakes/web-dashboard.md) | UI | 194 |
 | [web-dashboard-server](mistakes/web-dashboard-server.md) | Races | 278 |
-| [web-terminal](mistakes/web-terminal.md) | TTY | 142 |
+| [web-terminal](mistakes/web-terminal.md) | TTY | 166 |
 | [writer-reader-address](mistakes/writer-reader-address.md) | Keys | 115 |
 
 ### concerns
@@ -251,7 +251,7 @@
 | [planner-follow-ups-followups](concerns/planner-follow-ups-followups.md) |  | 91 |
 | [planner-kickoff-fixes-followups](concerns/planner-kickoff-fixes-followups.md) | Kickoff-fixes open items: web/dist hook, gate env, reviewer suggestions | 31 |
 | [planner-ui-repair-followups](concerns/planner-ui-repair-followups.md) | UI | 214 |
-| [planning-document-model-followups](concerns/planning-document-model-followups.md) |  | 170 |
+| [planning-document-model-followups](concerns/planning-document-model-followups.md) |  | 174 |
 | [planning-guidance-followups](concerns/planning-guidance-followups.md) |  | 43 |
 | [planning-session-sandbox-limits](concerns/planning-session-sandbox-limits.md) |  | 238 |
 | [platform-and-commit-gaps](concerns/platform-and-commit-gaps.md) |  | 249 |
@@ -264,5 +264,5 @@
 | [token-accounting-and-proof-defects](concerns/token-accounting-and-proof-defects.md) |  | 333 |
 | [typed-config-values](concerns/typed-config-values.md) | Gap | 22 |
 | [verification-v2-followups](concerns/verification-v2-followups.md) |  | 251 |
-| [web-dashboard-latent-issues](concerns/web-dashboard-latent-issues.md) | UI | 96 |
+| [web-dashboard-latent-issues](concerns/web-dashboard-latent-issues.md) | UI | 100 |
 | [worktree-build-cold-start](concerns/worktree-build-cold-start.md) | Cold | 108 |
