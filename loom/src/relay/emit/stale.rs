@@ -3,9 +3,11 @@
 //! A control ticket is never swept (`commands/hook/relay/sweep.rs`), so one
 //! whose Bash call lost its relay line stays on disk for good. Counting it
 //! against the unconsumed-ticket limit would let every missed rerun shrink the
-//! session's quota permanently. Nothing here deletes a ticket: age cannot tell
-//! a stranded ticket from one whose call is still running, and a stranded
-//! ticket keeps `loom request status` answering pending relay.
+//! session's quota permanently. Nothing in the CLI deletes a ticket: age
+//! cannot tell a stranded ticket from one whose call is still running, and a
+//! stranded ticket keeps `loom request status` answering pending relay. A file
+//! that does not read as a ticket is never relayed either; the quota refusal
+//! names it so the lead can delete it.
 
 use crate::fs::safe_read::{open_regular_no_follow, read_open_bounded};
 use crate::relay::{Ticket, MAX_TICKET_BYTES};
@@ -20,7 +22,7 @@ use std::time::{Duration, SystemTime};
 /// costs quota, never a request. Revisit if tickets gain a writer identity.
 pub(super) const STALE_AFTER: Duration = Duration::from_secs(60);
 
-/// At most this many stale control ids are named in the scratch-limit refusal.
+/// At most this many ids are named in a refusal, per kind of file.
 const MAX_NAMED_IDS: usize = 10;
 
 /// How the `.req` files in one scratch directory count.
@@ -33,6 +35,23 @@ pub(super) struct TicketCounts {
     pub stale_control: usize,
     /// Up to ten ids of the stale control tickets, in directory order.
     pub stale_ids: Vec<String>,
+    /// Files, counted in `live`, that do not open as a plain file, exceed the
+    /// ticket cap, do not decode as a ticket or have a non-UTF-8 name. No
+    /// relay ever picks them up.
+    pub undecodable: usize,
+    /// Up to ten ids of the undecodable files, in directory order.
+    pub undecodable_ids: Vec<String>,
+}
+
+/// How one `.req` file counts.
+enum Class {
+    /// A decodable control ticket older than [`STALE_AFTER`]; carries its id.
+    StaleControl(String),
+    /// A decodable ticket that still counts against the live limit.
+    Live,
+    /// Anything that does not read as a ticket; also counts as live, so a
+    /// planted file never frees quota.
+    Undecodable,
 }
 
 /// Count the `.req` files in `scratch_dir` as of `now`.
@@ -47,40 +66,55 @@ pub(super) fn classify(scratch_dir: &Path, now: SystemTime) -> Result<TicketCoun
         if Path::new(&name).extension() != Some(OsStr::new("req")) {
             continue;
         }
-        // A name that is not UTF-8 cannot be opened or decoded here, so it
-        // counts as live like any other file that cannot be classified.
-        match name
-            .to_str()
-            .and_then(|name| stale_control_id(scratch_dir, name, now))
-        {
-            Some(id) => {
+        match classify_one(scratch_dir, &name, now) {
+            Class::StaleControl(id) => {
                 counts.stale_control += 1;
                 if counts.stale_ids.len() < MAX_NAMED_IDS {
                     counts.stale_ids.push(id);
                 }
             }
-            None => counts.live += 1,
+            Class::Live => counts.live += 1,
+            Class::Undecodable => {
+                counts.live += 1;
+                counts.undecodable += 1;
+                if counts.undecodable_ids.len() < MAX_NAMED_IDS {
+                    let name = name.to_string_lossy();
+                    let id = name.strip_suffix(".req").unwrap_or(&name);
+                    counts.undecodable_ids.push(id.to_string());
+                }
+            }
         }
     }
     Ok(counts)
 }
 
-/// The ticket id when `name` is a decodable control ticket older than
-/// [`STALE_AFTER`]. `None` for anything else, including a symlink, a
-/// non-regular file, an oversize file or one that does not decode: those
-/// count as live, so a planted file never frees quota.
-fn stale_control_id(scratch_dir: &Path, name: &str, now: SystemTime) -> Option<String> {
+/// Decode first, then apply the age rule. A name that is not UTF-8, a
+/// symlink, a non-regular file, an oversize file or one that does not decode
+/// is undecodable; a control ticket older than [`STALE_AFTER`] is stale;
+/// every other ticket is live. Every file is opened without following a link
+/// and read within the ticket cap.
+fn classify_one(scratch_dir: &Path, name: &OsStr, now: SystemTime) -> Class {
+    let Some(name) = name.to_str() else {
+        return Class::Undecodable;
+    };
+    let Some((ticket, modified)) = read_ticket(scratch_dir, name) else {
+        return Class::Undecodable;
+    };
+    let age = now.duration_since(modified).unwrap_or_default();
+    if ticket.kind.is_control() && age > STALE_AFTER {
+        Class::StaleControl(ticket.id)
+    } else {
+        Class::Live
+    }
+}
+
+fn read_ticket(scratch_dir: &Path, name: &str) -> Option<(Ticket, SystemTime)> {
     let file = open_regular_no_follow(scratch_dir, name, libc::O_RDONLY)
         .ok()
         .flatten()?;
     let modified = file.metadata().ok()?.modified().ok()?;
-    let age = now.duration_since(modified).unwrap_or_default();
-    if age <= STALE_AFTER {
-        return None;
-    }
     let bytes = read_open_bounded(file, Path::new(name), MAX_TICKET_BYTES).ok()?;
-    let ticket = Ticket::decode(&bytes).ok()?;
-    ticket.kind.is_control().then_some(ticket.id)
+    Some((Ticket::decode(&bytes).ok()?, modified))
 }
 
 // APFS rejects file names that are not valid UTF-8 (EILSEQ), so the only
@@ -100,5 +134,6 @@ mod tests {
 
         assert_eq!(counts.live, 1);
         assert_eq!(counts.stale_control, 0);
+        assert_eq!(counts.undecodable, 1);
     }
 }

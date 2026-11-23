@@ -29,6 +29,10 @@ use super::relay_scratch::{create_scratch_dir, tempdir_outside_tmp};
 
 const STAGE_ID: &str = "relay-control-e2e-stage";
 const OLD: Duration = Duration::from_secs(120);
+/// The `tool_use_id` of every hook call here; `loom-relay-guard.sh` writes
+/// `.pre-<id>` before a control call, and the relay refuses a control ticket
+/// without it.
+const TOOL_USE_ID: &str = "toolu_e2e";
 
 /// Everything one run needs, kept alive for the fixture's lifetime.
 struct Fixture {
@@ -141,6 +145,8 @@ impl Fixture {
 
     /// `loom stage block`, as the session would run it.
     fn block(&self) -> Blocked {
+        fs::write(self.scratch_dir.join(format!(".pre-{TOOL_USE_ID}")), b"")
+            .expect("write the call marker");
         let output = self
             .session_loom()
             .args(["stage", "block", STAGE_ID, "relay control e2e"])
@@ -188,6 +194,7 @@ impl Fixture {
         let path = std::env::var_os("PATH").unwrap_or_default();
         let payload = serde_json::json!({
             "tool_name": "Bash",
+            "tool_use_id": TOOL_USE_ID,
             "tool_input": {"command": command},
             "tool_response": {"stdout": stdout, "stderr": stderr},
         })

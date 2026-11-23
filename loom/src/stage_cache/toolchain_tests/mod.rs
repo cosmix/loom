@@ -11,9 +11,11 @@
 //! A confined command takes its environment from this process, so the runs use
 //! the real `HOME` (the toolchains and host seeds live under it; the sandbox
 //! keeps it read-only) with the cache base moved to a temporary
-//! `XDG_CACHE_HOME` under `/tmp`: short enough that `<root>/h.sock` fits in a
-//! socket address, so sccache gets `SCCACHE_SERVER_UDS` instead of falling back
-//! to localhost TCP, which the boundary denies. The tests read the process
+//! `XDG_CACHE_HOME` under `/tmp`. The host job's sccache socket sits in a
+//! directory only the command can reach (`/tmp` under bubblewrap, the
+//! command's scratch directory on macOS), never in the cache root, so sccache gets
+//! `SCCACHE_SERVER_UDS` instead of falling back to localhost TCP, which the
+//! boundary denies. The tests read the process
 //! `HOME` and `PATH`, which other tests pin, so every one is `#[serial]`.
 
 mod c_cpp;
@@ -71,8 +73,7 @@ impl Rig {
 
     fn bare() -> Option<Rig> {
         let home = PathBuf::from(std::env::var_os("HOME").filter(|home| !home.is_empty())?);
-        // The cache base sits under /tmp, never under the real HOME, and is
-        // short: a TMPDIR-based one can push the socket path past SUN_LEN.
+        // The cache base sits under /tmp, never under the real HOME.
         let dirs = vec![
             tempfile::tempdir().unwrap(),
             tempfile::tempdir_in("/tmp").ok()?,
@@ -80,8 +81,6 @@ impl Rig {
         ];
         let [repo, xdg, tree] = [0, 1, 2].map(|i| dirs[i].path().canonicalize().unwrap());
         let cache = StageCache::resolve(&repo, "toolchain", &home, Some(&xdg)).unwrap();
-        let socket = cache.root().join("h.sock");
-        assert!(socket.as_os_str().len() < 104, "{socket:?} exceeds SUN_LEN");
         Some(Rig {
             _dirs: dirs,
             tree,

@@ -20,6 +20,8 @@ pub use record::{record_accepted_handoff, record_attempt_handoff};
 #[cfg(test)]
 mod attest_tests;
 #[cfg(test)]
+mod attestation_key_contract_tests;
+#[cfg(test)]
 mod checkpoint_tests;
 #[cfg(test)]
 mod checkpoint_trust_tests;

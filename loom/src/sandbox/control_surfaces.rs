@@ -30,10 +30,11 @@ const GLOB_CHARS: [char; 4] = ['*', '?', '[', '{'];
 /// Path components that mark loom state or Claude Code configuration wherever
 /// they appear: the state root in both layouts, stage worktrees, every
 /// `.claude` directory (hooks, settings, projects, plugins), and the
-/// repository's own git directory. Matched by exact path component
+/// repository's own git directory, and every `.codex` directory (the codex
+/// lane's hooks and configuration). Matched by exact path component
 /// (`pattern_names` below), so `.gitignore`, `.github` and `.gitattributes`
 /// stay unaffected: none of them equals `.git`.
-const CONTROL_COMPONENTS: [&str; 5] = [".loom", ".work", ".worktrees", ".claude", ".git"];
+const CONTROL_COMPONENTS: [&str; 6] = [".loom", ".work", ".worktrees", ".claude", ".git", ".codex"];
 
 /// Tools whose rule argument is a single path pattern.
 const PATH_TOOLS: [&str; 7] = [
@@ -261,8 +262,9 @@ impl ControlSurfaces {
     /// A path tool's rule names one when its pattern holds a
     /// [`CONTROL_COMPONENTS`] entry, lies under one of the roots, reaches one
     /// through a glob over an ancestor, or covers the session's own directory
-    /// (a bare tool name, an empty literal part, or `..`). Any other rule
-    /// names one when a word of its argument is such a path.
+    /// (a bare tool name or an empty literal part). Any `..` component marks
+    /// a rule, in a path rule or a Bash word alike. Any other rule names one
+    /// when a word of its argument is such a path.
     pub(crate) fn names(&self, rule: &str) -> bool {
         let Some((tool, argument)) = split_rule(rule) else {
             return PATH_TOOLS.contains(&rule.trim());
@@ -277,6 +279,9 @@ impl ControlSurfaces {
 
     fn pattern_names(&self, pattern: &str, path_rule: bool) -> bool {
         let path = expand(pattern.trim(), self.home.as_deref());
+        if path.components().any(|c| c == Component::ParentDir) {
+            return true;
+        }
         let marked = path.components().any(|component| {
             matches!(component, Component::Normal(name) if CONTROL_COMPONENTS
                 .iter()
@@ -287,9 +292,7 @@ impl ControlSurfaces {
         }
         let prefix = literal_prefix(&path);
         if !prefix.is_absolute() {
-            return path_rule
-                && (prefix.as_os_str().is_empty()
-                    || prefix.components().any(|c| c == Component::ParentDir));
+            return path_rule && prefix.as_os_str().is_empty();
         }
         let covers_descendants = path_rule && prefix != path;
         self.roots.iter().any(|root| {
@@ -317,6 +320,8 @@ fn split_rule(rule: &str) -> Option<(&str, &str)> {
     Some((rule[..open].trim(), argument))
 }
 
+#[cfg(test)]
+mod parent_dir_contract_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

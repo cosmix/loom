@@ -38,7 +38,7 @@ pub(crate) use roots::{cargo_home, environment_path};
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 #[path = "confine_protected.rs"]
-mod protected;
+pub(in crate::verify::criteria) mod protected;
 
 #[cfg(target_os = "macos")]
 #[path = "confine_developer_tools.rs"]
@@ -82,8 +82,7 @@ pub(crate) enum NetworkAccess {
 pub(super) struct Grants<'a> {
     /// A linked worktree's Git metadata, read-only.
     pub(super) git: Option<&'a git_roots::GitDirs>,
-    /// The canonical stage cache root: writable, and on macOS the only place
-    /// the host-job sccache socket may be bound and reached.
+    /// The canonical stage cache root, writable.
     pub(super) cache_root: Option<&'a Path>,
     /// The plan's memory journals outside the tree, read-only
     /// (`confine_protected`).
@@ -193,6 +192,7 @@ fn apply_environment(
     scratch.apply_environment(command);
     if let Some(cache) = cache {
         let host = host_env_from_process();
+        let cache = cache.clone().with_socket_dir(scratch.sccache_socket_dir());
         command.envs(cache.environment(Consumer::HostJob, tree, &host, None));
     }
     command.env("GIT_CONFIG_GLOBAL", "/dev/null");

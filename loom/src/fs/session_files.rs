@@ -173,13 +173,15 @@ pub fn find_session_for_stage(stage_id: &str, work_dir: &Path) -> Option<String>
 
     let entries = fs::read_dir(&sessions_dir).ok()?;
     for entry in entries.flatten() {
-        let path = entry.path();
+        let name = entry.file_name();
+        let path = Path::new(&name);
         if path.extension().and_then(|e| e.to_str()) != Some("md") {
             continue;
         }
 
-        // Read only the session fields needed for lookup.
-        if let Ok(content) = fs::read_to_string(&path) {
+        if let Ok(content) =
+            crate::fs::safe_read::read_to_string_bounded(&sessions_dir, path, 1024 * 1024)
+        {
             if let Ok(frontmatter) = parse_frontmatter_strings(&content) {
                 if frontmatter.get("stage_id").map(|s| s.as_str()) == Some(stage_id) {
                     if let Some(session_id) = frontmatter.get("id") {
@@ -316,6 +318,24 @@ mod tests {
         let result = find_session_file(work_dir, "session-abc").unwrap();
         assert!(result.is_some());
         assert!(result.unwrap().ends_with("session-abc.md"));
+    }
+
+    #[test]
+    fn test_find_session_for_stage_skips_an_oversized_session() {
+        let work_dir = TempDir::new().unwrap();
+        let sessions_dir = work_dir.path().join("sessions");
+        fs::create_dir(&sessions_dir).unwrap();
+        let path = sessions_dir.join("session-1.md");
+        let frontmatter = "---\nid: session-1\nstage_id: test-stage\n---\n";
+        fs::write(&path, frontmatter).unwrap();
+        fs::OpenOptions::new()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_len(1024 * 1024 + 1)
+            .unwrap();
+
+        assert_eq!(find_session_for_stage("test-stage", work_dir.path()), None);
     }
 
     #[test]

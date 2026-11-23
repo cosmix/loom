@@ -10,8 +10,7 @@ use crate::fs::safe_read::open_regular_no_follow;
 use crate::handoff::schema::{
     AcceptedReceipt, CompletionAttemptEvidence, CompletionPhase, NonceObservation,
 };
-
-use crate::commands::stage::admin_hmac::{constant_time_eq, hmac_sha256};
+use crate::utils::hmac::{constant_time_eq, hmac_sha256};
 
 pub const ATTESTATION_KEY_FILE: &str = "completion-attestation.key";
 
@@ -140,12 +139,22 @@ fn read_key(work_dir: &Path) -> Result<Option<AttestationKey>> {
 }
 
 fn refuse_unsafe_mode(file: &File) -> Result<()> {
-    let mode = file
+    let metadata = file
         .metadata()
-        .context("failed to inspect completion attestation key")?
-        .mode();
+        .context("failed to inspect completion attestation key")?;
+    let uid = metadata.uid();
+    // SAFETY: geteuid has no preconditions.
+    let euid = unsafe { libc::geteuid() };
+    if uid != euid {
+        bail!("completion attestation key is owned by uid {uid}, not by this user ({euid})");
+    }
+
+    let mode = metadata.mode();
     if mode & 0o044 != 0 {
         bail!("completion attestation key is readable by group or other");
+    }
+    if mode & 0o022 != 0 {
+        bail!("completion attestation key is writable by group or other");
     }
     Ok(())
 }

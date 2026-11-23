@@ -358,13 +358,10 @@ fn host_job_sccache_socket_is_not_the_sessions() {
     let private = short.clone().with_socket_dir(socket_dir);
     for (consumer, socket) in consumers() {
         let env = private.environment(consumer, &tree, &host, None);
-        let parent = if consumer == Consumer::HostJob {
-            private.root()
-        } else {
-            socket_dir
-        };
-        let expected = shown(&parent.join(socket));
+        let expected = shown(&socket_dir.join(socket));
         assert_eq!(var(&env, "SCCACHE_SERVER_UDS"), Some(expected));
+        let uds = PathBuf::from(var(&env, "SCCACHE_SERVER_UDS").unwrap());
+        assert!(!uds.starts_with(private.root()), "{socket} is in the root");
         let dir = shown(&short.root().join("sccache"));
         assert_eq!(var(&env, "SCCACHE_DIR"), Some(dir), "{socket}");
     }

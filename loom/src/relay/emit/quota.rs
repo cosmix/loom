@@ -20,13 +20,24 @@ pub(super) fn require_headroom(scratch_dir: &Path, now: SystemTime) -> Result<()
         live,
         stale_control,
         stale_ids,
+        undecodable,
+        undecodable_ids,
     } = stale::classify(scratch_dir, now)?;
     if live >= MAX_UNCONSUMED_TICKETS {
+        let unreadable = if undecodable > 0 {
+            format!(
+                " {undecodable} of them do not read as relay tickets and are never relayed: {}. \
+                 Delete `$LOOM_SCRATCH_DIR/<id>.req` for each.",
+                undecodable_ids.join(", ")
+            )
+        } else {
+            String::new()
+        };
         bail!(
             "this session already has {live} unconsumed relay tickets (limit \
              {MAX_UNCONSUMED_TICKETS}). Memory tickets: run `loom memory note --help` alone, in \
              the foreground, with its output unfiltered, to relay them. Check tickets: rerun \
-             `loom check` the same way."
+             `loom check` the same way.{unreadable}"
         );
     }
     let total = live + stale_control;
@@ -73,6 +84,17 @@ mod tests {
         assert!(err.contains("loom memory note --help"));
         assert!(err.contains("rerun `loom check`"));
         assert!(!err.contains("wait for the relay hook"));
+    }
+
+    #[test]
+    fn names_undecodable_tickets_in_the_refusal() {
+        let dir = TempDir::new().unwrap();
+        for n in 0..MAX_UNCONSUMED_TICKETS {
+            fs::write(dir.path().join(format!("{n}.req")), b"").unwrap();
+        }
+        let err = require(&dir).unwrap_err().to_string();
+        assert!(err.contains("do not read as relay tickets"), "{err}");
+        assert!(err.contains("0"), "{err}");
     }
 
     #[test]

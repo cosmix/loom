@@ -20,6 +20,16 @@
 # Not guarded: complete and subagents:control (pinned by loom-control-complete.sh
 #   and loom-control-subagents.sh), memory and telemetry (swept from disk).
 #
+# Call marker: a call that passes and runs any control kind (the guarded kinds
+#   plus complete and subagents:control) also gets an empty file
+#   $LOOM_SCRATCH_DIR/.pre-<tool_use_id>. The relay hook relays a control ticket
+#   for the lead only when the ticket was written at or after that marker, so a
+#   ticket a subagent planted in the shared scratch directory earlier cannot be
+#   relayed as the lead's by a later call that happens to print its line. The
+#   marker is written last, after every refusal, so a blocked call leaves none;
+#   the relay deletes it, and markers of calls that never reached PostToolUse
+#   are removed here once an hour old.
+#
 # Input:  the PreToolUse JSON payload on stdin.
 # Output: guidance on stderr when blocking.
 # Exit:   2 to block (fails closed without jq); 0 otherwise. Outside a loom
@@ -41,14 +51,17 @@ if ! command -v jq >/dev/null 2>&1; then
 	loom_require_jq loom-relay-guard.sh
 fi
 
-# One jq call: tool name, background flag, then the command (which may span
-# lines) last. The trailing "." keeps trailing newlines of the command.
+# One jq call: tool name, tool_use_id, background flag, then the command (which
+# may span lines) last. The trailing "." keeps trailing newlines of the command.
 FIELDS=$(printf '%s' "$INPUT_JSON" | jq -r '
 	(.tool_name // "" | tostring | gsub("[\r\n]"; " ")),
+	(.tool_use_id // "" | tostring | gsub("[\r\n]"; " ")),
 	(.tool_input.run_in_background // false | tostring),
 	(.tool_input.command // "" | tostring), "."' 2>/dev/null) || exit 0
 FIELDS=${FIELDS%$'\n.'}
 TOOL_NAME=${FIELDS%%$'\n'*}
+FIELDS=${FIELDS#*$'\n'}
+TOOL_USE_ID=${FIELDS%%$'\n'*}
 FIELDS=${FIELDS#*$'\n'}
 BACKGROUND=${FIELDS%%$'\n'*}
 COMMAND=${FIELDS#*$'\n'}
@@ -198,6 +211,28 @@ check_filter_rule() {
 	done
 }
 
+# write_call_marker - Leave `.pre-<tool_use_id>` in the scratch directory for a
+# call that runs a control kind. A tool_use_id of any other shape gets none, and
+# the relay treats the marker as absent.
+write_call_marker() {
+	local idx kind marker has_control=false
+	local id_pattern='^[A-Za-z0-9_-]{1,128}$'
+	while read -r idx kind; do
+		if relay_kind_is_control "$kind"; then
+			has_control=true
+			break
+		fi
+	done < <(relay_each_invocation)
+	[[ "$has_control" == true && "$TOOL_USE_ID" =~ $id_pattern ]] || return 0
+	marker="$LOOM_SCRATCH_DIR/.pre-$TOOL_USE_ID"
+	find "$LOOM_SCRATCH_DIR" -maxdepth 1 -type f -name '.pre-*' -mmin +60 -exec rm -f {} + 2>/dev/null || true
+	rm -f "$marker" 2>/dev/null || true
+	# noclobber makes the redirect create the file exclusively, so a link planted
+	# at the marker path between the rm and the write is not followed.
+	(umask 077 && set -C && : >"$marker") 2>/dev/null || true
+}
+
 check_stdout_rule
 check_filter_rule
+write_call_marker
 exit 0

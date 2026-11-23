@@ -3,9 +3,10 @@
 use anyhow::{bail, Context, Result};
 use sha2::{Digest, Sha256};
 
-use super::admin_hmac::{constant_time_eq, hmac_sha256};
 use std::os::fd::AsRawFd;
 use std::path::{Path, PathBuf};
+
+use crate::utils::hmac::{constant_time_eq, hmac_sha256};
 
 /// Environment variable carrying the one-time admin proof for a privileged
 /// action (stage completion, daemon stop). The proof is minted by the

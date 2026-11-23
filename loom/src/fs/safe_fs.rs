@@ -307,6 +307,9 @@ pub fn safe_create_dir_all(work_dir: &Path, relpath: &Path, mode: libc::mode_t) 
 }
 
 #[cfg(test)]
+mod non_utf8_parent_contract_tests;
+
+#[cfg(test)]
 #[path = "safe_fs_write_tests.rs"]
 mod write_tests;
 

@@ -5,10 +5,11 @@
 //! — or, for a ticket no line describes, when it is a well-formed ticket file
 //! of this session's own.
 
-use std::fs::File;
+use std::fs::{File, Metadata};
 use std::io::Read;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 use anyhow::{bail, Context, Result};
 
@@ -49,12 +50,22 @@ pub(super) fn consume(ticket: &Path) -> String {
 /// Open `<scratch_dir>/<id>.req` without following a link, then require a
 /// single-link regular file owned by `uid`, exactly `line.bytes` long and
 /// within the ticket cap, whose SHA-256 and `v`/`id`/`kind` match the line.
-pub(super) fn read_verified(scratch_dir: &Path, line: &RelayLine, uid: u32) -> Result<Ticket> {
+/// The ticket comes with its modification time, read from the same open
+/// descriptor the bytes came from.
+pub(super) fn read_verified(
+    scratch_dir: &Path,
+    line: &RelayLine,
+    uid: u32,
+) -> Result<(Ticket, SystemTime)> {
     let expected = u64::from(line.bytes);
     if expected > MAX_TICKET_BYTES as u64 {
         bail!("the line claims {expected} bytes, above the {MAX_TICKET_BYTES}-byte ticket cap");
     }
-    let (file, len) = open_owned(scratch_dir, &line.id, uid)?;
+    let (file, metadata) = open_owned(scratch_dir, &line.id, uid)?;
+    let len = metadata.len();
+    let modified = metadata
+        .modified()
+        .context("the ticket's modification time could not be read")?;
     if len != expected {
         bail!("the ticket is {len} bytes, the line says {expected}");
     }
@@ -72,7 +83,7 @@ pub(super) fn read_verified(scratch_dir: &Path, line: &RelayLine, uid: u32) -> R
             line.id
         );
     }
-    Ok(ticket)
+    Ok((ticket, modified))
 }
 
 /// Read `<scratch_dir>/<id>.req` for a ticket no line in this call describes:
@@ -87,7 +98,8 @@ pub(super) fn read_verified(scratch_dir: &Path, line: &RelayLine, uid: u32) -> R
 /// authorises a relay is the session proof plus the kinds derived from the
 /// Bash command's own text, and a swept ticket passes through both.
 pub(super) fn read_unlisted(scratch_dir: &Path, id: &str, uid: u32) -> Result<Ticket> {
-    let (file, len) = open_owned(scratch_dir, id, uid)?;
+    let (file, metadata) = open_owned(scratch_dir, id, uid)?;
+    let len = metadata.len();
     if len > MAX_TICKET_BYTES as u64 {
         bail!("the ticket is {len} bytes, above the {MAX_TICKET_BYTES}-byte ticket cap");
     }
@@ -103,9 +115,9 @@ pub(super) fn read_unlisted(scratch_dir: &Path, id: &str, uid: u32) -> Result<Ti
     Ok(ticket)
 }
 
-/// The open ticket file and its length: a regular file with a single link,
+/// The open ticket file and its metadata: a regular file with a single link,
 /// reached without following a symlink at any component, owned by `uid`.
-fn open_owned(scratch_dir: &Path, id: &str, uid: u32) -> Result<(File, u64)> {
+fn open_owned(scratch_dir: &Path, id: &str, uid: u32) -> Result<(File, Metadata)> {
     let file = open_regular_no_follow(scratch_dir, &ticket_file_name(id), libc::O_RDONLY)
         .context("the ticket is not a plain single-link file")?
         .context("the ticket disappeared before it could be read")?;
@@ -118,7 +130,7 @@ fn open_owned(scratch_dir: &Path, id: &str, uid: u32) -> Result<(File, u64)> {
             metadata.uid()
         );
     }
-    Ok((file, metadata.len()))
+    Ok((file, metadata))
 }
 
 /// Read exactly `len` bytes, refusing a file that changed size meanwhile.

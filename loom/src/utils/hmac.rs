@@ -1,14 +1,11 @@
-//! HMAC-SHA256 and constant-time comparison for operator proofs.
-//!
-//! Split from `admin_proof` so the proof POLICY (what a capability is bound
-//! to, who may mint one, replay consumption) reads separately from the
-//! primitive that signs it. The primitive is pinned against the RFC 4231
-//! vector in `admin_proof`'s tests; it has no loom-specific behaviour and
-//! should need no further change.
+//! HMAC-SHA256 and constant-time comparison shared by operator proofs
+//! (`commands::stage::admin_proof`) and completion attestations
+//! (`handoff::completion::attest`). The RFC 4231 vector in `admin_proof`'s
+//! tests pins the HMAC implementation.
 
 use sha2::{Digest, Sha256};
 
-pub(super) const SHA256_LEN: usize = 32;
+const SHA256_LEN: usize = 32;
 const SHA256_BLOCK_LEN: usize = 64;
 
 pub(crate) fn hmac_sha256(key: &[u8], message: &[u8]) -> [u8; SHA256_LEN] {

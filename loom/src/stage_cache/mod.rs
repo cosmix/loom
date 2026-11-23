@@ -39,7 +39,9 @@ mod toolchain_tests;
 mod writable_tests;
 
 pub use developer::DeveloperTools;
-pub use environment::{go_proxy, goproxy_has_userinfo, host_env_from, host_env_from_process};
+pub use environment::{
+    drop_credentialed_proxies, go_proxy, goproxy_has_userinfo, host_env_from, host_env_from_process,
+};
 pub use roots::{seed_read_roots, toolchain_read_roots};
 
 use anyhow::{Context, Result};
@@ -75,8 +77,8 @@ pub struct StageCache {
     /// base-run tree for a base run's cache (`base_checkout`).
     parents: Vec<String>,
     root: PathBuf,
-    /// The consumer's private directory for a `Session` or `Worker` sccache
-    /// socket ([`StageCache::with_socket_dir`]).
+    /// The consumer's private directory for its sccache socket
+    /// ([`StageCache::with_socket_dir`]).
     socket_dir: Option<PathBuf>,
 }
 
@@ -136,9 +138,9 @@ impl StageCache {
         StageCache::resolve(repo_root, stage_id, Path::new(&home), xdg.as_deref())
     }
 
-    /// This cache with `dir` as the private directory of a `Session` or
-    /// `Worker` sccache socket: one no other consumer of the stage is granted.
-    /// Without it those consumers get no `SCCACHE_SERVER_UDS`.
+    /// This cache with `dir` as the private directory of a `Session`,
+    /// `Worker` or `HostJob` sccache socket: one no other consumer of the
+    /// stage is granted. Without it those consumers get no `SCCACHE_SERVER_UDS`.
     pub fn with_socket_dir(mut self, dir: &Path) -> StageCache {
         self.socket_dir = Some(dir.to_path_buf());
         self

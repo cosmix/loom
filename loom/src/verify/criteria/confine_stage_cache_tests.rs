@@ -44,9 +44,7 @@ fn temp() -> (tempfile::TempDir, PathBuf) {
     (dir, path)
 }
 
-/// A temporary cache base under `/tmp`: a host job's `TMPDIR` is long enough
-/// to push `<root>/h.sock` past the socket address limit, which drops
-/// `SCCACHE_SERVER_UDS` from the environment.
+/// A temporary cache base under `/tmp`, short enough for any path below it.
 fn short_temp() -> (tempfile::TempDir, PathBuf) {
     let dir = tempfile::tempdir_in("/tmp").unwrap();
     let path = dir.path().canonicalize().unwrap();
@@ -191,8 +189,9 @@ fn a_command_without_a_stage_cache_resolves_git_in_the_developer_directory() {
     );
 }
 
-/// The host-job socket in the stage root can be bound and reached; any other
-/// socket path in the root, the session's included, cannot be bound.
+/// The host-job socket in the command's own scratch can be bound and reached;
+/// a socket path in the stage root, where the session could pre-bind it,
+/// cannot be bound.
 #[cfg(target_os = "macos")]
 #[test]
 #[serial_test::serial]
@@ -204,8 +203,7 @@ fn only_the_host_job_sccache_socket_is_granted() {
     let (_x, xdg) = short_temp();
     let _home = HomeGuard::pin(&home);
     let cache = StageCache::resolve(&repo, "alpha", &home, Some(&xdg)).unwrap();
-    let socket = cache.root().join("h.sock");
-    assert!(socket.as_os_str().len() < 104, "{socket:?} exceeds SUN_LEN");
+    let root_socket = cache.root().join("h.sock");
     // Listen, then connect from the same process: no server to time.
     let probe = "use IO::Socket::UNIX; my $l = IO::Socket::UNIX->new(Type => SOCK_STREAM(), \
                  Local => $ARGV[0], Listen => 1) or die \"bind: $!\"; \
@@ -213,12 +211,13 @@ fn only_the_host_job_sccache_socket_is_granted() {
                  or die \"connect: $!\"; print \"OK\\n\"";
     let script = format!(
         "/usr/bin/perl -e '{probe}' \"$SCCACHE_SERVER_UDS\" && \
-         /usr/bin/perl -e '{probe}' \"$(dirname \"$SCCACHE_SERVER_UDS\")/s.sock\""
+         /usr/bin/perl -e '{probe}' \"{}\"",
+        root_socket.display()
     );
     let result = run_in_stage(&script, &tree, &cache);
     assert_eq!(result.stdout.matches("OK").count(), 1, "{result:?}");
     assert!(result.stderr.contains("bind:"), "{result:?}");
-    assert!(cache.root().join("h.sock").exists(), "{result:?}");
+    assert!(!root_socket.exists(), "{result:?}");
 }
 
 /// Maven's settings files are absent inside the boundary, metadata included,
@@ -350,7 +349,7 @@ fn a_symlinked_cache_base_gives_variables_under_the_granted_root() {
     let mut original = Command::new("/bin/sh");
     original.current_dir(&tree);
     let network = super::NetworkAccess::Denied;
-    let (wrapped, _scratch, _git) =
+    let (wrapped, scratch, _git) =
         super::wrap(&original, Some(&tree), network, Some(&cache), None).unwrap();
     let granted = cache.ensure().unwrap();
     assert!(granted.starts_with(&real), "{granted:?}");
@@ -359,5 +358,15 @@ fn a_symlinked_cache_base_gives_variables_under_the_granted_root() {
         PathBuf::from(value.unwrap().1.unwrap())
     };
     assert_eq!(named("GOCACHE"), granted.join("go-build"));
-    assert_eq!(named("SCCACHE_SERVER_UDS"), granted.join("h.sock"));
+    let socket = named("SCCACHE_SERVER_UDS");
+    assert!(
+        !socket.starts_with(&granted),
+        "{socket:?} is in the cache root"
+    );
+    let expected = if cfg!(target_os = "linux") {
+        PathBuf::from("/tmp/h.sock")
+    } else {
+        scratch.path().join("h.sock")
+    };
+    assert_eq!(socket, expected);
 }

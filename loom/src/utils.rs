@@ -5,6 +5,7 @@ use std::sync::{Once, OnceLock};
 use colored::Colorize;
 use sha2::{Digest, Sha256};
 
+pub(crate) mod hmac;
 mod terminal_recovery;
 pub mod text;
 #[cfg(test)]

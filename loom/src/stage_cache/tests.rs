@@ -91,9 +91,9 @@ fn a_seed_that_breaks_list_syntax_is_left_out() {
     }
 }
 
-/// A session's and a worker's sccache sockets live in the private directory
-/// they are given, never in the shared root; without one, or past
-/// `sun_path`, the variable is left out. A host job's stays in the root.
+/// Every consumer's sccache socket lives in the private directory it is
+/// given, never in the shared root; without one, or past `sun_path`, the
+/// variable is left out.
 #[test]
 fn session_and_worker_sockets_live_in_their_own_directory() {
     let ((_r, repo), (_h, home), (_t, tree)) = (temp(), temp(), temp());
@@ -105,7 +105,7 @@ fn session_and_worker_sockets_live_in_their_own_directory() {
             "SCCACHE_SERVER_UDS",
         )
     };
-    for consumer in [Consumer::Session, Consumer::Worker] {
+    for consumer in [Consumer::Session, Consumer::Worker, Consumer::HostJob] {
         assert_eq!(socket(&shared, consumer), None, "{consumer:?}");
     }
     let private = shared.clone().with_socket_dir(Path::new("/run/session-1"));
@@ -114,10 +114,7 @@ fn session_and_worker_sockets_live_in_their_own_directory() {
     let worker = socket(&private, Consumer::Worker);
     assert_eq!(worker.as_deref(), Some("/run/session-1/w.sock"));
     let host_job = socket(&private, Consumer::HostJob);
-    assert_eq!(
-        host_job,
-        Some(shared.root().join("h.sock").display().to_string())
-    );
+    assert_eq!(host_job.as_deref(), Some("/run/session-1/h.sock"));
     let long = shared.with_socket_dir(&Path::new("/run").join("d".repeat(120)));
     assert_eq!(socket(&long, Consumer::Session), None);
 }
@@ -268,20 +265,20 @@ fn ensure_refuses_a_planted_symlink() {
     assert!(std::fs::read_dir(&elsewhere).unwrap().next().is_none());
 }
 
-/// With the socket directory short enough, `<root>/h.sock` is emitted at
-/// `SUN_LEN - 1` bytes and omitted at `SUN_LEN`; `<root>` is the base plus
-/// `/loom/stage-cache/` and a 24-character hash.
+/// `<socket dir>/h.sock` is emitted at `SUN_LEN - 1` bytes and omitted at
+/// `SUN_LEN`.
 #[test]
 fn the_sccache_socket_is_emitted_below_sun_len_and_omitted_at_it() {
     const SUN_LEN: usize = if cfg!(target_os = "macos") { 104 } else { 108 };
     let ((_r, repo), (_h, home), (_t, tree)) = (temp(), temp(), temp());
-    let fixed = "/loom/stage-cache/".len() + 24 + "/h.sock".len();
-    let socket_len = |xdg_len: usize| {
-        let xdg = PathBuf::from(format!("/{}", "x".repeat(xdg_len - 1)));
-        let cache = StageCache::resolve(&repo, "alpha", &home, Some(&xdg)).unwrap();
+    let fixed = "/h.sock".len();
+    let cache = StageCache::resolve(&repo, "alpha", &home, None).unwrap();
+    let socket_len = |dir_len: usize| {
+        let dir = PathBuf::from(format!("/{}", "x".repeat(dir_len - 1)));
+        let cache = cache.clone().with_socket_dir(&dir);
         let env = cache.environment(Consumer::HostJob, &tree, &host(&home, &[]), None);
         (
-            cache.root().join("h.sock").as_os_str().len(),
+            dir.join("h.sock").as_os_str().len(),
             var(&env, "SCCACHE_SERVER_UDS"),
         )
     };
@@ -319,7 +316,7 @@ fn sccache_sockets_are_distinct_and_each_is_omitted_on_its_own_long_path() {
     let private = short.clone().with_socket_dir(socket_dir);
     let mut seen = BTreeSet::new();
     for (consumer, path) in [
-        (Consumer::HostJob, private.root().join("h.sock")),
+        (Consumer::HostJob, socket_dir.join("h.sock")),
         (Consumer::Session, socket_dir.join("s.sock")),
         (Consumer::Worker, socket_dir.join("w.sock")),
     ] {
@@ -330,14 +327,11 @@ fn sccache_sockets_are_distinct_and_each_is_omitted_on_its_own_long_path() {
     assert_eq!(seen.len(), 3, "the consumers' sockets are distinct");
     let long = StageCache::resolve(&repo, "alpha", &home.join("h".repeat(200)), None).unwrap();
     let long_root = long.with_socket_dir(socket_dir);
-    assert_eq!(uds(&long_root, Consumer::HostJob), None, "long root");
+    assert!(uds(&long_root, Consumer::HostJob).is_some(), "a long root");
     let long_dir = Path::new("/run").join("d".repeat(120));
     let long_socket_dir = short.clone().with_socket_dir(&long_dir);
-    assert!(uds(&long_socket_dir, Consumer::HostJob).is_some());
-    for consumer in [Consumer::Session, Consumer::Worker] {
+    for consumer in [Consumer::Session, Consumer::Worker, Consumer::HostJob] {
         assert_eq!(uds(&long_socket_dir, consumer), None, "long dir");
         assert_eq!(uds(&short, consumer), None, "no socket directory");
     }
-    let host_socket = short.root().join("h.sock").display().to_string();
-    assert_eq!(uds(&short, Consumer::HostJob), Some(host_socket));
 }

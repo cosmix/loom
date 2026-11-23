@@ -31,6 +31,10 @@ pub(super) const CONTRACT_ID: &str = "rejects-x";
 pub(super) const CONTRACT_FILE: &str = "tests/x_contract.rs";
 pub(super) const FROZEN: &str = "#[test]\nfn rejects_x() { assert!(false); }\n";
 pub(super) const REASON: &str = "r";
+/// The `tool_use_id` of the hook call; `loom-relay-guard.sh` writes
+/// `.pre-<id>` before a control call, and the relay refuses a control ticket
+/// without it.
+const TOOL_USE_ID: &str = "toolu_e2e";
 
 /// Everything one run needs; the temp dirs live as long as the fixture.
 pub(super) struct Fixture {
@@ -258,6 +262,8 @@ impl Fixture {
     }
 
     pub(super) fn run_dispute(&self, replacement: &Path) -> Output {
+        fs::write(self.scratch_dir.join(format!(".pre-{TOOL_USE_ID}")), b"")
+            .expect("write the call marker");
         let mut command = self.session_loom();
         command
             .args([
@@ -292,6 +298,7 @@ impl Fixture {
 pub(super) fn run_hook(fx: &Fixture, command_text: &str, filed: &Output) -> Output {
     let payload = serde_json::json!({
         "tool_name": "Bash",
+        "tool_use_id": TOOL_USE_ID,
         "tool_input": {"command": command_text},
         "tool_response": {
             "stdout": String::from_utf8_lossy(&filed.stdout),

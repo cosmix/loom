@@ -40,15 +40,46 @@ pub(super) const HOST_ENV_NAMES: [&str; 9] = [
 ];
 
 /// Whether any entry of a `GOPROXY` list (separated by `,` or `|`) has userinfo
-/// in its authority, the part between `scheme://` and the next `/`.
+/// in its authority, the part between `scheme://` and the next `/`; also reads
+/// an HTTP proxy variable, whose value is one entry.
 /// An entry without `://` is read as `https://` by Go, so its authority is the
-/// text before the first `/`.
+/// text before the first `/`. `://` counts as the scheme separator only when no
+/// `/` or `@` precedes it.
 pub fn goproxy_has_userinfo(value: &OsStr) -> bool {
     let value = value.to_string_lossy();
     value.split([',', '|']).any(|entry| {
-        let authority = entry.split_once("://").map_or(entry, |(_, rest)| rest);
+        let authority = entry
+            .split_once("://")
+            .filter(|(scheme, _)| !scheme.contains(['/', '@']))
+            .map_or(entry, |(_, rest)| rest);
         authority.split('/').next().unwrap_or("").contains('@')
     })
+}
+
+/// The proxy variables a client reads, in both cases.
+const PROXY_ENV_NAMES: [&str; 6] = [
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "ALL_PROXY",
+    "http_proxy",
+    "https_proxy",
+    "all_proxy",
+];
+
+/// Removes every proxy variable `command` sets to a URL with userinfo. Dropped,
+/// never stripped: a stripped URL fails with 407, and dropping matches the
+/// `GOPROXY` policy ([`host_env_from`]).
+pub fn drop_credentialed_proxies(command: &mut std::process::Command) {
+    let credentialed: Vec<OsString> = command
+        .get_envs()
+        .filter(|(name, _)| PROXY_ENV_NAMES.iter().any(|proxy| name == proxy))
+        .filter_map(|(name, value)| Some((name, value?)))
+        .filter(|(_, value)| goproxy_has_userinfo(value))
+        .map(|(name, _)| name.to_os_string())
+        .collect();
+    for name in credentialed {
+        command.env_remove(name);
+    }
 }
 
 /// The `HOST_ENV_NAMES` of `vars`; a name that is not UTF-8 is skipped, and a
@@ -219,13 +250,13 @@ impl StageCache {
     /// fit `sun_path`. The consumers of one stage share writable caches, so
     /// the cache gives no integrity guarantee between them; separate sockets
     /// keep each consumer's compiler runs inside its own confinement, since an
-    /// sccache server runs the compilers its clients ask for. A host job's
-    /// socket is in the root, where Seatbelt grants `h.sock` alone and
-    /// bubblewrap binds the root; a session's or worker's is in its private
-    /// [`StageCache::with_socket_dir`], which no host job is granted.
+    /// sccache server runs the compilers its clients ask for. Every socket is
+    /// in the directory the caller hands to [`StageCache::with_socket_dir`],
+    /// never in the shared root, which a session can write: a host job's
+    /// socket there could be pre-bound or connected to.
     fn sccache_socket(&self, consumer: Consumer) -> Option<PathBuf> {
         let socket = match consumer {
-            Consumer::HostJob => self.root.join("h.sock"),
+            Consumer::HostJob => self.socket_dir.as_ref()?.join("h.sock"),
             Consumer::Session => self.socket_dir.as_ref()?.join("s.sock"),
             Consumer::Worker => self.socket_dir.as_ref()?.join("w.sock"),
         };

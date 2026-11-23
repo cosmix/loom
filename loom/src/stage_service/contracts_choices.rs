@@ -12,10 +12,10 @@ use anyhow::Result;
 use std::path::Path;
 
 use super::Site;
-use crate::daemon::ContractRunReport;
 use crate::host_verify::{store as jobs, JobKind};
 use crate::models::stage::Stage;
 use crate::plan::schema::{ContractChoice, ContractChoices, ContractSpec};
+use crate::stage_service::ContractRunReport;
 use crate::verify::contracts::choices::{
     load_choices, merge_choices, prune_choices, save_choices, validate_choices_in,
 };

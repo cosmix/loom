@@ -142,6 +142,19 @@ impl CargoScratch {
         self.directory.path()
     }
 
+    /// The directory for the host job's sccache socket, one only that job's
+    /// own command can reach. Linux: `/tmp`, a private tmpfs per command under
+    /// bubblewrap, so no session sees it and `/tmp/h.sock` always fits
+    /// `sun_path`. macOS: the command's scratch, fresh and randomly named,
+    /// which the Seatbelt profile lets the command bind and connect in.
+    pub(super) fn sccache_socket_dir(&self) -> &Path {
+        if cfg!(target_os = "linux") {
+            Path::new("/tmp")
+        } else {
+            self.path()
+        }
+    }
+
     /// The private directory bound writable at the host Cargo home, and that path.
     #[cfg(target_os = "linux")]
     pub(super) fn cargo_mount(&self) -> Option<(PathBuf, &Path)> {
