@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use super::baseline;
 use super::config_guard::{changed, snapshot, ConfigSnapshot};
 use super::driver::RunEnv;
 use super::recover::terminate_codex;
@@ -59,6 +60,9 @@ impl CodexHalf {
         let before = snapshot(root).map_err(|error| {
             format!("cannot read the session configuration before Codex: {error:#}")
         })?;
+        baseline::save(env.ctx.runtime(), &before).map_err(|error| {
+            format!("cannot record the session configuration before Codex: {error:#}")
+        })?;
         let slots = &env.slots;
         let candidates: Vec<String> = codex_model_candidates(&slots.codex_model)
             .into_iter()
@@ -73,7 +77,10 @@ impl CodexHalf {
             candidates.clone(),
             &slots.codex_effort,
         )
-        .map_err(|error| format!("Codex did not start: {error:#}"))?;
+        .map_err(|error| {
+            clear_baseline(env);
+            format!("Codex did not start: {error:#}")
+        })?;
         env.publish(|view| view.begin_codex(round, &slots.codex_model, &slots.codex_effort));
         let mut half = CodexHalf {
             run: Some(run),
@@ -254,8 +261,17 @@ impl CodexHalf {
     fn configuration_changed(&self, env: &RunEnv) -> Option<String> {
         if self.running() {
             line(&format!("pressure run: {NOT_EXITED}"));
-            return block(env, NOT_EXITED.to_owned(), &[]);
+            let blocked = block(env, NOT_EXITED.to_owned(), &[]);
+            clear_baseline(env);
+            return blocked;
         }
+        let blocked = self.compare(env);
+        clear_baseline(env);
+        blocked
+    }
+
+    /// The decision on a Codex that has exited: compare against the baseline in memory.
+    fn compare(&self, env: &RunEnv) -> Option<String> {
         let (reason, changed) = match snapshot(env.ctx.root()) {
             Ok(after) => {
                 let changed = changed(&self.before, &after);
@@ -270,6 +286,17 @@ impl CodexHalf {
             }
         };
         block(env, reason, &changed)
+    }
+}
+
+/// The run is over for configuration purposes (compared, blocked or never started): drop the
+/// on-disk baseline. A failed removal leaves a stale file the next recovery would compare.
+fn clear_baseline(env: &RunEnv) {
+    if let Err(error) = baseline::clear(env.ctx.runtime()) {
+        line(&format!(
+            "pressure run: the configuration baseline was not removed: {}",
+            safe(&format!("{error:#}"))
+        ));
     }
 }
 

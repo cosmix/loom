@@ -163,7 +163,10 @@ fn answer(ctx: &PlanContext, conn: &ConnCtx, client_id: Option<String>, outcome:
         &PlanMessage::Chat(Box::new(ChatFrame::Result(result))),
     );
     if !returned.is_empty() {
-        let frame = ChatFrame::QueueReturned { texts: returned };
+        let frame = ChatFrame::QueueReturned {
+            texts: returned,
+            cause: None,
+        };
         hub.send_to_conn(conn.id, &PlanMessage::Chat(Box::new(frame)));
     }
 }

@@ -27,6 +27,7 @@ fn seed() -> Seed {
         messages: Vec::new(),
         attachments: Vec::new(),
         shape: None,
+        target: None,
     }
 }
 
@@ -63,11 +64,28 @@ fn sessions(f: &Fixture) -> Vec<String> {
 }
 
 #[test]
+fn a_seeded_target_is_stored_by_create() {
+    let f = Fixture::new(false);
+    let state = ChatState::default();
+    let target = "doc/plans/PLAN-demo.md";
+    let seed = Seed {
+        target: Some(target.into()),
+        ..seed()
+    };
+
+    drafts::create(&f.ctx, &state, SESSION, seed).unwrap();
+
+    let draft = drafts::get(&f.ctx, &state, SESSION).unwrap();
+    assert_eq!(draft.target.as_deref(), Some(target));
+}
+
+#[test]
 fn messages_are_capped_on_write() {
     let f = Fixture::new(false);
     let state = ChatState::default();
     let seed = Seed {
         messages: (0..45).map(|n| format!("m{n:02}")).collect(),
+        target: None,
         ..seed()
     };
     drafts::create(&f.ctx, &state, SESSION, seed).unwrap();
@@ -255,6 +273,7 @@ fn a_draft_over_the_file_cap_loses_its_oldest_messages_and_still_reads_back() {
         messages: (0..MAX_MESSAGES)
             .map(|n| format!("{n:02}{message}"))
             .collect(),
+        target: None,
         ..seed()
     };
 

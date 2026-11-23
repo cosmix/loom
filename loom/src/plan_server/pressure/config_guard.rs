@@ -5,6 +5,7 @@ use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
+use serde::{Deserialize, Serialize};
 
 use crate::fs::safe_read::EntryKind;
 
@@ -44,7 +45,7 @@ const CLAUDE_WORKTREES: &str = "worktrees";
 /// One fingerprint per sorted path as Claude Code reads it: the SHA-256 of a regular file, the
 /// target of a symlink plus what it serves inside the repository, or the kind of any other
 /// non-directory entry.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ConfigSnapshot {
     files: BTreeMap<String, String>,
 }

@@ -13,11 +13,12 @@ use super::commands::{Out, Step};
 use super::driver::checked_transcript;
 use super::ending::END_SLACK;
 use super::host::socket_name;
+use super::pending::read_pending;
 use super::registry::{read_record, remove_session_dir, session_dirs};
-use super::registry::{terminate_children, write_record, SessionRecord};
+use super::registry::{terminate_children, write_record, ChildRecord, SessionRecord};
 use super::requests::canonical;
 use super::session::{Phase, Recovery, Session};
-use super::{Bridge, BridgeEvent, EndCause, EndMode, EndOutcome, RecoveredSession, RecoveryReport};
+use super::{Bridge, BridgeEvent, EndCause, EndMode, EndOutcome};
 use crate::fs::safe_read::read_bounded;
 use crate::orchestrator::terminal::tmux::socket_path_for;
 use crate::plan_session::kind::{SessionDir, SessionKind};
@@ -25,6 +26,22 @@ use crate::plan_session::model::DenyReason;
 use crate::plan_session::permission::{write_answer, Answer, Behavior};
 use crate::plan_session::spool::SpoolReader;
 use crate::process::IdentityStatus;
+
+/// A session recovery ended.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RecoveredSession {
+    pub id: String,
+    pub kind: SessionKind,
+    pub children: Vec<ChildRecord>,
+}
+/// What `recover` found in the sessions directory.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct RecoveryReport {
+    pub closed: Vec<RecoveredSession>,
+    pub torn_down: Vec<RecoveredSession>,
+    /// `(id, socket, why)`; the socket is empty when no record named one.
+    pub left_alone: Vec<(String, String, String)>,
+}
 
 const RESTARTED: &str = "the server restarted";
 /// The hook reads answers bounded the same way.
@@ -156,8 +173,14 @@ impl Bridge {
             }
         }
         terminate_children(&record.children);
+        let texts = read_pending(dir);
         if let Err(error) = remove_session_dir(dir) {
             return left(format!("cannot remove its directory: {error:#}"));
+        }
+        if !texts.is_empty() {
+            let id = record.id.clone();
+            let returned = BridgeEvent::InputReturned { id, texts };
+            self.lock().outbox.push(Out::Event(returned));
         }
         let ended = BridgeEvent::Ended {
             id: record.id.clone(),
@@ -176,6 +199,7 @@ impl Bridge {
     /// Rebuild the live session from its spool and transcript (the driver reads both from
     /// the start) and run its final write, denying every request on arrival.
     fn resume(&self, record: SessionRecord, dir: SessionDir) -> Found {
+        let texts = read_pending(&dir);
         let answers = deny_unanswered(&dir);
         let recovered = RecoveredSession {
             id: record.id.clone(),
@@ -196,6 +220,10 @@ impl Bridge {
             inner.chat = Some(session.id.clone());
         }
         let mut step = Step::new(chat);
+        if !texts.is_empty() {
+            let id = session.id.clone();
+            step.event(BridgeEvent::InputReturned { id, texts });
+        }
         session.sync(&mut step);
         inner.sessions.insert(session.id.clone(), session);
         inner.outbox.append(&mut step.out);
@@ -206,6 +234,7 @@ impl Bridge {
 impl Bridge {
     /// Write the changed record of a live session; the driver is its only writer.
     pub(super) fn record_step(&self, id: &str) {
+        self.save_pending(id);
         let (dir, record) = {
             let mut inner = self.lock();
             let Some(session) = inner.sessions.get_mut(id) else {
@@ -219,6 +248,11 @@ impl Bridge {
         };
         if let Err(error) = write_record(&dir, &record) {
             tracing::warn!(session = %id, %error, "cannot update the session record");
+            // Cleared before the write so a change during it sets the flag again; a failed
+            // write puts it back for the next tick.
+            if let Some(session) = self.lock().sessions.get_mut(id) {
+                session.record_dirty = true;
+            }
         }
     }
 }

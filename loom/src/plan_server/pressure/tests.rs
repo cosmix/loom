@@ -3,8 +3,15 @@
 //! fixture sets `LOOM_HOME`, `CODEX_HOME` and `PATH`.
 
 mod authoring;
+#[cfg(test)]
+mod baseline_contract_tests;
 mod duties;
 mod fake;
+#[cfg(test)]
+// The frozen contract file binds a temporary before returning it; it cannot be edited.
+#[allow(clippy::let_and_return)]
+mod queue_cause_contract_tests;
+mod recovery_baseline;
 mod routes;
 mod runs;
 

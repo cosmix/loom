@@ -293,3 +293,40 @@ fn join_turns_a_runner_panic_into_an_error() {
         "codex runner thread panicked"
     );
 }
+
+#[cfg(unix)]
+fn run_logged(log: &Path, output: &str) -> Result<()> {
+    let mut child = spawn_codex_logged(
+        Path::new("/bin/sh"),
+        vec!["-c".into(), format!("echo {output}")],
+        log.parent().unwrap(),
+        log,
+        |_| {},
+    )?;
+    child.wait()?;
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn a_previous_regular_log_is_replaced() {
+    let dir = tempfile::tempdir().unwrap();
+    let log = dir.path().join("codex.log");
+    run_logged(&log, "first-attempt").unwrap();
+    run_logged(&log, "second-attempt").unwrap();
+    assert_eq!(std::fs::read_to_string(&log).unwrap(), "second-attempt\n");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_directory_at_the_log_path_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let log = dir.path().join("codex.log");
+    std::fs::create_dir(&log).unwrap();
+    let error = run_logged(&log, "out").unwrap_err();
+    assert!(
+        error.to_string().contains("not a regular file"),
+        "{error:#}"
+    );
+    assert!(log.is_dir());
+}

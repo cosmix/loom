@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use super::driver::{teardown, PressureSessions, Run};
 use super::options::PressureRunning;
-use super::recover::interrupted_runs;
+use super::recover::{check_baseline, interrupted_runs};
 use super::view::StopCause;
 use crate::plan_server::authoring::{AuthoringEvent, FreeReason};
 use crate::plan_server::context::PlanContext;
@@ -186,8 +186,13 @@ pub(crate) fn install_with(
     send_on_open(ctx, &runs);
     register_shutdown(ctx, &runs);
     let root = ctx.root().to_path_buf();
+    let runtime = ctx.runtime().clone();
+    let grace = runs.tools.codex_exit_grace;
     sessions.on_recovered(Box::new(move |report| {
         for message in interrupted_runs(&root, report) {
+            line(&message);
+        }
+        if let Some(message) = check_baseline(&root, &runtime, report, grace) {
             line(&message);
         }
     }));

@@ -15,10 +15,15 @@ mod message;
 pub mod pins;
 mod publish;
 mod release;
+mod returned;
 mod team;
 
 #[cfg(test)]
+mod draft_seed_contract_tests;
+#[cfg(test)]
 mod kickoff_fix_contracts;
+#[cfg(test)]
+mod returned_contract_tests;
 #[cfg(test)]
 mod start_contract_tests;
 #[cfg(test)]
@@ -27,6 +32,8 @@ mod tests;
 mod tests_dispatch;
 #[cfg(test)]
 mod tests_drafts;
+#[cfg(test)]
+mod tests_returned;
 
 pub use dispatch::dispatch;
 pub use drafts::routes;
@@ -73,6 +80,8 @@ struct ChatState {
     team: Mutex<Option<DraftTeamView>>,
     /// Held across every read-modify-write of a draft file (`drafts`).
     drafts: Mutex<()>,
+    /// Input a restart returned, and the browser it waits for (`returned`).
+    returned: Mutex<returned::Returned>,
 }
 
 impl ChatState {
@@ -137,6 +146,7 @@ pub(crate) fn install_with(
     let slot = Arc::new(GuidanceSlot::new(Arc::new(ChecklistGuidance)));
     let leases = Arc::new(AuthoringLeases::default());
     let state = Arc::new(ChatState::default());
+    *lock(&state.returned) = returned::load(ctx);
     drafts::sweep(ctx);
     let mut config = bridge_config(ctx, &slot);
     config_overrides(&mut config);
@@ -147,6 +157,7 @@ pub(crate) fn install_with(
     ctx.extensions().insert(Arc::clone(&state));
     ctx.extensions().insert(Arc::clone(&bridge));
     publish::subscribe(ctx, &bridge, &state);
+    returned::follow_holder(ctx);
     open_snapshots(ctx, &bridge, &state);
     follow_authoring(ctx, &bridge);
     follow_sessions(ctx, &bridge, state, leases, runtime);
@@ -222,6 +233,7 @@ fn open_snapshots(ctx: &Arc<PlanContext>, bridge: &Arc<Bridge>, state: &Arc<Chat
         let mut messages = vec![PlanMessage::Chat(Box::new(ChatFrame::Snapshot(snapshot)))];
         messages.extend(team::snapshots(&state));
         messages.push(drafts::snapshot(&ctx, &state));
+        messages.extend(returned::on_open(&ctx, &state, &conn.browser));
         messages
     }));
 }
@@ -299,6 +311,9 @@ fn follow_sessions(
                 if let Some(starter) = starter.filter(|_| *kind == SessionKind::Authoring) {
                     release::release_ended(&ctx, &state, &bridge, &leases, starter);
                 }
+            }
+            BridgeEvent::InputReturned { texts, .. } => {
+                returned::on_returned(&ctx, &state, texts.clone());
             }
             _ => {}
         }

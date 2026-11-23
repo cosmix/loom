@@ -7,6 +7,8 @@ use std::path::Path;
 
 use anyhow::Result;
 
+#[cfg(test)]
+mod codex_log_contract_tests;
 pub mod codex_run;
 pub mod instruction;
 pub mod models;

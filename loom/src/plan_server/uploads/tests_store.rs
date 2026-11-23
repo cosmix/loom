@@ -119,6 +119,31 @@ fn an_upload_past_the_cap_is_refused_but_a_stored_file_is_reused_at_the_cap() {
 }
 
 #[test]
+fn a_full_store_sweeps_expired_files_before_refusing() {
+    let rt = runtime();
+    let old = stored(put(rt.path(), "old.txt", "text/plain", b"old content", 1));
+    let dir = store_dir(&rt);
+    let old_data = dir.join(format!("{old}.txt"));
+    let old_sidecar = dir.join(format!("{old}.json"));
+    let cap = fs::metadata(&old_data).unwrap().len() + fs::metadata(&old_sidecar).unwrap().len();
+    let body = b"new";
+
+    let fresh = stored(put_within(
+        rt.path(),
+        "new.txt",
+        "text/plain",
+        body,
+        1 + KEEP_SECONDS + 10,
+        cap,
+    ));
+
+    assert_eq!(fresh, id_of(body));
+    assert_eq!(fs::read(dir.join(format!("{fresh}.txt"))).unwrap(), body);
+    assert!(!old_data.exists());
+    assert!(!old_sidecar.exists());
+}
+
+#[test]
 fn touch_refreshes_a_present_id_and_reports_a_missing_or_malformed_one() {
     let rt = runtime();
     let id = stored(put(rt.path(), "a.png", "image/png", &PNG, 100));
@@ -229,6 +254,30 @@ fn the_same_bytes_under_another_media_type_keep_the_first_file() {
     assert_eq!(stored(put(rt.path(), "a.md", "text/markdown", body, 2)), id);
     let first = store_dir(&rt).join(format!("{id}.txt"));
     assert_eq!(fs::read(first).unwrap(), body, "a delivered path went away");
+}
+
+#[test]
+fn a_second_media_type_adds_no_blob() {
+    let rt = runtime();
+    let body = b"# same bytes\n";
+    let id = stored(put(rt.path(), "a.txt", "text/plain", body, 1));
+
+    let Ok(second) = put(rt.path(), "b.md", "text/markdown", body, 2) else {
+        panic!("the second upload should reuse the file");
+    };
+
+    let dir = store_dir(&rt);
+    let mut names: Vec<_> = fs::read_dir(&dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+        .collect();
+    names.sort();
+    assert_eq!(names, [format!("{id}.json"), format!("{id}.txt")]);
+    assert_eq!(second.id, id);
+    assert_eq!(second.media_type, "text/plain");
+    let sidecar = read_sidecar(&dir, &id).unwrap();
+    assert_eq!(sidecar.media_type, "text/plain");
+    assert_eq!((sidecar.name.as_str(), sidecar.stored_at), ("b.md", 2));
 }
 
 #[test]

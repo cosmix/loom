@@ -16,7 +16,22 @@ pub enum ChatFrame {
     Snapshot(ChatSnapshot),
     Delta(ChatDelta),
     Result(CommandResult),
-    QueueReturned { texts: Vec<String> },
+    QueueReturned {
+        texts: Vec<String>,
+        /// Absent: the texts answer the receiving tab's own interrupt, end or set-aside.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cause: Option<QueueReturnCause>,
+    },
+}
+
+/// Why a `queue_returned` frame arrived without the receiving tab asking for it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum QueueReturnCause {
+    /// A Pressure Start ended the open chat.
+    Pressure,
+    /// A restart found input the last server accepted and never saw confirmed.
+    Recovery,
 }
 
 /// The outcome of a browser command.
@@ -215,5 +230,37 @@ mod tests {
             "command": "discard_kickoff", "session": "kickoff-1"
         }))
         .is_err());
+    }
+
+    #[test]
+    fn a_queue_returned_frame_carries_its_cause() {
+        let frame = ChatFrame::QueueReturned {
+            texts: vec!["kept".into()],
+            cause: Some(QueueReturnCause::Pressure),
+        };
+        let expected = json!({
+            "frame": "queue_returned", "texts": ["kept"], "cause": "pressure"
+        });
+
+        assert_eq!(serde_json::to_value(&frame).unwrap(), expected);
+        assert_eq!(
+            serde_json::from_value::<ChatFrame>(expected).unwrap(),
+            frame
+        );
+    }
+
+    #[test]
+    fn a_queue_returned_frame_without_a_cause_omits_the_key() {
+        let plain = json!({"frame": "queue_returned", "texts": ["kept"]});
+        let frame = serde_json::from_value::<ChatFrame>(plain.clone()).unwrap();
+
+        assert_eq!(
+            frame,
+            ChatFrame::QueueReturned {
+                texts: vec!["kept".into()],
+                cause: None
+            }
+        );
+        assert_eq!(serde_json::to_value(&frame).unwrap(), plain);
     }
 }

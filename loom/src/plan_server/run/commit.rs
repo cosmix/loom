@@ -7,7 +7,7 @@ use std::thread;
 use anyhow::{ensure, Context, Result};
 
 use crate::git::revision::head_commit;
-use crate::git::user_git::{literal, user_git, IndexBefore};
+use crate::git::user_git::{self, literal, untracked, user_git, IndexBefore};
 use crate::git::worktree::WorktreeGit;
 use crate::plan_server::context::PlanContext;
 use crate::plan_server::request::{ApiRequest, ApiResponse};
@@ -55,16 +55,6 @@ pub fn commit_doc_changes(
     run_sequence(root, paths, message, |_, _, line| on_line(line))
 }
 
-/// The ticked paths `git add` can match. A staged deletion or a rename's source is in neither
-/// the index nor the worktree, and `git add` exits 128 on such a pathspec; `git commit -- <paths>`
-/// still records those paths from HEAD, so they stay on the commit's pathspec only.
-fn addable_paths<'a>(root: &Path, paths: &'a [String]) -> Vec<&'a String> {
-    paths
-        .iter()
-        .filter(|path| root.join(path).symlink_metadata().is_ok())
-        .collect()
-}
-
 fn run_sequence(
     root: &Path,
     paths: &[String],
@@ -72,14 +62,18 @@ fn run_sequence(
     mut on_line: impl FnMut(&str, OutputStream, &str),
 ) -> Result<i32> {
     let index = IndexBefore::read(root).context("reading the index before the commit")?;
-    let addable = addable_paths(root, paths);
-    if !addable.is_empty() {
+    // Only untracked files need adding. A staged deletion or a rename's source is absent
+    // from both the index and the worktree, so it stays on the commit pathspec only.
+    let path_strs: Vec<&str> = paths.iter().map(String::as_str).collect();
+    let added = untracked(root, &path_strs)?;
+    if !added.is_empty() {
         let mut add = user_git(root);
         add.args(["-c", "core.quotepath=off", "add", "--"])
-            .args(literal(&addable));
-        let code = run_step(add, "git add", &mut on_line)?;
-        if code != 0 {
-            return Ok(code);
+            .args(literal(&added));
+        let ran = run_step(add, "git add", &mut on_line);
+        if !matches!(ran, Ok(0)) {
+            unstage_added(root, &added, &mut on_line);
+            return ran;
         }
     }
     let mut commit = user_git(root);
@@ -97,8 +91,20 @@ fn run_sequence(
         for note in index.reset(root, paths, "HEAD").notes() {
             on_line("git reset", OutputStream::Stderr, &note);
         }
+    } else {
+        unstage_added(root, &added, &mut on_line);
     }
     ran
+}
+
+fn unstage_added(
+    root: &Path,
+    added: &[String],
+    on_line: &mut impl FnMut(&str, OutputStream, &str),
+) {
+    if let Err(why) = user_git::unstage(root, added) {
+        on_line("git rm --cached", OutputStream::Stderr, &why);
+    }
 }
 
 /// Run `cmd`, streaming its lines as step `name`; its exit code, -1 for a signal.
@@ -198,5 +204,7 @@ fn commit_worker(ctx: &PlanContext, body: CommitRequest) {
     child::emit_done(ctx, RunJob::Commit, COMMIT_STEP, code);
 }
 
+#[cfg(test)]
+mod index_contract_tests;
 #[cfg(test)]
 mod tests;

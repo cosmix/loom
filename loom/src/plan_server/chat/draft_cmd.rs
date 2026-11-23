@@ -40,6 +40,7 @@ impl StartDraft {
             messages: vec![typed],
             attachments: inputs.iter().take(MAX_ATTACHMENTS).cloned().collect(),
             shape: None,
+            target: None,
             size,
         }))
     }

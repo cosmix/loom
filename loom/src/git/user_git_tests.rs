@@ -39,7 +39,7 @@ fn hook(root: &Path, name: &str, script: &str) {
     fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
 }
 
-/// What the planner's commit does to `a.md`: read the index, stage, commit `a.md` alone, reset.
+/// Read and reset the index around a pathspec commit of `a.md`.
 fn commit_a(root: &Path) -> IndexReset {
     let index = IndexBefore::read(root).unwrap();
     git(root, &["add", "--", "a.md"]);
@@ -48,6 +48,41 @@ fn commit_a(root: &Path) -> IndexReset {
         &["commit", "-q", "-m", "edit", "--", ":(literal)a.md"],
     );
     index.reset(root, &["a.md"], "HEAD")
+}
+
+#[test]
+fn reset_with_no_paths_keeps_the_staged_index() {
+    let dir = repo();
+    let root = dir.path();
+    fs::write(root.join("a.md"), "base\n").unwrap();
+    git(root, &["add", "--", "a.md"]);
+    git(root, &["commit", "-q", "-m", "base"]);
+    fs::write(root.join("a.md"), "staged\n").unwrap();
+    git(root, &["add", "--", "a.md"]);
+    let index = IndexBefore::read(root).unwrap();
+
+    let reset = index.reset(root, &[] as &[&str], "HEAD");
+
+    assert!(reset.failed.is_none(), "{:?}", reset.failed);
+    assert_eq!(git(root, &["show", ":a.md"]), b"staged\n");
+}
+
+#[test]
+fn untracked_lists_only_unknown_paths() {
+    let dir = repo();
+    let root = dir.path();
+    fs::create_dir(root.join("docs")).unwrap();
+    for path in ["tracked.md", "new[1].md", "new1.md", "ignored.tmp"] {
+        fs::write(root.join("docs").join(path), "contents\n").unwrap();
+    }
+    fs::write(root.join(".gitignore"), "*.tmp\n").unwrap();
+    git(root, &["add", "--", "docs/tracked.md"]);
+
+    let paths = ["tracked.md", "new[1].md", "ignored.tmp", "absent.md"];
+    assert_eq!(
+        untracked(&root.join("docs"), &paths).unwrap(),
+        ["new[1].md"]
+    );
 }
 
 // APFS rejects file names that are not valid UTF-8 (EILSEQ), so the fixture

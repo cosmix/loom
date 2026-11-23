@@ -9,10 +9,10 @@ use std::path::Path;
 
 use crate::git::revision::head_commit;
 use crate::git::runner::run_git;
-use crate::git::user_git::{run_literal, IndexBefore};
+use crate::git::user_git::{self, IndexBefore};
 use crate::git::worktree::WorktreeGit;
 
-use super::settle_commit::{refusal, Recorded};
+use super::settle_commit::Recorded;
 
 /// How many commits a `post-commit` hook may add on top of the settle's own before the settle's is
 /// no longer looked for. Revisit if projects' hooks routinely commit more than this.
@@ -116,17 +116,8 @@ fn unheld(root: &Path, added: &[String]) -> Vec<String> {
 
 /// Unstage `added`, paths a settle added that no commit holds; `reason` says why it ended.
 pub(super) fn unstage(root: &Path, added: &[String], reason: String) -> String {
-    if added.is_empty() {
-        return reason;
-    }
-    // `-f`: the entries are this settle's own, whatever a hook did to the files meanwhile.
-    let rm = ["rm", "--cached", "-q", "-f", "--ignore-unmatch", "--"];
-    match run_literal(root, &rm, added) {
-        Ok(output) if output.status.success() => reason,
-        Ok(output) => format!("{reason}; {}", refusal("git rm --cached", &output)),
-        Err(error) => format!(
-            "{reason}; git rm --cached could not run: {}",
-            error.root_cause()
-        ),
+    match user_git::unstage(root, added) {
+        Ok(()) => reason,
+        Err(why) => format!("{reason}; {why}"),
     }
 }

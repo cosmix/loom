@@ -1,5 +1,6 @@
 //! The `doc/` watcher feeding the project view, and the 1 s housekeeping tick.
 
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -67,7 +68,9 @@ pub(super) fn apply_batch(ctx: &PlanContext, batch: &Batch) {
         )
     };
     for hook in ctx.batch_hooks() {
-        hook(ctx, batch);
+        if catch_unwind(AssertUnwindSafe(|| hook(ctx, batch))).is_err() {
+            tracing::error!("a planning batch hook panicked");
+        }
     }
     // Compared after the hooks: the summary engine's hook updates the evaluation that
     // `has_summary` reads, so a sealed summary reaches the standalone table.
@@ -151,6 +154,36 @@ mod tests {
             )
             .unwrap(),
         )
+    }
+
+    #[test]
+    fn a_panicking_batch_hook_leaves_later_hooks_and_broadcasts_running() {
+        let root = tempfile::tempdir().unwrap();
+        let ctx = context(root.path());
+        let conn = ctx.conn_ctx(BrowserId::parse(&"d".repeat(32)).unwrap());
+        let frames = ctx.hub().register(&conn);
+        let called = Arc::new(AtomicBool::new(false));
+        ctx.on_batch(Box::new(|_, _| panic!("batch hook failed")));
+        let recorded = Arc::clone(&called);
+        ctx.on_batch(Box::new(move |_, _| {
+            recorded.store(true, Ordering::Relaxed)
+        }));
+        let path = "doc/plans/PLAN-fix.md";
+        put(root.path(), path, "# Fix\n");
+
+        apply_batch(
+            &ctx,
+            &Batch {
+                added: vec![path.into()],
+                ..Batch::default()
+            },
+        );
+
+        assert!(called.load(Ordering::Relaxed));
+        let frame = frames.try_recv().expect("the standalone shelf changed");
+        let value: Value = serde_json::from_str(&frame).unwrap();
+        assert_eq!(value["type"], "checklist");
+        assert_eq!(value["standalone"][0]["path"], path);
     }
 
     #[test]

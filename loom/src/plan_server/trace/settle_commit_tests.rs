@@ -8,7 +8,7 @@ use std::time::Duration;
 use tempfile::TempDir;
 
 use super::route_tests::{git, put};
-use super::settle_commit::{record, Limits, Recorded, SettleCommit};
+use super::settle_commit::{committed_bytes, record, Limits, Recorded, SettleCommit};
 use crate::test_git::TestRepo;
 
 pub(super) const PLAN: &str = "doc/plans/demo/PLAN-first.md";
@@ -113,6 +113,22 @@ pub(super) fn assert_left_staged(root: &Path) {
     assert_eq!(
         git(root, &["diff", "--name-only"]),
         format!("{PLAN}\n{LOOSE}")
+    );
+}
+
+#[test]
+fn committed_bytes_of_an_unknown_commit_is_an_error() {
+    let dir = repo();
+    assert!(committed_bytes(dir.path(), &"0".repeat(40), Path::new(PLAN)).is_err());
+}
+
+#[test]
+fn committed_bytes_of_an_absent_path_is_none() {
+    let dir = repo();
+    let root = dir.path();
+    assert_eq!(
+        committed_bytes(root, &head(root), Path::new(NEW_BRIEF)).unwrap(),
+        None
     );
 }
 

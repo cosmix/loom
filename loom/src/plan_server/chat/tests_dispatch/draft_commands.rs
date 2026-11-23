@@ -105,6 +105,19 @@ fn continue_is_refused_while_another_chat_is_open_and_keeps_the_old_draft() {
 }
 
 #[test]
+fn a_continued_confirmed_draft_keeps_its_target() {
+    let f = fixture(false);
+    let tab = f.connect(&browser());
+    plan_draft(&f, true);
+
+    assert_eq!(f.command(&tab, continue_cmd(OLD)), ok_result());
+
+    let id = wait_for("the continuation", || f.bridge.chat_session_id());
+    assert_eq!(stored(&f, &id)["target"], PLAN);
+    assert!(!draft_file(&f, OLD).exists());
+}
+
+#[test]
 fn a_full_draft_continues_within_the_delivery_limit() {
     let f = fixture(false);
     let tab = f.connect(&browser());

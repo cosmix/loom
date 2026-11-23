@@ -7,7 +7,7 @@ use std::time::Instant;
 use super::super::view::{self, StopCause};
 use super::step::{Waited, TICK};
 use super::RunEnv;
-use crate::plan_server::wire::chat::ChatFrame;
+use crate::plan_server::wire::chat::{ChatFrame, QueueReturnCause};
 use crate::plan_server::wire::message::PlanMessage;
 use crate::plan_server::wire::pressure::PressureEnd;
 use crate::plan_session::bridge::{BridgeEvent, EndCause, EndMode};
@@ -58,7 +58,10 @@ impl RunEnv {
         if texts.is_empty() {
             return;
         }
-        let frame = PlanMessage::Chat(Box::new(ChatFrame::QueueReturned { texts }));
+        let frame = PlanMessage::Chat(Box::new(ChatFrame::QueueReturned {
+            texts,
+            cause: Some(QueueReturnCause::Pressure),
+        }));
         self.ctx.hub().send_to_browser(&self.run.browser, &frame);
     }
 

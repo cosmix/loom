@@ -70,7 +70,7 @@ impl FakeHost {
         self.fail_spawn.store(true, Ordering::SeqCst);
     }
 
-    /// A spawn swaps `session.json` for a symlink: the no-follow write completing it fails.
+    /// A spawn puts a non-empty directory at `session.json`: the record write completing it fails.
     pub(super) fn fail_record(&self) {
         self.fail_record.store(true, Ordering::SeqCst);
     }
@@ -120,10 +120,11 @@ impl SessionHost for FakeHost {
             return Err(anyhow::Error::new(TeardownFailed { error, teardown }));
         }
         if self.fail_record.load(Ordering::SeqCst) {
-            // Refused for any uid, unlike a read-only mode; the record stays readable.
-            let (record, kept) = (spec.dir.record(), spec.dir.path().join("record.kept"));
-            fs::rename(&record, &kept)?;
-            std::os::unix::fs::symlink(&kept, &record)?;
+            // A rename onto a non-empty directory fails for any uid, unlike a read-only mode.
+            let record = spec.dir.record();
+            fs::remove_file(&record)?;
+            fs::create_dir(&record)?;
+            fs::write(record.join("kept"), b"kept")?;
         }
         let pid = 3_700_000 + self.next_pid.fetch_add(1, Ordering::SeqCst);
         self.specs.lock().unwrap().push((spec.clone(), pid));

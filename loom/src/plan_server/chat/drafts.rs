@@ -92,6 +92,8 @@ pub(super) struct Seed {
     pub(super) messages: Vec<String>,
     pub(super) attachments: Vec<AttachmentInput>,
     pub(super) shape: Option<KickoffShape>,
+    /// The confirmed document a continuation resumes.
+    pub(super) target: Option<String>,
 }
 
 /// A lowercase hyphenated uuid: the id becomes a file name.
@@ -115,7 +117,7 @@ impl Draft {
             messages: Vec::new(),
             shape: seed.shape,
             attachments: seed.attachments,
-            target: None,
+            target: seed.target,
             live: true,
         };
         draft.attachments.truncate(MAX_ATTACHMENTS);

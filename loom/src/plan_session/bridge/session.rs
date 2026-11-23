@@ -234,6 +234,9 @@ pub(super) struct Flow {
     /// The holder allowed this session's fetches from a card; never set by the session, never
     /// carried into another one (a recovered session starts without it).
     pub(super) fetch_grant: bool,
+    /// What `pending.json` holds; empty when it is absent. A recovered session starts empty, so
+    /// its file keeps the texts recovery read until the directory goes.
+    pub(super) pending_saved: Vec<String>,
 }
 
 pub(super) struct Session {

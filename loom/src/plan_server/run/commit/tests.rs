@@ -41,6 +41,10 @@ impl Repo {
         String::from_utf8(git_checked(self.0.path(), args).stdout).unwrap()
     }
 
+    fn staged_paths(&self) -> String {
+        self.git_text(&["diff", "--cached", "--name-only"])
+    }
+
     fn put(&self, path: &str, text: &str) {
         let path = self.0.path().join(path);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -55,13 +59,8 @@ impl Repo {
 
     fn commit(&self, paths: &[&str], message: &str) -> Result<i32> {
         let (current, _) = super::super::changes::split_changes(self.0.path()).unwrap();
-        commit_doc_changes(
-            self.0.path(),
-            &strings(paths),
-            message,
-            &current,
-            &mut |_| {},
-        )
+        let paths = strings(paths);
+        commit_doc_changes(self.0.path(), &paths, message, &current, &mut |_| {})
     }
 
     fn context(&self, read_only: bool) -> Arc<PlanContext> {
@@ -109,7 +108,7 @@ fn refuses_unselected_or_unsafe_paths_before_staging() {
     ] {
         assert!(repo.commit(&paths, "edit").is_err(), "{paths:?}");
         assert_eq!(repo.git_text(&["rev-parse", "HEAD"]), head);
-        assert_eq!(repo.git_text(&["diff", "--cached", "--name-only"]), "");
+        assert_eq!(repo.staged_paths(), "");
     }
 }
 
@@ -147,7 +146,7 @@ fn refuses_empty_oversized_and_nul_messages_before_staging() {
     for message in [String::new(), "x".repeat(2_001), "é".repeat(1_001), nul] {
         assert!(repo.commit(&["doc/a.md"], &message).is_err());
         assert_eq!(repo.git_text(&["rev-parse", "HEAD"]), head);
-        assert_eq!(repo.git_text(&["diff", "--cached", "--name-only"]), "");
+        assert_eq!(repo.staged_paths(), "");
     }
 }
 
@@ -206,15 +205,17 @@ fn signal_death_returns_minus_one_without_moving_head() {
 #[serial_test::serial]
 fn failed_add_never_runs_commit() {
     let repo = Repo::new();
-    repo.put("doc/a.md", "changed\n");
+    repo.put("doc/new.md", "new\n");
+    repo.put(".git/info/attributes", "doc/new.md filter=refuse\n");
+    repo.git_text(&["config", "filter.refuse.clean", "false"]);
+    repo.git_text(&["config", "filter.refuse.required", "true"]);
     repo.hook("pre-commit", "#!/bin/sh\ntouch hook-ran\n");
-    repo.put(".git/index.lock", "locked");
     let head = repo.git_text(&["rev-parse", "HEAD"]);
     let mut lines = Vec::new();
 
     let code = run_sequence(
         repo.0.path(),
-        &strings(&["doc/a.md"]),
+        &strings(&["doc/new.md"]),
         "edit",
         |step, stream, line| lines.push((step.to_owned(), stream, line.to_owned())),
     )
@@ -243,11 +244,37 @@ fn commits_only_ticked_paths_and_preserves_unrelated_staging() {
         repo.git_text(&["show", "--format=", "--name-only", "HEAD"]),
         "doc/a.md\n"
     );
-    assert_eq!(
-        repo.git_text(&["diff", "--cached", "--name-only"]),
-        "doc/unticked.md\nsrc.txt\n"
-    );
+    assert_eq!(repo.staged_paths(), "doc/unticked.md\nsrc.txt\n");
     assert_eq!(repo.git_text(&["show", "HEAD:src.txt"]), "original\n");
+}
+
+#[test]
+#[serial_test::serial]
+fn a_refused_commit_leaves_partial_staging_and_new_files_as_they_were() {
+    let repo = Repo::new();
+    repo.put("doc/a.md", "staged\n");
+    repo.put("src.txt", "changed\n");
+    repo.git_text(&["add", "--", "doc/a.md", "src.txt"]);
+    repo.put("doc/a.md", "worktree\n");
+    repo.put("doc/new.md", "new\n");
+    repo.hook("pre-commit", "#!/bin/sh\nexit 1\n");
+    let entries = ["ls-files", "--stage"];
+    let diff = ["diff", "--cached"];
+    let before = (repo.git_text(&entries), repo.git_text(&diff));
+    assert_eq!(repo.commit(&["doc/a.md", "doc/new.md"], "edit").unwrap(), 1);
+    assert_eq!((repo.git_text(&entries), repo.git_text(&diff)), before);
+}
+
+#[test]
+#[serial_test::serial]
+fn a_new_file_is_committed_and_unstaged_paths_stay_unstaged() {
+    let repo = Repo::new();
+    repo.put("doc/a.md", "changed\n");
+    repo.put("doc/new.md", "new\n");
+    assert_eq!(repo.commit(&["doc/a.md", "doc/new.md"], "edit").unwrap(), 0);
+    assert_eq!(repo.git_text(&["show", "HEAD:doc/a.md"]), "changed\n");
+    assert_eq!(repo.git_text(&["show", "HEAD:doc/new.md"]), "new\n");
+    assert_eq!(repo.staged_paths(), "");
 }
 
 #[test]
@@ -329,10 +356,7 @@ fn commits_deletions_beside_edits_and_keeps_unrelated_staging() {
     assert_eq!(head_files(&repo), "doc/c.md\ndoc/new.md\nsrc.txt\n");
     assert_eq!(repo.git_text(&["show", "HEAD:doc/c.md"]), "changed\n");
     assert_eq!(repo.git_text(&["show", "HEAD:src.txt"]), "original\n");
-    assert_eq!(
-        repo.git_text(&["diff", "--cached", "--name-only"]),
-        "src.txt\n"
-    );
+    assert_eq!(repo.staged_paths(), "src.txt\n");
 }
 
 #[test]
@@ -370,8 +394,5 @@ fn a_file_a_hook_generates_and_adds_is_left_clean_beside_unrelated_staging() {
 
     assert_eq!(repo.git_text(&["show", "HEAD:doc/gen.md"]), "generated\n");
     assert_eq!(repo.git_text(&["status", "--porcelain", "--", "doc"]), "");
-    assert_eq!(
-        repo.git_text(&["diff", "--cached", "--name-only"]),
-        "src.txt\n"
-    );
+    assert_eq!(repo.staged_paths(), "src.txt\n");
 }

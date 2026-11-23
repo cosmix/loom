@@ -16,30 +16,11 @@ use std::thread::{self, JoinHandle};
 
 use crate::codex::codex_model_candidates;
 
+mod log_file;
 mod retirement;
+pub(crate) use log_file::tail as log_tail;
+use log_file::{unavailable_line, LOG_SCAN_BYTES};
 pub use retirement::CodexRetirement;
-
-/// Phrases Codex and the API print when the account cannot use a model,
-/// matched case-insensitively.
-const UNAVAILABLE_PHRASES: [&str; 4] = [
-    "model is not supported",
-    "model not found",
-    "model_not_found",
-    "does not exist",
-];
-
-/// The first error line naming `model` together with an unavailability
-/// phrase. Tool output and model prose can quote those phrases, so only
-/// `ERROR` lines count. Requiring both on one line also excludes Codex's
-/// harmless metadata warning and unrelated errors.
-fn unavailable_line<'a>(log: &'a str, model: &str) -> Option<&'a str> {
-    log.lines().find(|line| {
-        let lower = line.to_lowercase();
-        line.trim_start().starts_with("ERROR")
-            && line.contains(model)
-            && UNAVAILABLE_PHRASES.iter().any(|p| lower.contains(p))
-    })
-}
 
 /// What the Codex runner reports once its last attempt has exited.
 pub struct CodexOutcome {
@@ -189,7 +170,7 @@ impl CodexJob {
     /// An unreadable log counts as no unavailable-model error, so an unrelated
     /// failure is reported instead of being retried blindly.
     fn unavailable_line(&self, model: &str) -> Option<String> {
-        let bytes = std::fs::read(&self.log_path).ok()?;
+        let bytes = log_file::tail(&self.log_path, LOG_SCAN_BYTES)?;
         let log = String::from_utf8_lossy(&bytes);
         unavailable_line(&log, model).map(|line| line.trim().to_string())
     }
@@ -372,8 +353,7 @@ pub fn spawn_codex_logged(
     log_path: &Path,
     configure: impl FnOnce(&mut Command),
 ) -> Result<Child> {
-    let log = std::fs::File::create(log_path)
-        .with_context(|| format!("failed to create codex log {}", log_path.display()))?;
+    let log = log_file::create_log(log_path)?;
     let log_err = log
         .try_clone()
         .context("failed to clone codex log handle")?;
