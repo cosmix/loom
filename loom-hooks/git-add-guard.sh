@@ -62,7 +62,7 @@ debug() {
 
 # Read stdin JSON (Claude Code provides tool input)
 source "$(dirname "${BASH_SOURCE[0]}")/_bounded.sh"
-INPUT_JSON=$(loom_read_input 1 2>/dev/null || true)
+loom_read_payload_or_block 1 git-add-guard.sh
 
 # Extract tool name and command
 TOOL_NAME=$(echo "$INPUT_JSON" | jq -r '.tool_name // empty' 2>/dev/null || true)

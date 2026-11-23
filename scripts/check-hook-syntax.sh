@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# check-hook-syntax.sh - parse every shell hook, fail on the first syntax error.
+# check-hook-syntax.sh - parse shell and Python hooks, install.sh and dev-install.sh.
 #
 # Exists because two hooks shipped syntactically invalid and nothing caught it:
 # `spawn-guard.sh` and `codex-forward.sh` each carried a heredoc inside a command
@@ -42,16 +42,41 @@ while IFS= read -r script; do
 	fi
 
 	checked=$((checked + 1))
-	if ! bash -n "$script" 2>/dev/null; then
+	if ! diagnostic=$(bash -n "$script" 2>&1); then
 		printf 'SYNTAX ERROR: %s\n' "${script#"$repo_root"/}" >&2
-		bash -n "$script" 2>&1 | sed 's/^/    /' >&2
+		printf '%s\n' "$diagnostic" | sed 's/^/    /' >&2
 		failed=$((failed + 1))
 	fi
-done < <({ find "${script_dirs[@]}" -type f -name '*.sh'; find "$repo_root/loom-hooks/tests/bsd-shims" -type f; find "$repo_root/loom/.githooks" -type f -perm -u+x; } 2>/dev/null | sort)
+done < <({
+	find "${script_dirs[@]}" -type f -name '*.sh'
+	find "$repo_root/loom-hooks/tests/bsd-shims" -type f || true
+	find "$repo_root/loom/.githooks" -type f -perm -u+x || true
+	printf '%s\n' "$repo_root/install.sh" "$repo_root/dev-install.sh"
+} 2>/dev/null | sort)
 
-if [ "$failed" -ne 0 ]; then
-	printf '\ncheck-hook-syntax: %d of %d shell scripts failed to parse\n' "$failed" "$checked" >&2
+if ! command -v python3 >/dev/null; then
+	printf 'check-hook-syntax: python3 is required to parse the Python hooks\n' >&2
 	exit 1
 fi
 
-printf 'check-hook-syntax: %d shell scripts parse cleanly\n' "$checked"
+py_files=$(find "$repo_root/loom-hooks" -type f \( -name '*.py' -o -name '*.sh' \) | sort)
+while IFS= read -r file; do
+	[ -n "$file" ] || continue
+	if [[ "$file" != *.py ]] && ! head -n 1 "$file" | grep -q 'python'; then
+		continue
+	fi
+
+	checked=$((checked + 1))
+	if ! diagnostic=$(python3 -c 'import ast, sys; ast.parse(open(sys.argv[1], "rb").read(), sys.argv[1])' "$file" 2>&1); then
+		printf 'SYNTAX ERROR: %s\n' "${file#"$repo_root"/}" >&2
+		printf '%s\n' "$diagnostic" | sed 's/^/    /' >&2
+		failed=$((failed + 1))
+	fi
+done <<<"$py_files"
+
+if [ "$failed" -ne 0 ]; then
+	printf '\ncheck-hook-syntax: %d of %d scripts failed to parse\n' "$failed" "$checked" >&2
+	exit 1
+fi
+
+printf 'check-hook-syntax: %d scripts parse cleanly\n' "$checked"

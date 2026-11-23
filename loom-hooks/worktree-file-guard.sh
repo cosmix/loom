@@ -14,25 +14,9 @@ source "$(dirname "$0")/_common.sh"
 loom_require_jq "worktree-file-guard.sh"
 
 source "$(dirname "${BASH_SOURCE[0]}")/_bounded.sh"
-INPUT_JSON=$(loom_read_input 5 2>/dev/null || true)
+loom_read_payload_or_block 5 worktree-file-guard.sh
 
 TOOL_NAME=$(printf '%s' "$INPUT_JSON" | jq -r '.tool_name // empty' 2>/dev/null || true)
-
-if [[ -n "$INPUT_JSON" && -z "$TOOL_NAME" ]]; then
-	loom_record_block "worktree-file-guard" "bad-payload" "unknown" ""
-	cat >&2 <<EOF
-
-[worktree-file-guard/bad-payload] LOOM: BLOCKED - File operation metadata could not be parsed
-============================================================
-
-Reason: received non-empty tool input that did not contain a valid tool name.
-
-Retry the file operation so the worktree policy can validate its path.
-============================================================
-
-EOF
-	exit 2
-fi
 
 case "$TOOL_NAME" in
 Read | Write | Edit | MultiEdit | Glob | Grep | NotebookEdit) ;;

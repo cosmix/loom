@@ -213,7 +213,7 @@ confirm_overwrites() {
 	if [[ ! "$response" =~ ^[Yy]$ ]]; then
 		echo ""
 		info "cancelled"
-		exit 0
+		exit 1
 	fi
 }
 
@@ -317,6 +317,13 @@ print_summary() {
 	echo -e "   ${D}~/.local/bin/${N}"
 	echo -e "     loom        ${D}parallel work orchestrator${N}"
 	echo ""
+	case ":$PATH:" in
+		*":$HOME/.local/bin:"*) ;;
+		*)
+			warn "\$HOME/.local/bin is not on your PATH; add it with: export PATH=\"\$HOME/.local/bin:\$PATH\""
+			echo ""
+			;;
+	esac
 	echo -e "   ${D}next steps${N}"
 	echo -e "     ${C}loom init${N} <plan.md>   ${D}initialize a project${N}"
 	echo -e "     ${C}loom run${N}              ${D}start orchestration${N}"

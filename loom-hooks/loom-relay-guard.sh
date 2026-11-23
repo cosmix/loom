@@ -50,6 +50,7 @@ if ! command -v jq >/dev/null 2>&1; then
 	source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 	loom_require_jq loom-relay-guard.sh
 fi
+loom_require_payload loom-relay-guard.sh
 
 # One jq call: tool name, tool_use_id, background flag, then the command (which
 # may span lines) last. The trailing "." keeps trailing newlines of the command.

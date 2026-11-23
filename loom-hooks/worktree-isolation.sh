@@ -55,7 +55,7 @@ debug() {
 
 # Read JSON input from stdin
 source "$(dirname "${BASH_SOURCE[0]}")/_bounded.sh"
-INPUT_JSON=$(loom_read_input 1 2>/dev/null || true)
+loom_read_payload_or_block 1 worktree-isolation.sh
 
 debug "=== $(date) worktree-isolation ==="
 debug "INPUT_JSON: $INPUT_JSON"

@@ -6,6 +6,13 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Usage text comes from install.sh; build nothing and signal nothing.
+for arg in "$@"; do
+    case "$arg" in
+        -h|--help) exec bash "$SCRIPT_DIR/install.sh" "$@" ;;
+    esac
+done
+
 cleanup_backups() {
     local backups=()
     local root file name response
@@ -67,6 +74,8 @@ echo "Running install.sh..."
 cd "$SCRIPT_DIR"
 bash ./install.sh "$@"
 
+# A declined install exits non-zero, and `set -e` stops the script here, before
+# the kill below.
 # Stop the daemon only after the binary and hooks are both installed: a daemon
 # started while the build or install is still running keeps the old binary and
 # refuses every spawn because its embedded hooks differ from the installed ones.

@@ -19,11 +19,7 @@ set -euo pipefail
 # loom_tokenize_command, strip_embedded_content, loom_record_block and the
 # caller-identity helpers.
 source "$(dirname "$0")/_common.sh"
-
-read_input() {
-	source "$(dirname "${BASH_SOURCE[0]}")/_bounded.sh"
-	loom_read_input 1 2>/dev/null || true
-}
+source "$(dirname "${BASH_SOURCE[0]}")/_bounded.sh"
 
 # fail_closed <reason> [<prefix>] - Print the refusal (after <prefix>) and exit 2.
 fail_closed() {
@@ -352,14 +348,12 @@ emit_pinned_allow() {
 	printf '%s\n' "$out"
 }
 
-INPUT_JSON=$(read_input)
-[[ -n "$INPUT_JSON" ]] || exit 0
-[[ "$(printf '%s' "$INPUT_JSON" | jq -r '.tool_name // empty')" == Bash ]] || exit 0
-
 STAGE_ID=${LOOM_STAGE_ID:-}
 SESSION_ID=${LOOM_SESSION_ID:-}
 WORKTREE_PATH=${LOOM_WORKTREE_PATH:-}
 [[ -n "$STAGE_ID" && -n "$SESSION_ID" ]] || exit 0
+loom_read_payload_or_block 1 loom-control-subagents.sh
+[[ "$(printf '%s' "$INPUT_JSON" | jq -r '.tool_name // empty')" == Bash ]] || exit 0
 # Membership, not presence (same rule as loom_current_worktree in _common.sh):
 # only a stage session, which runs in `<repo>/.worktrees/<stage-id>`, relays
 # worker control. Anchored at the end so a repo under an outer `.worktrees/<id>/`

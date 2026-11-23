@@ -1,13 +1,26 @@
 #!/usr/bin/env bash
 # Runtime proof of the background-output trust boundary, using real srt.
+# A missing prerequisite, or an srt that cannot start a sandbox here (for
+# instance inside another sandbox), skips with exit 0. Set
+# LOOM_HOOK_TEST_REQUIRE_SRT=1 to turn that skip into a failure; no CI job sets
+# it today, so a runner without srt skips this probe.
 set -euo pipefail
+# unavailable <reason> - skip, or fail when the runtime is required.
+unavailable() {
+    if [[ "${LOOM_HOOK_TEST_REQUIRE_SRT:-}" == 1 ]]; then
+        echo "FAIL: $1" >&2
+        exit 1
+    fi
+    echo "SKIP: $1"
+    exit 0
+}
 if [[ "$(uname -s)" != Linux ]]; then
     echo 'SKIP: native task-output confinement probe requires Linux'
     exit 0
 fi
 runtime="${LOOM_TEST_SRT_BIN:-srt}"
 for tool in "$runtime" bwrap socat python3; do
-    command -v "$tool" >/dev/null || { echo "missing runtime prerequisite: $tool" >&2; exit 1; }
+    command -v "$tool" >/dev/null || unavailable "missing runtime prerequisite: $tool"
 done
 d=$(mktemp -d)
 root="/tmp/claude-$(id -u)"
@@ -23,6 +36,8 @@ with open(sys.argv[1], 'w') as target:
                "filesystem":{"denyRead":[],"allowRead":[],
                              "allowWrite":["/tmp"],"denyWrite":[sys.argv[2]]}}, target)
 PY
+"$runtime" --settings "$d/settings.json" -c true >/dev/null 2>&1 ||
+    unavailable "srt cannot start a sandbox here"
 cat >"$d/probe.py" <<'PY'
 import os, pathlib, sys, tempfile
 channel = pathlib.Path(sys.argv[1])

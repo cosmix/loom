@@ -26,7 +26,7 @@ loom_require_jq "plans-path-guard.sh"
 
 # Read stdin JSON (Claude Code provides tool input)
 source "$(dirname "${BASH_SOURCE[0]}")/_bounded.sh"
-INPUT_JSON=$(loom_read_input 1 2>/dev/null || true)
+loom_read_payload_or_block 1 plans-path-guard.sh
 
 TOOL_NAME=$(echo "$INPUT_JSON" | jq -r '.tool_name // empty' 2>/dev/null || true)
 FILE_PATH=$(echo "$INPUT_JSON" | jq -r '.tool_input.file_path // empty' 2>/dev/null || true)

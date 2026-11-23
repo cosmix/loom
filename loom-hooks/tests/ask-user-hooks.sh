@@ -38,14 +38,16 @@ STUB
 # Runs a hook with the given stdin payload against an isolated fixture.
 # OSTYPE is overridden so neither the macOS nor the Linux notification branch
 # matches - this suite only checks the stage transition and the events trail.
+# Optional 4th and 5th arguments set the stage id and the hook PATH.
 run_hook() {
-	local hook="$1" fixture="$2" stdin="$3"
+	local hook="$1" fixture="$2" stdin="$3" stage="${4:-stage-x}" hook_path="${5:-$PATH}"
 	set +e
 	printf '%s' "$stdin" |
 		OSTYPE=unmatched \
 		LOOM_BIN="$fixture/loom" \
+		LOOM_HOOK_PATH="$hook_path" \
 		LOOM_WORK_DIR="$fixture/work" \
-		LOOM_STAGE_ID="stage-x" \
+		LOOM_STAGE_ID="$stage" \
 		LOOM_SESSION_ID="session-x" \
 		bash "$hook" >"$fixture/stdout" 2>"$fixture/stderr"
 	HOOK_CODE=$?
@@ -167,6 +169,48 @@ fixture_case7_pre_fails_open_without_jq() {
 		'.payload.acted' 'true'
 }
 
+# A stage id outside [A-Za-z0-9_-] must not reach the events line, a loom call
+# or a notification: the hook leaves without acting, with or without jq.
+fixture_case8_hostile_stage_id_is_refused() {
+	local fixture="$1" hook hook_path
+	for hook in "$pre_hook" "$post_hook"; do
+		for hook_path in "$PATH" "$NOJQ_PATH"; do
+			run_hook "$hook" "$fixture" '{"tool_name":"AskUserQuestion"}' 'a"b' "$hook_path"
+			assert_exit_zero "hostile-stage-id/${hook##*/}" "$fixture"
+			assert_no_loom_call "hostile-stage-id/${hook##*/}" "$fixture"
+			[[ ! -e "$fixture/work/hooks/events.jsonl" ]] ||
+				fail "hostile-stage-id/${hook##*/} wrote events.jsonl: $(cat "$fixture/work/hooks/events.jsonl")"
+		done
+	done
+}
+
+# The macOS notification text travels as its own osascript argument, never
+# inside the AppleScript source.
+fixture_case9_notification_message_is_an_argument() {
+	local fixture="$1" args_log="$1/osascript.args"
+	mkdir -p "$fixture/bin"
+	cat >"$fixture/bin/osascript" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$@" >"$(dirname "$0")/../osascript.args"
+STUB
+	chmod +x "$fixture/bin/osascript"
+	set +e
+	printf '%s' '{"tool_name":"AskUserQuestion"}' |
+		OSTYPE=darwin23 LOOM_HOOK_PATH="$fixture/bin:$PATH" LOOM_BIN="$fixture/loom" \
+			LOOM_WORK_DIR="$fixture/work" LOOM_STAGE_ID=stage-x LOOM_SESSION_ID=session-x \
+			bash "$pre_hook" >"$fixture/stdout" 2>"$fixture/stderr"
+	HOOK_CODE=$?
+	set -e
+	assert_exit_zero "pre/darwin" "$fixture"
+	[[ -s "$args_log" ]] || fail "pre/darwin did not call osascript"
+	# Every argument that follows -e is AppleScript source; none may hold the text.
+	if grep -x -A1 -- '-e' "$args_log" | grep -q 'needs your input'; then
+		fail "the notification text is inside an AppleScript source argument: $(cat "$args_log")"
+	fi
+	grep -qx 'loom stage stage-x needs your input' "$args_log" ||
+		fail "the message is not a separate osascript argument: $(cat "$args_log")"
+}
+
 with_fixture ask-user-hooks-case1 fixture_case1_pre_ignores_other_tools
 with_fixture ask-user-hooks-case2 fixture_case2_pre_records_a_real_question
 with_fixture ask-user-hooks-case3 fixture_case3_pre_fails_open_on_empty_stdin
@@ -174,5 +218,8 @@ with_fixture ask-user-hooks-case4 fixture_case4_post_resumes_on_a_real_answer
 with_fixture ask-user-hooks-case5 fixture_case5_post_ignores_other_tools
 with_fixture ask-user-hooks-case6 fixture_case6_pre_fails_open_on_malformed_stdin
 with_fixture ask-user-hooks-case7 fixture_case7_pre_fails_open_without_jq
+
+with_fixture ask-user-hooks-case8 fixture_case8_hostile_stage_id_is_refused
+with_fixture ask-user-hooks-case9 fixture_case9_notification_message_is_an_argument
 
 printf 'PASS\n'

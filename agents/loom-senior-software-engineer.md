@@ -19,7 +19,7 @@ Architecture across modules, new algorithms, concurrency and distributed systems
 
 You run at effort medium. A brief that reports a failed attempt at medium is spawned at effort high; after a failure at high the orchestrator asks `loom-advisor` for a diagnosis.
 
-## Skills to Leverage
+## Skills to Use
 
 When the brief names skills for this stage, load those first. Otherwise, use these for specialized work:
 

@@ -4,6 +4,7 @@
 use super::dry_run_tests::{committed, plan, stage};
 use super::*;
 use crate::process::sandbox_probe::{confined_commands_runnable, skip_unless};
+use serial_test::serial;
 
 fn skipped(test: &str) -> bool {
     let why = "the real executor confines every command with bubblewrap";
@@ -76,6 +77,7 @@ fn a_command_slow_with_a_warm_cache_is_a_timeout() {
 }
 
 #[test]
+#[serial]
 fn the_plans_inherit_confinement_reaches_acceptance() {
     if skipped("the_plans_inherit_confinement_reaches_acceptance") {
         return;
