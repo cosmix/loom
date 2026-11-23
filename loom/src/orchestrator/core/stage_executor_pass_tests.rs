@@ -80,3 +80,54 @@ fn uncertain_inventory_defers_with_a_visible_scheduling_reason() {
         StageStatus::Queued
     );
 }
+
+/// A dependency completed and merged by an out-of-process write after this
+/// tick's graph sync (a knowledge stage's `loom stage complete`) is ready by
+/// its file. The graph must agree before base-branch resolution reads it,
+/// or every child is refused as `SchedulingNotReady`.
+#[test]
+fn a_dependency_merged_on_disk_after_graph_sync_does_not_refuse_its_child() {
+    let temp = work_dir();
+    let work = temp.path().join(".loom").join("work");
+    let mut dep = Stage::new("dep".to_string(), None);
+    dep.id = "dep".to_string();
+    dep.status = StageStatus::Completed;
+    dep.merged = true;
+    save_stage(&dep, &work).unwrap();
+    let mut child = Stage::new("child".to_string(), None);
+    child.id = "child".to_string();
+    child.status = StageStatus::Queued;
+    child.dependencies = vec!["dep".to_string()];
+    save_stage(&child, &work).unwrap();
+
+    let mut graph = ExecutionGraph::build(vec![
+        crate::plan::schema::StageDefinition {
+            id: "dep".to_string(),
+            name: "dep".to_string(),
+            working_dir: ".".to_string(),
+            ..Default::default()
+        },
+        crate::plan::schema::StageDefinition {
+            id: "child".to_string(),
+            name: "child".to_string(),
+            working_dir: ".".to_string(),
+            dependencies: vec!["dep".to_string()],
+            ..Default::default()
+        },
+    ])
+    .unwrap();
+    graph.mark_status("dep", StageStatus::Executing).unwrap();
+
+    let mut orchestrator = orchestrator_for(&work, temp.path());
+    orchestrator.graph = graph;
+    orchestrator.start_ready_stages().unwrap();
+
+    let node = orchestrator.graph.get_node("dep").unwrap();
+    assert_eq!(node.status, StageStatus::Completed);
+    assert!(node.merged);
+    let reason = orchestrator.spawn_blocks.get("child");
+    assert!(
+        !matches!(reason, Some(BlockReason::SchedulingNotReady { .. })),
+        "{reason:?}"
+    );
+}

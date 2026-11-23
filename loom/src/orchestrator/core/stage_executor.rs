@@ -7,6 +7,7 @@ use crate::models::stage::{Stage, StageStatus, StageType};
 use crate::orchestrator::scheduling_report::{self, BlockReason, BlockedStage, SchedulingReport};
 use crate::orchestrator::signals::DependencyStatus;
 
+use super::lifecycle_snapshot::StageSnapshot;
 use super::persistence::Persistence;
 use super::session_adoption::AdoptionResult;
 use super::Orchestrator;
@@ -66,6 +67,34 @@ impl Orchestrator {
 
         scheduling_report::write(&self.config.work_dir, &SchedulingReport { blocked });
     }
+
+    /// Clear a launched stage's scheduling bookkeeping and republish the
+    /// report at once: a launch can take minutes (brief generation), and the
+    /// started stage must not sit in the report until the pass ends.
+    fn record_started(&mut self, stage_id: &str) {
+        self.queued_since.remove(stage_id);
+        self.spawn_blocks.remove(stage_id);
+        self.publish_scheduling_report();
+    }
+
+    /// Readiness comes from the stage files, base-branch resolution from the
+    /// graph. A dependency completed and merged by an out-of-process write
+    /// (`loom stage complete` on a knowledge stage) after this tick's graph
+    /// sync would otherwise be ready by its file but `Executing` in the graph,
+    /// and every child would be refused as `SchedulingNotReady`.
+    fn project_ready_dependencies(&mut self, snapshot: &StageSnapshot, ready_ids: &[String]) {
+        for stage_id in ready_ids {
+            let Some((stage, _)) = snapshot.records.get(stage_id) else {
+                continue;
+            };
+            for dep in &stage.dependencies {
+                self.graph.set_node_merged(dep, true);
+                if let Err(error) = self.graph.mark_completed(dep) {
+                    tracing::warn!(dep = %dep, %error, "Cannot project completed dependency");
+                }
+            }
+        }
+    }
 }
 
 /// Confirm the stage's Claude Code hooks directory exists, or fail.
@@ -115,7 +144,9 @@ impl StageExecutor for Orchestrator {
         // Watchdog + runtime-safety pass; see `coherence::begin_scheduling_pass`.
         self.begin_scheduling_pass();
 
-        let ready_ids = self.stage_snapshot()?.ready_ids();
+        let snapshot = self.stage_snapshot()?;
+        let ready_ids = snapshot.ready_ids();
+        self.project_ready_dependencies(&snapshot, &ready_ids);
         self.spawn_blocks.clear();
         let now = Utc::now();
         let mut started = 0;
@@ -136,8 +167,7 @@ impl StageExecutor for Orchestrator {
                 Ok(StartDisposition::Deferred) => {}
                 Ok(StartDisposition::Launched | StartDisposition::Adopted) => {
                     started += 1;
-                    self.queued_since.remove(stage_id);
-                    self.spawn_blocks.remove(stage_id);
+                    self.record_started(stage_id);
                 }
                 // One stage's lock or file must not end the daemon for the rest.
                 Err(error) => {
