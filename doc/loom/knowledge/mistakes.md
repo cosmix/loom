@@ -231,9 +231,7 @@ Host-job test guards added only where a failure was seen (two full runs hung), p
 
 ## CI Gate Rollout
 
-Strict CI gates pushed in bulk and untested, a commit that took another session's staged files, a CI run started on known failures, and a tool behaviour taken from memory.
-
-→ [CI Gate Rollout](mistakes/ci-gate-rollout.md)
+Strict CI gates pushed in bulk and untested, a commit that took another session's staged files, a CI run started on known failures, and a tool behaviour taken from memory. → [CI Gate Rollout](mistakes/ci-gate-rollout.md)
 
 ## macOS Boundary Delivery
 

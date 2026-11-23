@@ -21,7 +21,7 @@
 
 **What happened:** `git-add-guard.sh` used bare `timeout` command without `gtimeout` fallback, which fails silently on macOS without GNU coreutils.
 **Why:** macOS doesn't have `timeout` by default; GNU coreutils provides it as `gtimeout`.
-**How to avoid:** Hooks reading stdin use the cascade `gtimeout` → `timeout` → `cat`. Any other command that needs a bound goes through `loom_run_bounded` (`_read_ledger.sh`), whose last tier is a bash watchdog; never skip the command or run it unbounded when both binaries are missing ([The First macOS Hook Run](#the-first-macos-hook-run-found-bash-32-and-bsd-faults-the-linux-shims-hid-2026-10-13)).
+**How to avoid:** Hooks reading stdin use the cascade `gtimeout` → `timeout` → `cat`. Any other command that needs a bound goes through `loom_run_bounded` (`_read_ledger.sh`), whose last tier is a bash watchdog; never skip the command or run it unbounded when both binaries are missing ([The First macOS Hook Run](hooks-macos-and-bash32.md#the-first-macos-hook-run-found-bash-32-and-bsd-faults-the-linux-shims-hid-2026-10-13)).
 
 ## `${#arr[@]-0}` Is Not a Portable Empty-Array Guard (2026-08-10)
 
