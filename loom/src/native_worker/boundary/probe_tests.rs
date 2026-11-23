@@ -4,6 +4,7 @@ use std::os::unix::process::ExitStatusExt;
 use std::path::{Path, PathBuf};
 use std::process::ExitStatus;
 
+use super::super::mounts::codex_package;
 use super::host::{codex_bwrap, RealHost};
 use super::{qualify_from, HostProbes, Nesting, NESTING_REQUIRED, SIZE_REQUIRED};
 
@@ -147,8 +148,16 @@ fn real_codex_sandbox_runs_inside_a_payload_boundary() {
     if super::super::tests::no_boundary("real_codex_sandbox_runs_inside_a_payload_boundary") {
         return;
     }
-    if crate::codex::find_codex_path().is_err() {
+    let Ok(program) = crate::codex::find_codex_path() else {
         eprintln!("skipping real_codex_sandbox_runs_inside_a_payload_boundary: no codex on PATH");
+        return;
+    };
+    let package = program
+        .canonicalize()
+        .map_err(|error| format!("{error:#}"))
+        .and_then(|path| codex_package(&path).map_err(|error| format!("{error:#}")));
+    if let Err(error) = package {
+        eprintln!("skipping real_codex_sandbox_runs_inside_a_payload_boundary: {error:#}");
         return;
     }
     let nesting = RealHost.nesting().unwrap();
