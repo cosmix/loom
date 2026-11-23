@@ -1,5 +1,6 @@
 use super::*;
 use crate::plan_server::lock::{self, Acquired};
+use crate::web_server::listener::rebind_when_released;
 
 const WAIT: Duration = Duration::from_secs(10);
 
@@ -79,7 +80,7 @@ fn failed_start_retains_registered_worker_listener_and_singleton() {
     ));
     release.send(()).unwrap();
     wait_for_singleton(&path);
-    TcpListener::bind(local).expect("failed-start cleanup releases the listener");
+    rebind_when_released(local).expect("failed-start cleanup releases the listener");
 }
 
 #[test]
@@ -181,7 +182,7 @@ fn descendants_registered_during_cleanup_keep_ownership() {
     ));
     descendant.release.send(()).unwrap();
     assert!(pending.wait(WAIT));
-    TcpListener::bind(local).expect("all descendant owners released");
+    rebind_when_released(local).expect("all descendant owners released");
     assert!(matches!(lock::acquire(&path).unwrap(), Acquired::Held(_)));
 }
 
@@ -230,5 +231,5 @@ fn failed_hook_spawn_cannot_detach_its_registered_job() {
     assert!(TcpListener::bind(local).is_err());
     release.send(()).unwrap();
     assert!(pending.wait(WAIT));
-    TcpListener::bind(local).expect("job stays owned despite hook spawn failure");
+    rebind_when_released(local).expect("job stays owned despite hook spawn failure");
 }

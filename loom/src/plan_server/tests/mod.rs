@@ -110,17 +110,32 @@ fn an_omitted_port_walks_past_a_busy_default() {
         eprintln!("an_omitted_port_walks_past_a_busy_default: {DEFAULT_PORT} is in use elsewhere");
         return;
     };
-    let next_free = TcpListener::bind(("127.0.0.1", DEFAULT_PORT + 1)).is_ok();
     let project = project();
-    let mut opts = options(&project);
+    // The probe of the next port and the server's bind are two moments: another process, or
+    // a child forked meanwhile (it holds a released descriptor until exec, the last attempt's
+    // server's included), can take or free the port between them. An attempt whose outcome
+    // contradicts its probe repeats; a walk that skips a free port fails every attempt.
+    let next = DEFAULT_PORT + 1;
+    let mut outcomes = Vec::new();
+    for _ in 0..3 {
+        let (next_free, port) = walk_past_the_default(&project);
+        if next_free == (port == next) && port > DEFAULT_PORT {
+            drop(held);
+            return;
+        }
+        outcomes.push((next_free, port));
+    }
+    panic!("the walk from {DEFAULT_PORT} contradicted the probe of {next}: {outcomes:?}");
+}
+
+/// Whether the port after the default bound just before the server started without a port,
+/// and the port the server took.
+fn walk_past_the_default(project: &tempfile::TempDir) -> (bool, u16) {
+    let next_free = TcpListener::bind(("127.0.0.1", DEFAULT_PORT + 1)).is_ok();
+    let mut opts = options(project);
     opts.port = None;
     let server = serve_with(opts);
     let port = server.local.port();
-    if next_free {
-        assert_eq!(port, DEFAULT_PORT + 1);
-    } else {
-        assert!(port > DEFAULT_PORT + 1, "{port}");
-    }
-    drop(held);
     server.stop().expect("stop");
+    (next_free, port)
 }

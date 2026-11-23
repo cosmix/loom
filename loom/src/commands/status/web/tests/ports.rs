@@ -42,22 +42,28 @@ fn automatic_port_selection_starts_at_the_default_port() {
     if skip_without_loopback("automatic_port_selection_starts_at_the_default_port") {
         return;
     }
-    let probe = match TcpListener::bind(("127.0.0.1", DEFAULT_PORT)) {
-        Ok(listener) => listener,
-        Err(error) if error.kind() == ErrorKind::AddrInUse => {
-            eprintln!("skipping: default dashboard port {DEFAULT_PORT} is already occupied");
+    // Another process, or a child forked between the probe and the bind (it holds the
+    // released probe until exec), can hold the port meanwhile. Such an attempt repeats; a
+    // selection that does not begin at the default fails every attempt.
+    let mut selected_ports = Vec::new();
+    for _ in 0..3 {
+        match TcpListener::bind(("127.0.0.1", DEFAULT_PORT)) {
+            Ok(probe) => drop(probe),
+            Err(error) if error.kind() == ErrorKind::AddrInUse => {
+                eprintln!("skipping: default dashboard port {DEFAULT_PORT} is already occupied");
+                return;
+            }
+            Err(error) => panic!("probe default dashboard port {DEFAULT_PORT}: {error}"),
+        }
+        let selected =
+            bind_listener(LOOPBACK, None).expect("bind an available default dashboard port");
+        let port = selected.local_addr().expect("selected address").port();
+        if port == DEFAULT_PORT {
             return;
         }
-        Err(error) => panic!("probe default dashboard port {DEFAULT_PORT}: {error}"),
-    };
-    drop(probe);
-
-    let selected = bind_listener(LOOPBACK, None).expect("bind an available default dashboard port");
-    assert_eq!(
-        selected.local_addr().expect("selected address").port(),
-        DEFAULT_PORT,
-        "automatic selection must begin at the documented default port"
-    );
+        selected_ports.push(port);
+    }
+    panic!("automatic selection must begin at the default port {DEFAULT_PORT}: {selected_ports:?}");
 }
 
 #[test]

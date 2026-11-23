@@ -39,3 +39,25 @@ pub fn bind_first_available_port(host: IpAddr, start_port: u16) -> Result<TcpLis
     }
     bail!("failed to bind a port on {host} from {start_port} through 65535");
 }
+
+/// Rebind `local`, polling to a deadline on `AddrInUse`: proof that its listener closed.
+///
+/// Dropping the last owner closes the listener, but a child another test thread is spawning
+/// in that instant holds a copy of the descriptor between fork and exec (std opens it
+/// `SOCK_CLOEXEC`, so exec drops it). Until then the address stays bound and a connect to it
+/// succeeds. A listener still owned in this process stays `AddrInUse` past the deadline and
+/// fails the caller. The returned listener holds the address, so no later bind can mask it.
+#[cfg(test)]
+pub(crate) fn rebind_when_released(local: SocketAddr) -> std::io::Result<TcpListener> {
+    use std::time::{Duration, Instant};
+
+    let deadline = Instant::now() + Duration::from_secs(1);
+    loop {
+        match TcpListener::bind(local) {
+            Err(error) if error.kind() == ErrorKind::AddrInUse && Instant::now() < deadline => {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            other => return other,
+        }
+    }
+}

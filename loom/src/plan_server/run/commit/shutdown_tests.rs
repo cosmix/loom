@@ -8,6 +8,7 @@ use super::Repo;
 use crate::plan_server::lock::Acquired;
 use crate::plan_server::tests::support as http;
 use crate::plan_server::RunningServer;
+use crate::web_server::listener::rebind_when_released;
 use crate::web_server::ShutdownPending;
 
 fn wait_for_hook(repo: &Repo) {
@@ -111,5 +112,5 @@ fn accepted_http_commit_keeps_port_and_singleton_through_bounded_stop() {
         "# Updated\n"
     );
     assert!(!singleton_held(&lock_path), "singleton stayed held");
-    TcpListener::bind(local).expect("port released after commit");
+    rebind_when_released(local).expect("port released after commit");
 }

@@ -13,6 +13,7 @@ use super::support::{
 use crate::plan_server::gate::{access_cookie_name, browser_cookie_name};
 use crate::plan_server::shutdown::ShutdownHook;
 use crate::plan_server::{begin_shutdown, RunningServer};
+use crate::web_server::listener::rebind_when_released;
 
 #[test]
 fn websocket_upgrades_need_exact_origin_and_both_cookies() {
@@ -139,10 +140,7 @@ fn the_server_keeps_serving_while_shutdown_drains() {
     server
         .stop_when_drained(drains)
         .expect("stop after the drain");
-    assert!(
-        std::net::TcpStream::connect(addr).is_err(),
-        "the listener is closed"
-    );
+    rebind_when_released(addr).expect("the listener is closed");
 }
 
 /// One browser with an open, admitted socket: its cookies, the socket and its public id.

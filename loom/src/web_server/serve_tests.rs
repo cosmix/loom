@@ -21,6 +21,7 @@ impl Router for EmptyRouter {
 #[test]
 fn zero_slots_still_waits_for_the_worker_resource_owner() {
     use crate::process::sandbox_probe::{loopback_bindable, skip_unless};
+    use crate::web_server::listener::rebind_when_released;
 
     if skip_unless(
         loopback_bindable(),
@@ -53,22 +54,4 @@ fn zero_slots_still_waits_for_the_worker_resource_owner() {
     drop(shared);
     assert!(pending.is_complete());
     rebind_when_released(local).expect("success releases the address");
-}
-
-/// Rebind `local`, polling to a deadline on `AddrInUse`. Dropping the last
-/// owner closes the listener, but a child another test thread is spawning in
-/// that instant holds a copy of the descriptor between fork and exec (std
-/// opens it `SOCK_CLOEXEC`, so exec drops it), keeping the address bound for
-/// up to about a millisecond under load. A listener still owned in this
-/// process stays `AddrInUse` past the deadline and fails the test.
-fn rebind_when_released(local: SocketAddr) -> io::Result<TcpListener> {
-    let deadline = Instant::now() + Duration::from_secs(1);
-    loop {
-        match TcpListener::bind(local) {
-            Err(error) if error.kind() == io::ErrorKind::AddrInUse && Instant::now() < deadline => {
-                thread::sleep(Duration::from_millis(10));
-            }
-            other => return other,
-        }
-    }
 }

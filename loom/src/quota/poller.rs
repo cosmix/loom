@@ -72,9 +72,10 @@ impl ProviderState {
 
 fn run_quota_poller(work_root: &Path, shutdown: &AtomicBool) {
     // A test must not read the login keychain, call the usage endpoint, run `codex`,
-    // or write `~/.loom/quota`. The workspace `.cargo/config.toml` sets this for every
+    // or write `~/.loom/quota`. `cfg!(test)` covers in-crate tests however their binary
+    // is launched; the workspace `.cargo/config.toml` sets the variable for every
     // Cargo-run test binary and the `loom` processes those tests spawn.
-    if std::env::var_os(TEST_DISABLE_ENV).is_some() {
+    if cfg!(test) || std::env::var_os(TEST_DISABLE_ENV).is_some() {
         return;
     }
     let mut claude_state = ProviderState::new();

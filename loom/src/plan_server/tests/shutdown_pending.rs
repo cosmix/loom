@@ -9,6 +9,7 @@ use std::time::Duration;
 use super::support;
 use crate::plan_server::request::{ApiRequest, ApiResponse};
 use crate::plan_server::routes::{BodyKind, Method, Role, RouteSpec};
+use crate::web_server::listener::rebind_when_released;
 use crate::web_server::ShutdownPending;
 
 struct Paused {
@@ -132,7 +133,7 @@ fn stop_propagates_pending_and_retains_request_context() {
         std::fs::read_to_string(project.path().join("pending-update")).unwrap(),
         "committed"
     );
-    TcpListener::bind(local).expect("listener released only after the route finishes");
+    rebind_when_released(local).expect("listener released only after the route finishes");
 }
 
 #[test]
@@ -203,7 +204,7 @@ fn blocked_watcher_keeps_bounded_stop_pending_and_owned() {
     assert!(pending.wait(support::WAIT));
     assert!(project.path().join("watcher-update").exists());
     assert_singleton(&lock_path, false);
-    TcpListener::bind(local).expect("listener released only after the watcher finishes");
+    rebind_when_released(local).expect("listener released only after the watcher finishes");
 }
 
 struct BlockingDrop {
@@ -252,5 +253,5 @@ fn context_disposal_runs_under_the_bounded_cleanup_owner() {
     assert!(pending.wait(support::WAIT));
     assert_eq!(pending.completion_error(), None);
     assert_singleton(&lock_path, false);
-    TcpListener::bind(local).expect("listener released only after context disposal");
+    rebind_when_released(local).expect("listener released only after context disposal");
 }

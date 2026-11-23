@@ -54,7 +54,10 @@ fn store_drafts(project: &TempDir) -> PathBuf {
     runtime.dir
 }
 
+/// `parallel`: the test and the server each resolve the runtime directory from `LOOM_HOME`,
+/// which `#[serial]` tests change; one change between the two reads splits them.
 #[test]
+#[serial_test::parallel]
 fn a_stored_kickoff_draft_is_listed_after_a_restart() {
     if skip("a_stored_kickoff_draft_is_listed_after_a_restart") {
         return;

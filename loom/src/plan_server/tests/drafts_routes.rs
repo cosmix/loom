@@ -40,7 +40,10 @@ fn assert_detail(found: &str) {
     assert_eq!(detail["messages"], json!(["first idea", "second idea"]));
 }
 
+/// `parallel`: the test and the server each resolve the runtime directory from `LOOM_HOME`,
+/// which `#[serial]` tests change; one change between the two reads splits them.
 #[test]
+#[serial_test::parallel]
 fn a_draft_is_fetched_with_its_shape_and_messages() {
     if skip("a_draft_is_fetched_with_its_shape_and_messages") {
         return;
