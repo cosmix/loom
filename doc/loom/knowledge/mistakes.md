@@ -36,7 +36,7 @@ Session identity, liveness routing, spawn-site coverage, the struct-literal blas
 
 Token-based Bash matchers repeatedly shipped with bypasses because separators that are _glued_ to a neighbour never become tokens. Also: forgeable `glob | head -1` privilege lookups, env leakage into simulated process trees, three Bash parsing traps, and cross-platform portability traps (gawk extensions on BSD awk, non-portable `timeout`, redirect order, `cmd | head` under `pipefail` killing the producer with SIGPIPE). Lexical guards also blocked 435 mostly legitimate calls in one week and agents rewrote commands until they passed: a guard blocks only what it decides soundly, names the sanctioned route, rewrites the commands loom owns, ships each relaxation with its hostile test, resolves paths physically and never keys on `TMPDIR`.
 
-→ [Shell Command Matchers](mistakes/shell-command-matchers.md), [Hooks: Shell Portability](mistakes/hooks-shell-portability.md), [Lexical Hooks Blocked Legitimate Work](mistakes/shell-command-matchers.md#lexical-hooks-blocked-legitimate-work-and-were-routed-around), [Hook-Guard Delivery Slips](mistakes/shell-command-matchers.md#hook-guard-delivery-slips-ledger-parser-template-trim-gate-coverage-spawner-list)
+→ [Shell Command Matchers](mistakes/shell-command-matchers.md), [Hooks: Shell Portability](mistakes/hooks-shell-portability.md), [Hooks: macOS and Bash 3.2](mistakes/hooks-macos-and-bash32.md), [Lexical Hooks Blocked Legitimate Work](mistakes/shell-command-matchers.md#lexical-hooks-blocked-legitimate-work-and-were-routed-around), [Hook-Guard Delivery Slips](mistakes/shell-command-matchers.md#hook-guard-delivery-slips-ledger-parser-template-trim-gate-coverage-spawner-list)
 
 ## Doctrine, Acceptance Criteria, and Cross-Surface Drift (2026-07-28)
 
@@ -159,24 +159,6 @@ A missing subagent report is not a missing result; codex worker briefing gotchas
 
 → [Agent and Process Lessons](mistakes/subagent-orchestration.md)
 
-## Brief-path extractor fed markdown into the run glob
-
-**What happened:** `loom run` failed on a plan that `loom plan verify --strict` accepted, with `Pattern syntax error near position 42: recursive wildcards must form a single path component`. The plan prose read `**Briefs live outside \`doc/plans/briefs/\`.**`.
-
-**Why:** `extract_brief_paths` (`plan/schema/structural_checks.rs`) trimmed only `.,:\`` from token ends, so the token kept the bold marker after the closing backtick. Run's input discovery compiled any token holding`*` as a glob and aborted on a bad one without naming the token or file. Verify never ran that discovery: it only warned about missing brief paths in stage descriptions, so a plan could verify clean and still fail run's preflight.
-
-**Prevention:** a check that accepts a plan must run the same code every later consumer runs on it. Verify and the run preflight share one discovery (`plan/inputs.rs`); a new run-time check on plan inputs goes there, never into `commands/run/` alone.
-
-**Fix:** the extractor cuts each token at its first backtick (test `markdown_after_a_code_span_is_not_part_of_the_path`). `plan/inputs.rs` collects invalid references (bad glob, parent traversal, symlink) with the token and its source file instead of aborting; `loom run` lists them with uncommitted inputs, and `loom plan verify` reports invalid and missing inputs as errors and uncommitted ones as a note (`commands/plan/verify/inputs.rs`).
-
-## Sandbox Route Closure
-
-A metaplan that denied the `Workflow` tool every ultracode stage runs on, a sibling-directory deny nested above a `config.worktree` deny that aborts bubblewrap, a probe control the Knowledge capsule does not grant, and metaplan reasons that went stale against the tree: [Sandbox Paths and Settings](mistakes/sandbox-and-settings.md). A `rustfmt` edition and recursion, a filtered `loom check` that hid the relay line, and the scratch directory a read-only reviewer cannot read: [Brief and Dev-Server Gotchas](mistakes/typed-config-values-process.md). An integration-verify suite criterion with no extended timeout: [Cargo Churn and Stall Kills](mistakes/completion-runtime.md).
-
-- [contract-phase-human-blocking](mistakes/contract-autonomy-delivery.md#a-contract-freeze-refusal-waited-on-the-operator): a plan defect in the contract phase parked the stage on the operator. Rule: no stage waits on a human for something loom or an agent can resolve; a human is reached only after the automatic budgets run out.
-
-- [codex-direct-mode-invisible](mistakes/codex-direct-mode-invisible.md): direct-mode codex forwards (Linux nested-bubblewrap fallback) leave no companion job, so reconcile, lifecycle and the status model display all miss them.
-
 ## Contract Autonomy Delivery
 
 A chain check that read attributes by position and refused by deny-list (a `cfg` bypass), recording-time verdict validation that skipped the apply's per-patch order, escaping names where only refusal fails closed, worker checks that missed shared-fixture consumers and the maintainability test, a package-free fixture base, frozen contracts that failed the stage's own lint because the freeze ran only the format gate, a reviewer-brief fixture without a checkout identity, and tests added inside an assertion statement's span: [contract-autonomy-delivery](mistakes/contract-autonomy-delivery.md). Plans that forced definition-shaped wiring checks on stages whose consumer came later, ordered a ritual integrity dispute that cost a fresh session, or stated brief premises the tree contradicted: [plan-authoring](mistakes/plan-authoring.md). A growth budget that ignored the stable-prefix ceiling and a compile signal the subagent hook refuses: [briefs-and-bug-reports](mistakes/briefs-and-bug-reports.md).
@@ -196,13 +178,6 @@ A read-denied directory is a writable private tmpfs under srt, a skipped real-sa
 ## Plan Chat Delivery
 
 Review handlers briefed without lock, guard and subscriber order; codex and fixer units that passed their own checks and failed the full gate, the reviewers or the 400/50-line limits; web logic slips (turn ids repeat across sessions, hunk-relative diff parsing, both authoring refusals). → [Plan Server Delivery](mistakes/plan-server-delivery.md#review-loop-handlers-were-briefed-without-lock-guard-and-subscriber-facts-2026-10-29)
-
-## Treating this repository's conventions as loom's product behaviour
-
-**What happened:** While planning the planner redesign, a draft decision asked whether loom should ignore DONE- plans inside feature directories, citing this repository's own .gitignore as if it were loom's behaviour.
-**Why:** loom is developed with loom, so this repository's doc/, .gitignore and plan habits are easy to mistake for what loom does in every project. Loom is a product used to build other projects.
-**Prevention:** Before stating what loom does in a project, find the code that does it. In target projects loom only manages the .loom/work and .worktrees ignore entries (loom/src/commands/repair/workspace.rs); everything else in a project's .gitignore is the project's choice, and planner features must work whatever the project ignores.
-**Fix:** PLAN-planner-ui-redesign.md moves the DONE-/REVIEW- pattern change to this repository's migration stage only.
 
 ## Planner UI Redesign Delivery
 
@@ -224,13 +199,6 @@ Claude Code began wrapping a delivered prompt in `<pasted_content id="X">` tags 
 ## Planner Polish
 
 A container-query component in an unsized flex item (footer meters stacked), a stop notice produced twice from one event, spine plan rows that lost their slug to badge words, layout and glyph fixes judged from a stubbed payload or one surface, and worker slips. → [Planner Polish Mistakes](mistakes/planner-polish.md) Planner feedback fixes: a route test that sent the id form the web client never sends, a background hand-back that reopened activity after the closing Stop, a bulk route holding the project read guard across saves, tests removed with a page, a test file over 400 lines, `loom check` backgrounded. → [Planner Review Fixes Mistakes](mistakes/planner-review-fixes.md#a-route-test-sent-the-id-form-the-web-client-never-sends) A visual request needs a concrete design brief and a screenshot check, not only DOM-presence tests. → [Planner Visual Feedback Shortfall](mistakes/planner-visual-feedback-shortfall.md)
-
-## Plan Amendment Strips completed_commit From a Merged Stage
-
-**What happened:** during PLAN-planner-polish, integration-verify's session amended merged stage chat-and-shell-visual's `wiring` twice (11:45Z, 11:46Z). `plan/amendment_fields.rs::sync_stage_from_definition` set `completed_commit = None` because the field changed, but left `merged: true`. When the adjudication verdict re-queued integration-verify at 11:49Z, `verify/transitions/state.rs::describe_dependency_block` returned `MissingCommit` for the dependency, and the stage sat queued for 68 minutes.
-**Why:** clearing `completed_commit` forces re-verification of an in-flight stage, but a merged stage cannot re-verify. The amendment broke the merged-implies-commit invariant that the scheduler relies on.
-**Prevention:** an amendment must never clear `completed_commit` on a stage with `merged` or `merge_assumed`; integration-verify legitimately amends earlier stages' wiring.
-**Fix:** operator recreated `loom/chat-and-shell-visual` at its merged tip and ran `loom stage complete chat-and-shell-visual --force-unsafe --assume-merged`.
 
 ## Planner follow-ups delivery
 
@@ -272,3 +240,9 @@ Strict CI gates pushed in bulk and untested, a commit that took another session'
 Whole-crate lint run by a subagent, a pinned struct field whose construction sites no worker owned, and concurrent workers sharing one `$TMPDIR`; the cfg and merge slips are in [Review Integration Verification](mistakes/review-integration-verification.md).
 
 → [macOS Boundary Delivery](mistakes/native-macos-delivery.md), [Cargo Test Harness Layout](mistakes/cargo-test-harness-layout.md) (kernel tests that always skipped), [Tunnel Half-Close](mistakes/native-worker-tunnel-half-close.md) (replies dropped once they ran)
+
+## Plan Input, Convention and Amendment Slips
+
+- [Brief-path extractor fed markdown into the run glob](mistakes/plan-authoring.md#brief-path-extractor-fed-markdown-into-the-run-glob): a plan that `loom plan verify --strict` accepted failed `loom run`'s input discovery. Rule: a check that accepts a plan runs the same discovery every later consumer runs.
+- [Treating this repository's conventions as loom's product behaviour](mistakes/plan-authoring.md#treating-this-repositorys-conventions-as-looms-product-behaviour): this repository's `.gitignore` and plan habits are not loom's behaviour in a target project. Rule: find the code that does it before stating what loom does.
+- [Plan Amendment Strips completed_commit From a Merged Stage](mistakes/plan-authoring.md#plan-amendment-strips-completed_commit-from-a-merged-stage): an amendment cleared `completed_commit` on a merged stage and left its dependent queued. Rule: never clear it on a stage with `merged` or `merge_assumed`.

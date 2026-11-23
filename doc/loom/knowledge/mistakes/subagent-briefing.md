@@ -333,7 +333,7 @@ limit (`ulimit -u` 10666 there), not open files (that is EMFILE). All four were 
 cargo tests and hook suites. The sandbox denies `ps`, so the cause was never observed. The probable
 cause is a worker's new shim `--version` probe recursing through a test's PATH wrapper, which later
 killed a Linux CI runner; see
-[A Shim's `--version` Probe Recursed](hooks-shell-portability.md#a-shims-version-probe-recursed-through-a-tests-wrapper-and-killed-the-linux-runner-2026-10-13).
+[A Shim's `--version` Probe Recursed](hooks-macos-and-bash32.md#a-shims-version-probe-recursed-through-a-tests-wrapper-and-killed-the-linux-runner-2026-10-13).
 Parallel test runs made the loop's effect worse rather than causing it. One brief also told a subagent
 that a test "passes locally" when it had only SKIPPED.
 

@@ -29,27 +29,26 @@ the `read:*` cost falls by more than the denied calls cost (see [Read Gate](../a
 
 - **Codex isolation:** the scratch directory honours `TMPDIR`, which can nest in a git checkout; Codex is
   assumed to walk to the nearest `.git` for its agents-instructions file, so a repo's copy could reach the worker
-  (`run.rs:122`). The disable list names no web-search or image-view feature and the probe reads only a text
-  file; extend it with a planted web-search request (`backend.rs:21`). `parse_codex` fails closed only on
-  `item.completed`; apply the allow-list to `item.started` too (`backend.rs:229`). Check that `--help` marks
+  (`run.rs:115`). The disable list names no web-search or image-view feature and the probe reads only a text
+  file; extend it with a planted web-search request (`backend.rs:21`). Check that `--help` marks
   the Codex variant experimental in its first sentence (`backend.rs:36`).
 - **Environment scrub is a deny-list** (`run.rs:34`): a new session variable passes silently.
   `process/environment.rs` shows the allow-list alternative, which withholds `SSH_AUTH_SOCK`. Revisit if the
   Codex probe fails or an agent is told to use `loom ask`.
 - **Process lifetime:** unlink the payload after opening it so a SIGKILL leaves no plaintext copy
-  (`run.rs:172`); a SIGKILL of loom orphans the worker with no deadline, `PR_SET_PDEATHSIG` in `pre_exec`
-  would cover it on Linux, and a `setsid` descendant escapes group retirement (`run.rs:159`). The reader, cap
+  (`run.rs:164`); a SIGKILL of loom orphans the worker with no deadline, `PR_SET_PDEATHSIG` in `pre_exec`
+  would cover it on Linux, and a `setsid` descendant escapes group retirement (`run.rs:152`). The reader, cap
   and retire logic re-implements `process::run_bounded` and `kill_group` (`process/mod.rs`, `process/owned.rs`);
   an on-spawn hook in `run_bounded_with` would publish the pgid to the interrupt handler and allow reuse
   (`run.rs:189`). The stderr excerpt is the tail of the first 64 KiB, not the end of stderr; `drain_tail`
-  keeps the end (`run.rs:249`).
+  keeps the end (`run.rs:256`).
 - **Payload:** a per-run random nonce in the wrapper tag would stop a file forging an opening tag or a variant
-  such as `</ file>` (`payload.rs:170`; the doc comment claiming nothing can forge a wrapper is stronger than
+  such as `</ file>` (`payload.rs:175`; the doc comment claiming nothing can forge a wrapper is stronger than
   the code). `read_to_string_bounded` does not check `nlink`, so a hard link with a harmless name to `.env`
   passes the credential check; `safe_read::single_link_regular_file` would refuse it, at the cost of refusing
   package-manager hard links the operator names (`payload.rs:52`). `is_credential` is `pub(crate)` but used
   only inside the module and its tests, and `payload_tests.rs` has no end-to-end `read_documents` test with
-  `HOME` as the root (`ask_eval_contracts.rs` covers it) (`payload.rs:146`).
+  `HOME` as the root (`ask_eval_contracts.rs` covers it) (`payload.rs:134`).
 - **Evaluation:** `eval.rs:28` says case paths are relative to the cases file's directory, but `base.join`
   lets an absolute path through when it is inside the root; refuse absolute case paths or fix the comment. A
   1 MiB cases file can hold thousands of cases of up to 400 KB each with no case cap and no overall deadline.

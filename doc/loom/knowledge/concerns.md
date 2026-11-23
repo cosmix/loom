@@ -12,12 +12,12 @@
 
 ### Layering Violations
 
-Lower layers import from higher ones:
+Lower layers import from higher ones. Each edge was checked against the tree; the full list, with the module cycles, is in [Core Abstractions](architecture/core-abstractions.md#layering-violations-known-issues).
 
-- daemon calls commands: `loom/src/daemon/server/client.rs::authorize_preface` (`commands::stage::admin_proof::verify_and_consume_admin_proof`), `loom/src/daemon/server/status.rs::collect_status` and `loom/src/daemon/protocol.rs::Response` (`commands::status::data`)
-- orchestrator calls commands: `loom/src/orchestrator/core/coherence.rs::begin_scheduling_pass` (`commands::stage::complete::strip_privileged_env_for_runtime`), `loom/src/orchestrator/core/inbox_drain/merge_resolved.rs::resolve_merge_from_inbox` and `loom/src/orchestrator/core/merge_handler/resolver_exit.rs::land_resolved_worktree` (`commands::stage::complete::verify_resolved_completion`)
+- daemon calls commands: `loom/src/daemon/server/client.rs::authorize_preface` (`commands::stage::admin_proof::verify_and_consume_admin_proof`)
+- orchestrator calls commands: `loom/src/orchestrator/core/coherence.rs::begin_scheduling_pass` (`commands::stage::complete::strip_privileged_env_for_runtime`) and `loom/src/orchestrator/skip.rs::skip_stage` (`commands::stage::native_gate::ensure_no_native_workers`)
 - git imports orchestrator: `loom/src/git/cleanup/orphans.rs` (`orchestrator::merge_lifecycle::{CleanupOutcome, MergeLifecycle}`)
-- models imports plan: `loom/src/models/dispute.rs`, `loom/src/models/stage/types.rs`, `loom/src/models/stage/checks.rs`, `loom/src/models/stage/methods.rs`
+- models imports plan, verify, git, assets and fs: `models/stage/{types,checks,methods}.rs` and `models/dispute_criterion.rs` (`plan`), `models/dispute.rs` (`verify`), `models/stage/merge_block.rs` (`git`), `models/forward_receipt/transcript/argv.rs` (`assets`), `models/stage/sandbox_config.rs` (`fs::permissions`)
 
 ## Code Quality Concerns
 
@@ -49,23 +49,18 @@ Full detail: [codex-heartbeat-starvation.md](concerns/codex-heartbeat-starvation
 
 ## Automatic-Knowledge Plan Followups
 
-Four open items: an unbounded whole-file read ahead of the extraction size cap,
-three production-dead `KnowledgeDir` methods kept alive only by each other's tests,
-a writer/reader plan-key normalisation mismatch, and a `LOOM_PERMISSIONS_WORKTREE`
-constant with no consumer. The topic also covers natural-language queries that
-corpus stopwording empties.
+Three open items: four production-dead `KnowledgeDir` methods kept alive only by each other's tests, a
+writer/reader plan-key normalisation mismatch, and a `LOOM_PERMISSIONS_WORKTREE` constant with no non-test consumer.
+Refresh source reads are bounded (`SourceRead` hashes through a fixed 16 KiB buffer and retains at most
+`MAX_EXTRACTED_FILE_BYTES`); source windows read through a separate path that needs its own bound audit. The topic also
+covers natural-language queries that corpus stopwording empties.
 
 Full detail: [automatic-knowledge-source-graph-followups.md](concerns/automatic-knowledge-source-graph-followups.md).
 
 ## Tier-1 Knowledge Housekeeping Backlog
 
-`loom knowledge check --strict` exits 0 on this tree under the tier-1 limits (250 lines per file, 40 per
-section), the tier-2 limits (400 per file, 80 per section) and the 16 KB cap on `INDEX.md`, which has about 100
-bytes of headroom, so every new topic must be paid for with shorter blurbs. What remains is the CLI's own rough
-edges: `replace-section`'s CRLF/trailing-blank-line quirks, `update`'s stdin-vs-inline trim mismatch, no blurb flag on
-`update`, no in-place heading rename (delete-section plus update is the workaround), and the disagreement between the
-chunker's and the splicer's fenced-code models. `--baseline` and `--write-baseline` exist for adopting a limit on a
-tree that cannot clear it yet; none is needed while `--strict` stays green.
+`loom knowledge check --strict` enforces the tier-1 limits (250 lines per file, 40 per section), the tier-2 limits (400 per file, 80 per section), resolvable source references and a byte budget on `INDEX.md` (`MAX_INDEX_BYTES`, `loom/src/fs/knowledge/catalog/size.rs`). `INDEX.md` is over that budget and `doc/loom/knowledge/check-baseline.txt` records it as `oversized-index`, so the gate is `loom knowledge check --strict --baseline doc/loom/knowledge/check-baseline.txt`; every new topic adds an INDEX row, so shrinking the index is the open work.
+What remains of the CLI's own rough edges: `replace-section`'s CRLF/trailing-blank-line quirks, `update`'s stdin-vs-inline trim mismatch, no blurb flag on `update`, and no in-place heading rename (delete-section plus update is the workaround).
 
 → [Knowledge CLI Gaps](concerns/knowledge-cli-gaps.md)
 

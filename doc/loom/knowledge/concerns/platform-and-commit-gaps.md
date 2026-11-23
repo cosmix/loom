@@ -10,7 +10,7 @@ and the partial-staging regression under `/bin/bash` 3.2, which a step asserts) 
 `.github/workflows/nightly.yml` runs `test-macos` as lib, integration and host-job-lane jobs, plus both smoke scripts,
 because its build swaps on the push path ([CI macOS Test Build Time](ci-macos-test-build-time.md)).
 fmt, audit, deny and the web job stay Linux-only.
-Related portability lessons: [The First macOS Hook Run](../mistakes/hooks-shell-portability.md#the-first-macos-hook-run-found-bash-32-and-bsd-faults-the-linux-shims-hid-2026-10-13),
+Related portability lessons: [The First macOS Hook Run](../mistakes/hooks-macos-and-bash32.md#the-first-macos-hook-run-found-bash-32-and-bsd-faults-the-linux-shims-hid-2026-10-13),
 [Rust Fixtures Assumed Linux](../mistakes/ci-toolchain-and-cargo.md#rust-fixtures-assumed-linux-paths-ptys-and-tool-output-2026-10-13)
 and [macOS `proc_pidinfo` Hid Zombies](../mistakes/sessions-and-liveness.md#macos-proc_pidinfo-hid-zombies-so-an-unreaped-dead-session-read-as-alive-2026-10-13).
 Open gaps:

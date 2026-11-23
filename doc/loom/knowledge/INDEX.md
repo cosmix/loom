@@ -12,9 +12,9 @@
 | [entry-points.md](entry-points.md) | Key files agents should read first | 86 |
 | [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 200 |
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 230 |
-| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 274 |
+| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 248 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 116 |
-| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 250 |
+| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 245 |
 
 ## Tier 2 — Topics
 
@@ -35,7 +35,7 @@
 | [contract-collection](architecture/contract-collection.md) |  | 70 |
 | [contract-phase](architecture/contract-phase.md) | Freeze | 282 |
 | [contract-trial](architecture/contract-trial.md) | loom check --contracts, replacement trial receipt, overlay undo, env-red refusal | 24 |
-| [core-abstractions](architecture/core-abstractions.md) | Graph | 135 |
+| [core-abstractions](architecture/core-abstractions.md) | Graph | 129 |
 | [criterion-narrowing-evidence](architecture/criterion-narrowing-evidence.md) | base-run evidence, leaves_out narrowing rules, hand-offs | 36 |
 | [daemon-launch](architecture/daemon-launch.md) |  | 71 |
 | [daemon-owned-commits](architecture/daemon-owned-commits.md) |  | 151 |
@@ -162,14 +162,15 @@
 | [dev-install](mistakes/dev-install.md) | Daemon | 68 |
 | [dispute-guards-delivery](mistakes/dispute-guards-delivery.md) | host-job hangs, parallel worker collisions, scaffold wording, hook quirks | 131 |
 | [doctrine-and-acceptance](mistakes/doctrine-and-acceptance.md) |  | 392 |
-| [hooks-shell-portability](mistakes/hooks-shell-portability.md) |  | 412 |
+| [hooks-macos-and-bash32](mistakes/hooks-macos-and-bash32.md) | macOS Bash 3.2 and BSD tool faults that Linux hook runs hid | 96 |
+| [hooks-shell-portability](mistakes/hooks-shell-portability.md) |  | 319 |
 | [host-verify-group-containment](mistakes/host-verify-group-containment.md) |  | 47 |
-| [knowledge-base-drift](mistakes/knowledge-base-drift.md) |  | 276 |
+| [knowledge-base-drift](mistakes/knowledge-base-drift.md) |  | 286 |
 | [knowledge-cli-invariants](mistakes/knowledge-cli-invariants.md) | Rules | 241 |
 | [knowledge-write-channel](mistakes/knowledge-write-channel.md) | Writes | 144 |
 | [ledger-tui-rendering](mistakes/ledger-tui-rendering.md) |  | 84 |
 | [live-state-pollution](mistakes/live-state-pollution.md) |  | 143 |
-| [maintainability-baseline](mistakes/maintainability-baseline.md) |  | 103 |
+| [maintainability-baseline](mistakes/maintainability-baseline.md) |  | 134 |
 | [memory-relay-drain-gap](mistakes/memory-relay-drain-gap.md) |  | 51 |
 | [merge-cleanup-boundary](mistakes/merge-cleanup-boundary.md) |  | 237 |
 | [merge-in-operator-checkout](mistakes/merge-in-operator-checkout.md) |  | 70 |
@@ -178,7 +179,7 @@
 | [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Shared | 351 |
 | [phantom-merges](mistakes/phantom-merges.md) | Merges | 347 |
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Pins | 332 |
-| [plan-authoring](mistakes/plan-authoring.md) |  | 323 |
+| [plan-authoring](mistakes/plan-authoring.md) |  | 347 |
 | [plan-server-delivery](mistakes/plan-server-delivery.md) | Slips | 376 |
 | [planner-design-brainstorm](mistakes/planner-design-brainstorm.md) | Stubs | 134 |
 | [planner-follow-ups-delivery](mistakes/planner-follow-ups-delivery.md) | Slips | 196 |
@@ -187,7 +188,7 @@
 | [planner-review-fixes](mistakes/planner-review-fixes.md) |  | 149 |
 | [planner-ui-repair](mistakes/planner-ui-repair.md) | Repair | 215 |
 | [planner-visual-feedback-shortfall](mistakes/planner-visual-feedback-shortfall.md) | Visual | 24 |
-| [planning-sandbox-delivery](mistakes/planning-sandbox-delivery.md) |  | 90 |
+| [planning-sandbox-delivery](mistakes/planning-sandbox-delivery.md) |  | 98 |
 | [pre-commit-hardening](mistakes/pre-commit-hardening.md) |  | 93 |
 | [refactor-stragglers](mistakes/refactor-stragglers.md) |  | 335 |
 | [review-continuation-verification](mistakes/review-continuation-verification.md) | Repair | 331 |
@@ -216,7 +217,7 @@
 | [test-concurrency-and-fixtures](mistakes/test-concurrency-and-fixtures.md) | Races | 398 |
 | [test-hermeticity](mistakes/test-hermeticity.md) | Tests that reached real network, keychain or home state | 33 |
 | [test-sweep-and-fixture-discipline](mistakes/test-sweep-and-fixture-discipline.md) |  | 398 |
-| [testing-and-lint](mistakes/testing-and-lint.md) |  | 408 |
+| [testing-and-lint](mistakes/testing-and-lint.md) |  | 377 |
 | [tests-that-cannot-fail](mistakes/tests-that-cannot-fail.md) |  | 392 |
 | [tmux-backend](mistakes/tmux-backend.md) | tmux | 176 |
 | [typed-config-values-process](mistakes/typed-config-values-process.md) | Dev | 86 |
@@ -236,14 +237,14 @@
 | [agent-rule-bending-hardening](concerns/agent-rule-bending-hardening.md) |  | 375 |
 | [automatic-knowledge-source-graph-followups](concerns/automatic-knowledge-source-graph-followups.md) | Gap | 69 |
 | [ci-macos-test-build-time](concerns/ci-macos-test-build-time.md) | macOS lib test build swaps on the 7 GB runner; nightly split and open options | 16 |
-| [code-quality-and-hook-debt](concerns/code-quality-and-hook-debt.md) | Debt | 330 |
+| [code-quality-and-hook-debt](concerns/code-quality-and-hook-debt.md) | Debt | 327 |
 | [codex-heartbeat-starvation](concerns/codex-heartbeat-starvation.md) |  | 22 |
 | [consolidation-followups](concerns/consolidation-followups.md) |  | 148 |
 | [contract-autonomy-followups](concerns/contract-autonomy-followups.md) |  | 70 |
 | [dispute-guards-followups](concerns/dispute-guards-followups.md) | open review suggestions: trial, overlay undo, narrowing, prompt text | 55 |
 | [handoff-followups](concerns/handoff-followups.md) |  | 57 |
-| [knowledge-cli-gaps](concerns/knowledge-cli-gaps.md) |  | 108 |
-| [loom-ask-and-read-gate](concerns/loom-ask-and-read-gate.md) |  | 108 |
+| [knowledge-cli-gaps](concerns/knowledge-cli-gaps.md) |  | 87 |
+| [loom-ask-and-read-gate](concerns/loom-ask-and-read-gate.md) |  | 107 |
 | [macos-confined-networking](concerns/macos-confined-networking.md) | macOS confined IP networking: off by default, loopback opt-in, residual | 15 |
 | [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Edges | 105 |
 | [native-codex-qualification](concerns/native-codex-qualification.md) |  | 120 |
@@ -251,18 +252,18 @@
 | [planner-follow-ups-followups](concerns/planner-follow-ups-followups.md) |  | 91 |
 | [planner-kickoff-fixes-followups](concerns/planner-kickoff-fixes-followups.md) | Kickoff-fixes open items: web/dist hook, gate env, reviewer suggestions | 31 |
 | [planner-ui-repair-followups](concerns/planner-ui-repair-followups.md) | UI | 214 |
-| [planning-document-model-followups](concerns/planning-document-model-followups.md) |  | 174 |
+| [planning-document-model-followups](concerns/planning-document-model-followups.md) |  | 173 |
 | [planning-guidance-followups](concerns/planning-guidance-followups.md) |  | 43 |
-| [planning-session-sandbox-limits](concerns/planning-session-sandbox-limits.md) |  | 238 |
+| [planning-session-sandbox-limits](concerns/planning-session-sandbox-limits.md) |  | 236 |
 | [platform-and-commit-gaps](concerns/platform-and-commit-gaps.md) |  | 249 |
 | [runtime-and-session-safety](concerns/runtime-and-session-safety.md) |  | 147 |
-| [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) |  | 400 |
+| [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) |  | 396 |
 | [source-graph-known-gaps](concerns/source-graph-known-gaps.md) | Limits | 94 |
 | [source-graph-review-backlog](concerns/source-graph-review-backlog.md) | Todo | 295 |
 | [stage-build-cache-gaps](concerns/stage-build-cache-gaps.md) | Open reviewer suggestions and residuals of the stage build cache | 33 |
 | [state-confinement-gaps](concerns/state-confinement-gaps.md) | Caches | 21 |
-| [token-accounting-and-proof-defects](concerns/token-accounting-and-proof-defects.md) |  | 333 |
+| [token-accounting-and-proof-defects](concerns/token-accounting-and-proof-defects.md) |  | 323 |
 | [typed-config-values](concerns/typed-config-values.md) | Gap | 22 |
-| [verification-v2-followups](concerns/verification-v2-followups.md) |  | 251 |
+| [verification-v2-followups](concerns/verification-v2-followups.md) |  | 248 |
 | [web-dashboard-latent-issues](concerns/web-dashboard-latent-issues.md) | UI | 100 |
 | [worktree-build-cold-start](concerns/worktree-build-cold-start.md) | Cold | 108 |

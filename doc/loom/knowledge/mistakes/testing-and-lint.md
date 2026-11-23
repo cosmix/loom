@@ -97,37 +97,6 @@ Expect `Summary: 0 issues`. `.markdownlint.json` disables MD013/MD033/MD036/MD04
 
 **Fix (2026-09-30):** `.githooks/pre-commit` applies the same banner test and prints a `WARNING: markdownlint-cli2 could not run` line (plus the output's last lines) instead of staying silent. It still exits 0, because pre-commit only auto-fixes.
 
-## Growing a Function That Carries a Maintainability Baseline Entry Breaks the Gate (2026-08-10)
-
-**What happened:** A five-line fix inside `generate_index` (`src/fs/knowledge/index.rs`) pushed it from 53 to 58 lines and failed `cargo test --test maintainability`, blocking the push.
-
-**Why:** `maintainability-baseline.txt` records exact line counts for every function already over the 50-line limit. The ledger is a debt list, not a budget — entries may shrink but never grow, and an entry that no longer corresponds to a violation is rejected as stale.
-
-**Also check the FILE entry, not just the function.** The ledger records both, so a change that keeps every function small can still fail on the file total — and four of them can fail at once, as the codex sandbox work did (`repair.rs`, `fs/permissions/settings.rs`, `sandbox/settings.rs`, plus three functions). The move that satisfies the ledger honestly is extraction: lift the new code into a new module (then the `codex_sandbox` module, since deleted, and `commands/repair/settings_checks.rs`), which carries no entry at all while it stays under 400 lines, then lower the now-smaller entries to their measured values. Growth is never recordable; shrinkage must be recorded.
-
-**Prevention:** before adding lines to a function, `rg '<fn name>' loom/maintainability-baseline.txt`. If it is listed, refactor rather than extend — and when the refactor drops it under the limit, DELETE the entry rather than lowering it. Prove behaviour is unchanged by regenerating the artifact and diffing (for INDEX.md: `loom knowledge sync` then `git status --porcelain`, expecting no change).
-
-**Two more shapes, from wiring the viewer reconciler (2026-08-11):** (1) a cross-cutting per-tick
-call could not live in `orchestrator.rs` (file ledgered at 564) NOR in `event_handler.rs` (468) —
-even a one-line addition to a ledgered FILE fails the gate, so a new hook must find an unledgered
-host with headroom (`Monitor::poll` in `monitor/core.rs`, 128 lines, same per-tick semantics).
-Check the file ledger BEFORE choosing a call site, not after the test fails. (2) MOVING a
-grandfathered over-limit function is fine: the ledger accepts deleting the entry at the old path
-and re-adding it, same measured size, at the new path (alphabetical within the `function` group).
-Relocated debt is not new debt — but only new-code violations must be refactored instead of
-ledgered.
-
-## Ledger Growth Reached Push Time Again — Gates Moved Earlier (2026-08-14)
-
-**What happened:** the maintainability failure class recurred a third time: a guidance commit (`deecb23e`) duplicated a 13-line block into two ledgered `signals/` functions and grew four tests, and the breakage was only discovered when the pre-push hook ran the suite. The truncated-`cargo test` trap above is exactly how it went unnoticed at commit time.
-
-**Fix (mechanical, both hooks in `loom/.githooks/`):**
-
-- `pre-commit` now runs `cargo test --quiet --test maintainability` after formatting — ledger growth blocks the commit itself, not the eventual push. Fast when the build is warm; the first commit in a cold worktree pays a compile.
-- `pre-push` now mirrors CI: `cargo clippy --all-targets -- -D warnings`, the rustdoc gate, and `cargo test --all-targets --no-fail-fast`. Since 2026-09-05 it also runs `scripts/flake-check.sh` (the CI flake job) last and warns when `rustup check` reports a newer stable.
-
-**Prevention:** when a failure class recurs at push time, the fix is to move its cheapest sufficient check to commit time, not to write another reminder. The ledger fix itself followed the standard shape: extract the duplicated block into an unledgered module (`signals/helpers.rs::append_settled_completion_rules`), never raise a ledger entry.
-
 ## A `[`link`]` to a Private Item Fails the Docs Build — Four Recurrences, Now Gated at Commit Time (2026-08-11)
 
 **What happened:** CI's `Documentation` job failed on main while build, test, clippy, fmt, maintainability, audit and deny were all green. Two module doc comments used intra-doc link syntax for private functions — ``[`tmux_endpoint_ready`]`` in `src/commands/attach/mod.rs` and ``[`kind_env`]`` in `src/orchestrator/terminal/native/wrapper.rs`. Both targets are private `fn`s referenced from public docs.

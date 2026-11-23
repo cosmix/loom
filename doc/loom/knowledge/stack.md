@@ -7,7 +7,7 @@
 
 ## Core Stack
 
-- **Language:** Rust (~380K lines under `loom/src`)
+- **Language:** Rust (~720K lines under `loom/src`, about 3,750 `.rs` files)
 - **Concurrency:** std threads only. The daemon is thread-based: a Unix socket accept loop, a client worker pool, and the orchestrator, log-tailer, status-broadcaster, and quota-poller threads, each joined with a 5 s timeout on shutdown (`loom/src/daemon/server/lifecycle.rs`). `loom/Cargo.toml` has no tokio and no async runtime.
 - **CLI Framework:** clap with `#[derive(Parser)]`
 - **Serialization:** serde; YAML through `loom::yaml` (serde-saphyr), JSON through serde_json, toml
@@ -85,8 +85,8 @@ with `=`:
 
 | Pack (feature)                 | Crates                                                                                                                                                                                                                          |
 | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Core (`source-graph`)          | `tree-sitter =0.27.0`, `tree-sitter-rust =0.24.2`, `tree-sitter-typescript =0.23.2` (TypeScript and TSX), `tree-sitter-python =0.25.0`, `tree-sitter-go =0.25.0`, `tree-sitter-javascript =0.25.0`, `streaming-iterator =0.1.9` |
-| Wave B (`source-graph-wave-b`) | `tree-sitter-java =0.23.5`, `tree-sitter-c-sharp =0.23.5`, `tree-sitter-ruby =0.23.1`, `tree-sitter-php =0.24.2`                                                                                                                |
+| Core (`source-graph`)          | `tree-sitter =0.27.2`, `tree-sitter-rust =0.24.2`, `tree-sitter-typescript =0.23.2` (TypeScript and TSX), `tree-sitter-python =0.25.0`, `tree-sitter-go =0.25.0`, `tree-sitter-javascript =0.25.0`, `streaming-iterator =0.1.9` |
+| Wave B (`source-graph-wave-b`) | `tree-sitter-java =0.23.5`, `tree-sitter-c-sharp =0.23.5`, `tree-sitter-ruby =0.23.1`, `tree-sitter-php =0.25.1`                                                                                                                |
 | Wave C (`source-graph-wave-c`) | `tree-sitter-c =0.24.2`, `tree-sitter-cpp =0.23.4`                                                                                                                                                                              |
 
 `default = ["source-graph", "source-graph-wave-b", "source-graph-wave-c"]`; each wave feature implies
@@ -97,7 +97,7 @@ wave D) are out of scope.
 
 **The per-pack capability-gap rule.** The pack, not the crate, is the unit of feature gating. A pack that is not
 compiled does not fail the build or hide its dialects: `extractor_for` returns `Lookup::Gap` and the files get
-file-level `LexicalOnly` nodes with the detail `grammar pack {feature} not compiled ({dialect})`, which the coverage
+file-level `LexicalOnly` nodes with the detail `grammar pack {feature} not compiled in ({dialect})`, which the coverage
 report and census list as `gaps`. Collapsing every grammar into one feature would let a host drop half the grammars
 and leave the registry inconsistent, and a feature per crate (what `cargo add --optional` generates) would expose
 that same inconsistency; packs group grammars that ship together. `GrammarPack::feature()` names the feature and
@@ -111,6 +111,6 @@ The three packs cost binary size and build time: the release binary grew from 37
 
 Exact pins matter because `ExtractorIdentity.grammar_version` carries the _grammar_ crate version into the cache
 identity: a floating pin would silently invalidate or, worse, silently reuse cached extractions. A core-only
-`tree-sitter` bump does not change it. Upgrading the core crate is not free: 0.26 to 0.27 made
-`QueryMatch::captures` a method rather than a public field (`context/extract/treesitter/collect.rs`). See
+`tree-sitter` bump does not change it. Upgrading the core crate is not free: the harness reads each match through the
+`QueryMatch::captures` method (`context/extract/treesitter/collect.rs:138`). See
 [Source Graph](architecture/source-graph.md#the-extractor-trait).

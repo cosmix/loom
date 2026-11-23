@@ -104,32 +104,26 @@ proof.
 
 Correct dependency direction: commands/ -> orchestrator/ -> models/ (top), daemon/ / git/ / plan/ (middle), fs/ (bottom).
 
-Known violations (all four are pre-existing, none introduced by the context work):
+Upward edges in production code (test modules excluded), each checked against the tree:
 
-- daemon imports commands (mark_plan_done_if_all_merged) -- fix: move to fs/plan_lifecycle.rs
-- orchestrator imports commands (check_merge_state) -- fix: move to git/merge/status.rs
-- git/worktree imports orchestrator (hook config) -- fix: extract loom-hooks/ as top-level
-- models imports plan/schema (WiringCheck, StageType) -- fix: move types to models/
+- **daemon -> commands:** `daemon/server/client.rs:89` (`commands::stage::admin_proof::verify_and_consume_admin_proof`).
+- **orchestrator -> commands:** `orchestrator/core/coherence.rs:41` (`commands::stage::complete::strip_privileged_env_for_runtime`) and `orchestrator/skip.rs:45` (`commands::stage::native_gate::ensure_no_native_workers`).
+- **handoff -> commands:** `handoff/completion/attest.rs:14` (`commands::stage::admin_hmac::{constant_time_eq, hmac_sha256}`; the other user is `commands/stage/admin_proof.rs:6`).
+- **subagent_lifecycle -> commands:** `subagent_lifecycle/claude.rs:8` imports `StartedAgentTypeIndex` through `commands::subagents::ledger`, which only re-exports `provider_data::ledger`.
+- **git -> orchestrator:** `git/cleanup/orphans.rs:10` (`orchestrator::merge_lifecycle::{CleanupOutcome, MergeLifecycle}`).
+- **process -> daemon:** `process/sandbox_probe/needs.rs:8` (`daemon::{socket_path_fits, SUN_PATH_MAX}`, defined in `daemon/socket.rs`). `daemon` imports `process`, so `process` is the lower layer.
+- **models -> plan, verify, git, assets, fs:** `plan` at `models/dispute_criterion.rs:7` and `models/stage/{checks,types,methods}.rs`, `verify` at `models/dispute.rs:15-18`, `git` at `models/stage/merge_block.rs:8`, `assets` at `models/forward_receipt/transcript/argv.rs:24`, `fs::permissions` at `models/stage/sandbox_config.rs:161`.
+- **stage_service -> daemon:** `ContractRunReport` is defined in `stage_service/mod.rs:43` and re-exported by `daemon/protocol.rs:93`; `stage_service/contracts_choices.rs:15`, `verify/contracts/*` and `host_verify/*` import it through `crate::daemon`. The edge `daemon -> stage_service` (`daemon/server/contracts.rs:18`) is a downward call.
+- **handoff <-> orchestrator (cycle):** `handoff/mod.rs:28` re-exports `orchestrator::continuation` (the continuation code lives in `orchestrator` because of its spawner and signal dependencies) and `handoff/session_content.rs:21` imports `orchestrator::monitor::stage_context_tokens`; `orchestrator/continuation/context.rs:9-10`, `orchestrator/core/stage_handoff.rs:3`, `orchestrator/core/inbox_drain/complete.rs:13` and `orchestrator/monitor/completion_blockers.rs:6` import `crate::handoff`.
 
-### The newer modules are clean
+### Edges of `context`, `telemetry` and `process`
 
-The list above does not cover `context/`, `telemetry/` and `process/`. Verified with
-`rg '^use crate::[a-z_]+' loom/src/context`:
+Checked with `rg -o 'crate::[a-z_]+' loom/src/<module>`, test files excluded:
 
-- **`context`** imports only `crate::context`, `crate::fs`, `crate::language`, `crate::models`
-  and `crate::git`. **No upward edge** to `orchestrator`, `commands` or `daemon`. The single
-  `git` edge is deliberate — `git::runner::run_git_checked` at
-  `context/refresh/source_graph/generation.rs::working_tree`, needed to list tracked files and judge tree
-  cleanliness — and it points downward, so it is not a violation. Record it rather than
-  rediscovering it.
-- **`telemetry`** is a leaf: one module, no `crate::` imports beyond its own serde types. The
-  orchestrator calls into it (`orchestrator/core/stage_telemetry.rs`), never the reverse.
-- **`process`** holds the env allowlist and is consumed by both `verify` and the terminal
-  spawner without importing either.
+- **`context`** imports `crate::context`, `fs`, `git`, `models`, `utils`, `yaml`, `testrun` and one `verify` edge (`context/worktree_graph.rs:27`, `verify::review::fingerprint::checkout_git`). It has no edge to `orchestrator`, `commands` or `daemon`. The `git` edges (`context/refresh/source_graph/generation.rs::working_tree`, `layer.rs`, `worktree_graph.rs`, `census/mod.rs`) list tracked files and judge tree cleanliness, and they point downward.
+- **`telemetry`** imports `crate::fs`, `crate::git` and `crate::relay`, never a layer above them. The orchestrator calls into it (`orchestrator/core/stage_telemetry.rs`), never the reverse.
+- **`process`** holds the env allowlist and is consumed by both `verify` and the terminal spawner without importing either. Its one upward edge is the `daemon` import listed above.
 
-The rule to preserve: the orchestrator calls into `context`, never the other way around. A
-`use crate::orchestrator` appearing anywhere under `loom/src/context/` is a regression, and the
-one-line check above is the way to catch it.
+The rule to preserve: the orchestrator calls into `context`, never the other way around. A `use crate::orchestrator` appearing under `loom/src/context/` outside test files is a regression; `rg 'crate::orchestrator' loom/src/context` finds it.
 
-(Note that a match for `crate::external` under `context/extract/rust/tests.rs::FIXTURE` is inside a golden
-test fixture string, not a real import.)
+(A match for `crate::external` under `context/extract/rust/tests.rs::FIXTURE` is inside a golden test fixture string, not a real import.)

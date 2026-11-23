@@ -183,9 +183,7 @@ no deterministic unit test of `Batch::in_time_order`; one requests mutation note
 
 ## Recurring flock-after-drop
 
-`ServerLock` (`plan_server/lock.rs`) is the third lock type found holding its `flock` past `drop` under a
-forking test binary ([mistake](../mistakes/test-concurrency-and-fixtures.md)). A proposal: a maintainability
-test that fails for any struct owning a locked `File` without a `Drop` that calls `flock(LOCK_UN)`.
+Lock types that own a `flock` release it in `Drop` with `flock(LOCK_UN)`, because a child forked on another thread holds a copy of the descriptor until its exec ([mistake](../mistakes/test-concurrency-and-fixtures.md)); `ServerLock` (`plan_server/lock.rs`) does. A proposal: a maintainability test that fails for any struct owning a locked `File` without a `Drop` that calls `flock(LOCK_UN)`.
 
 ## Bridge test caveats
 

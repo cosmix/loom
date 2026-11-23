@@ -4,13 +4,11 @@
 
 ## Open Items From the Automatic-Knowledge Plan
 
-**Bounded refresh source retention.** `context/refresh/source_graph/layer.rs::read_bytes` uses `context/source_graph/read.rs::SourceRead` through `read_source` or `run_git_stream`. The reader hashes and counts every byte through a fixed 16 KiB buffer while retaining at most `MAX_EXTRACTED_FILE_BYTES`; oversized nodes keep full-file content identity and byte spans without whole-file allocation. Source windows have a separate read path and require a separate bound audit.
-
-**Three production-dead `KnowledgeDir` methods.** `append`, `read_index` and the
+**Four production-dead `KnowledgeDir` methods.** `append`, `read_index`, `read_target` and the
 `KnowledgeFile`-keyed `replace_section` (`fs/knowledge/dir.rs`) have no non-test callers.
-`read` is live (`commands/knowledge/bootstrap/mod.rs`), and so are `read_target` and
+`read` is live (`commands/knowledge/bootstrap/mod.rs`), and so is
 `replace_section_target` (`commands/knowledge/mod.rs`). All are `pub` on a `pub` type, so clippy
-cannot flag them, and `tests_dir.rs` and `tests_dir_bugfixes.rs` exercise the dead three against
+cannot flag them, and `tests_dir.rs` and `tests_dir_bugfixes.rs` exercise the dead four against
 each other. Settle them in one change: delete the methods and their tests together, or wire them
 to a real consumer. A dead-accessor list holds for one revision only; re-check it before acting.
 
@@ -23,6 +21,8 @@ one is used as is. Silent by construction; see `mistakes/writer-reader-address.m
 lists worktree-shaped `Read(...)` rules and `Bash(loom *)`, but only its re-export in
 `fs/permissions/mod.rs` and `constants_tests.rs` reference it; no settings writer uses it. Wire it
 into the worktree settings or delete it with its tests.
+
+Refresh source reads are bounded: `context/refresh/source_graph/layer.rs::read_bytes` uses `context/source_graph/read.rs::SourceRead` through `read_source` or `git.run_stream`. The reader hashes and counts every byte through a fixed 16 KiB buffer while retaining at most `MAX_EXTRACTED_FILE_BYTES`; oversized nodes keep full-file content identity and byte spans without whole-file allocation. Source windows have a separate read path and require a separate bound audit.
 
 ## Stopwording Drops the Words a Natural-Language Source-Graph Question Is Asked In
 

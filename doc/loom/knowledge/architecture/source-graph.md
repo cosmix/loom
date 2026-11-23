@@ -132,7 +132,7 @@ A `DialectSpec` carries `id` (equals `NodeLanguage::as_str()`), `language`, `fam
 | `java`               | java       | `java`                    | `tree-sitter-java 0.23.5`       | WaveB |
 | `csharp`             | csharp     | `cs`                      | `tree-sitter-c-sharp 0.23.5`    | WaveB |
 | `ruby`               | ruby       | `rb,rake,gemspec`         | `tree-sitter-ruby 0.23.1`       | WaveB |
-| `php`                | php        | `php`                     | `tree-sitter-php 0.24.2`        | WaveB |
+| `php`                | php        | `php`                     | `tree-sitter-php 0.25.1`        | WaveB |
 | `c`                  | c          | `c`                       | `tree-sitter-c 0.24.2`          | WaveC |
 | `cpp`                | c          | `cc,cpp,cxx,hh,hpp,hxx,h` | `tree-sitter-cpp 0.23.4`        | WaveC |
 
@@ -147,7 +147,7 @@ from `dialect_for_path`: TSX folds into TypeScript and `Other(_)` maps to no lan
 
 **Gap vs Unknown.** `Lookup::Gap` is a dialect loom knows whose extractor is absent: the file
 still gets a file-level node with `FileCoverage::LexicalOnly` and a named detail
-(`grammar pack {feature} not compiled ({dialect})` or `no extractor registered for dialect
+(`grammar pack {feature} not compiled in ({dialect})` or `no extractor registered for dialect
 {dialect}`). `Unknown` (no dialect for the extension) keeps the lexical fallback. Both stamp
 `LEXICAL_PARSER_VERSION`, and every currency check treats them alike, so a base holding such a
 file is `Reused` on the next `ensure_snapshot`. `Capabilities { declarations, imports,

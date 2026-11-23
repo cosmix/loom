@@ -321,3 +321,27 @@ knowledge-distill the rewrite, or the stage changes it. Raise a cap to the measu
 **Prevention:** a brief names a path under `doc/plans/briefs/` only when a worker must read that file. Describe any other brief in words. After `loom plan verify`, list the inputs that lie outside the plan's own briefs directory; there should be none the plan does not need.
 
 **Fix:** the mention was reworded and the plan's inputs are its own file and briefs.
+
+## Brief-path extractor fed markdown into the run glob
+
+**What happened:** `loom run` failed on a plan that `loom plan verify --strict` accepted, with `Pattern syntax error near position 42: recursive wildcards must form a single path component`. The plan prose read `**Briefs live outside \`doc/plans/briefs/\`.**`.
+
+**Why:** `extract_brief_paths` (`plan/schema/structural_checks.rs`) trimmed only `.,:\`` from token ends, so the token kept the bold marker after the closing backtick. Run's input discovery compiled any token holding`*` as a glob and aborted on a bad one without naming the token or file. Verify never ran that discovery: it only warned about missing brief paths in stage descriptions, so a plan could verify clean and still fail run's preflight.
+
+**Prevention:** a check that accepts a plan must run the same code every later consumer runs on it. Verify and the run preflight share one discovery (`plan/inputs.rs`); a new run-time check on plan inputs goes there, never into `commands/run/` alone.
+
+**Fix:** the extractor cuts each token at its first backtick (test `markdown_after_a_code_span_is_not_part_of_the_path`). `plan/inputs.rs` collects invalid references (bad glob, parent traversal, symlink) with the token and its source file instead of aborting; `loom run` lists them with uncommitted inputs, and `loom plan verify` reports invalid and missing inputs as errors and uncommitted ones as a note (`commands/plan/verify/inputs.rs`).
+
+## Treating this repository's conventions as loom's product behaviour
+
+**What happened:** While planning the planner redesign, a draft decision asked whether loom should ignore DONE- plans inside feature directories, citing this repository's own .gitignore as if it were loom's behaviour.
+**Why:** loom is developed with loom, so this repository's doc/, .gitignore and plan habits are easy to mistake for what loom does in every project. Loom is a product used to build other projects.
+**Prevention:** Before stating what loom does in a project, find the code that does it. In target projects loom only manages the .loom/work and .worktrees ignore entries (loom/src/commands/repair/workspace.rs); everything else in a project's .gitignore is the project's choice, and planner features must work whatever the project ignores.
+**Fix:** PLAN-planner-ui-redesign.md moves the DONE-/REVIEW- pattern change to this repository's migration stage only.
+
+## Plan Amendment Strips completed_commit From a Merged Stage
+
+**What happened:** during PLAN-planner-polish, integration-verify's session amended merged stage chat-and-shell-visual's `wiring` twice (11:45Z, 11:46Z). `plan/amendment_fields.rs::sync_stage_from_definition` set `completed_commit = None` because the field changed, but left `merged: true`. When the adjudication verdict re-queued integration-verify at 11:49Z, `verify/transitions/state.rs::describe_dependency_block` returned `MissingCommit` for the dependency, and the stage sat queued for 68 minutes.
+**Why:** clearing `completed_commit` forces re-verification of an in-flight stage, but a merged stage cannot re-verify. The amendment broke the merged-implies-commit invariant that the scheduler relies on.
+**Prevention:** an amendment must never clear `completed_commit` on a stage with `merged` or `merge_assumed`; integration-verify legitimately amends earlier stages' wiring.
+**Fix:** operator recreated `loom/chat-and-shell-visual` at its merged tip and ran `loom stage complete chat-and-shell-visual --force-unsafe --assume-merged`.

@@ -27,18 +27,6 @@ end of the file). An in-place rename is missing.
 **Fix:** either accept a `--heading <new>` flag, or match the OLD heading and re-emit whatever
 heading line the content passed in.
 
-## Two Fenced-Code-Block Models Disagree in `fs/knowledge/`
-
-`splice.rs`'s `fence_mask` (the level-agnostic `replace-section` splicer) requires a closing
-fence's run length to be at least as long as the opener's — CommonMark-correct. `chunker.rs`'s
-`fence_marker` (used for retrieval chunking, `~:153-222`) closes on ANY line whose first
-non-whitespace characters start with the same delimiter, regardless of run length. They disagree
-on, e.g., a ` ``` ` line inside a ` ` ```` fence: `chunker.rs` treats it as closing the
-fence early (so a `##` line just past it can be lexed as a heading) while `splice.rs` keeps
-reading through to the real closer. Consequence: the span `loom knowledge context` reads a
-heading from is not necessarily the span `replace-section` will overwrite. Should become one
-shared scanner.
-
 ## `replace-section` Silently Converts CRLF to LF and Can Drop Trailing Blank Lines
 
 `splice.rs::assemble_replacement` rebuilds the file from `base.lines()` (which strips both `\n`
@@ -59,21 +47,12 @@ two paths should agree.
 
 ## Tier-1 Knowledge Housekeeping Backlog
 
-**Closed by the 2026-09-19 cleanup.** `loom knowledge check --strict` exits 0 on this tree under the tier-1
-limits (250 lines per file, 40 per section) AND the tier-2 pair (400 lines per file, 80 per section,
-`fs/knowledge/catalog/size.rs`), with no `MissingSourceRef`. The earlier backlog (728 findings, six oversized tier-1
-files, bare-filename source references) was cleared by the knowledge-bootstrap stage, and this stage split the five
-tier-2 files and eleven sections that the new tier-2 limits flagged (context-retrieval, sandbox-and-settings,
-subagent-orchestration, testing-and-lint and codex-plugin, plus eleven sections in other topics).
+`loom knowledge check --strict` enforces the tier-1 limits (250 lines per file, 40 per section), the tier-2 limits (400 lines per file, 80 per section, `fs/knowledge/catalog/size.rs`), resolvable source references and the `INDEX.md` byte budget (`MAX_INDEX_BYTES`). `INDEX.md` is over that budget; the committed baseline `doc/loom/knowledge/check-baseline.txt` records it as `oversized-index`, and the gate is `loom knowledge check --strict --baseline doc/loom/knowledge/check-baseline.txt`.
 
-What remains is discipline, not backlog:
+What remains is discipline:
 
-- **A tier-2 file or section that grows past its limit is split, not baselined.** `--write-baseline` exists for
-  adopting a limit on a tree that cannot clear it yet; this tree can, so no baseline file is needed while
-  `--strict` stays green. After `./dev-install.sh`, run `loom knowledge check --strict`: exit 0 means no baseline
-  file to generate. If a newer binary reports issues this one does not, record them with
-  `loom knowledge check --write-baseline doc/loom/knowledge/check-baseline.txt` and gate with `--baseline`.
-- **Source references accept project-relative and Cargo-module-relative paths, bare basenames, and path suffixes.** `fs/knowledge/catalog/source_roots.rs::repository_source_path_exists` accepts a bare basename when any indexed project file has that name; a slash-containing suffix must identify exactly one file. An unresolved live project reference produces `MissingSourceRef`; example and external-reference classification are handled separately.
+- **A tier-2 file or section that grows past its limit is split, not baselined.** `--write-baseline` exists for adopting a limit on a tree that cannot clear it yet. Write the baseline from a clean clone of the repository (with the knowledge directory copied over it), never from a working checkout: references to plan briefs that are untracked in a working checkout (`doc/plans/briefs/...`) resolve there and not in a clone, so a baseline written from the checkout drops entries that a clean checkout reports again.
+- **Source references accept project-relative and Cargo-module-relative paths, bare basenames, and path suffixes.** `fs/knowledge/catalog/source_roots.rs::repository_source_path_exists` accepts a bare basename when any indexed project file has that name; a slash-containing suffix must identify exactly one file. An unresolved live project reference produces `MissingSourceRef`; example and external-reference classification are handled separately (an `e.g.` before a list of file names marks them as examples).
 - **A topic's blurb is set with `loom knowledge annotate <target> --blurb "<text>"`** (at most 80 characters), which
   works from inside a stage. `update` still cannot set it, so a new topic takes two calls.
 - **Moving a section between topics has no verb.** The split record used `update <dst>` then `delete-section <src>`. An
@@ -91,8 +70,8 @@ exact-once substitutions, and pipe the result to `replace-section` from a file. 
 inert heredoc bodies (quoted delimiter, inert reader), but a long body still belongs in a file fed on
 stdin; name that file `.distill-body-*` so the main-agent edit advisory ignores it.
 
-`INDEX.md` sits within a few bytes of its 16 384-byte `OversizedIndex` budget; the SessionStart knowledge-orient
-line reports its current size. Every new tier-2 topic adds a row, so each one has to be paid for with shorter
+`INDEX.md` has a byte budget (`MAX_INDEX_BYTES`, `fs/knowledge/catalog/size.rs`) that `loom knowledge check` reports as
+`OversizedIndex`; the SessionStart knowledge-orient line reports its current size. Every new tier-2 topic adds a row, so each one has to be paid for with shorter
 blurbs (`loom knowledge annotate <target> --blurb`) or by merging small topics.
 
 ## `loom knowledge update` Run From Inside the Knowledge Directory Scaffolds a Nested Tree

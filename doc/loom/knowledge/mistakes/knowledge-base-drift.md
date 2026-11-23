@@ -274,3 +274,13 @@ and the contradictory-path-rules lesson as relevant. Eval passes at hit@5 1.00, 
 **Prevention:** Verify each call-path claim in a replacement paragraph against its caller.
 
 **Fix:** The recovery caller uses `build_dependency_findings_with_changes`; the current-state paragraph names that shared-snapshot path.
+
+## Concern Entries Outlived the Fix They Described (2026-11-23)
+
+**What happened:** a review found 14 knowledge sections that still described closed work: a layering list naming imports that had moved, a housekeeping section stating that `loom knowledge check --strict` exits 0 while it exited 1, an unbounded-read concern that `SourceRead` had closed, a dry-run gap fixed in `apply_confined_environment`, a journal-splitting gap closed by `escape_body`, and body-deadline and raw-string claims in the planner concerns. The correction pass found the same wrong claim in a second home more than once: the "exits 0" claim in three files, the body-reading claim in two sections of `architecture/plan-server.md`, the layering list in two files.
+
+**Why:** the stages that fixed the code recorded no `stale-knowledge` memory, so no distill stage touched the concern, and `loom knowledge check` validates sizes and source paths, not claims. Counts, versions and "exits 0" statements go stale first.
+
+**Prevention:** a stage that closes a concern records `loom memory note "stale-knowledge: ..."` in the same stage; a correction searches the knowledge base for the claim's other homes (`rg` on the symbol and on the number) before it finishes; prose carries no exact line count or crate version without a source reference to check it against.
+
+**Fix:** the sections were corrected from the tree in the `knowledge-repair` stage, each verified at a file and line.

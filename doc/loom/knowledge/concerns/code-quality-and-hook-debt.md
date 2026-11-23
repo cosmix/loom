@@ -91,27 +91,6 @@ app::TuiApp` (`commands/status/ui/tui/mod.rs`, used only by `run_tui` in the sam
   from daemon exit / `Response::Error` through to `panels::render_footer`, but no ledger test ever
   sets it non-`None` (`commands/status/ui/tui/ledger/tests.rs::fixture`, `commands/status/ui/tui/ledger/layout.rs::notice_below_minimum` both pass `None`).
 
-## Efficiency-Plan Debt: Hook File Size, Unwired False Positives, Baseline Pressure, Criterion Rendering
-
-- **`loom-hooks/commit-filter.sh` is 463 lines**.
-  The repository's 400-line file cap is not enforced for `loom-hooks/*.sh`: `loom/tests/maintainability.rs`'s scanner walks
-  only the loom crate's `build`, `src` and `tests` Rust files, so no gate sees hook scripts. A refactor stage should
-  either split the script or extend the scanner to hooks.
-- **The stage-completion unwired-file detector uses the resolved source graph.**
-  `verify/wiring_detection.rs:37-115` inspects resolved edges, marks missing or incomplete graph
-  evidence uncertain, and excludes conventional test paths. `#[path]` support depends on graph
-  extraction and resolution; any remaining false positive needs a current fixture with its graph
-  evidence. It is not a grep of importable names in `mod.rs`.
-- **Every new `Stage` field costs a baseline line.** `Stage::default` (`models/stage/defaults.rs`) is the single
-  exhaustive literal and its `loom/maintainability-baseline.txt` entry (`function src/models/stage/defaults.rs default 76`)
-  is exact; the next field needs a field-grouping refactor (nested structs) rather than another raise.
-- **The stage signal renders an acceptance criterion as its bare command** (`orchestrator/signals/format/sections.rs::format_dynamic_section`), dropping
-  `exit_code`, so a criterion that must FAIL (`exit_code: 1`) reads as a positive check and misled two worker briefs.
-  Render the expected exit code beside the command.
-- **Two masked-exit shapes are still misjudged** (`plan/schema/validation/criterion_hazards/masked_exit.rs`): `cargo build && (cargo test ||
-true)` is flagged although a failing build still fails it, and `cmd || true 2>/dev/null` is not flagged. Both are rare;
-  they are recorded in [plan-lifecycle-and-fields](../architecture/plan-lifecycle-and-fields.md).
-
 ## Memory and Hook Follow-Ups After the Doctrine-Truth Plan
 
 Reviewer suggestions the plan left unimplemented:
@@ -320,7 +299,7 @@ Two accepted edges of `loom-hooks/loom-relay-guard.sh`, both from the shared tok
 
 ## Tests Shell Out to Perl and Python
 
-Rust tests reach other languages for helper programs: 9 files under `loom/src` and `loom/tests` run `/usr/bin/perl` (for example the Unix-socket probes in `verify/criteria/confine_seatbelt_tests.rs`) and 72 `.rs` files mention `python`/`python3`, beside the Python scripts under `scripts/` and the bash hooks. Each language adds an interpreter the test host and the sandbox must provide (macOS `/usr/bin/python3` is an xcrun shim). A probe that needs a real process inside a boundary can re-run the test binary itself instead (`std::env::current_exe()` with a hidden mode), as `process/host_job_lane_tests.rs` and `pressure/record/publication_tests.rs` do; `verify/criteria/confine_seatbelt_network_tests.rs` follows that pattern. Open: migrate the remaining Perl and Python helpers to it.
+Rust tests reach other languages for helper programs: 6 files under `loom/src` run `perl`, three by absolute path (`/usr/bin/perl` in `verify/criteria/confine_seatbelt_tests.rs`, `confine_seatbelt_loopback_tests.rs` and `confine_stage_cache_tests.rs`) and three by bare name (`confine_host_tests.rs`, `confine_seatbelt_signal_tests.rs` and `escapees_tests.rs`), and 80 `.rs` files mention `python`/`python3`, beside the Python scripts under `scripts/` and the bash hooks. Each language adds an interpreter the test host and the sandbox must provide (macOS `/usr/bin/python3` is an xcrun shim). A probe that needs a real process inside a boundary can re-run the test binary itself instead (`std::env::current_exe()` with a hidden mode), as `process/host_job_lane_tests.rs` and `pressure/record/publication_tests.rs` do. Open: migrate the remaining Perl and Python helpers to it.
 
 ## Hook Proposals From Recurring Orchestrator Mistakes
 
@@ -328,3 +307,21 @@ Two mistakes recurred across plans, so they get a mechanical guard proposal inst
 
 - **Editing the tree while `loom-code-reviewer` runs** ([first record](../mistakes/planner-follow-ups-delivery.md#editing-a-file-while-the-code-reviewer-ran-skipped-its-round), again in `open-github-issues`: four reviewers each ended as `review_harvest_failed.worktree_changed`, no round was recorded, and the findings had to be carried into the fix brief by hand). The review hook binds a round to the tree fingerprint at spawn. Proposal: a PreToolUse guard that refuses `Edit` and `Write` in the main session while a `loom-code-reviewer` it spawned has not returned, naming the outstanding reviewer; `loom check` failures are fixed before spawning.
 - **A Bash command whose text holds both `stage` and `complete` is refused as an unpinned completion** ([first record](../mistakes/codex-worker-briefing.md#verification-loops-hid-the-tool-they-called), again twice in `open-github-issues`: a Python heredoc mentioning `completed_stages`, an inline script mentioning `stageCounts(record).completed`, and an edit script about plan completion). The text scan in `loom-control-complete.sh` cannot tell prose from a command. Proposal: scan only the command's first word and arguments for the exact `loom stage complete` shape, never heredoc bodies or quoted script text. Until then write edit scripts with the Write tool to the scratch directory and run `python3 <file>`.
+
+## Efficiency-Plan Debt: Hook File Size, Unwired False Positives, Baseline Pressure
+
+- **`loom-hooks/commit-filter.sh` is 463 lines**.
+  The repository's 400-line file cap is not enforced for `loom-hooks/*.sh`: `loom/tests/maintainability.rs`'s scanner walks
+  only the loom crate's `build`, `src` and `tests` Rust files, so no gate sees hook scripts. A refactor stage should
+  either split the script or extend the scanner to hooks.
+- **The stage-completion unwired-file detector uses the resolved source graph.**
+  `verify/wiring_detection.rs:37-115` inspects resolved edges, marks missing or incomplete graph
+  evidence uncertain, and excludes conventional test paths. `#[path]` support depends on graph
+  extraction and resolution; any remaining false positive needs a current fixture with its graph
+  evidence. It is not a grep of importable names in `mod.rs`.
+- **Every new `Stage` field costs a baseline line.** `Stage::default` (`models/stage/defaults.rs`) is the single
+  exhaustive literal and its `loom/maintainability-baseline.txt` entry (`function src/models/stage/defaults.rs default 76`)
+  is exact; the next field needs a field-grouping refactor (nested structs) rather than another raise.
+- **Two masked-exit shapes are still misjudged** (`plan/schema/validation/criterion_hazards/masked_exit.rs`): `cargo build && (cargo test ||
+true)` is flagged although a failing build still fails it, and `cmd || true 2>/dev/null` is not flagged. Both are rare;
+  they are recorded in [plan-lifecycle-and-fields](../architecture/plan-lifecycle-and-fields.md).

@@ -36,10 +36,6 @@ Found during the plan's stages and integration-verify, verified against the tree
   stage from `project_slug` via `stage_id()`, the pattern the provider ledger forbids for new
   attribution. `cache_ignore.rs::check_ignore` duplicates `process::run_bounded`'s spawn and wait
   handling except stdin.
-- **No shared any-path bounded reader.** `usage --compare` keeps a local bounded reader because
-  `fs/safe_read.rs::read_bounded` is root-relative and no-follow (see
-  [Token Accounting and Receipts](../architecture/token-accounting-and-receipts.md)); a shared
-  any-path variant in `fs/safe_read.rs` would retire the copy.
 - **`#[serial]` env mutation races non-serial siblings.** `verify/criteria` runner tests mutate the
   process-wide `LANG` through `EnvGuard` (`loom/src/verify/criteria/tests/runner_tests.rs::EnvGuard`);
   `apply_stage_environment` (`loom/src/process/environment.rs::apply_stage_environment`) re-reads the process environment
@@ -56,10 +52,8 @@ Found during the plan's stages and integration-verify, verified against the tree
 
 ## Open Follow-Ups From the Efficiency-and-Acceptance Plan
 
-- **Knowledge check baseline.** After `./dev-install.sh`, run `loom knowledge check --strict`. It exits 0 on this tree,
-  so no baseline file is needed; if a newer binary reports issues, record them with
-  `loom knowledge check --write-baseline doc/loom/knowledge/check-baseline.txt`, commit the file and gate with
-  `--baseline` (see [knowledge-cli-gaps](knowledge-cli-gaps.md)).
+- **Knowledge check baseline.** `doc/loom/knowledge/check-baseline.txt` records the structural issues `loom knowledge check --strict`
+  tolerates; gate with `--baseline` and regenerate it from a clean clone (see [knowledge-cli-gaps](knowledge-cli-gaps.md)).
 - **Confirm the retrieval precision floor.** Run `loom knowledge eval`: `precision_floor` is 0.40 against a measured
   precision@5 of 0.45 on 2026-09-19, judged over the hook-delivered pack for prompt cases
   ([context-retrieval](../architecture/context-retrieval.md)).
@@ -264,17 +258,13 @@ Open items from the plan's reviews, all small. The implemented ones are gone fro
   thread-less receipt observed within `MAX_FORWARD_SECS` after `until` leaves its in-window rows
   foreign with no reason (`[since, until + MAX_FORWARD_SECS]` would cover it). No test pins the
   inclusive bounds (a receipt at exactly `since + 600 s`, exactly `until`, exactly `since`), so a
-  `>=` to `>` mutation passes. `classify_response_ids` in `codex_provider.rs` runs before the
-  scope drops foreign rows: a foreign and a project thread sharing a `response_id` with identical
-  usage (a forked or replayed rollout) could classify the project row `DuplicateExact` and lose it
-  once the foreign row goes; scope before classifying. Fresh forwarder threads cannot trigger it.
+  `>=` to `>` mutation passes.
 - **Comparison and evidence.** `--run-evidence` does not conflict with `--windows` or `--json`,
   which it ignores. A provider the declaration assigns but that has no measured rows makes
   `accounting_provenance` unknown and excludes the pair from net-total
   (`net-total-excluded-pairs`); the README does not say so. `net()` maps a `u64` overflow of
   resident plus output to `None`, reported as `missing-dimension`. `TokenRule` derives
-  `Serialize` that nothing uses. `run_evidence.rs` and `comparison.rs` both `File::open` an
-  operator path, so a FIFO blocks and a symlink is followed; `print_evidence` repeats
+  `Serialize` that nothing uses. `run_evidence.rs` `File::open`s an operator path (bounded by `take`), so a FIFO blocks and a symlink is followed; `print_evidence` repeats
   `render_json`. The quota tolerance tests stop at 1, 200, 281 and 301 s, so the exact `300 s`
   and `180 s` boundaries are unpinned, and nothing pins the human-mode failure report that now
   prints a `reasons:` line.
