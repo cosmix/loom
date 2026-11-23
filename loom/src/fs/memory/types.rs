@@ -213,7 +213,7 @@ impl MemoryEntry {
             id: Uuid::new_v4().simple().to_string(),
             timestamp: Utc::now(),
             entry_type,
-            content,
+            content: content.trim().to_string(),
             context: None,
             session: std::env::var("LOOM_SESSION_ID").ok(),
             evidence: Vec::new(),
@@ -240,7 +240,7 @@ impl MemoryEntry {
     }
 
     fn with_context_value(mut self, context: String) -> Self {
-        self.context = Some(context);
+        self.context = Some(context.trim().to_string());
         self
     }
 }

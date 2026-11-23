@@ -16,9 +16,9 @@ file src/orchestrator/signals/cache.rs 508
 file src/orchestrator/signals/format/sections.rs 554
 file src/orchestrator/signals/tests.rs 551
 file src/orchestrator/signals/tests_cache.rs 629
-file src/plan/parser/extraction.rs 410
+file src/plan/parser/extraction.rs 409
 file src/plan/schema/tests/validation_tests.rs 826
-file src/plan/schema/validation.rs 1063
+file src/plan/schema/validation.rs 1062
 file src/plan/tests/amendment.rs 605
 file src/sandbox/config.rs 708
 file src/sandbox/settings/tests.rs 1565
@@ -31,10 +31,10 @@ function src/commands/clean/worktrees.rs clean_worktrees 109
 function src/commands/graph/display.rs build_graph_display 52
 function src/commands/graph/tests.rs test_build_graph_display_shows_all_deps 70
 function src/commands/graph/tree.rs build_tree_display 57
-function src/commands/init/plan_setup.rs initialize_with_plan 182
+function src/commands/init/plan_setup.rs initialize_with_plan 181
 function src/commands/knowledge/tests.rs test_knowledge_update_in_worktree_writes_to_worktree 74
 function src/commands/knowledge/tests.rs test_parse_file_type 70
-function src/commands/repair.rs execute 99
+function src/commands/repair.rs execute 84
 function src/commands/repair/tests.rs repair_fixes_a_stale_knowledge_directory_deny_in_a_worktree 62
 function src/commands/resume.rs execute 57
 function src/commands/sessions.rs kill 54
@@ -87,11 +87,10 @@ function src/orchestrator/terminal/native/detection.rs detect_terminal#1 56
 function src/orchestrator/terminal/native/detection.rs detect_terminal#2 65
 function src/orchestrator/terminal/tmux/tests_discovery.rs live_tmux_sessions_orders_by_created_at_then_id 60
 function src/orchestrator/terminal/tmux/tests_viewer.rs pane_command_neutralises_hostile_session_ids 69
-function src/plan/parser/extraction.rs extract_yaml_metadata_with_ranges 51
 function src/plan/parser/mod.rs test_parse_plan_with_all_fields 74
 function src/plan/schema/tests/security_policy_tests.rs rejects_misspelled_nested_sandbox_fields 58
 function src/plan/schema/validation.rs check_cross_stage_wiring_coverage 66
-function src/plan/schema/validation.rs validate 357
+function src/plan/schema/validation.rs validate 353
 function src/plan/schema/validation.rs validate_structural_preflight 196
 function src/sandbox/settings/tests.rs every_stage_type_can_write_the_knowledge_directory 56
 function src/sandbox/settings/tests.rs test_build_settings_adds_resolved_work_symlink_permissions_legacy_layout 92

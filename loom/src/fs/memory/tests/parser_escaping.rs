@@ -73,6 +73,31 @@ fn a_plain_body_is_written_without_escapes() {
 }
 
 #[test]
+fn a_trailing_newline_in_the_content_is_stored_trimmed() {
+    let temp = TempDir::new().unwrap();
+    let entry = MemoryEntry::new(MemoryEntryType::Note, "text\n".to_string());
+    append_entry(temp.path(), STAGE, &entry).unwrap();
+
+    let journal = read_journal(temp.path(), STAGE).unwrap();
+    assert_eq!(journal.entries[0].content, "text");
+}
+
+#[test]
+fn a_trailing_newline_in_the_context_is_stored_trimmed() {
+    let temp = TempDir::new().unwrap();
+    let entry = MemoryEntry::with_context(
+        MemoryEntryType::Decision,
+        "use the lock".to_string(),
+        "reason\n".to_string(),
+    );
+    assert_eq!(entry.context.as_deref(), Some("reason"));
+    append_entry(temp.path(), STAGE, &entry).unwrap();
+
+    let journal = read_journal(temp.path(), STAGE).unwrap();
+    assert_eq!(journal.entries[0].context.as_deref(), Some("reason"));
+}
+
+#[test]
 fn a_multi_line_context_cannot_end_or_forge_an_entry() {
     let temp = TempDir::new().unwrap();
     let lines = ["why", "---", FORGED_HEADING, FORGED_RECEIPT];

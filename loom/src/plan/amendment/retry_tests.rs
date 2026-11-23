@@ -3,7 +3,7 @@ use crate::models::stage::Stage;
 use crate::verify::transitions::save_stage;
 use tempfile::TempDir;
 
-fn fixture() -> (TempDir, PathBuf, PathBuf) {
+pub(super) fn fixture() -> (TempDir, PathBuf, PathBuf) {
     let temp = TempDir::new().unwrap();
     let work = temp.path().join(".loom/work");
     fs::create_dir_all(work.join("stages")).unwrap();
@@ -27,7 +27,7 @@ fn fixture() -> (TempDir, PathBuf, PathBuf) {
     (temp, work, plan)
 }
 
-fn request(stage: &str, patch: AmendmentPatch) -> AmendmentRequest {
+pub(super) fn request(stage: &str, patch: AmendmentPatch) -> AmendmentRequest {
     AmendmentRequest {
         stage_id: stage.into(),
         field: AmendmentField::Acceptance,

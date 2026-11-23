@@ -16,7 +16,9 @@ use super::search_args::SearchArgs;
 use super::shell_lex::{lex, simple_commands, SimpleCommand, Word};
 
 mod masked_exit;
+mod ungrantable;
 use masked_exit::masks_exit_status;
+pub(super) use ungrantable::criterion_needs_ungrantable_resource;
 
 /// How deep the scan follows command substitutions and `sh -c` scripts.
 pub(super) const MAX_NESTING: usize = 4;
@@ -135,33 +137,6 @@ pub(crate) fn push_hazard_warnings(stage: &StageDefinition, warnings: &mut Vec<S
             }
         }
     }
-}
-
-/// Check whether an acceptance criterion invokes a resource that a worktree
-/// session's sandboxed acceptance run cannot grant.
-///
-/// `loom map` and `loom knowledge context` both open `ContextStore`, which
-/// resolves its cache under the main project root — read-only from a
-/// worktree, and unreachable via `allow_write` since both settings emitters
-/// filter out `../` paths. `tmux`/`docker` are host daemons the sandbox does
-/// not expose. Returns the matched invocation for use in the warning
-/// message, or `None` if the criterion is clean.
-pub(super) fn criterion_needs_ungrantable_resource(cmd: &str) -> Option<&'static str> {
-    if cmd.contains("loom map") {
-        return Some("loom map");
-    }
-    if cmd.contains("loom knowledge context") {
-        return Some("loom knowledge context");
-    }
-    for token in cmd.split_whitespace() {
-        if token == "tmux" || token.ends_with("/tmux") {
-            return Some("tmux");
-        }
-        if token == "docker" || token.ends_with("/docker") {
-            return Some("docker");
-        }
-    }
-    None
 }
 
 /// Every command the stage runs, labelled, with whether it is a wiring test.

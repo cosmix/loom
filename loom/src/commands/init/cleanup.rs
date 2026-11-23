@@ -7,7 +7,7 @@ use std::path::Path;
 
 use crate::commands::common::resolve_state_dir;
 use crate::fs::memory::archive_state_dir;
-use crate::git::branch::branch_name_for_stage;
+use crate::git::cleanup::CleanupConfig;
 use crate::git::runner::run_git;
 use crate::orchestrator::terminal::tmux::reap_sockets;
 pub use crate::orchestrator::terminal::tmux::SessionReapMode;
@@ -124,27 +124,25 @@ pub fn cleanup_worktrees_directory(repo_root: &Path) -> Result<()> {
         return Ok(());
     }
 
-    if let Ok(entries) = fs::read_dir(&worktrees_dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                let stage_id = entry.file_name().to_string_lossy().to_string();
-
-                let path_str = path.to_string_lossy().to_string();
-                let _ = run_git(&["worktree", "remove", "--force", &path_str], repo_root);
-
-                let branch_name = branch_name_for_stage(&stage_id);
-                let _ = run_git(&["branch", "-D", &branch_name], repo_root);
-
-                if let Err(error) =
-                    crate::stage_cache::cleanup::remove_stage_cache_of(repo_root, &stage_id)
-                {
-                    println!(
-                        "  {} {stage_id}: stage cache not removed: {error:#}",
-                        "⚠".yellow().bold()
-                    );
-                }
-            }
+    // `DirEntry::file_type` does not follow links: a symlink is skipped, never handed to git.
+    let mut stage_ids = Vec::new();
+    for entry in fs::read_dir(&worktrees_dir)
+        .with_context(|| format!("Failed to read {}", worktrees_dir.display()))?
+    {
+        let entry = entry.with_context(|| format!("Failed to read {}", worktrees_dir.display()))?;
+        let kind = entry
+            .file_type()
+            .with_context(|| format!("Failed to inspect {}", entry.path().display()))?;
+        if kind.is_dir() {
+            stage_ids.push(entry.file_name().to_string_lossy().into_owned());
+        }
+    }
+    let id_refs: Vec<&str> = stage_ids.iter().map(String::as_str).collect();
+    let results =
+        crate::git::cleanup_multiple_stages(&id_refs, repo_root, &CleanupConfig::forced());
+    for (stage_id, result) in &results {
+        for warning in &result.warnings {
+            println!("  {} {stage_id}: {}", "⚠".yellow().bold(), warning.dimmed());
         }
     }
 

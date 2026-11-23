@@ -1,6 +1,5 @@
 //! Plan initialization and stage creation for loom init.
 
-use super::base_branch::checked_out_branch;
 use crate::fs::stage_files::stage_file_path;
 use crate::fs::work_dir::{self, WorkDir};
 use crate::models::session::{SessionBackendKind, TerminalConfig};
@@ -109,15 +108,14 @@ fn refuse_unconfined_sandbox(plan_sandbox: &SandboxConfig, stages: &[Stage]) -> 
 /// `preflight_plan`). Everything here PRINTS or WRITES, so it stays in the
 /// same place in `execute()`'s flow as before the preflight split.
 ///
-/// `repo_root` is the repository `loom init` runs in: the base branch is read
-/// from it and `source_path` is stored relative to it. It is a parameter
-/// (rather than read from the process cwd here) so tests can hand in a
-/// scratch repository on a branch instead of whatever the test binary's cwd
-/// has checked out, which is a detached HEAD in a tag build.
+/// `repo_root` is the repository `loom init` runs in: `source_path` is stored
+/// relative to it. `base_branch` is read by the caller before any cleanup, so a
+/// detached HEAD refuses while the previous run is still intact.
 pub fn initialize_with_plan(
     work_dir: &WorkDir,
     plan: &PreflightedPlan,
     repo_root: &Path,
+    base_branch: &str,
     terminal_backend: Option<SessionBackendKind>,
 ) -> Result<usize> {
     let canonical_path = &plan.canonical_path;
@@ -171,8 +169,6 @@ pub fn initialize_with_plan(
         println!("  {} {}", "⚠".yellow().bold(), warning.yellow());
     }
 
-    let base_branch = checked_out_branch(repo_root)?;
-
     // Store source_path as relative to the project root so it works from
     // both the main repo and worktrees (where the state directory is a symlink).
     // Falls back to canonical (absolute) if the plan is outside the repo.
@@ -195,7 +191,7 @@ pub fn initialize_with_plan(
         doc.decor_mut().set_prefix(header);
     }
 
-    let plan_table = plan_table(parsed_plan, relative_source_path, &base_branch)?;
+    let plan_table = plan_table(parsed_plan, relative_source_path, base_branch)?;
     doc.insert("plan", Item::Table(plan_table));
 
     work_dir::write_config(work_dir.root(), &doc).context("Failed to write config.toml")?;

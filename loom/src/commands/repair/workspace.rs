@@ -99,16 +99,20 @@ pub(super) fn fix_work_symlink(repo_root: &Path) -> Result<()> {
 ///
 /// The path is derived from [`state_dir`], the same resolver
 /// `check_work_dir_state` uses, and MUST stay in step with the detector: the
-/// `else` branch below is a recursive delete, so aiming it at the other
+/// directory branch below is a recursive delete, so aiming it at the other
 /// layout's directory would destroy that workspace's stages, sessions,
 /// signals, handoffs and memory while the real corruption survived.
 pub(super) fn fix_invalid_work(repo_root: &Path) -> Result<()> {
     let (work_path, _layout) = state_dir(repo_root);
-    if work_path.is_file() {
-        fs::remove_file(&work_path)?;
+    let metadata = fs::symlink_metadata(&work_path)
+        .with_context(|| format!("Failed to inspect {}", work_path.display()))?;
+    // Only a real directory takes a recursive delete; a file, socket, FIFO or device is unlinked.
+    if metadata.file_type().is_dir() {
+        fs::remove_dir_all(&work_path)
     } else {
-        fs::remove_dir_all(&work_path)?;
+        fs::remove_file(&work_path)
     }
+    .with_context(|| format!("Failed to remove {}", work_path.display()))?;
     // The settings files may carry a LOOM_WORK_DIR pin naming the directory
     // we just deleted. Left in place, it shadows WorkDir::new's upward
     // search in every later session of this repo (see

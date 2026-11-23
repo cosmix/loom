@@ -207,7 +207,7 @@ pub(super) fn clean_worktrees(repo_root: &Path) -> Result<(usize, usize)> {
         .into_iter()
         .flatten()
         .flatten()
-        .filter(|entry| entry.path().is_dir())
+        .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
         .map(|entry| entry.file_name().to_string_lossy().to_string())
         .collect();
 

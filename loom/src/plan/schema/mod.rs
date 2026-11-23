@@ -9,6 +9,10 @@ pub(crate) mod validation;
 mod validation_suite;
 
 #[cfg(test)]
+mod dependency_cycle_contract_tests;
+#[cfg(test)]
+mod path_component_contract_tests;
+#[cfg(test)]
 mod tests;
 
 pub use detect::{detect_stage_type, detect_stage_type_from_id_name};

@@ -3,6 +3,8 @@
 
 mod base_graphs;
 mod relay_dirs;
+#[cfg(test)]
+mod root_contract_tests;
 mod sessions;
 mod worktrees;
 
@@ -46,7 +48,7 @@ struct CleanStats {
 /// unmerged commits is deleted, the user is shown the commits-ahead counts and
 /// asked to confirm (skip the prompt with `LOOM_CLEAN_YES=1`).
 pub fn execute(all: bool, worktrees: bool, sessions: bool, state: bool) -> Result<()> {
-    let repo_root = std::env::current_dir()?;
+    let repo_root = crate::commands::common::main_repo_root("clean")?;
 
     begin_clean(&repo_root, all || state)?;
 

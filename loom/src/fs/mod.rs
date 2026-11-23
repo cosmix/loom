@@ -15,6 +15,8 @@ pub mod memory;
 pub(crate) mod no_follow_tree;
 pub mod permissions;
 pub mod plan_lifecycle;
+#[cfg(test)]
+mod plan_lifecycle_contract_tests;
 pub mod plan_review;
 pub mod safe_fs;
 pub mod safe_read;

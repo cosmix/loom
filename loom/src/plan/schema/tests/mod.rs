@@ -3,8 +3,10 @@
 mod acceptance_tests;
 mod auto_merge_tests;
 mod build_tool_path_tests;
+mod dependency_cycle_tests;
 mod implementer_tests;
 mod knowledge_recommendations_tests;
+mod path_component_tests;
 mod reasoning_effort_tests;
 mod regression_test_tests;
 mod security_policy_tests;
@@ -14,6 +16,7 @@ mod stage_model_tests;
 mod stage_type_tests;
 mod subagent_timeout_tests;
 mod ultracode_tests;
+mod ungrantable_resource_tests;
 mod v2_contract_cwd_tests;
 mod v2_contract_lint_tests;
 mod v2_lint_environment_tests;

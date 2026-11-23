@@ -46,8 +46,7 @@ fn minimal_stage_definition(id: &str, name: &str) -> StageDefinition {
 }
 
 /// Initialize a state directory from a plan holding `stages`, against a
-/// scratch repository on `main`: the checkout the tests run in is a detached
-/// HEAD in a tag build, which `loom init` refuses.
+/// scratch repository and base branch `main`.
 fn init_from_stages(stages: Vec<StageDefinition>) -> (TempDir, WorkDir) {
     let temp_dir = TempDir::new().unwrap();
     let work_dir = WorkDir::new(temp_dir.path()).unwrap();
@@ -55,7 +54,7 @@ fn init_from_stages(stages: Vec<StageDefinition>) -> (TempDir, WorkDir) {
     let plan_path = create_test_plan(temp_dir.path(), stages);
     let preflighted = preflight_plan(&plan_path).unwrap();
     let backend = Some(SessionBackendKind::Native);
-    initialize_with_plan(&work_dir, &preflighted, &repo().root, backend).unwrap();
+    initialize_with_plan(&work_dir, &preflighted, &repo().root, "main", backend).unwrap();
     (temp_dir, work_dir)
 }
 
