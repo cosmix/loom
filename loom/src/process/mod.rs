@@ -133,10 +133,8 @@ fn run_bounded_inner(
         command.process_group(0);
     }
 
-    let child = command
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
+    command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    let child = spawn_retrying_text_busy(command)
         .with_context(|| format!("Failed to spawn {:?}", command.get_program()))?;
 
     let mut child = OwnedProcess::new(child);

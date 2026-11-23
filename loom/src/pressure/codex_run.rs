@@ -384,7 +384,7 @@ pub fn spawn_codex_logged(
     cmd.stdout(Stdio::from(log));
     cmd.stderr(Stdio::from(log_err));
     configure(&mut cmd);
-    cmd.spawn().context("failed to spawn codex")
+    crate::process::spawn_retrying_text_busy(&mut cmd).context("failed to spawn codex")
 }
 
 /// Whether `$CODEX_HOME/skills/pressure/SKILL.md` is installed as a file.

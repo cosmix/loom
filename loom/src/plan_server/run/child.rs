@@ -33,7 +33,8 @@ fn run_streamed_bounded(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .process_group(0);
-    let mut child = cmd.spawn()?;
+    // `loom self-update` can replace the binary these jobs run while one starts.
+    let mut child = crate::process::spawn_retrying_text_busy(&mut cmd)?;
     let started = Instant::now();
     let stdout = child.stdout.take().expect("stdout configured as piped");
     let stderr = child.stderr.take().expect("stderr configured as piped");
