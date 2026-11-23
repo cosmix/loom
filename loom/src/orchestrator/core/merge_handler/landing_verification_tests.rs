@@ -1,7 +1,11 @@
 use super::*;
 
+// The criterion runs confined, which creates the stage build cache below
+// `HOME`: pin it to a temp dir, serially with every other test that sets it.
 #[test]
+#[serial_test::serial]
 fn the_resolver_exit_hands_failed_verification_back_to_a_stage_session() {
+    let _env = crate::test_cache_env::CacheEnv::pin();
     let (repo, mut orchestrator) = worktree_stage();
     let original = enter_conflict(&orchestrator, &repo);
     resolve_in_worktree(&repo);

@@ -3,6 +3,7 @@
 
 use std::os::unix::fs::symlink;
 use std::path::Path;
+use std::time::{Duration, Instant};
 
 use fs2::FileExt;
 
@@ -59,9 +60,17 @@ fn safe_open_append_holds_lock() {
     );
 
     drop(held);
-    second
-        .try_lock_exclusive()
-        .expect("the lock is released when the appender's File drops");
+    // flock belongs to the open file description: a child another test thread
+    // forks while `held` is open keeps a duplicate until its exec closes it,
+    // so the release is observed after that window, not at drop.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while let Err(error) = second.try_lock_exclusive() {
+        assert!(
+            Instant::now() < deadline,
+            "the lock is released when the appender's File drops: {error}"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
 }
 
 #[test]

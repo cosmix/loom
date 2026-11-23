@@ -45,6 +45,9 @@ fn a_pre_existing_modified_tracked_file_is_not_a_new_entry() {
 #[test]
 #[serial_test::serial]
 fn a_provision_that_writes_a_non_utf8_name_blocks_the_stage() {
+    if !confined_commands_runnable() {
+        return;
+    }
     let repo = repo_ignoring_node_modules();
 
     let (passed, stage) = gate(

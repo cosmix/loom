@@ -1,6 +1,7 @@
 use super::*;
 use crate::daemon::protocol::CompletionSummary;
 use std::io::{Read, Write};
+use std::net::Shutdown;
 use std::os::unix::net::UnixStream;
 use std::time::{Duration, Instant};
 
@@ -47,6 +48,10 @@ fn response_reader_retains_split_header_and_body_across_timeouts() {
         Some(Response::Pong)
     ));
     sender.write_all(&second).unwrap();
+    // A `fork` on another test thread can hold a copy of this fd until it
+    // execs, so a bare `drop` may never deliver EOF; shutdown marks the
+    // socket itself closed.
+    sender.shutdown(Shutdown::Both).unwrap();
     drop(sender);
     match reader.poll(&mut receiver).unwrap() {
         Some(Response::OrchestrationComplete { summary }) => {
@@ -158,6 +163,9 @@ fn split_completion_is_delivered_before_eof() {
     sender.write_all(&frame[3..10]).unwrap();
     assert!(reader.poll(&mut receiver).unwrap().is_none());
     sender.write_all(&frame[10..]).unwrap();
+    // Shut the socket down so EOF does not depend on every forked fd copy
+    // having exec'd (see the first test above).
+    sender.shutdown(Shutdown::Both).unwrap();
     drop(sender);
     match reader.poll(&mut receiver).unwrap() {
         Some(Response::OrchestrationComplete { summary }) => {
