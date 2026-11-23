@@ -5,7 +5,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use crate::daemon::DaemonServer;
-use crate::fs::permissions::sync_worktree_permissions_with_working_dir;
+use crate::fs::permissions::fold_back_approvals;
 use crate::fs::session_files::find_session_for_stage;
 use crate::git::merge::{detect_in_progress_merge_at_worktree, ActiveMergeState, MergeLocation};
 use crate::git::worktree::find_repo_root_from_cwd;
@@ -195,45 +195,17 @@ fn load_all_sessions_for_router(work_dir: &Path) -> Vec<Session> {
     sessions
 }
 
-/// Sync worktree permissions with main repo
+/// Fold the main checkout's local approvals into the loom-owned list.
 ///
-/// Ensures permissions are synced even if acceptance fails, allowing
-/// approved permissions to persist for retry attempts.
-pub(super) fn sync_worktree_permissions(
-    working_dir: &Option<PathBuf>,
-    acceptance_dir: &Option<PathBuf>,
-) {
-    if let Some(ref dir) = working_dir {
-        // Find the main repo root from the worktree path
-        let repo_root = find_repo_root_from_cwd(dir);
-
-        if let Some(ref root) = repo_root {
-            match sync_worktree_permissions_with_working_dir(dir, root, acceptance_dir.as_deref()) {
-                Ok(result) => {
-                    if result.allow_added > 0 || result.deny_added > 0 {
-                        let mut msg = format!(
-                            "Synced permissions from worktree: {} allow, {} deny",
-                            result.allow_added, result.deny_added
-                        );
-                        if result.worktrees_updated > 0 {
-                            msg.push_str(&format!(
-                                " (propagated to {} other worktree{})",
-                                result.worktrees_updated,
-                                if result.worktrees_updated == 1 {
-                                    ""
-                                } else {
-                                    "s"
-                                }
-                            ));
-                        }
-                        println!("{}", msg);
-                    }
-                }
-                Err(e) => {
-                    eprintln!("Warning: Failed to sync worktree permissions: {e}");
-                }
-            }
-        }
+/// Runs before acceptance, so the approvals persist for a retry even when
+/// acceptance fails.
+pub(super) fn fold_back_main_approvals(working_dir: &Option<PathBuf>) {
+    let Some(root) = working_dir.as_deref().and_then(find_repo_root_from_cwd) else {
+        return;
+    };
+    let added = fold_back_approvals(&root);
+    if added > 0 {
+        println!("Recorded {added} approved permission(s) from the main checkout's local settings");
     }
 }
 

@@ -54,7 +54,7 @@ impl Orchestrator {
             current.set_resolved_base(None);
             Ok(())
         })?;
-        self.insert_active_session(&stage_id, spawned);
+        self.track_spawned_session(&stage_id, spawned);
         Ok(())
     }
 

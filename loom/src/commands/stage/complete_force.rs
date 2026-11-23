@@ -13,7 +13,7 @@ use crate::verify::transitions::{trigger_dependents, update_stage};
 
 use crate::commands::stage::acceptance_runner::resolve_stage_execution_paths;
 
-use super::sync_worktree_permissions;
+use super::fold_back_main_approvals;
 
 fn warn_force_unsafe(landing: &ForcedLanding) {
     eprintln!();
@@ -170,10 +170,7 @@ pub(super) fn handle_force_unsafe_completion(
     // Best-effort permission sync before force-completing
     // Uses resolve_stage_execution_paths to get worktree paths, same as normal completion
     if let Ok(execution_paths) = resolve_stage_execution_paths(&stage) {
-        sync_worktree_permissions(
-            &execution_paths.worktree_root,
-            &execution_paths.acceptance_dir,
-        );
+        fold_back_main_approvals(&execution_paths.worktree_root);
     }
 
     println!(

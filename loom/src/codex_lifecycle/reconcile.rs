@@ -22,6 +22,7 @@ use super::{ReconcileEntry, ReconcileReport};
 const MAX_ACTIVE_STAGES: usize = 64;
 const MAX_ACTIVE_SESSIONS: usize = 256;
 
+#[cfg(test)]
 pub(super) fn reconcile_with_state_root(
     work_dir: &Path,
     active_sessions: &[Session],
@@ -30,41 +31,46 @@ pub(super) fn reconcile_with_state_root(
     reconcile_at(work_dir, active_sessions, state_root, Utc::now())
 }
 
-/// `now` decides only whether an authorization with neither a forward receipt
-/// nor a companion job is still inside [`direct::RECEIPT_WINDOW_SECS`].
+#[cfg(test)]
 pub(crate) fn reconcile_at(
     work_dir: &Path,
     active_sessions: &[Session],
     state_root: &Path,
     now: DateTime<Utc>,
 ) -> Result<ReconcileReport> {
-    let active = active_stage_sessions(active_sessions);
+    reconcile_from(work_dir, active_sessions, state_root, now, 0)
+}
+
+/// `now` decides only whether an authorization with neither a forward receipt
+/// nor a companion job is still inside [`direct::RECEIPT_WINDOW_SECS`].
+pub(crate) fn reconcile_from(
+    work_dir: &Path,
+    active_sessions: &[Session],
+    state_root: &Path,
+    now: DateTime<Utc>,
+    cursor: usize,
+) -> Result<ReconcileReport> {
+    let active: Vec<(String, HashSet<String>)> =
+        active_stage_sessions(active_sessions).into_iter().collect();
     let mut report = ReconcileReport::default();
-    for (stage_id, session_ids) in active.into_iter().take(MAX_ACTIVE_STAGES) {
-        let path = work_dir
-            .join("subagents")
-            .join(&stage_id)
-            .join("codex.jsonl");
-        let rows = match read_authorization_rows(&path) {
-            Ok(rows) => rows,
-            Err(error) => {
-                report
-                    .entries
-                    .push(ReconcileEntry::unknown(&stage_id, None, error.to_string()));
-                continue;
-            }
-        };
-        let receipts = StageReceipts::load(work_dir, &stage_id, now);
-        reconcile_stage_rows(
+    let n = active.len();
+    if n == 0 {
+        return Ok(report);
+    }
+    let start = cursor % n;
+    let take = n.min(MAX_ACTIVE_STAGES);
+    for i in 0..take {
+        let (stage_id, session_ids) = &active[(start + i) % n];
+        reconcile_stage(
             work_dir,
             state_root,
-            &stage_id,
-            &session_ids,
-            rows,
-            &receipts,
+            stage_id,
+            session_ids,
+            now,
             &mut report,
         );
     }
+    report.next_cursor = (start + take) % n;
     Ok(report)
 }
 
@@ -130,8 +136,8 @@ fn active_stage_sessions(sessions: &[Session]) -> BTreeMap<String, HashSet<Strin
     let mut active: BTreeMap<String, HashSet<String>> = BTreeMap::new();
     for session in sessions
         .iter()
-        .take(MAX_ACTIVE_SESSIONS)
         .filter(|session| !session.status.is_terminal())
+        .take(MAX_ACTIVE_SESSIONS)
     {
         let Some(stage_id) = session.stage_id.as_deref() else {
             continue;
@@ -144,6 +150,39 @@ fn active_stage_sessions(sessions: &[Session]) -> BTreeMap<String, HashSet<Strin
         }
     }
     active
+}
+
+fn reconcile_stage(
+    work_dir: &Path,
+    state_root: &Path,
+    stage_id: &str,
+    session_ids: &HashSet<String>,
+    now: DateTime<Utc>,
+    report: &mut ReconcileReport,
+) {
+    let path = work_dir
+        .join("subagents")
+        .join(stage_id)
+        .join("codex.jsonl");
+    let rows = match read_authorization_rows(&path) {
+        Ok(rows) => rows,
+        Err(error) => {
+            report
+                .entries
+                .push(ReconcileEntry::unknown(stage_id, None, error.to_string()));
+            return;
+        }
+    };
+    let receipts = StageReceipts::load(work_dir, stage_id, now);
+    reconcile_stage_rows(
+        work_dir,
+        state_root,
+        stage_id,
+        session_ids,
+        rows,
+        &receipts,
+        report,
+    );
 }
 
 fn reconcile_stage_rows(

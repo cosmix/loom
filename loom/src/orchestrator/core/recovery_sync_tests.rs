@@ -384,3 +384,6 @@ fn recovery_completes_a_live_session_left_spawning() {
         assert_eq!(record.worktree_path.as_deref(), Some(worktree.as_path()));
     }
 }
+
+#[path = "recovery_orphan_tests.rs"]
+mod orphan_tests;

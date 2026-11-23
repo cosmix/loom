@@ -21,7 +21,14 @@ impl Orchestrator {
                     merge_candidates.push(stage.id.clone());
                 }
             } else if stage.status == StageStatus::Blocked {
-                stage = self.apply_retry_if_due(stage, &path)?;
+                match self.apply_retry_if_due(&stage, &path) {
+                    Ok(updated) => stage = updated,
+                    Err(error) => tracing::warn!(
+                        stage_id = %stage.id,
+                        error = %format!("{error:#}"),
+                        "Cannot apply a due retry; keeping the stage Blocked until the next pass"
+                    ),
+                }
             }
             self.project_stage(&stage)?;
         }
@@ -63,9 +70,9 @@ impl Orchestrator {
         Ok(())
     }
 
-    fn apply_retry_if_due(&self, stage: Stage, path: &Path) -> Result<Stage> {
-        if !check_retry_eligibility(&stage) {
-            return Ok(stage);
+    fn apply_retry_if_due(&self, stage: &Stage, path: &Path) -> Result<Stage> {
+        if !check_retry_eligibility(stage) {
+            return Ok(stage.clone());
         }
         update_stage_at_path(&stage.id, path, &self.config.work_dir, |current| {
             if current.status == StageStatus::Blocked && check_retry_eligibility(current) {

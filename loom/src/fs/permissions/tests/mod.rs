@@ -3,6 +3,8 @@
 #[cfg(test)]
 mod constants_tests;
 #[cfg(test)]
+mod foldback_source_tests;
+#[cfg(test)]
 mod hooks_tests;
 #[cfg(test)]
 mod install_tests;

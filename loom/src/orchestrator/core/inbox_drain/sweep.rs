@@ -106,7 +106,7 @@ fn retire(
         return; // its entries wait for the next tick, and so does the cleanup
     }
     let work_dir = host.work_dir().to_path_buf();
-    fold_back_permissions(record, host.repo_root());
+    crate::fs::permissions::fold_back_approvals(host.repo_root());
     let mut failures = Vec::new();
     if let Some(dir) = scratch {
         if let Err(error) = entry::remove_tree(dir) {
@@ -122,26 +122,6 @@ fn retire(
         report.retired.push(sid.to_string());
     } else if host.first_report(&format!("retire:{sid}")) {
         tracing::warn!(session_id = %sid, failures = %failures.join("; "), "Could not fully retire a finished session's relay state; retrying next tick");
-    }
-}
-
-/// The permission fold-back stage completion runs, which a completion the
-/// daemon applies from a host job never reaches: it records the session's
-/// approvals into the loom-owned list. Best-effort; retirement never fails
-/// over it.
-fn fold_back_permissions(record: &Session, repo_root: &Path) {
-    let checkout = record
-        .worktree_path
-        .clone()
-        .unwrap_or_else(|| repo_root.to_path_buf());
-    if !checkout.exists() {
-        // A merge resolver's exit removes its worktree and folds the approvals
-        // back first, so there is nothing left to read.
-        tracing::debug!(session_id = %record.id, checkout = %checkout.display(), "Session checkout is gone; skipping the permission fold-back");
-        return;
-    }
-    if let Err(error) = crate::fs::permissions::sync_worktree_permissions(&checkout, repo_root) {
-        tracing::warn!(session_id = %record.id, error = %format!("{error:#}"), "Permission fold-back at session retirement failed");
     }
 }
 

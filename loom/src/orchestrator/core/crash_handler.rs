@@ -4,17 +4,21 @@ use anyhow::Result;
 use chrono::Utc;
 use std::path::{Path, PathBuf};
 
-use crate::models::failure::{FailureInfo, FailureType};
-use crate::models::session::Session;
-use crate::models::stage::{Stage, StageStatus};
-use crate::orchestrator::retry::{crash_backoff, should_auto_retry};
-
 use super::crash_classification::{
     is_remote_control_fast_fail, is_startup_refusal, ordinary_crash, startup_refusal_crash,
-    CrashClassification, FAST_FAIL_WINDOW_SECS,
+    CrashClassification,
 };
 use super::persistence::Persistence;
 use super::{clear_status_line, Orchestrator};
+use crate::models::failure::{FailureInfo, FailureType};
+use crate::models::session::Session;
+use crate::models::stage::{Stage, StageStatus};
+
+#[path = "crash_outcome.rs"]
+mod crash_outcome;
+use crash_outcome::{
+    announce_crash_outcome, maybe_disable_remote_control, note_remote_control_disabled,
+};
 
 enum CrashTransition {
     Applied(Box<Stage>),
@@ -24,7 +28,10 @@ enum CrashTransition {
 
 fn crash_applicable(stage: &Stage, session_id: &str) -> bool {
     crate::stage_service::ownership::matches_attempt(stage, session_id)
-        && stage.status == StageStatus::Executing
+        && matches!(
+            stage.status,
+            StageStatus::Executing | StageStatus::WaitingForInput
+        )
 }
 
 impl Orchestrator {
@@ -146,25 +153,14 @@ impl Orchestrator {
         }
     }
 
-    /// Best-effort permission sync before the stage transitions to `Blocked`.
-    fn sync_crashed_session_permissions(&self, sid: &str, stage: &Stage) {
-        let worktree_path = self.config.repo_root.join(".worktrees").join(sid);
-        if !worktree_path.exists() {
-            return;
-        }
-        let working_dir_path = stage.working_dir.as_ref().map(|wd| worktree_path.join(wd));
-        match crate::fs::permissions::sync_worktree_permissions_with_working_dir(
-            &worktree_path,
-            &self.config.repo_root,
-            working_dir_path.as_deref(),
-        ) {
-            Ok(result) if result.allow_added > 0 || result.deny_added > 0 => eprintln!(
-                "Synced {} permissions from crashed session for stage '{}'",
-                result.allow_added + result.deny_added,
-                sid
-            ),
-            Ok(_) => {}
-            Err(e) => eprintln!("Warning: Failed to sync permissions from crashed session: {e}"),
+    /// Record the approvals the crashed session left behind before the stage
+    /// transitions to `Blocked`.
+    fn sync_crashed_session_permissions(&self, sid: &str) {
+        let recorded = crate::fs::permissions::fold_back_approvals(&self.config.repo_root);
+        if recorded > 0 {
+            eprintln!(
+                "Recorded {recorded} approved permission(s) after the crash of stage '{sid}'"
+            );
         }
     }
 
@@ -188,6 +184,7 @@ impl Orchestrator {
         };
 
         if self.stage_answerable_for_crash(&sid, session_id)?.is_none() {
+            self.take_matching_active_session(&sid, session_id);
             self.reported_crashes.insert(session_id.to_string());
             return Ok(());
         }
@@ -218,11 +215,11 @@ impl Orchestrator {
         );
         note_remote_control_disabled(remote_control_suspected, sid, &mut classification);
         match self.finish_crash_transition(sid, session_id, classification) {
-            CrashTransition::Applied(updated) => {
+            CrashTransition::Applied(_) => {
                 self.take_matching_active_session(sid, session_id);
                 self.reported_crashes.insert(session_id.to_string());
                 maybe_disable_remote_control(remote_control_suspected);
-                self.sync_crashed_session_permissions(sid, &updated);
+                self.sync_crashed_session_permissions(sid);
                 clear_status_line();
                 eprintln!("Session '{session_id}' crashed for stage '{sid}'");
                 if let Some(path) = crash_report_path {
@@ -230,6 +227,7 @@ impl Orchestrator {
                 }
             }
             CrashTransition::Stale => {
+                self.take_matching_active_session(sid, session_id);
                 self.reported_crashes.insert(session_id.to_string());
             }
             // The monitor spaces out the redeliveries, which bounds this line.
@@ -295,6 +293,11 @@ impl Orchestrator {
                 stale = true;
                 return Ok(());
             }
+            // `WaitingForInput -> Blocked` is no transition edge: end the wait
+            // in this same locked update or `try_mark_blocked` refuses.
+            if current.status == StageStatus::WaitingForInput {
+                crate::verify::contracts::refusal::end_wait(current)?;
+            }
             current.accumulate_attempt_time(detected_at);
             current.failure_info = Some(FailureInfo {
                 failure_type: failure_type.clone(),
@@ -318,73 +321,6 @@ impl Orchestrator {
                 CrashTransition::RetryableFailure
             }
         }
-    }
-}
-
-/// If this crash is suspected to be a rejected `--remote-control` flag,
-/// latch Remote Control off for the rest of this process (see
-/// `remote_control::disable_for_this_process`) so the retry drops the flag
-/// entirely. A no-op otherwise.
-fn maybe_disable_remote_control(remote_control_suspected: bool) {
-    if remote_control_suspected {
-        crate::remote_control::disable_for_this_process(&format!(
-            "session exited within {FAST_FAIL_WINDOW_SECS}s of spawn with --remote-control"
-        ));
-    }
-}
-
-/// The stage-facing note for the crash that triggered the in-process Remote
-/// Control disable — names the cause and that the stage will retry without
-/// the flag. A no-op for every other crash.
-fn note_remote_control_disabled(
-    remote_control_suspected: bool,
-    sid: &str,
-    classification: &mut CrashClassification,
-) {
-    if !remote_control_suspected {
-        return;
-    }
-    let hint = format!(
-        "session exited within {FAST_FAIL_WINDOW_SECS}s with --remote-control; Remote \
-         Control disabled for the rest of this daemon run, retrying stage '{sid}' without it"
-    );
-    classification.reason.push_str(&format!("; {hint}"));
-    classification.evidence.push(hint.clone());
-    classification.console_note = Some(match classification.console_note.take() {
-        Some(note) => format!("{note} {hint}"),
-        None => hint,
-    });
-}
-
-/// The console message for a crash's outcome: the retry countdown, the
-/// startup-refusal note, or the "exhausted its attempts" message — whichever
-/// applies.
-fn announce_crash_outcome(
-    sid: &str,
-    failure_type: &FailureType,
-    updated: &Stage,
-    console_note: Option<String>,
-) {
-    let max = updated.max_retries.unwrap_or(3);
-    if should_auto_retry(failure_type, updated.retry_count, max) {
-        let backoff = crash_backoff(updated.retry_count);
-        clear_status_line();
-        eprintln!(
-            "Stage '{}' crashed (attempt {}/{}). Will retry in {}s...",
-            sid,
-            updated.retry_count,
-            max,
-            backoff.as_secs()
-        );
-    } else if let Some(note) = console_note {
-        clear_status_line();
-        eprintln!("Stage '{sid}': {note}");
-    } else if updated.retry_count >= max {
-        clear_status_line();
-        eprintln!(
-            "Stage '{}' failed after {} attempts. Fix the cause, then run `loom stage retry {}`.",
-            sid, updated.retry_count, sid
-        );
     }
 }
 

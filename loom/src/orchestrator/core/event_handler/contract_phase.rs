@@ -28,6 +28,7 @@ use crate::models::stage::{Stage, StageStatus};
 use crate::models::worktree::Worktree;
 use crate::orchestrator::signals::remove_signal;
 use crate::orchestrator::terminal::native::{session_process_status, SessionProcessStatus};
+use crate::verify::contracts::refusal::end_wait;
 use crate::verify::contracts::store::load_freeze;
 
 use super::super::contract_budget::{
@@ -199,7 +200,7 @@ impl Orchestrator {
         // the charge: a replacement that did not start must not spend budget.
         let work_dir = self.config.work_dir.clone();
         let _admission = crate::fs::stage_admission::lock_for_daemon(&work_dir, stage_id)?;
-        let Some((stage, _)) = self.current_contract_session(stage_id, session_id)? else {
+        let Some((mut stage, _)) = self.current_contract_session(stage_id, session_id)? else {
             return Ok(());
         };
         if load_freeze(&work_dir, stage_id)?.is_some() {
@@ -215,11 +216,24 @@ impl Orchestrator {
             "Contract session '{session_id}' of stage '{stage_id}' ended without freezing its \
              contracts; starting replacement {attempt} of {MAX_CONTRACT_RESPAWNS}."
         );
+        // `spawn_on_stage_worktree` reloads the stage and requires `Executing`.
+        if stage.status == StageStatus::WaitingForInput {
+            stage = self.update_stage(stage_id, |current| {
+                if current.status == StageStatus::WaitingForInput
+                    && current.session.as_deref() == Some(session_id)
+                {
+                    end_wait(current)
+                } else {
+                    Ok(())
+                }
+            })?;
+        }
         self.spawn_on_stage_worktree(stage, AgentKind::Contract)
     }
 
     /// The stage and the contract session a report names, re-read from disk:
-    /// the stage must still be `Executing` and name `session_id`, and that
+    /// the stage must still be `Executing` or `WaitingForInput` and name
+    /// `session_id`, and that
     /// record must be this stage's `Contract` session. Anything else means the
     /// stage moved on between the poll and now, and the report is dropped.
     fn current_contract_session(
@@ -228,8 +242,10 @@ impl Orchestrator {
         session_id: &str,
     ) -> Result<Option<(Stage, Session)>> {
         let stage = self.load_stage(stage_id)?;
-        let assigned =
-            stage.status == StageStatus::Executing && stage.session.as_deref() == Some(session_id);
+        let assigned = matches!(
+            stage.status,
+            StageStatus::Executing | StageStatus::WaitingForInput
+        ) && stage.session.as_deref() == Some(session_id);
         let session = if assigned {
             load_session_exact(&self.config.work_dir, session_id)?
         } else {
@@ -282,10 +298,15 @@ impl Orchestrator {
     /// spawning and wait for a human.
     fn escalate_contract_phase(&mut self, stage_id: &str, session_id: &str) -> Result<()> {
         self.update_stage(stage_id, |stage| {
-            if stage.status != StageStatus::Executing
-                || stage.session.as_deref() != Some(session_id)
-            {
+            let running = matches!(
+                stage.status,
+                StageStatus::Executing | StageStatus::WaitingForInput
+            );
+            if !running || stage.session.as_deref() != Some(session_id) {
                 return Ok(());
+            }
+            if stage.status == StageStatus::WaitingForInput {
+                end_wait(stage)?;
             }
             request_contract_review(stage)
         })?;

@@ -11,6 +11,7 @@ use crate::models::failure::FailureType;
 use crate::models::stage::StageStatus;
 use crate::orchestrator::coherence::live_worker_sessions;
 use crate::orchestrator::scheduling_report::BlockReason;
+use crate::orchestrator::session_registry::{identityless_record_is_dead, Admission};
 
 use super::persistence::Persistence;
 use super::stage_block::StageBlock;
@@ -117,6 +118,50 @@ impl Orchestrator {
             );
         }
         Ok(AdoptionResult::Adopted)
+    }
+
+    /// Whether no tracked session stands in the way of a new spawn for
+    /// `stage_id`. A tracked incumbent that is alive, cannot be probed, or was
+    /// launched too recently to judge defers the spawn (`OwnershipUncertain`);
+    /// one proven dead is dropped so the replacement is tracked.
+    ///
+    /// The caller holds the stage's admission lock (`start_stage`), which is
+    /// what makes `Admission::Held` a true claim.
+    pub(super) fn tracked_incumbent_cleared(&mut self, stage_id: &str) -> bool {
+        let Some(incumbent) = self.active_sessions.get(stage_id).cloned() else {
+            return true;
+        };
+        let uncertain = match self.backend.is_session_alive(&incumbent) {
+            Ok(false) => None,
+            Ok(true) => Some(String::new()),
+            Err(error) => Some(format!(": probe failed: {error:#}")),
+        };
+        let proven_dead = uncertain.is_none()
+            && identityless_record_is_dead(
+                &self.config.work_dir,
+                &incumbent,
+                Admission::Held,
+                Utc::now(),
+            );
+        if proven_dead {
+            tracing::warn!(
+                stage_id = %stage_id,
+                incumbent_session = %incumbent.id,
+                "Dropping a dead tracked session before spawning a replacement"
+            );
+            self.active_sessions.remove(stage_id);
+            return true;
+        }
+        let detail = format!(
+            "tracked session '{}' may still be running; it must end before a replacement starts{}",
+            incumbent.id,
+            uncertain.unwrap_or_default()
+        );
+        self.spawn_blocks.insert(
+            stage_id.to_string(),
+            BlockReason::OwnershipUncertain { detail },
+        );
+        false
     }
 
     /// Escalate instead of adopting: a different session is already tracked

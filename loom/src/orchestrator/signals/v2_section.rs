@@ -9,6 +9,7 @@ use crate::models::stage::{Stage, StageType};
 use crate::verify::contracts::store::{effective_contract, load_freeze};
 
 use super::contract::table_cell;
+use crate::context::untrusted::inline_safe;
 
 #[path = "v2_section_review.rs"]
 mod review;
@@ -57,7 +58,7 @@ fn append_frozen_contracts(content: &mut String, stage: &Stage, work_dir: &Path)
         let globs: Vec<String> = stage
             .harness
             .iter()
-            .map(|glob| format!("`{glob}`"))
+            .map(|glob| format!("`{}`", inline_safe(glob)))
             .collect();
         content.push_str(&format!(
             "Files matching the harness globs {} were frozen with them.\n\n",

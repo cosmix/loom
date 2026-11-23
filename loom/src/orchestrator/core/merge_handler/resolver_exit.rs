@@ -52,7 +52,7 @@ impl Orchestrator {
             eprintln!("Warning: Failed to remove merge signal: {e}");
         }
         self.forget_tracked_resolver(stage_id, session_id);
-        self.fold_back_resolver_permissions(stage_id);
+        self.fold_back_resolver_permissions();
 
         let mut stage = self.load_stage(stage_id)?;
         let target = resolve_target_branch(&self.config.base_branch, &self.config.repo_root);
@@ -86,19 +86,11 @@ impl Orchestrator {
         Ok(())
     }
 
-    /// Record the approvals the resolver collected in `.worktrees/<id>` before
-    /// any cleanup path removes it. Best effort: the inbox sweep that retires
-    /// the session finds the worktree gone and skips its own fold-back.
-    fn fold_back_resolver_permissions(&self, stage_id: &str) {
-        let repo_root = &self.config.repo_root;
-        let worktree = repo_root.join(".worktrees").join(stage_id);
-        if !worktree.exists() {
-            return;
-        }
-        if let Err(error) = crate::fs::permissions::sync_worktree_permissions(&worktree, repo_root)
-        {
-            tracing::warn!(stage_id = %stage_id, error = %format!("{error:#}"), "Permission fold-back from the merge resolver's worktree failed");
-        }
+    /// Record the approvals the resolver's session left in the main
+    /// checkout's local settings. They never live in the resolver's worktree,
+    /// so the order against its removal does not matter.
+    fn fold_back_resolver_permissions(&self) {
+        crate::fs::permissions::fold_back_approvals(&self.config.repo_root);
     }
 
     /// Whether git proves `stage`, flagged merged but not final (a merged flag

@@ -37,6 +37,7 @@ impl Orchestrator {
     /// from a shell that happened to carry them — so the runtime strip also
     /// runs here on every pass.
     pub(super) fn begin_scheduling_pass(&mut self) {
+        self.recover_deferred_orphans();
         self.reconcile_executing_stages();
         crate::commands::stage::complete::strip_privileged_env_for_runtime();
     }

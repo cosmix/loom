@@ -16,14 +16,18 @@ mod parse;
 mod recovery;
 mod recovery_format;
 mod recovery_parsing;
+mod recovery_sections;
 mod recovery_types;
 mod retrieval;
 mod section_formatters;
 mod types;
 mod v2_section;
+mod wrap;
 
 #[cfg(test)]
 mod allocation_contract_tests;
+#[cfg(test)]
+mod recovery_signal_contract_tests;
 
 #[cfg(test)]
 mod budget_contract_tests;

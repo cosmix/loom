@@ -152,7 +152,7 @@ fn complete_normal_stage(
         worktree_root,
         acceptance_dir,
     } = &execution_paths;
-    sync_worktree_permissions(worktree_root, acceptance_dir);
+    fold_back_main_approvals(worktree_root);
     let snapshot = if no_verify {
         None
     } else {

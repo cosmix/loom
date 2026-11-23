@@ -133,6 +133,9 @@ pub struct Orchestrator {
     /// `.loom/work/scheduling.json` at the end of every pass. Populated fresh each
     /// tick, so it never reports a reason that has since gone away.
     pub(super) spawn_blocks: HashMap<String, crate::orchestrator::scheduling_report::BlockReason>,
+    /// Current session records (stage id to session id) found dead at startup
+    /// but too young to judge; re-judged on every scheduling pass. In memory only.
+    pub(super) deferred_orphans: HashMap<String, String>,
     /// When each stage was first seen ready-but-unstarted, for "queued for X".
     ///
     /// In-memory only: a daemon restart is a fresh scheduling attempt, so
@@ -186,11 +189,10 @@ impl Orchestrator {
         let liveness = LivenessService::new(Arc::clone(&backend));
         let monitor = Self::new_monitor(&config, liveness.clone());
 
-        let skill_index = if config.enable_skill_routing {
-            Self::load_skill_index(&config)
-        } else {
-            None
-        };
+        let skill_index = config
+            .enable_skill_routing
+            .then(|| Self::load_skill_index(&config))
+            .flatten();
 
         let detected_languages = detect_project_languages(&config.repo_root);
         Self::reconcile_plan_amendments(&config);
@@ -214,6 +216,7 @@ impl Orchestrator {
             spool_drain_error_logged: HashSet::new(),
             adjudicators: AdjudicatorRegistry::new(),
             spawn_blocks: HashMap::new(),
+            deferred_orphans: HashMap::new(),
             queued_since: HashMap::new(),
             blocked_merge_inputs: HashMap::new(),
             refused_merge_attempts: HashMap::new(),

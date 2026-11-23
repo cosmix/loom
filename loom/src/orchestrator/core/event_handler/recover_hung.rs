@@ -52,7 +52,7 @@ use super::loop_recovery::{
 /// Two: the first stall can be the agent's bad luck and the second its
 /// successor's, but a third says the stage itself is what stalls, and an
 /// operator has to look at it.
-const MAX_STALL_RECOVERIES: u32 = 2;
+pub(crate) const MAX_STALL_RECOVERIES: u32 = 2;
 
 /// How many pane lines a park keeps below its review reason.
 const PANE_TAIL_LINES: usize = 40;

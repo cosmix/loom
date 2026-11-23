@@ -1,5 +1,7 @@
 //! Stage execution logic - creating worktrees, spawning sessions
 
+use std::ops::ControlFlow;
+
 use anyhow::Result;
 use chrono::Utc;
 
@@ -195,42 +197,26 @@ impl StageExecutor for Orchestrator {
         // inspect a write-ahead session before its process exists.
         let _admission =
             crate::fs::stage_admission::lock_for_daemon(&self.config.work_dir, stage_id)?;
-        let mut stage = self.load_stage(stage_id)?;
-
-        // The graph handed this stage over as Queued; its file decides.
-        if !matches!(
-            stage.status,
-            StageStatus::Queued | StageStatus::WaitingForDeps
-        ) {
-            self.sync_unstartable_node(stage_id, &stage.status);
-            return Ok(StartDisposition::Deferred);
-        }
-
-        // Skip a held stage, and a knowledge stage while the target is held
-        if let Some(reason) = self.spawn_hold_reason(&stage) {
-            self.spawn_blocks.insert(stage_id.to_string(), reason);
-            return Ok(StartDisposition::Deferred);
-        }
-
-        // Adopt a still-live agent instead of spawning a duplicate into its
-        // worktree. Only a Queued stage adopts; a WaitingForDeps one is
-        // offered adoption once the dependency check below has queued it.
-        if stage.status == StageStatus::Queued {
-            if let Some(disposition) = self.adoption_disposition(stage_id)? {
-                return Ok(disposition);
-            }
-        }
+        let mut stage = match self.startable_stage(stage_id)? {
+            ControlFlow::Continue(stage) => stage,
+            ControlFlow::Break(disposition) => return Ok(disposition),
+        };
 
         if !self.spawn_dependencies_satisfied(&stage) {
             return Ok(StartDisposition::Deferred);
         }
 
-        // Transition through Queued if currently WaitingForDeps to reduce race window
         if stage.status == StageStatus::WaitingForDeps {
-            stage = self.update_stage(stage_id, |current| current.try_mark_queued())?;
-            if let Some(disposition) = self.adoption_disposition(stage_id)? {
-                return Ok(disposition);
+            match self.queue_waiting_stage(stage_id)? {
+                ControlFlow::Continue(queued) => stage = queued,
+                ControlFlow::Break(disposition) => return Ok(disposition),
             }
+        }
+
+        // Both adoption points are behind us: a handle still tracked now is a
+        // session no adoption claimed, and a spawn must not run beside it.
+        if !self.tracked_incumbent_cleared(stage_id) {
+            return Ok(StartDisposition::Deferred);
         }
 
         if stage.stage_type == StageType::Knowledge {
@@ -242,6 +228,52 @@ impl StageExecutor for Orchestrator {
 
     fn start_knowledge_stage(&mut self, stage: Stage) -> Result<()> {
         self.launch_knowledge_stage(stage)
+    }
+}
+
+impl Orchestrator {
+    /// Load `stage_id` and settle what needs no dependency check: a stage the
+    /// graph handed over but whose file says otherwise, a held stage, and a
+    /// still-live agent worth adopting. Only a Queued stage adopts here; a
+    /// WaitingForDeps one is offered adoption by `queue_waiting_stage`. `Break`
+    /// carries the disposition. Runs under the admission lock `start_stage` holds.
+    fn startable_stage(&mut self, stage_id: &str) -> Result<ControlFlow<StartDisposition, Stage>> {
+        let stage = self.load_stage(stage_id)?;
+        // The graph handed this stage over as Queued; its file decides.
+        if !matches!(
+            stage.status,
+            StageStatus::Queued | StageStatus::WaitingForDeps
+        ) {
+            self.sync_unstartable_node(stage_id, &stage.status);
+            return Ok(ControlFlow::Break(StartDisposition::Deferred));
+        }
+        // Skip a held stage, and a knowledge stage while the target is held
+        if let Some(reason) = self.spawn_hold_reason(&stage) {
+            self.spawn_blocks.insert(stage_id.to_string(), reason);
+            return Ok(ControlFlow::Break(StartDisposition::Deferred));
+        }
+        // Adopt a still-live agent instead of spawning a duplicate into its worktree.
+        if stage.status == StageStatus::Queued {
+            if let Some(disposition) = self.adoption_disposition(stage_id)? {
+                return Ok(ControlFlow::Break(disposition));
+            }
+        }
+        Ok(ControlFlow::Continue(stage))
+    }
+
+    /// Transition a WaitingForDeps stage through Queued to reduce the race
+    /// window, then offer the second adoption point. `Break` carries the
+    /// disposition when an agent was adopted instead. Runs under the admission
+    /// lock `start_stage` holds.
+    fn queue_waiting_stage(
+        &mut self,
+        stage_id: &str,
+    ) -> Result<ControlFlow<StartDisposition, Stage>> {
+        let queued = self.update_stage(stage_id, |current| current.try_mark_queued())?;
+        Ok(match self.adoption_disposition(stage_id)? {
+            Some(disposition) => ControlFlow::Break(disposition),
+            None => ControlFlow::Continue(queued),
+        })
     }
 }
 

@@ -38,14 +38,15 @@ fn overlay_heartbeat_context(sessions: &mut [Session], events: &[MonitorEvent]) 
     }
 }
 
-fn reconcile_codex_evidence(work_dir: &std::path::Path, sessions: &[Session]) {
-    let report = match crate::codex_lifecycle::reconcile_codex_jobs(work_dir, sessions) {
+fn reconcile_codex_evidence(work_dir: &std::path::Path, sessions: &[Session], cursor: &mut usize) {
+    let report = match crate::codex_lifecycle::reconcile_codex_jobs(work_dir, sessions, *cursor) {
         Ok(report) => report,
         Err(error) => {
             tracing::warn!(error = %error, "Codex lifecycle reconcile failed");
             return;
         }
     };
+    *cursor = report.next_cursor;
     for entry in report.entries {
         let unknown = entry.is_unknown();
         tracing::debug!(
@@ -76,6 +77,7 @@ pub struct Monitor {
     pub(super) handlers: Handlers,
     pub(super) heartbeat_watcher: HeartbeatWatcher,
     completion_blocker_watch: CompletionBlockerWatch,
+    codex_cursor: usize,
 }
 
 impl Monitor {
@@ -118,6 +120,7 @@ impl Monitor {
             detection: Detection::new(),
             heartbeat_watcher,
             completion_blocker_watch: CompletionBlockerWatch::default(),
+            codex_cursor: 0,
             config,
         }
     }
@@ -148,7 +151,7 @@ impl Monitor {
 
         let stages = self.load_stages()?;
         let mut sessions = self.load_sessions()?;
-        reconcile_codex_evidence(&self.config.work_dir, &sessions);
+        reconcile_codex_evidence(&self.config.work_dir, &sessions, &mut self.codex_cursor);
         sample_fullscreen(&self.config.work_dir, &sessions);
         let blocker_scan = self.scan_completion_blockers(&stages);
 

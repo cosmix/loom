@@ -6,7 +6,9 @@ use crate::models::stage::Stage;
 /// reachable units).
 ///
 /// Call only when `stage.has_any_goal_checks()` is true.
-pub(super) fn format_goal_backward_verification_section(stage: &Stage) -> String {
+pub(in crate::orchestrator::signals) fn format_goal_backward_verification_section(
+    stage: &Stage,
+) -> String {
     let mut content = String::new();
     content.push_str("\n## Goal-Backward Verification\n\n");
     content.push_str("Beyond acceptance criteria, verify these OUTCOMES work:\n\n");

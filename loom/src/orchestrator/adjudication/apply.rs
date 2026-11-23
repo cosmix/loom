@@ -178,7 +178,7 @@ impl AdjudicatorRegistry {
             "stage left adjudication before dispute {dispute_id} was applied"
         );
         let loaded_reason = stage.review_reason.clone();
-        let loaded_updated_at = stage.updated_at;
+        let loaded_dispute_count = stage.dispute_count;
 
         apply_by_kind(work_dir, &mut stage, &record, &request.kind)?;
         persist_verdict_result(
@@ -187,7 +187,7 @@ impl AdjudicatorRegistry {
             dispute_id,
             &stage,
             loaded_reason.as_deref(),
-            loaded_updated_at,
+            loaded_dispute_count,
             &applied,
         )
     }
@@ -196,7 +196,7 @@ impl AdjudicatorRegistry {
 /// Persist the verdict's stage delta and its receipt in one locked stage write.
 ///
 /// Re-applies ONLY the verdict-owned fields onto the FRESH on-disk stage so a
-/// concurrent dispute-thread write (e.g. dispute_count for a parallel filing)
+/// concurrent dispute-thread write (e.g. a hold, release or outputs update)
 /// or CLI write is not reverted (A-5). The verdict owns: status, the change
 /// it made to review_reason (from `loaded_reason`, the reason `stage` was
 /// loaded with; see [`apply_reason_change`]), evidence_rounds,
@@ -204,15 +204,15 @@ impl AdjudicatorRegistry {
 /// transaction already persisted it, and a cached copy could overwrite a
 /// newer amendment. The amendment tally is monotonic for the same reason.
 ///
-/// A changed lifecycle refuses the commit. The dispute lock keeps cooperating
-/// reset, close and record operations from crossing this boundary.
+/// A new round (`dispute_count`, bumped by every filing) or a status change
+/// refuses the commit; other writes (hold, release, outputs) are kept.
 fn persist_verdict_result(
     work_dir: &Path,
     stage_id: &str,
     dispute_id: u32,
     stage: &Stage,
     loaded_reason: Option<&str>,
-    loaded_updated_at: chrono::DateTime<chrono::Utc>,
+    loaded_dispute_count: u32,
     applied: &Path,
 ) -> Result<()> {
     let receipt = verdict_receipt(dispute_id);
@@ -224,7 +224,7 @@ fn persist_verdict_result(
             return Ok(());
         }
         anyhow::ensure!(
-            s.status == StageStatus::NeedsAdjudication && s.updated_at == loaded_updated_at,
+            s.status == StageStatus::NeedsAdjudication && s.dispute_count == loaded_dispute_count,
             "stage lifecycle changed while applying dispute {dispute_id}; refusing stale verdict"
         );
         anyhow::ensure!(

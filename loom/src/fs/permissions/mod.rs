@@ -16,6 +16,8 @@ mod trust;
 pub(crate) mod write_rules;
 
 #[cfg(test)]
+mod foldback_contract_tests;
+#[cfg(test)]
 pub(crate) mod scratch_home;
 #[cfg(test)]
 mod tests;
@@ -41,7 +43,7 @@ pub use settings::{
     ensure_loom_permissions_to, scrub_main_repo_settings_identity, scrub_session_identity_env,
     scrub_stale_work_dir_env, settings_json_has_hooks, SESSION_IDENTITY_ENV_KEYS,
 };
-pub use sync::{sync_worktree_permissions, sync_worktree_permissions_with_working_dir, SyncResult};
+pub use sync::fold_back_approvals;
 pub use trust::{migrate_legacy_trust, trust_project, trust_worktree, untrust_worktree};
 
 /// Loom's global guard-hook registrations with every command under

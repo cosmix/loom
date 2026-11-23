@@ -1,4 +1,5 @@
 use super::*;
+use serde_json::json;
 
 #[test]
 fn test_is_worktree_specific_permission() {
@@ -144,23 +145,24 @@ fn normalize_single_slash_path_leaves_other_shapes_unchanged() {
 /// wherever the rule is rendered later. Recorded verbatim it would grant the
 /// wrong path once rendered into a capsule; normalizing to the cwd-relative
 /// form lets a later session apply it to its own checkout. Covers a rule
-/// sourced from the main repository's own settings and one sourced from the
-/// worktree's, and every shape the normalization must leave alone, run
-/// through the control-surface filter after normalizing.
+/// sourced from the main repository's settings, the only source, and every
+/// shape the normalization must leave alone, run through the control-surface
+/// filter after normalizing.
 #[test]
 fn single_slash_paths_are_normalized_to_cwd_relative_before_recording() {
     let temp = tempfile::TempDir::new().unwrap();
     let repo = temp.path().join("repo");
-    let worktree = repo.join(".worktrees").join("s1");
     std::fs::create_dir_all(repo.join(".loom").join("work")).unwrap();
     std::fs::create_dir_all(repo.join(".claude")).unwrap();
-    std::fs::create_dir_all(worktree.join(".claude")).unwrap();
 
-    // R's own local settings file.
     let main_settings = json!({ "permissions": { "allow": [
         "Edit(/src/**)",
         "Edit(//abs/x)",
-        "Bash(cargo test:*)"
+        "Bash(cargo test:*)",
+        "Read(/docs/**)",
+        "Edit(~/x)",
+        "Edit(/.loom/**)",
+        "Edit(/.claude/settings.json)"
     ] } });
     std::fs::write(
         repo.join(".claude/settings.local.json"),
@@ -168,20 +170,7 @@ fn single_slash_paths_are_normalized_to_cwd_relative_before_recording() {
     )
     .unwrap();
 
-    // The worktree's own local settings file.
-    let worktree_settings = json!({ "permissions": { "allow": [
-        "Read(/docs/**)",
-        "Edit(~/x)",
-        "Edit(/.loom/**)",
-        "Edit(/.claude/settings.json)"
-    ] } });
-    std::fs::write(
-        worktree.join(".claude/settings.local.json"),
-        worktree_settings.to_string(),
-    )
-    .unwrap();
-
-    sync_worktree_permissions_with_working_dir(&worktree, &repo, None).unwrap();
+    fold_back_approvals(&repo);
 
     let resolved_state_root = repo.join(".loom").join("work").canonicalize().unwrap();
     let list = super::super::approved::approved_path(&resolved_state_root);
@@ -198,9 +187,8 @@ fn single_slash_paths_are_normalized_to_cwd_relative_before_recording() {
     );
 }
 
-/// The fold-back feeds the loom-owned approved list from both sources a
-/// session's approvals can land in (the worktree's local settings and the
-/// main repository's), and nothing that names a control surface gets in.
+/// The fold-back feeds the loom-owned approved list from the main checkout's
+/// local settings, and nothing that names a control surface gets in.
 ///
 /// Covers every control-surface spelling that is checkable without an
 /// injected environment (`.loom/`, `.work/`, the resolved state root,
@@ -211,32 +199,25 @@ fn single_slash_paths_are_normalized_to_cwd_relative_before_recording() {
 fn fold_back_records_approvals_through_the_control_surface_filter() {
     let temp = tempfile::TempDir::new().unwrap();
     let repo = temp.path().join("repo");
-    let worktree = repo.join(".worktrees").join("s1");
     std::fs::create_dir_all(repo.join(".loom").join("work")).unwrap();
     std::fs::create_dir_all(repo.join(".claude")).unwrap();
-    std::fs::create_dir_all(worktree.join(".claude")).unwrap();
     let resolved_state_root = repo.join(".loom").join("work").canonicalize().unwrap();
-    let worktree_settings = json!({ "permissions": { "allow": [
+    let main_settings = json!({ "permissions": { "allow": [
         "Bash(cargo test:*)",
         "Edit(.claude/settings.json)",
         "Edit(.loom/work/handoffs/**)",
         "Edit(.work/memory/**)",
         "Edit(.worktrees/s1/**)",
-        format!("Edit(/{}/signals/**)", resolved_state_root.display())
+        format!("Edit(/{}/signals/**)", resolved_state_root.display()),
+        "WebFetch(domain:docs.rs)"
     ] } });
-    std::fs::write(
-        worktree.join(".claude/settings.local.json"),
-        worktree_settings.to_string(),
-    )
-    .unwrap();
-    let main_settings = json!({ "permissions": { "allow": ["WebFetch(domain:docs.rs)"] } });
     std::fs::write(
         repo.join(".claude/settings.local.json"),
         main_settings.to_string(),
     )
     .unwrap();
 
-    sync_worktree_permissions_with_working_dir(&worktree, &repo, None).unwrap();
+    fold_back_approvals(&repo);
 
     let list = super::super::approved::approved_path(&resolved_state_root);
     let approved: Value = serde_json::from_str(&std::fs::read_to_string(list).unwrap()).unwrap();
@@ -249,8 +230,7 @@ fn fold_back_records_approvals_through_the_control_surface_filter() {
 /// Acceptance: spawn-setup and the fold-back never write either local
 /// settings file. Both files are made read-only before the fold-back runs;
 /// a write attempt would fail loudly (`std::fs::write` on a 0444 file
-/// returns `EACCES`), so an `Ok` result and untouched bytes together prove
-/// no write was attempted.
+/// returns `EACCES`), so untouched bytes prove no write was attempted.
 #[test]
 fn fold_back_leaves_both_local_settings_files_untouched() {
     use std::os::unix::fs::PermissionsExt;
@@ -275,7 +255,7 @@ fn fold_back_leaves_both_local_settings_files_untouched() {
     )
     .unwrap();
 
-    let result = sync_worktree_permissions_with_working_dir(&worktree, &repo, None);
+    let folded = fold_back_approvals(&repo);
 
     // Restore write permission before asserting, so a failing assertion
     // does not leave a read-only fixture behind for TempDir's cleanup.
@@ -286,7 +266,7 @@ fn fold_back_leaves_both_local_settings_files_untouched() {
     )
     .unwrap();
 
-    assert!(result.is_ok(), "fold-back must not error: {result:?}");
+    assert_eq!(folded, 1);
     assert_eq!(
         std::fs::read_to_string(&main_settings_path).unwrap(),
         main_body

@@ -38,6 +38,8 @@ fn build_recovery_context(
         Some(&content.stage_id),
     );
     let changes = super::retrieval::dependency_changes(work_dir, stage);
+    embedded_context.sandbox_summary =
+        Some(super::generate::build_sandbox_summary(stage, work_dir));
     embedded_context.context_pack =
         super::retrieval::retrieve_stage_pack_with_changes(work_dir, stage, &changes);
     embedded_context.knowledge_tree_empty = super::helpers::knowledge_tree_is_empty(work_dir);
@@ -61,6 +63,10 @@ pub fn generate_recovery_signal(
     let embedded_context = build_recovery_context(content, stage, work_dir)?;
 
     let mut signal_content = format_recovery_signal(content, stage, &embedded_context);
+    super::helpers::ensure_trailing_newline(&mut signal_content);
+    signal_content.push_str(&super::recovery_sections::format_recovery_dependencies(
+        stage, work_dir,
+    ));
     if let Some(findings) = &embedded_context.dependency_findings {
         super::helpers::ensure_trailing_newline(&mut signal_content);
         signal_content.push_str(&format!("{findings}\n\n"));
@@ -71,9 +77,9 @@ pub fn generate_recovery_signal(
     super::v2_section::append_v2_section(&mut signal_content, stage, work_dir);
     // A resumed integration-verify stage keeps the spec-conformance duty and its section list.
     super::generate::append_product_sections(&mut signal_content, stage, work_dir);
-    // A stage handed back from a merge resolver must see the failure it has to
-    // fix on every resume, not only in its first signal.
-    super::section_formatters::append_merge_handback_section(&mut signal_content, stage);
+    // The merge handback, adjudicator feedback and review dimensions a fresh
+    // signal ends with: a resolver's failure must show on every resume.
+    super::generate::append_stage_feedback(&mut signal_content, stage, work_dir);
 
     super::helpers::publish_signal(
         &content.session_id,
@@ -96,6 +102,10 @@ pub fn find_recovery_handoff_for_session(
         work_dir,
     )
 }
+
+#[cfg(test)]
+#[path = "recovery_signal_tests.rs"]
+mod recovery_signal_tests;
 
 #[cfg(test)]
 mod tests {

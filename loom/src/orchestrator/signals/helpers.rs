@@ -30,6 +30,11 @@ pub(super) fn write_signal_file(
     content: &str,
     work_dir: &Path,
 ) -> Result<PathBuf> {
+    // Not `validate_id`: its length cap would refuse recovery ids of long stages.
+    anyhow::ensure!(
+        crate::validation::valid_stage_path_component(session_id),
+        "refusing to write a signal for unsafe session id '{session_id}'"
+    );
     let signals_dir = work_dir.join("signals");
 
     if !signals_dir.exists() {

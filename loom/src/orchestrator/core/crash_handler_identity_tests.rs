@@ -368,3 +368,6 @@ fn a_fast_fail_crash_with_remote_control_inactive_is_a_startup_refusal() {
         "a crash unrelated to Remote Control must not latch it off for the process"
     );
 }
+
+#[path = "crash_wait_tests.rs"]
+mod wait_tests;
