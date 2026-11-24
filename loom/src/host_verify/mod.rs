@@ -114,6 +114,8 @@ mod tests_wait_live_log;
 #[cfg(test)]
 mod tests_wait_refusal;
 #[cfg(test)]
+mod trial_follow_contract_tests;
+#[cfg(test)]
 mod verdict_complete_contract_tests;
 #[cfg(test)]
 mod verdict_history_contract_tests;

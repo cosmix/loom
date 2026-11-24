@@ -169,13 +169,27 @@ fn staged_state(cwd: &Path) -> Result<(String, String)> {
 fn run_checked(command: &mut Command, label: &str) -> Result<Output> {
     let output = run_bounded_output(command, Duration::from_secs(600), label)?;
     if !output.status.success() {
-        bail!(
+        let failure = format!(
             "{label} failed:\nstderr:\n{}\nstdout:\n{}",
             last_lines(&output.stderr),
             last_lines(&output.stdout)
         );
+        if matches!(label, "pre-commit" | "commit-msg") {
+            bail!("{failure}\n\n{}", hook_refusal_route(label));
+        }
+        bail!("{failure}");
     }
     Ok(output)
+}
+
+/// What a session does after the repository's own hook refused its commit.
+fn hook_refusal_route(label: &str) -> String {
+    format!(
+        "The repository's {label} hook refused this commit. Fix what it names and run the \
+         commit again: the hook outranks a plan instruction, and lowering or removing a \
+         ratchet-file entry is always allowed. A refused commit does not stop a dispute or \
+         `loom stage block`."
+    )
 }
 
 fn last_lines(bytes: &[u8]) -> String {
@@ -186,6 +200,35 @@ fn last_lines(bytes: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod hook_refusal_tests {
+    use super::*;
+
+    #[test]
+    fn hook_refusal_route_names_the_hook_and_the_exits() {
+        for label in ["pre-commit", "commit-msg", "stripspace"] {
+            let mut command = Command::new("sh");
+            command.args(["-c", "echo diagnostic >&2; echo detail; exit 1"]);
+            let error = run_checked(&mut command, label).unwrap_err().to_string();
+            let diagnostics = format!("{label} failed:\nstderr:\ndiagnostic\nstdout:\ndetail");
+            if label == "stripspace" {
+                assert_eq!(error, diagnostics);
+            } else {
+                let route = error.strip_prefix(&format!("{diagnostics}\n\n")).unwrap();
+                assert!(route.starts_with(&format!(
+                    "The repository's {label} hook refused this commit. Fix what it names and run the commit again:"
+                )));
+                assert!(route.contains("the hook outranks a plan instruction"));
+                assert!(
+                    route.contains("lowering or removing a ratchet-file entry is always allowed")
+                );
+                assert!(route
+                    .contains("A refused commit does not stop a dispute or `loom stage block`."));
+            }
+        }
+    }
+}
 
 #[cfg(test)]
 mod native_gate_tests {

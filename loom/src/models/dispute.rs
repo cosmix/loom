@@ -375,6 +375,11 @@ pub fn applied_marker(disputes_root: &std::path::Path, stage_id: &str, id: u32) 
     dispute_dir(disputes_root, stage_id, id).join("applied.marker")
 }
 
+/// `<disputes_root>/<stage_id>/feedback.md`: the verdict notices of the stage's current round.
+pub fn feedback_file(disputes_root: &std::path::Path, stage_id: &str) -> std::path::PathBuf {
+    disputes_root.join(stage_id).join("feedback.md")
+}
+
 #[cfg(test)]
 #[path = "dispute_tests.rs"]
 mod tests;

@@ -88,7 +88,8 @@ fn append_frozen_contract_commands(content: &mut String, id: &str) {
          dispute-contract {id} --contract <contract-id> [--contract <contract-id> ...] \
          --replacement <frozen-file>=<path> --reason \"...\"` naming every affected contract, \
          with the same `--replacement` values. On accept the daemon writes it into the \
-         worktree.\n\
+         worktree, uncommitted: stage it with `git add` and commit it. The latest review round \
+         still covers it.\n\
          - Run `loom check {id} --contracts` as soon as the contract tests compile, before the \
          rest of the work. A contract that fails there for a reason no implementation can \
          change is disputed at once with a replacement that checks the same scenario in a form \

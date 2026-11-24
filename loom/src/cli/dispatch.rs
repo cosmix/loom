@@ -1,3 +1,4 @@
+use crate::commands::hook::idle_stop::emit_idle_stop;
 use crate::commands::hook::reviewer_brief::emit_reviewer_brief;
 use crate::commands::{
     ask, attach, clean, config, context, graph, handoff, hook, init, install_assets, knowledge,
@@ -134,6 +135,7 @@ fn dispatch_hook(command: HookCommands) -> Result<()> {
         HookCommands::ReviewerModel => hook::reviewer_model::reviewer_model(),
         HookCommands::CodexBackend => hook::codex_backend::codex_backend(),
         HookCommands::ReviewerBrief => emit_reviewer_brief(),
+        HookCommands::IdleStop => emit_idle_stop(),
         HookCommands::ProjectTypes => hook::project_types::execute(),
         HookCommands::Relay { allowed_kinds } => hook::relay::relay(&allowed_kinds),
         HookCommands::ReviewHarvest => hook::review_harvest::review_harvest(),

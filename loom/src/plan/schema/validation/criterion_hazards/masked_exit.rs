@@ -35,7 +35,7 @@ fn final_statement(tokens: &[Token]) -> Option<(&[Token], bool)> {
 
 /// Split `tokens` at top-level `;`, `;;` and `&`, tracking `(`/`)` depth so a
 /// separator inside a subshell group does not end the outer statement.
-fn statements(tokens: &[Token]) -> Vec<&[Token]> {
+pub(super) fn statements(tokens: &[Token]) -> Vec<&[Token]> {
     let mut depth = 0i32;
     let mut start = 0;
     let mut parts = Vec::new();
@@ -56,7 +56,7 @@ fn statements(tokens: &[Token]) -> Vec<&[Token]> {
 
 /// Drop a statement's own wrapping `( ... )`, e.g. `(cargo test || true)`, so
 /// the group is inspected the same as its unwrapped body.
-fn strip_parens(mut statement: &[Token]) -> &[Token] {
+pub(super) fn strip_parens(mut statement: &[Token]) -> &[Token] {
     while let [Token::Control("("), rest @ ..] = statement {
         statement = rest;
     }

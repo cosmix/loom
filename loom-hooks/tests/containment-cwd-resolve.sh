@@ -26,10 +26,11 @@ REPO="$TMP/repo"
 WT="$REPO/.worktrees/stage"
 S="$TMP/scratch"
 mkdir -p "$REPO/.loom/work" "$REPO/.git" "$REPO/.worktrees/stage-x/src" \
-    "$WT/web/src" "$WT/a/b" "$WT/doc" "$WT/.loom" "$TMP/tmpdir" "$TMP/home" "$S"
+    "$WT/web/src" "$WT/a/b" "$WT/doc" "$WT/.loom" "$TMP/tmpdir" "$TMP/home" "$REPO/home" "$S"
 chmod 700 "$S" "$TMP/tmpdir"
 ln -s ../../../.loom/work "$WT/.loom/work"
 ln -s "$S" "$TMP/scratch-link"
+ln -s "$REPO" "$TMP/repo-link"
 
 FAILED=0
 fail() {
@@ -59,6 +60,11 @@ norm)
 class)
     loom_path_class "$1"
     echo
+    ;;
+main-checkout)
+    rc=0
+    loom_path_in_main_checkout "$1" || rc=$?
+    echo "$rc"
     ;;
 esac
 EOF
@@ -218,6 +224,19 @@ if [[ -n "$other" ]]; then
 else
     echo "SKIP: no directory owned by another uid for the scratch-owner case"
 fi
+
+# --- loom_path_in_main_checkout ----------------------------------------------
+main_checkout_of() {
+    drv "$WT" "${@:2}" -- main-checkout "$1"
+}
+expect_eq "main checkout: repository root" "$(main_checkout_of "$REPO")" 0
+expect_eq "main checkout: repository file" "$(main_checkout_of "$REPO/README.md")" 0
+expect_eq "main checkout: state path" "$(main_checkout_of "$REPO/.loom/work/x")" 1
+expect_eq "main checkout: worktree path" "$(main_checkout_of "$WT/web/src/a.ts")" 1
+expect_eq "main checkout: system path" "$(main_checkout_of /etc/hostname)" 1
+expect_eq "main checkout: repository is HOME" "$(main_checkout_of "$REPO/README.md" HOME="$REPO")" 1
+expect_eq "main checkout: repository is physical HOME" "$(main_checkout_of "$REPO/README.md" HOME="$TMP/repo-link")" 1
+expect_eq "main checkout: repository contains HOME" "$(main_checkout_of "$REPO/README.md" HOME="$REPO/home")" 1
 
 if ((FAILED)); then
     exit 1

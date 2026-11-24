@@ -6,6 +6,9 @@ mod build_tool_path_tests;
 mod dependency_cycle_tests;
 mod implementer_tests;
 mod knowledge_recommendations_tests;
+#[cfg(test)]
+mod negated_search_contract_tests;
+mod negated_search_tests;
 mod path_component_tests;
 mod reasoning_effort_tests;
 mod regression_test_tests;

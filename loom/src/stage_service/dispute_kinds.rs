@@ -35,7 +35,7 @@ use std::path::Path;
 mod admission;
 
 use super::contracts::refused;
-use super::dispute::transition_refusal;
+use super::dispute::{clear_previous_round_feedback, transition_refusal};
 use super::dispute_store::{
     escalate_to_human_review, file_under_stage_lock, lock_stage_disputes, Publication,
 };
@@ -268,6 +268,7 @@ fn file_on_locked_stage(
     dispute_budgets::spend(stage, &kind);
     super::receipts::remember(stage, request_id, id);
     stage.tally.evidence_rounds = 0;
+    clear_previous_round_feedback(filing.work_dir, stage)?;
     stage.try_request_adjudication(Some(reason))?;
     #[cfg(test)]
     super::dispute_race_tests::after_publication();

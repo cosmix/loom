@@ -101,7 +101,8 @@ fn frozen_contracts_block_teaches_the_replacement_dispute() {
          dispute-contract s1 --contract <contract-id> [--contract <contract-id> ...] \
          --replacement <frozen-file>=<path> --reason \"...\"` naming every affected contract, \
          with the same `--replacement` values. On accept the daemon writes it into the \
-         worktree."
+         worktree, uncommitted: stage it with `git add` and commit it. The latest review round \
+         still covers it."
     ));
     // One sequence: no bullet files a replacement before its trial.
     assert!(!content.contains("formatter check on it, and file"));
@@ -137,6 +138,17 @@ fn unfrozen_stage_renders_no_frozen_contracts_block() {
         "nothing is frozen yet"
     );
     assert!(content.contains("## Review Gate"));
+}
+
+#[test]
+fn review_section_names_loosening_only() {
+    let temp = tempfile::tempdir().unwrap();
+    let content = render(&v2_stage(), temp.path());
+    let (_, review) = content.split_once("## Review Gate\n").unwrap();
+
+    assert!(review.contains("a ratchet file loosened"));
+    assert!(review.contains("lowering or removing a ratchet entry raises nothing"));
+    assert!(!review.contains("ratchet file changed"));
 }
 
 #[test]

@@ -149,6 +149,77 @@ fn replacing_a_review_reason_with_the_same_text_archives_nothing() {
 }
 
 #[test]
+fn adjudication_filings_keep_both_reasons_current() {
+    let mut stage = stage_in(StageStatus::Executing);
+    for reason in ["first dispute", "second dispute"] {
+        stage.try_request_adjudication(Some(reason.into())).unwrap();
+    }
+
+    assert_eq!(
+        stage.review_reason.as_deref(),
+        Some("first dispute\nsecond dispute")
+    );
+    assert!(stage.issue_history.is_empty());
+}
+
+#[test]
+fn a_repeated_adjudication_reason_stays_on_one_line() {
+    let mut stage = stage_in(StageStatus::NeedsAdjudication);
+    stage.replace_review_reason("same".into());
+    stage.replace_review_reason("same".into());
+
+    assert_eq!(stage.review_reason.as_deref(), Some("same"));
+    assert!(stage.issue_history.is_empty());
+}
+
+#[test]
+fn repeats_in_joined_adjudication_reasons_must_match_whole_lines() {
+    let mut stage = stage_in(StageStatus::NeedsAdjudication);
+    for reason in [
+        "first dispute\nfirst detail",
+        "second dispute",
+        "first dispute\nfirst detail",
+        "dispute",
+    ] {
+        stage.replace_review_reason(reason.into());
+    }
+
+    assert_eq!(
+        stage.review_reason.as_deref(),
+        Some("first dispute\nfirst detail\nsecond dispute\ndispute")
+    );
+    assert!(stage.issue_history.is_empty());
+}
+
+#[test]
+fn retiring_adjudication_reasons_archives_one_issue_for_the_round() {
+    let mut stage = stage_in(StageStatus::NeedsAdjudication);
+    stage.replace_review_reason("first dispute".into());
+    stage.replace_review_reason("second dispute".into());
+    stage.retire_review_reason("NeedsAdjudication -> Queued", IssueDisposition::Resolved);
+
+    assert_eq!(stage.review_reason, None);
+    assert_eq!(kinds(&stage), [IssueKind::Review]);
+    let issue = &stage.issue_history[0];
+    assert_eq!(issue.evidence, ["first dispute", "second dispute"]);
+    assert_eq!(issue.ended_by, "NeedsAdjudication -> Queued");
+    assert_eq!(issue.disposition, Some(IssueDisposition::Resolved));
+}
+
+#[test]
+fn a_new_human_review_reason_still_supersedes_the_previous_one() {
+    let mut stage = stage_in(StageStatus::NeedsHumanReview);
+    stage.replace_review_reason("first review".into());
+    stage.replace_review_reason("second review".into());
+
+    assert_eq!(stage.review_reason.as_deref(), Some("second review"));
+    assert_eq!(kinds(&stage), [IssueKind::Review]);
+    let issue = &stage.issue_history[0];
+    assert_eq!(issue.evidence, ["first review"]);
+    assert_eq!(issue.disposition, Some(IssueDisposition::Superseded));
+}
+
+#[test]
 fn a_cleared_merge_block_moves_its_failure_into_history_labelled_by_the_transition() {
     let mut stage = stage_in(StageStatus::Completed);
     stage.block_merge(crate::git::MergeBlock::TargetMoved);

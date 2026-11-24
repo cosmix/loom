@@ -1,12 +1,11 @@
 //! The review gate and the store it reads (DESIGN D12).
 
-use super::*;
-use crate::verify::contracts::test_support::{contract_worktree, CONTRACT_FILE};
+use super::{test_support::round, *};
+use crate::verify::contracts::store::refreeze_set;
+use crate::verify::contracts::test_support::{contract_worktree, CONTRACT_CONTENT, CONTRACT_FILE};
 use crate::verify::review::fingerprint::ChangeFingerprint;
-use crate::verify::review::report::Finding;
-use crate::verify::review::store::{
-    finding_id, next_round, open_findings, write_round, RecordedFinding, RECORD_VERSION,
-};
+use crate::verify::review::frozen_cover::test_support::freeze;
+use crate::verify::review::store::{next_round, open_findings, write_round};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use tempfile::TempDir;
@@ -38,42 +37,6 @@ pub(super) fn fixture() -> Fixture {
         work_dir,
         worktree,
         stage,
-    }
-}
-
-fn finding(claim: &str) -> Finding {
-    Finding {
-        severity: "major".to_string(),
-        file: "src/a.rs".to_string(),
-        line: 42,
-        claim: claim.to_string(),
-        scenario: Some("empty input → panic".to_string()),
-        rule: None,
-    }
-}
-
-fn round(number: u32, at: &ChangeFingerprint, claims: &[&str], resolved: &[&str]) -> ReviewRound {
-    let findings = claims
-        .iter()
-        .enumerate()
-        .map(|(index, claim)| RecordedFinding {
-            id: finding_id(number, index + 1),
-            finding: finding(claim),
-        });
-    ReviewRound {
-        version: RECORD_VERSION,
-        round: number,
-        agent_id: format!("agent-{number}"),
-        harvested_at: chrono::Utc::now(),
-        fingerprint: at.value.clone(),
-        base: at.base.clone(),
-        behaviour: at.behaviour.clone(),
-        files: at.files.clone(),
-        malformed: None,
-        findings: findings.collect(),
-        resolved: resolved.iter().map(|id| id.to_string()).collect(),
-        unresolved: Vec::new(),
-        suggestion_memory_ids: Vec::new(),
     }
 }
 
@@ -227,6 +190,40 @@ fn gate_fails_without_review_at_current_fingerprint() {
     assert!(error.contains("loom stage review status s1"), "{error}");
     assert!(error.contains("review round 1 saw"), "{error}");
     assert!(error.contains(CONTRACT_FILE), "{error}");
+}
+
+#[test]
+fn the_gate_covers_only_the_current_frozen_replacement_on_the_same_base() {
+    let fx = fixture();
+    freeze(&fx.stage, &fx.work_dir, CONTRACT_FILE, CONTRACT_CONTENT);
+    let seen = round(1, &current(&fx), &[], &[]);
+    let replacement = b"#[test]\nfn replacement() { assert!(true); }\n";
+    let file = fx.worktree.join(CONTRACT_FILE);
+    std::fs::write(&file, replacement).unwrap();
+    refreeze_set(
+        &fx.work_dir,
+        STAGE,
+        &[(CONTRACT_FILE.to_string(), replacement.to_vec())],
+        &[],
+    )
+    .unwrap();
+    let accepted = current(&fx);
+    let covers = |now: &ChangeFingerprint| round_covers(&fx.stage, &fx.work_dir, &seen, now);
+    assert!(!covers_review(&seen, &accepted));
+    assert!(covers(&accepted));
+
+    let moved = fingerprint::fingerprint_from(
+        "other",
+        &[(CONTRACT_FILE.to_string(), Some(replacement.to_vec()))],
+    );
+    let reason = stale_review(&fx.stage, &fx.work_dir, &seen, &moved).unwrap();
+    assert!(reason.contains("the base commit moved"), "{reason}");
+
+    std::fs::write(&file, "fn arbitrary_edit() {}\n").unwrap();
+    assert!(!covers(&current(&fx)));
+    std::fs::write(&file, replacement).unwrap();
+    std::fs::write(fx.worktree.join("src/lib.rs"), "pub fn added() {}\n").unwrap();
+    assert!(!covers(&current(&fx)));
 }
 
 #[test]

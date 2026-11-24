@@ -8,6 +8,7 @@ pub mod blocks;
 pub mod codex_backend;
 pub mod context_ceilings;
 pub mod forward_receipt;
+pub mod idle_stop;
 pub mod pre_compact;
 pub mod project_types;
 pub mod reconcile_graph;
@@ -22,6 +23,8 @@ pub(crate) mod target;
 pub mod user_prompt;
 pub mod worker_brief;
 
+#[cfg(test)]
+mod idle_stop_contract_tests;
 #[cfg(test)]
 mod tests_blocks;
 #[cfg(test)]

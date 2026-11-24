@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# test-pre-commit-partial-staging.sh - prove the hook refuses a partial index.
+# test-pre-commit-partial-staging.sh - exercise the hook's staging guards.
 #
 # A formatter followed by git add can silently stage work a developer did not
 # intend to commit. This runs the checked-in hook against isolated repositories
-# with fake formatters, so the partial-index guard is tested without compiling.
+# with fake cargo and bunx commands, so the guards are tested without compiling.
 
 set -euo pipefail
 
@@ -35,11 +35,18 @@ write_fake() {
 		'#!/usr/bin/env bash' \
 		'set -euo pipefail' \
 		"printf '%s %s\\n' \"\$(basename \"\$0\")\" \"\$*\" >>\"\${$log_variable}\"" \
+		"${3:-}" \
 		'exit 0' >"$tmp/bin/$program"
 	chmod +x "$tmp/bin/$program"
 }
 
-write_fake cargo PRE_COMMIT_CARGO_LOG
+write_fake cargo PRE_COMMIT_CARGO_LOG '
+if [ "$*" = "test --quiet --test maintainability" ] &&
+	[ "${LOOM_LEDGER_TIGHTEN:-}" = 1 ] && [ -f maintainability-baseline.txt ]; then
+	sed "/^function /d" maintainability-baseline.txt >maintainability-baseline.txt.tmp
+	mv maintainability-baseline.txt.tmp maintainability-baseline.txt
+	[ "$(wc -l <growth.rs)" -le 1 ] || exit 1
+fi'
 write_fake bunx PRE_COMMIT_BUNX_LOG
 
 create_case_repo() {
@@ -56,10 +63,7 @@ create_case_repo() {
 	git -C "$case_repo" init -q
 	git -C "$case_repo" config user.name 'Pre-commit Fixture'
 	git -C "$case_repo" config user.email 'pre-commit-fixture@example.invalid'
-	for rust_path in "$@"; do
-		git -C "$case_repo" add -- ":(literal)$rust_path"
-	done
-	git -C "$case_repo" add -- README.md
+	git -C "$case_repo" add -- .
 	git -C "$case_repo" commit -q --no-verify -m 'Create fixture'
 }
 
@@ -73,7 +77,6 @@ prepare_case() {
 	out="$tmp/$fixture_name.out"
 	: >"$cargo_log"
 	: >"$bunx_log"
-	: >"$out"
 	export PRE_COMMIT_CARGO_LOG="$cargo_log"
 	export PRE_COMMIT_BUNX_LOG="$bunx_log"
 }
@@ -134,13 +137,12 @@ assert_nonzero_status() {
 	fi
 }
 
-assert_zero_status() {
+assert_status() {
 	local fixture_name=$1
-	local output=$2
+	local expected=$2
+	local output=$3
 
-	if [ "$status" -ne 0 ]; then
-		fail "$fixture_name" "hook exited $status; expected 0" "$output"
-	fi
+	[ "$status" -eq "$expected" ] || fail "$fixture_name" "hook exited $status; expected $expected" "$output"
 }
 
 assert_path_reported() {
@@ -169,12 +171,9 @@ assert_normal_flow() {
 	local fixture_name=$1
 	local output=$2
 
-	if ! grep -F -x -e 'cargo fmt' "$cargo_log" >/dev/null; then
-		fail "$fixture_name" 'cargo fmt was not invoked' "$output"
-	fi
-	if ! grep -F -x -e 'cargo test --quiet --test maintainability' "$cargo_log" >/dev/null; then
+	grep -Fxq 'cargo fmt' "$cargo_log" || fail "$fixture_name" 'cargo fmt was not invoked' "$output"
+	grep -Fxq 'cargo test --quiet --test maintainability' "$cargo_log" ||
 		fail "$fixture_name" 'maintainability test was not invoked' "$output"
-	fi
 }
 
 assert_markdown_linted() {
@@ -233,7 +232,7 @@ run_fully_staged_case() {
 	printf '# Staged fixture\n' >"$case_repo/README.md"
 	git -C "$case_repo" add -- "$path" README.md
 	run_hook "$case_repo" "$out"
-	assert_zero_status "$fixture_name" "$out"
+	assert_status "$fixture_name" 0 "$out"
 	assert_normal_flow "$fixture_name" "$out"
 	assert_markdown_linted "$fixture_name" README.md "$out"
 }
@@ -252,7 +251,7 @@ run_unstaged_only_case() {
 	printf 'fn a() { 1; }\n' >"$case_repo/$sibling_path"
 	printf '# Unstaged fixture\n' >"$case_repo/$unstaged_path"
 	run_hook "$case_repo" "$out"
-	assert_zero_status "$fixture_name" "$out"
+	assert_status "$fixture_name" 0 "$out"
 	assert_normal_flow "$fixture_name" "$out"
 	if [ -s "$bunx_log" ]; then
 		fail "$fixture_name" "bunx linted Markdown that was only unstaged" "$out"
@@ -333,11 +332,69 @@ run_hooks_path_commit_case() {
 	fi
 }
 
+run_ledger_case() {
+	local fixture_name=$1
+	local expected_status=$2
+	local path=loom/fixture.rs growth=loom/growth.rs
+	local ledger=loom/maintainability-baseline.txt
+	local snapshot_prefix="$tmp/$fixture_name"
+	local notice=
+
+	prepare_case "$fixture_name" "$path" "$growth"
+	printf '%s\n' '# Ledger' 'function fixture.rs fixture 60' >"$case_repo/$ledger"
+	git -C "$case_repo" add -- "$ledger"
+	git -C "$case_repo" commit -q --no-verify -m 'Create ledger'
+	printf 'fn fixture() { 1; }\n' >"$case_repo/$path"
+	if [[ "$fixture_name" == failing-gate* ]]; then
+		printf 'fn fixture() {\n    let _value = 1;\n}\n' >"$case_repo/$growth"
+	fi
+	git -C "$case_repo" add -- "$path" "$growth"
+	printf '# Ledger\n' >"$snapshot_prefix.expected"
+	case "$fixture_name" in
+		*unstaged-ledger)
+			printf '# Unstaged note\n' | tee -a "$case_repo/$ledger" >>"$snapshot_prefix.expected"
+			notice="ERROR: $ledger has unstaged edits and rows that had to be lowered."
+			;;
+		unstaged-source)
+			printf 'fn fixture() { 2; }\n' >"$case_repo/$growth"
+			notice='It must be committed together with the change that shrank the code.'
+			;;
+	esac
+	git -C "$case_repo" ls-files --stage >"$snapshot_prefix.index-before"
+	git -C "$case_repo" diff --binary -- . ":(exclude,literal)$ledger" >"$snapshot_prefix.worktree-before"
+
+	run_hook "$case_repo" "$out"
+	assert_normal_flow "$fixture_name" "$out"
+	assert_status "$fixture_name" "$expected_status" "$out"
+	if [ -n "$notice" ]; then
+		grep -Fq "$notice" "$out" || fail "$fixture_name" 'hook did not explain why the ledger was left unstaged' "$out"
+		git -C "$case_repo" ls-files --stage >"$snapshot_prefix.index-after"
+		cmp -s "$snapshot_prefix.index-before" "$snapshot_prefix.index-after" ||
+			fail "$fixture_name" 'hook changed the index despite leaving the ledger unstaged' "$out"
+	else
+		git -C "$case_repo" show ":$ledger" >"$snapshot_prefix.index-ledger"
+		cmp -s "$snapshot_prefix.expected" "$snapshot_prefix.index-ledger" ||
+			fail "$fixture_name" 'hook did not stage the lowered ledger' "$out"
+	fi
+	cmp -s "$snapshot_prefix.expected" "$case_repo/$ledger" ||
+		fail "$fixture_name" 'working-tree ledger differs from the fake cargo rewrite' "$out"
+	git -C "$case_repo" diff --binary -- . ":(exclude,literal)$ledger" >"$snapshot_prefix.worktree-after"
+	cmp -s "$snapshot_prefix.worktree-before" "$snapshot_prefix.worktree-after" ||
+		fail "$fixture_name" 'hook changed tracked working-tree files outside the ledger' "$out"
+}
+
 run_partially_staged_case partial-path loom/fixture.rs
 run_fully_staged_case
 run_two_partial_paths_case
 run_unstaged_only_case
 run_renamed_path_case
 run_hooks_path_commit_case
+run_ledger_case clean-ledger 0
+run_ledger_case unstaged-source 0
+run_ledger_case unstaged-ledger 1
+run_ledger_case failing-gate 1
+run_ledger_case failing-gate-unstaged-ledger 1
+grep -Fq 'ERROR: maintainability gate failed' "$out" ||
+	fail failing-gate-unstaged-ledger 'hook did not report the failed maintainability gate' "$out"
 
-printf 'test-pre-commit-partial-staging: 6 cases passed\n'
+printf 'test-pre-commit-partial-staging: 11 cases passed\n'

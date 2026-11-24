@@ -1,43 +1,31 @@
 //! Adjudicator feedback file lifecycle.
 //!
-//! For each stage that has been disputed, a single
-//! `.loom/work/disputes/<stage>/feedback.md` file holds the most recent
-//! human-readable advice the adjudicator surfaced (rejection reasoning,
-//! or follow-up evidence questions). The next signal generated for that
-//! stage embeds the file's contents so the agent reads them on resume.
-//!
-//! The file is overwritten on every adjudicator pass — older feedback
-//! is intentionally discarded, because the agent only needs the latest
-//! verdict to make progress. Persistent history lives in the per-
-//! dispute `verdict.md` records. The one append is the failure section of
-//! the daemon's completion run after a verdict that held the stage
-//! ([`append_completion_failures`]): it follows that verdict's notice, which
-//! the fresh session still needs.
+//! `feedback.md` holds the round's verdict notices in application order.
+//! The first filing of a new round clears it. Signals embed the current
+//! feedback, including any completion failures after the verdict notices.
+//! Persistent history lives in the per-dispute `verdict.md` records.
 
 use anyhow::{Context, Result};
-use std::fs;
+use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use crate::fs::safe_fs::safe_open_append;
-use crate::models::dispute::{truncate_to_byte_limit, Citation, DisputeKind};
+use crate::models::dispute::{feedback_file, truncate_to_byte_limit, Citation, DisputeKind};
 use crate::utils::text::single_line;
 
-const FEEDBACK_FILENAME: &str = "feedback.md";
+const MAX_FEEDBACK_BYTES: usize = 64 * 1024;
+const SECTION_SEPARATOR: &str = "\n---\n\n";
+const DROPPED_NOTICES: &str =
+    "Earlier notices of this round were dropped: the file passed 64 KiB.\n";
 
 /// Failure lines the completion section lists before it summarises the rest.
 const MAX_COMPLETION_FAILURES: usize = 20;
 /// Byte cap of one failure line; job summaries can carry whole command output.
 const MAX_FAILURE_LINE_BYTES: usize = 300;
 
-/// Path to `.loom/work/disputes/<stage>/feedback.md`. The parent directory
-/// is created on demand so the first dispute against a stage works
-/// without a prior `mkdir`.
 fn feedback_path(work_dir: &Path, stage_id: &str) -> PathBuf {
-    work_dir
-        .join("disputes")
-        .join(stage_id)
-        .join(FEEDBACK_FILENAME)
+    feedback_file(&work_dir.join("disputes"), stage_id)
 }
 
 fn ensure_parent(path: &Path) -> Result<()> {
@@ -48,17 +36,44 @@ fn ensure_parent(path: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Write rejection feedback: the adjudicator concluded the disputed check (an
+fn open_feedback(path: &Path) -> Result<File> {
+    ensure_parent(path)?;
+    let dir = path.parent().context("feedback path has no parent")?;
+    let name = path.file_name().context("feedback path has no filename")?;
+    safe_open_append(dir, Path::new(name))
+        .with_context(|| format!("Failed to open {}", path.display()))
+}
+
+fn append_section(work_dir: &Path, stage_id: &str, body: &str) -> Result<()> {
+    let path = feedback_path(work_dir, stage_id);
+    let mut file = open_feedback(&path)?;
+    let len = file
+        .metadata()
+        .with_context(|| format!("Failed to stat {}", path.display()))?
+        .len();
+    let separator = if len == 0 { "" } else { SECTION_SEPARATOR };
+    let size = len.saturating_add((separator.len() + body.len()) as u64);
+    let prefix = if size > MAX_FEEDBACK_BYTES as u64 {
+        file.set_len(0)
+            .with_context(|| format!("Failed to truncate {}", path.display()))?;
+        DROPPED_NOTICES
+    } else {
+        separator
+    };
+    file.write_all(prefix.as_bytes())
+        .and_then(|()| file.write_all(body.as_bytes()))
+        .with_context(|| format!("Failed to append to {}", path.display()))
+}
+
+/// Append rejection feedback: the adjudicator concluded the disputed check (an
 /// acceptance criterion, wiring check or wiring test) is correct and the
-/// agent must fix the implementation. Overwrites any prior content.
+/// agent must fix the implementation.
 pub fn append_rejection(
     work_dir: &Path,
     stage_id: &str,
     reasoning: &str,
     citations: &[Citation],
 ) -> Result<()> {
-    let path = feedback_path(work_dir, stage_id);
-    ensure_parent(&path)?;
     let mut body =
         String::from("The adjudicator rejected your dispute. The disputed check stands.\n\n");
     body.push_str("### Reasoning\n\n");
@@ -74,8 +89,7 @@ pub fn append_rejection(
         body.push('\n');
     }
     body.push_str("Action: fix the implementation so the check passes. Do NOT re-dispute.\n");
-    fs::write(&path, body).with_context(|| format!("Failed to write {}", path.display()))?;
-    Ok(())
+    append_section(work_dir, stage_id, &body)
 }
 
 /// What the agent does with an evidence question, for every dispute kind but a
@@ -102,17 +116,14 @@ pub fn evidence_action(stage_id: &str, kind: &DisputeKind) -> String {
     )
 }
 
-/// Write evidence-loop feedback: the adjudicator wants the agent to
+/// Append evidence-loop feedback: the adjudicator wants the agent to
 /// answer specific questions before re-disputing, then do `action`.
-/// Overwrites any prior content.
 pub fn append_questions(
     work_dir: &Path,
     stage_id: &str,
     questions: &[String],
     action: &str,
 ) -> Result<()> {
-    let path = feedback_path(work_dir, stage_id);
-    ensure_parent(&path)?;
     let mut body = String::from(
         "The adjudicator needs more evidence before deciding. Answer these in your next dispute:\n\n",
     );
@@ -121,21 +132,17 @@ pub fn append_questions(
     }
     body.push('\n');
     body.push_str(&format!("Action: {action}\n"));
-    fs::write(&path, body).with_context(|| format!("Failed to write {}", path.display()))?;
-    Ok(())
+    append_section(work_dir, stage_id, &body)
 }
 
-/// Write feedback the caller composed: the outcome of a findings, contract or
-/// integrity dispute. Overwrites any prior content.
+/// Append the verdict notice composed by the caller.
 pub fn write_notice(work_dir: &Path, stage_id: &str, body: &str) -> Result<()> {
-    let path = feedback_path(work_dir, stage_id);
-    ensure_parent(&path)?;
-    fs::write(&path, body).with_context(|| format!("Failed to write {}", path.display()))
+    append_section(work_dir, stage_id, body)
 }
 
 /// Append what stopped the daemon's completion after a verdict (a failed run
-/// or an eligibility error) to the stage's feedback, creating the file when missing and keeping the verdict's
-/// notice above it. Appends nothing for an empty `failures`.
+/// or an eligibility error) below the verdict notices, creating the file when
+/// missing. Appends nothing for an empty `failures`.
 ///
 /// Each failure is flattened to one line and bulleted, so command output such
 /// as `## heading` or an escape sequence never forms a heading or reaches a
@@ -149,11 +156,8 @@ pub fn append_completion_failures(
         return Ok(());
     }
     let path = feedback_path(work_dir, stage_id);
-    ensure_parent(&path)?;
-    let dir = path.parent().context("feedback path has no parent")?;
-    let mut fd = safe_open_append(dir, Path::new(FEEDBACK_FILENAME))
-        .with_context(|| format!("Failed to open {}", path.display()))?;
-    fd.write_all(completion_failures_section(failures).as_bytes())
+    open_feedback(&path)?
+        .write_all(completion_failures_section(failures).as_bytes())
         .with_context(|| format!("Failed to append to {}", path.display()))
 }
 
@@ -177,7 +181,7 @@ fn completion_failures_section(failures: &[String]) -> String {
     body
 }
 
-/// Read the current feedback for a stage, if any. Returns `Ok(None)`
+/// Read the stage's current round feedback. Returns `Ok(None)`
 /// when no file exists.
 pub fn read_feedback(work_dir: &Path, stage_id: &str) -> Result<Option<String>> {
     let path = feedback_path(work_dir, stage_id);
@@ -189,9 +193,7 @@ pub fn read_feedback(work_dir: &Path, stage_id: &str) -> Result<Option<String>> 
     Ok(Some(content))
 }
 
-/// Remove the feedback file (idempotent). Called once the agent's
-/// follow-up dispute is filed, so a future Accept verdict doesn't carry
-/// stale text into the next signal.
+/// Remove the stage's feedback file if it exists when adjudication escalates.
 pub fn clear_feedback(work_dir: &Path, stage_id: &str) -> Result<()> {
     let path = feedback_path(work_dir, stage_id);
     match fs::remove_file(&path) {
@@ -247,14 +249,64 @@ mod tests {
     }
 
     #[test]
-    fn second_write_overwrites_first() {
+    fn rejection_follows_the_evidence_questions() {
         let tmp = temp_work();
         let work = tmp.path();
         append_questions(work, "stage-c", &["first".to_string()], EVIDENCE_ACTION).unwrap();
         append_rejection(work, "stage-c", "second reasoning", &[]).unwrap();
         let content = read_feedback(work, "stage-c").unwrap().unwrap();
-        assert!(!content.contains("first"));
-        assert!(content.contains("second reasoning"));
+        let (first, second) = content.split_once(SECTION_SEPARATOR).unwrap();
+        assert!(first.contains("1. first"));
+        assert!(second.contains("second reasoning"));
+    }
+
+    #[test]
+    fn two_notices_are_separated_in_order() {
+        let tmp = temp_work();
+        let work = tmp.path();
+        write_notice(work, "s", "first notice").unwrap();
+        write_notice(work, "s", "second notice").unwrap();
+        assert_eq!(
+            read_feedback(work, "s").unwrap().unwrap(),
+            "first notice\n---\n\nsecond notice"
+        );
+    }
+
+    #[test]
+    fn notice_follows_rejection() {
+        let tmp = temp_work();
+        let work = tmp.path();
+        append_rejection(work, "s", "the disputed check stands", &[]).unwrap();
+        write_notice(work, "s", "second notice").unwrap();
+        let content = read_feedback(work, "s").unwrap().unwrap();
+        let (first, second) = content.split_once(SECTION_SEPARATOR).unwrap();
+        assert!(first.contains("the disputed check stands"));
+        assert_eq!(second, "second notice");
+    }
+
+    #[test]
+    fn exceeding_the_bound_drops_earlier_notices() {
+        let tmp = temp_work();
+        let work = tmp.path();
+        write_notice(work, "s", &"x".repeat(65_536)).unwrap();
+        assert_eq!(read_feedback(work, "s").unwrap().unwrap().len(), 65_536);
+        write_notice(work, "s", "new notice").unwrap();
+        assert_eq!(
+            read_feedback(work, "s").unwrap().unwrap(),
+            "Earlier notices of this round were dropped: the file passed 64 KiB.\nnew notice"
+        );
+    }
+
+    #[test]
+    fn completion_failures_keep_both_notices() {
+        let tmp = temp_work();
+        let work = tmp.path();
+        write_notice(work, "s", "first notice").unwrap();
+        write_notice(work, "s", "second notice\n").unwrap();
+        append_completion_failures(work, "s", &["criterion 2 failed".into()]).unwrap();
+        let content = read_feedback(work, "s").unwrap().unwrap();
+        assert!(content.starts_with("first notice\n---\n\nsecond notice\n\n### Completion"));
+        assert!(content.contains("- criterion 2 failed\n"));
     }
 
     #[test]

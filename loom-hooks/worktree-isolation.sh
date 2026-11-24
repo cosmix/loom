@@ -1,48 +1,18 @@
 #!/usr/bin/env bash
 # worktree-isolation.sh - PreToolUse hook to enforce worktree boundaries
 #
-# This hook intercepts tool calls and blocks operations that would violate
-# worktree isolation boundaries:
+# Checks Bash tokens for git overrides, traversal, and access to sibling
+# worktrees or the main checkout. Quoted prose is one whitespace-bearing
+# token, so a path mentioned mid-sentence does not look like a path argument.
+# Unclosed quotes use the legacy regex fallback. Token scanning is best
+# effort; the OS sandbox enforces the write boundary.
 #
-# For Bash tool:
-#   - Block global `git -C`, `--work-tree`, `--git-dir` unless every target
-#     resolves into this worktree or the session scratch directory
-#   - Block GIT_DIR= / GIT_WORK_TREE= env assignments that retarget git
-#   - Block `eval`-reached git (the regex cannot see inside eval'd strings)
-#   - Block `..` path traversal that RESOLVES outside the worktree (against
-#     the directory each token runs in, loom_track_cwd); warn instead when a
-#     `../..` token's directory cannot be known
-#   - Block `.worktrees/` access (except current worktree)
-#
-# SECURITY NOTE (best-effort): this is regex/token-scanning, not a parser. It
-# cannot catch every evasion — variable indirection (g=-C; git $g ..), $IFS
-# tricks, command substitution, or a cd into a sibling repo followed by a
-# plain `git`. The DURABLE boundary is the OS sandbox `Write` deny on parent
-# paths; this hook is defense-in-depth that raises the cost of the obvious
-# bypasses.
-#
-# TOKEN SCANNING: each pattern checks argv tokens from loom_tokenize_command,
-# not the raw string. A quoted PROSE payload (a codex brief, a `loom memory
-# note` body) is ONE token with embedded whitespace, which loom_token_is_word
-# excludes; a real path, flag or env assignment is a whitespace-free word, so
-# `cat "../../foo"` is still checked. Exception: a whitespace-bearing token
-# that STARTS WITH `../..` or `.worktrees/` is checked too
-# (`cat "../../doc/my notes.md"`); prose almost never begins that way. When
-# the tokenizer fails (an unterminated quote), the raw-string regex fallback
-# decides, so protection is never weaker than before tokenizing existed.
-#
-# Input: JSON from stdin (Claude Code passes tool info via stdin)
+# Input: JSON from stdin
 #   {"tool_name": "Bash", "tool_input": {...}, "cwd": "...", ...}
 #
-# Exit codes:
-#   0 - Allow the operation (stdout may carry a LOOM_HOOK_WARN additionalContext)
-#   2 - Block with guidance message; each block appends one line to the stage
-#       block ledger (loom_record_block, rule id in BLOCK_RULE)
-#   2 - jq not installed (fail closed)
-#
-# Environment:
-#   LOOM_STAGE_ID - Current stage ID (set by loom)
-#   LOOM_WORKTREE_PATH - Path to current worktree (if set)
+# Exit 0 allows (with an optional LOOM_HOOK_WARN on stdout).
+# Exit 2 blocks, including when jq is missing. BLOCK_RULE identifies the
+# rule in the stage block ledger.
 
 set -euo pipefail
 source "$(dirname "$0")/_common.sh"
@@ -69,11 +39,8 @@ TOOL_INPUT=$(echo "$INPUT_JSON" | jq -r '.tool_input // empty' 2>/dev/null || tr
 debug "TOOL_NAME: $TOOL_NAME"
 debug "TOOL_INPUT: $TOOL_INPUT"
 
-# Only enforce inside a genuine loom worktree. Membership is decided by the
-# working directory, NOT by LOOM_STAGE_ID: that variable leaks into plain Claude
-# Code sessions (e.g. a prior loom run exported it), so gating on it alone made
-# this hook wrongly fire on ordinary branches like main. If we are not inside a
-# loom worktree, stay inert.
+# LOOM_STAGE_ID can leak into ordinary sessions; let loom_current_worktree
+# establish worktree membership.
 CURRENT_WORKTREE=$(loom_current_worktree) || {
     debug "Not inside a loom worktree; allowing"
     exit 0
@@ -98,9 +65,6 @@ fi
 loom_load_worktree_policy "$POLICY_TAG" || block_policy_load
 
 # === BLOCK MESSAGES ===
-# Factored out so both the token-scan path and the legacy regex fallback path
-# print identical guidance text. Each opens with the `[worktree-isolation/<rule>]`
-# tag from BLOCK_RULE on its first non-empty line.
 
 print_git_override_block() {
     cat >&2 <<EOF
@@ -174,6 +138,18 @@ Instead, you should:
 You can only access your own worktree.
 ============================================================
 
+EOF
+}
+
+print_main_checkout_block() {
+    cat >&2 <<EOF
+[worktree-isolation/${BLOCK_RULE}] LOOM: BLOCKED - Main checkout access detected
+============================================================
+
+You tried to reach ${1} in the main checkout.
+Use your assigned worktree. It holds the same files at your stage's own revision.
+Loom's shared state under .loom/work/ stays readable.
+============================================================
 EOF
 }
 
@@ -295,6 +271,27 @@ check_cross_worktree_tokens() {
     return 1
 }
 
+# A whitespace-bearing token only counts when it starts with an absolute path.
+check_main_checkout_tokens() {
+    local tok abs assignment='^([a-zA-Z_][a-zA-Z0-9_]*|--[^/=]+)='
+    [[ -n "${LOOM_TOKENS[*]+x}" ]] || return 1
+    for tok in "${LOOM_TOKENS[@]}"; do
+        if loom_token_is_word "$tok"; then
+            if [[ "$tok" =~ $assignment ]]; then tok="${tok#*=}"; fi
+        else
+            [[ "$tok" == /* ]] || continue
+            tok="${tok%%[[:space:]]*}"
+        fi
+        case "$tok" in /* | '~/'*) ;; *) continue ;; esac
+        abs=$(loom_normalize_word / "$tok") || continue
+        if loom_path_in_main_checkout "$abs"; then
+            MAIN_CHECKOUT_PATH="$abs"
+            return 0
+        fi
+    done
+    return 1
+}
+
 # A block from any pattern wins over a traversal warning.
 validate_bash_command_token_path() {
     loom_track_cwd "$(jq -r '.cwd // empty' <<<"$INPUT_JSON" 2>/dev/null || true)"
@@ -313,6 +310,11 @@ validate_bash_command_token_path() {
     if check_cross_worktree_tokens; then
         BLOCK_RULE=cross-worktree
         print_cross_worktree_block
+        return 1
+    fi
+    if check_main_checkout_tokens; then
+        BLOCK_RULE=main-checkout
+        print_main_checkout_block "$MAIN_CHECKOUT_PATH"
         return 1
     fi
 

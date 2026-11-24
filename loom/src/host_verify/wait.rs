@@ -200,10 +200,13 @@ fn drive(
     Ok(outcome)
 }
 
-/// Whether `state` is the request a call at `head` and `digest` follows.
+/// Whether `state` matches this call's HEAD, selection, flags and digest.
+/// Replacement trials skip the digest comparison because the daemon's own
+/// overlay changes the digest while the trial runs.
 fn state_matches(site: &WaitSite<'_>, state: &RequestState, head: &str, digest: &str) -> bool {
+    let is_trial = site.contracts.is_some_and(|files| !files.is_empty());
     state.head == head
-        && state.tree_digest == digest
+        && (is_trial || state.tree_digest == digest)
         && state.no_cache == site.no_cache
         && state.criteria.as_deref() == site.criteria
         && state.contracts == site.contracts.map(trial_files)
@@ -224,10 +227,10 @@ fn awaits_application(site: &WaitSite<'_>, outcome: &WaitOutcome) -> bool {
     }
 }
 
-/// The request id of the state [`wait_or_request`] would follow right now (the
-/// same HEAD, tree digest, no-cache flag and criteria), or `None` when the
-/// next call would relay a new request. The freeze reads it to compare the
-/// flags a pending request was sent with before it follows that request.
+/// The request id [`wait_or_request`] would follow, or `None` if it would relay
+/// a new request. Matching requires the same HEAD, selection, flags and digest.
+/// Replacement trials skip the digest comparison because the daemon's overlay
+/// changes the digest during the trial. Freeze uses this to check pending flags.
 pub fn pending_request_id(site: &WaitSite<'_>) -> Result<Option<String>> {
     let head = head(site.checkout)?;
     let digest = if site.knowledge {

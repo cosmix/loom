@@ -77,8 +77,9 @@ fn append_dispute_commands(content: &mut String, stage: &Stage) {
          lets loom rerun the completion of the tree your latest `loom stage complete` ran on \
          and complete the stage if it passes; any other verdict starts a fresh session.\n\
          - `loom stage complete` also fails on a test-integrity event (tests or assertions \
-         removed, an assertion or ratchet file changed); `loom stage review integrity \
-         {stage_id}` lists them. Revert the change behind each one, or dispute them with \
+         removed, an assertion changed, a ratchet file loosened; lowering or removing a ratchet \
+         entry raises nothing); `loom stage review integrity {stage_id}` lists them. Revert the \
+         change behind each one, or dispute them with \
          `loom stage dispute-integrity {stage_id} --event <id> ... --reason ...`.\n"
     ));
     if stage.stage_type == StageType::Standard {

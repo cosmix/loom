@@ -233,6 +233,10 @@ pub enum HookCommands {
     #[command(hide = true)]
     ReviewerBrief,
 
+    /// Decide whether a stage session's stop is an unattended idle stop (the Stop hook calls this)
+    #[command(hide = true)]
+    IdleStop,
+
     /// Discover package-scoped project types for skill recommendations.
     #[command(hide = true)]
     ProjectTypes,

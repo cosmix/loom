@@ -27,6 +27,8 @@ mod wrap;
 #[cfg(test)]
 mod allocation_contract_tests;
 #[cfg(test)]
+mod exit_doctrine_contract_tests;
+#[cfg(test)]
 mod recovery_signal_contract_tests;
 
 #[cfg(test)]

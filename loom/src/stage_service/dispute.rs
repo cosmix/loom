@@ -19,7 +19,7 @@
 //!    starting at 1)
 //! 7. creates `.loom/work/disputes/<stage>/<n>/` and writes `request.md`
 //!    via the existing `safe_create_new_in_workdir` helper
-//! 8. increments `dispute_count`, resets `evidence_rounds = 0`,
+//! 8. clears feedback on entry to a new round, increments `dispute_count`, resets `evidence_rounds = 0`,
 //!    transitions the stage to `NeedsAdjudication`, saves the stage
 //! 9. responds `Response::DisputeCreated { id }`
 //!
@@ -30,15 +30,17 @@
 //! the locks, id allocation, `request.md` write and escalation every dispute
 //! kind shares, and `dispute_kinds.rs` files the plan v2 kinds.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use chrono::Utc;
+use std::os::fd::AsRawFd;
 use std::path::Path;
 
 use super::dispute_store::{file_under_stage_lock, lock_stage_disputes};
 use super::Response;
+use crate::fs::safe_fs::{safe_open_dirfd, safe_remove_in_workdir};
 use crate::models::dispute::{
-    truncate_to_byte_limit, CriterionField, CriterionTarget, DisputeKind, DisputeRequest,
-    FAILURE_OUTPUT_MAX_BYTES,
+    feedback_file, truncate_to_byte_limit, CriterionField, CriterionTarget, DisputeKind,
+    DisputeRequest, FAILURE_OUTPUT_MAX_BYTES,
 };
 use crate::models::stage::{Stage, StageStatus, StageType};
 #[cfg(test)]
@@ -124,6 +126,7 @@ pub(crate) fn handle_dispute_criteria_for_session(
         s.dispute_count = s.dispute_count.saturating_add(1);
         super::receipts::remember(s, request_id, id);
         s.tally.evidence_rounds = 0;
+        clear_previous_round_feedback(&locked.work_dir, s)?;
         s.try_request_adjudication(Some(reason))?;
         #[cfg(test)]
         super::dispute_race_tests::after_publication();
@@ -273,6 +276,17 @@ pub(super) fn transition_refusal(stage: &Stage, reason: &str) -> Option<Response
     })
 }
 
+/// Clear the previous round's feedback on entry to adjudication under the stage lock.
+pub(super) fn clear_previous_round_feedback(work_dir: &Path, stage: &Stage) -> Result<()> {
+    if stage.status == StageStatus::NeedsAdjudication {
+        return Ok(());
+    }
+    let relative = feedback_file(Path::new("disputes"), &stage.id);
+    let dirfd = safe_open_dirfd(work_dir)?;
+    safe_remove_in_workdir(dirfd.as_raw_fd(), &relative)
+        .with_context(|| format!("Failed to remove {}", work_dir.join(&relative).display()))
+}
+
 /// Escalate the stage to human review and refuse: its dispute budget is spent.
 fn exhausted_refusal(stage: &mut Stage) -> Response {
     // The state-machine permits the escalation from both
@@ -317,3 +331,53 @@ pub(super) fn build_record(
 #[cfg(test)]
 #[path = "../daemon/server/dispute_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod feedback_tests {
+    use super::*;
+    use crate::stage_service::dispute_race_tests::{setup_contract, try_file_contract};
+    use std::fs;
+
+    #[test]
+    fn only_the_first_filing_of_each_round_clears_feedback() {
+        let stage_id = "stage-disp";
+        for criterion_first in [true, false] {
+            let (_tmp, work_dir) = setup_contract(stage_id);
+            let path = feedback_file(&work_dir.join("disputes"), stage_id);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(&path, "previous round").unwrap();
+
+            let first = file(&work_dir, stage_id, criterion_first);
+            assert!(
+                matches!(first, Response::DisputeCreated { id: 1 }),
+                "{first:?}"
+            );
+            assert!(!path.exists());
+
+            fs::write(&path, "current round").unwrap();
+            let second = file(&work_dir, stage_id, !criterion_first);
+            assert!(
+                matches!(second, Response::DisputeCreated { id: 2 }),
+                "{second:?}"
+            );
+            assert_eq!(fs::read_to_string(&path).unwrap(), "current round");
+        }
+    }
+
+    fn file(work_dir: &Path, stage_id: &str, criterion: bool) -> Response {
+        if criterion {
+            handle_dispute_criteria(
+                work_dir,
+                stage_id,
+                CriterionField::Acceptance,
+                vec![0],
+                "reason".into(),
+                None,
+                None,
+            )
+        } else {
+            try_file_contract(work_dir, stage_id)
+        }
+        .unwrap()
+    }
+}
