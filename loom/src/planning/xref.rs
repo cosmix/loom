@@ -7,6 +7,7 @@ use crate::fs::lexical::normalize_lexically;
 use crate::plan::schema::extract_prefixed_paths;
 use crate::planning::discover::{DocTree, SUMMARIES};
 use crate::planning::kinds::DocId;
+use crate::planning::metaplan::{entries, is_metaplan};
 use crate::planning::sections::DocSections;
 use crate::planning::slug::{plan_slug, plan_state};
 
@@ -44,6 +45,7 @@ pub fn references(
 ) -> Vec<Reference> {
     let lines: Vec<&str> = text.lines().collect();
     let mask = fence_mask(&lines);
+    let planned = planned_entry_lines(doc_rel, text);
     let mut refs = Vec::new();
     for (line_no, line) in lines.iter().enumerate().filter(|(i, _)| !mask[*i]) {
         let (links, remaining) = links_on_line(line);
@@ -72,17 +74,40 @@ pub fn references(
                 target,
             });
         }
-        for raw in backticked_plans(&remaining) {
-            let target = plan_file_target(&raw, tree);
-            refs.push(Reference {
-                form: RefForm::PlanFile,
-                raw,
-                line: line_no,
-                target,
-            });
-        }
+        let declared = planned.contains(&line_no);
+        refs.extend(plan_file_refs(&remaining, line_no, declared, tree));
     }
     refs
+}
+
+/// Backticked plan filenames on one line. On a line that declares a metaplan entry, a plan
+/// that does not exist yet is skipped.
+fn plan_file_refs(text: &str, line: usize, declared: bool, tree: &DocTree) -> Vec<Reference> {
+    backticked_plans(text)
+        .into_iter()
+        .map(|raw| (plan_file_target(&raw, tree), raw))
+        .filter(|(target, _)| target.is_some() || !declared)
+        .map(|(target, raw)| Reference {
+            form: RefForm::PlanFile,
+            raw,
+            line,
+            target,
+        })
+        .collect()
+}
+
+/// Zero-based lines of a metaplan's entry headings that name a plan file. Such a heading
+/// declares the plan before it is written, so its filename is no reference until the plan
+/// exists; the metaplan's missing-plan gap covers it meanwhile.
+fn planned_entry_lines(doc_rel: &Path, text: &str) -> Vec<usize> {
+    if !is_metaplan(doc_rel) {
+        return Vec::new();
+    }
+    entries(text)
+        .into_iter()
+        .filter(|entry| entry.plan_file.is_some())
+        .map(|entry| entry.line)
+        .collect()
 }
 
 fn plan_file_target(raw: &str, tree: &DocTree) -> Option<(DocId, Option<String>)> {

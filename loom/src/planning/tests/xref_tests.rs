@@ -69,6 +69,30 @@ fn resolves_and_reports_all_forms() {
 }
 
 #[test]
+fn a_metaplan_entry_heading_names_its_plan_before_the_plan_exists() {
+    let text =
+        "# Metaplan\n\n## 2. Next (`PLAN-next.md`)\n\nNeeds `PLAN-next.md` and `PLAN-a.md`.\n";
+    let refs = refs_at("doc/plans/demo/index.md", text);
+    let raws: Vec<_> = refs.iter().map(|r| (r.raw.as_str(), r.line)).collect();
+    assert_eq!(raws, [("PLAN-next.md", 4), ("PLAN-a.md", 4)]);
+    assert!(
+        refs[0].target.is_none(),
+        "prose naming a missing plan stays broken"
+    );
+    let elsewhere = refs_at(
+        "doc/product/demo/section_02.md",
+        "## 2. Next (`PLAN-next.md`)\n",
+    );
+    assert!(elsewhere.len() == 1 && elsewhere[0].target.is_none());
+}
+
+fn refs_at(path: &str, text: &str) -> Vec<crate::planning::xref::Reference> {
+    references(Path::new(path), text, &tree(), &|_| {
+        Some(sections_of("# Rules\n"))
+    })
+}
+
+#[test]
 fn skips_code_urls_templates_and_globs_and_resolves_self_fragments() {
     let text = "[self](#rules) [bad](#no-heading) [code](../../../loom/src/main.rs) \
         [web](https://example.com) `doc/plans/PLAN-<slug>.md` `doc/plans/*.md` \
