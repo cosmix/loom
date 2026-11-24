@@ -156,8 +156,9 @@ fi
 if ! env -u GIT_INDEX_FILE -u GIT_DIR -u GIT_WORK_TREE cargo test --test maintainability 2>&1; then
     echo ""
     echo "ERROR: The maintainability gate failed."
-    echo "Extract the oversized file or function into a new module; never raise a"
-    echo "loom/maintainability-baseline.txt entry."
+    echo "Refactor any growth or new size violation. Never add or raise a ledger row."
+    echo "For stale or shrunk rows, run LOOM_LEDGER_TIGHTEN=1 cargo test --test maintainability"
+    echo "from loom/ (the pre-commit hook does this), then commit the ledger."
     echo ""
     exit 1
 fi

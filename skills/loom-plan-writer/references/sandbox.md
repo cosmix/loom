@@ -115,9 +115,12 @@ loom:
 
 ## Commit hooks
 
-Stage commits relay to the daemon host path. Account for pre-commit dependencies at that
-execution boundary; committing does not by itself require session network grants. `loom plan verify`
-still errors when a stage's sandbox omits a registry that the repository's pre-commit hook fetches from.
+`loom stage commit` runs the repository's pre-commit and commit-msg hooks in the stage session,
+inside the session's sandbox, before the commit is relayed; the daemon then writes the commit
+with hooks disabled. A hook therefore sees the session's tools, the session's network grants and
+the session's write limits. `loom plan verify` errors when a stage's sandbox omits a registry
+that the repository's pre-commit hook fetches from. A hook that rewrites files (a formatter, a
+ledger it lowers) must stage what it rewrote: the daemon commits the staged tree.
 
 ## Where criteria run
 

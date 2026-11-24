@@ -41,7 +41,7 @@ pub fn parse(source: &str) -> Result<BTreeMap<BaselineKey, usize>, Vec<String>> 
     errors.is_empty().then_some(entries).ok_or(errors)
 }
 
-fn parse_line(line: &str, line_number: usize) -> Result<(BaselineKey, usize), String> {
+pub(super) fn parse_line(line: &str, line_number: usize) -> Result<(BaselineKey, usize), String> {
     let fields = line.split_whitespace().collect::<Vec<_>>();
     let (key, maximum_text, limit) = match fields.as_slice() {
         ["file", path, maximum] => (

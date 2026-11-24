@@ -35,7 +35,7 @@ pub fn review_status(stage_id: String) -> Result<()> {
             if let Some(note) = note {
                 println!("Note: {}", single_line(&note));
             }
-            print_freshness(&rounds, &current);
+            print_freshness(&stage, &work_dir, &rounds, &current);
             print_base_move_cover(&stage, &work_dir, &rounds, &current);
         }
         Err(error) => println!(
@@ -126,8 +126,13 @@ fn print_open_findings(open: &[OpenFinding]) {
 
 /// Whether the latest round saw the current changes, and which files differ
 /// from the latest well-formed round.
-fn print_freshness(rounds: &[ReviewRound], current: &ChangeFingerprint) {
-    for line in freshness_report(rounds, current) {
+fn print_freshness(
+    stage: &Stage,
+    work_dir: &Path,
+    rounds: &[ReviewRound],
+    current: &ChangeFingerprint,
+) {
+    for line in freshness_report(stage, work_dir, rounds, current) {
         println!("{line}");
     }
 }
@@ -144,7 +149,10 @@ fn print_base_move_cover(
     let Some(round) = rounds.iter().rev().find(|round| round.is_well_formed()) else {
         return;
     };
-    if !gate::covers_review(round, current) && gate::round_covers(stage, work_dir, round, current) {
+    if round.base != current.base
+        && !gate::covers_review(round, current)
+        && gate::round_covers(stage, work_dir, round, current)
+    {
         println!(
             "Round {} still covers the worktree: the merge base moved, and the stage's \
              changes are the reviewed ones.",
@@ -159,15 +167,22 @@ fn print_base_move_cover(
 /// gate anchors on (`verify::review::gate::check`'s
 /// `rounds.iter().rev().find(is_well_formed)` selector), so a malformed
 /// round never hides a diff the gate would still require a review of.
-fn freshness_report(rounds: &[ReviewRound], current: &ChangeFingerprint) -> Vec<String> {
+fn freshness_report(
+    stage: &Stage,
+    work_dir: &Path,
+    rounds: &[ReviewRound],
+    current: &ChangeFingerprint,
+) -> Vec<String> {
     let mut lines = vec![format!("Current fingerprint: {}", current.value)];
     let latest = rounds.last();
     match latest {
         Some(round) => {
-            let matches = if crate::verify::review::gate::covers_review(round, current) {
-                "yes"
-            } else {
+            let matches = if !gate::round_covers(stage, work_dir, round, current) {
                 "no"
+            } else if round.base == current.base && !gate::covers_review(round, current) {
+                "yes (the only change is an accepted replacement of a frozen file)"
+            } else {
+                "yes"
             };
             lines.push(format!(
                 "Latest round ({}) matches the current fingerprint: {matches}",
@@ -245,5 +260,19 @@ fn diff_baseline(
 }
 
 #[cfg(test)]
-#[path = "review_status_tests.rs"]
-mod tests;
+#[path = "."]
+mod tests {
+    use super::*;
+
+    fn freshness_report(rounds: &[ReviewRound], current: &ChangeFingerprint) -> Vec<String> {
+        let work_dir = tempfile::TempDir::new().unwrap();
+        let stage = Stage {
+            id: "s1".to_string(),
+            ..Stage::default()
+        };
+        super::freshness_report(&stage, work_dir.path(), rounds, current)
+    }
+
+    #[path = "review_status_tests.rs"]
+    mod cases;
+}

@@ -1,24 +1,15 @@
 #!/usr/bin/env bash
-# loom-relay-stop.sh - Stop hook that tells a session once when a control relay
-# ticket is still on disk.
+# loom-relay-stop.sh - Stop hook for stranded control relay tickets and
+# unattended idle stops in stage sessions.
 #
-# A control ticket (block, commit, dispute, handoff, verdict, merge, freeze,
-# complete, ...) is never swept from disk by a later call. One that is still in
-# $LOOM_SCRATCH_DIR when the agent stops was either relayed with its unlink
-# failing, refused (a subagent's control kind), or never reached the relay hook
-# because the call's output was filtered, redirected or backgrounded. The agent
-# may believe the request was filed, so the hook blocks the stop once per ticket
-# with the recovery steps: check `loom request status`, rerun only when the
-# request was not filed.
+# A stranded control ticket may have been refused, missed by the relay hook,
+# or delivered without being unlinked. The hook gives recovery instructions at
+# most once per ticket, tracked by a `.stop-warned-<id>` marker. With no ticket
+# warning to give, it relays any `loom hook idle-stop` block within that
+# subcommand's limits of three per session and one per tool call.
 #
-# Why blocking once is safe: commit-guard.sh is advisory because a Stop hook that
-# blocked on every stop fired during subagent waits and ended sessions before they
-# committed. This hook blocks at most once per ticket (a `.stop-warned-<id>`
-# marker next to the ticket) and never when stop_hook_active is true, so a lead
-# waiting on subagents gets one extra instruction and no loop. A subagent's refused
-# control ticket sits in the shared scratch too, hence the "ignore this ticket"
-# clause. Revisit: if a Stop block is observed to end a session, switch to the
-# advisory systemMessage output.
+# Both paths skip a stop with stop_hook_active set to true. Revisit if a Stop
+# block is observed to end a session: switch to advisory systemMessage output.
 #
 # Input:  the Stop JSON payload on stdin.
 # Output: at most one {"decision":"block","reason":...} object on stdout.
@@ -70,9 +61,21 @@ for ticket in "$LOOM_SCRATCH_DIR"/*.req; do
 	MARKERS+=("$marker")
 done
 
-[[ -n "$REASON" ]] || exit 0
-for marker in "${MARKERS[@]}"; do
-	: >"$marker" 2>/dev/null || true
-done
-jq -nc --arg reason "$REASON" '{decision: "block", reason: $reason}'
+if [[ -n "$REASON" ]]; then
+	for marker in "${MARKERS[@]}"; do
+		: >"$marker" 2>/dev/null || true
+	done
+	jq -nc --arg reason "$REASON" '{decision: "block", reason: $reason}' 2>/dev/null || true
+elif [[ -n "${LOOM_STAGE_ID:-}" ]] && command -v "${LOOM_BIN:-loom}" &>/dev/null; then
+	# Keep the reason JSON-encoded through Bash to preserve all string characters.
+	if IDLE_REASON_JSON=$(printf '%s' "$INPUT_JSON" |
+		loom_run_bounded 5 "${LOOM_BIN:-loom}" hook idle-stop 2>/dev/null |
+		jq -ces '
+			select(length == 1) | .[0]
+			| select(type == "object" and .decision == "block")
+			| .reason | select(type == "string" and length > 0)
+		' 2>/dev/null); then
+		jq -nc --arg reason "$IDLE_REASON_JSON" '{decision: "block", reason: ($reason | fromjson)}' 2>/dev/null || true
+	fi
+fi
 exit 0

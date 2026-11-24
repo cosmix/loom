@@ -124,6 +124,7 @@ jq '.x == 1' out.json
   before the first pipe (`. as $d | ...`). Cross-referencing after a pipe is silent until executed.
 - **One assertion per criterion.** Two simple criteria beat one clever pipeline: a compound
   expression that fails does not say which half broke.
+- **Never negate a search over a command's output.** `! <command> | rg -q <failure text>` passes whenever the command dies with any other message, and `loom plan verify` warns on it. Run the command for its own exit status; when only some failures count, have the tool expose a mode for that and test the mode's exit status.
 - **Every expression decides its own exit code** — `jq -e`, or a numeric comparison on the output.
 - **Prefer a checked-in script, or a case in the repo's own suite, to a clever YAML one-liner.**
   Code in the repo gets review, tooling, and its own failure message; a one-liner in YAML gets none

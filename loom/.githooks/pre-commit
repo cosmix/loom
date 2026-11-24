@@ -49,6 +49,19 @@ if [ "$PARTIAL_STAGING" -eq 1 ]; then
     exit 1
 fi
 
+LEDGER=loom/maintainability-baseline.txt
+git diff --quiet -- ":(literal)$LEDGER"
+LEDGER_DIFF_STATUS=$?
+if [ "$LEDGER_DIFF_STATUS" -gt 1 ]; then
+    echo "ERROR: failed to compare the staged ledger with the working tree: $LEDGER" >&2
+    exit 1
+fi
+
+LEDGER_HASH_BEFORE=
+if [ -e "$LEDGER" ]; then
+    LEDGER_HASH_BEFORE=$(git hash-object -- "$LEDGER") || exit 1
+fi
+
 echo "Running pre-commit formatting..."
 
 # Auto-format Rust code
@@ -91,17 +104,50 @@ if [ -s "$STAGED_FILE_LIST" ]; then
     done < "$STAGED_FILE_LIST"
 fi
 
-# Maintainability ledger gate: catches growth of ledgered files/functions at
-# commit time instead of push time. Fast when the build is warm.
+# Preserve safe ledger corrections even when growth or new violations fail the gate.
 cd "$REPO_ROOT/loom" || exit 1
 echo "Checking maintainability limits..."
-if ! cargo test --quiet --test maintainability 2>&1; then
+MAINTAINABILITY_STATUS=0
+LOOM_LEDGER_TIGHTEN=1 cargo test --quiet --test maintainability 2>&1 || MAINTAINABILITY_STATUS=$?
+
+LEDGER_STAGE_STATUS=0
+LEDGER_HASH_AFTER=
+if [ -e "$REPO_ROOT/$LEDGER" ]; then
+    LEDGER_HASH_AFTER=$(git -C "$REPO_ROOT" hash-object -- "$LEDGER") || exit 1
+fi
+if [ "$LEDGER_HASH_BEFORE" != "$LEDGER_HASH_AFTER" ]; then
+    if [ "$LEDGER_DIFF_STATUS" -eq 1 ]; then
+        echo "ERROR: $LEDGER has unstaged edits and rows that had to be lowered. Stage or discard your edits, then commit again." >&2
+        LEDGER_STAGE_STATUS=1
+    else
+        # Rows measured from unstaged edits may be too low for the index.
+        git -C "$REPO_ROOT" diff --quiet -- loom/ ":(exclude,literal)$LEDGER"
+        case $? in
+            0)
+                git -C "$REPO_ROOT" add -- ":(literal)$LEDGER" || exit 1
+                echo "Staged the lowered ledger rows in $LEDGER."
+                ;;
+            1)
+                echo "Left $LEDGER unstaged. It must be committed together with the change that shrank the code." >&2
+                ;;
+            *)
+                echo "ERROR: failed to compare staged files under loom/ with the working tree." >&2
+                LEDGER_STAGE_STATUS=1
+                ;;
+        esac
+    fi
+fi
+
+if [ "$MAINTAINABILITY_STATUS" -ne 0 ]; then
     echo ""
     echo "ERROR: maintainability gate failed - a ledgered file or function grew,"
-    echo "or a new file/function exceeds the limits."
-    echo "Refactor (extract into a new module) instead of growing ledgered code;"
-    echo "growth is never recordable in loom/maintainability-baseline.txt."
+    echo "or a new file/function exceeds the limits (see the lines above)."
+    echo "Refactor (extract into a new module); never raise or add a row in"
+    echo "loom/maintainability-baseline.txt."
     echo ""
+    exit 1
+fi
+if [ "$LEDGER_STAGE_STATUS" -ne 0 ]; then
     exit 1
 fi
 

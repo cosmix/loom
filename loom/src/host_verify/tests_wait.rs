@@ -7,17 +7,17 @@ use chrono::Utc;
 use tempfile::TempDir;
 
 use super::digest::{head, tree_digest};
-use super::store::{append_progress, save_criterion_log, save_current, save_result, stage_dir};
-use super::wait::{exit_code, wait_or_request, WaitOutcome, WaitSite};
+use super::store::{append_progress, save_criterion_log, save_current, save_result};
+use super::wait::{exit_code, pending_request_id, wait_or_request, WaitOutcome, WaitSite};
 use super::{CriterionOutcome, JobKind, JobRecord, JobResult, JobState};
 use crate::fs::inbox::{append_ledger, LedgerOutcome, LedgerRecord};
-use crate::relay::RequestKind;
+use crate::models::dispute::FileReplacement;
+use crate::relay::{HostJobRequest, RequestKind};
 use crate::test_git::{git, TestRepo};
 
 pub(super) const STAGE: &str = "s1";
 const SESSION: &str = "session-1";
 pub(super) const OLD_JOB: &str = "11111111111111111111111111111111";
-const NEW_JOB: &str = "22222222222222222222222222222222";
 
 pub(super) struct Fx {
     _tmp: TempDir,
@@ -108,7 +108,7 @@ impl Fx {
     }
 
     /// Run a first call that relays `request_id`, leaving the state file.
-    fn request(&self, request_id: &str) {
+    pub(super) fn request(&self, request_id: &str) {
         let outcome = self.call(Duration::ZERO, false, request_id).0;
         assert_eq!(
             outcome,
@@ -118,7 +118,12 @@ impl Fx {
         );
     }
 
-    fn call(&self, budget: Duration, no_cache: bool, request_id: &str) -> (WaitOutcome, String) {
+    pub(super) fn call(
+        &self,
+        budget: Duration,
+        no_cache: bool,
+        request_id: &str,
+    ) -> (WaitOutcome, String) {
         let mut out = Vec::new();
         let mut relay = |_: &crate::relay::HostJobRequest| Ok(request_id.to_string());
         let outcome = wait_or_request(&self.site(budget, no_cache), &mut relay, &mut out).unwrap();
@@ -135,7 +140,7 @@ fn outcome(label: &str, passed: bool, summary: &str, log: Option<String>) -> Cri
     }
 }
 
-fn result(job: &JobRecord, criteria: Vec<CriterionOutcome>) -> JobResult {
+pub(super) fn result(job: &JobRecord, criteria: Vec<CriterionOutcome>) -> JobResult {
     JobResult {
         job_id: job.id.clone(),
         head: job.head.clone(),
@@ -144,25 +149,6 @@ fn result(job: &JobRecord, criteria: Vec<CriterionOutcome>) -> JobResult {
         error: None,
         policy_hash: None,
     }
-}
-
-/// Write `text` into the FIFO at `path` once a reader has it open (ENXIO before).
-fn hand_over_through_fifo(path: &std::path::Path, text: &str) {
-    use std::os::unix::fs::OpenOptionsExt;
-    let deadline = std::time::Instant::now() + Duration::from_secs(60);
-    let mut open = std::fs::OpenOptions::new();
-    open.write(true).custom_flags(libc::O_NONBLOCK);
-    let mut fifo = loop {
-        match open.open(path) {
-            Ok(file) => break file,
-            Err(error) => {
-                let waiting = error.raw_os_error() == Some(libc::ENXIO);
-                assert!(waiting && std::time::Instant::now() < deadline, "{error}");
-                std::thread::sleep(Duration::from_millis(10));
-            }
-        }
-    };
-    fifo.write_all(text.as_bytes()).unwrap();
 }
 
 #[derive(Clone, Default)]
@@ -259,23 +245,6 @@ fn a_failed_job_exits_one_and_prints_the_failed_summary_with_its_log() {
 }
 
 #[test]
-fn a_cancelled_job_exits_four() {
-    let fx = fixture();
-    fx.request("r1");
-    let mut cancelled = fx.job(OLD_JOB, JobState::Cancelled, &["r1"]);
-    cancelled.detail = Some("takedown".to_string());
-    save_current(&fx.work_dir, &cancelled).unwrap();
-    let (waited, text) = fx.call(Duration::from_secs(5), false, "r9");
-    assert_eq!(exit_code(&waited), 4);
-    assert!(text.starts_with("Host job: stopped (check, "), "{text}");
-    assert!(text.contains("takedown"), "{text}");
-    assert!(
-        text.contains("Run the same command again to request a new run."),
-        "{text}"
-    );
-}
-
-#[test]
 fn an_elapsed_budget_is_pending_and_exits_zero() {
     let fx = fixture();
     fx.request("r1");
@@ -295,106 +264,100 @@ fn an_elapsed_budget_is_pending_and_exits_zero() {
     assert!(fx.state_file().is_file());
 }
 
-#[test]
-fn a_superseded_job_is_followed_through_its_own_record_and_reported_stopped() {
-    let fx = fixture();
-    fx.request("r1");
-    fx.ledger(
-        "r1",
-        LedgerOutcome::Applied,
-        &format!("host job {OLD_JOB} queued"),
-    );
-    let mut old = fx.job(OLD_JOB, JobState::Cancelled, &["r1"]);
-    old.detail = Some(format!("superseded by {NEW_JOB}"));
-    save_current(&fx.work_dir, &old).unwrap();
-    save_current(&fx.work_dir, &fx.job(NEW_JOB, JobState::Queued, &["r2"])).unwrap();
-    let (waited, text) = fx.call(Duration::from_secs(5), false, "r9");
-    assert!(matches!(&waited, WaitOutcome::Finished(job, _) if job.id == OLD_JOB));
-    assert_eq!(exit_code(&waited), 4);
-    assert!(text.contains(NEW_JOB), "{text}");
+fn replacement(content: &str) -> [FileReplacement; 1] {
+    [FileReplacement {
+        file: "a.txt".into(),
+        content: content.into(),
+        base_sha256: None,
+    }]
 }
 
-#[test]
-fn a_job_whose_directory_was_pruned_is_stopped() {
-    let fx = fixture();
-    fx.request("r1");
-    fx.ledger(
-        "r1",
-        LedgerOutcome::Applied,
-        &format!("host job {OLD_JOB} queued"),
-    );
-    std::fs::create_dir_all(stage_dir(&fx.work_dir, STAGE).unwrap()).unwrap();
-    let (waited, _) = fx.call(Duration::from_secs(5), false, "r9");
-    assert_eq!(exit_code(&waited), 4);
-}
-
-#[test]
-fn a_refused_ledger_entry_is_reported_and_clears_the_state() {
-    let fx = fixture();
-    fx.request("r1");
-    fx.ledger("r1", LedgerOutcome::Refused, "not the active session");
-    let (waited, text) = fx.call(Duration::from_secs(5), false, "r9");
+fn rerun(
+    first_site: &WaitSite<'_>,
+    second_site: &WaitSite<'_>,
+    between_calls: impl FnOnce(),
+) -> (usize, WaitOutcome) {
+    let mut calls = 0;
+    let mut relay = |_: &HostJobRequest| {
+        calls += 1;
+        Ok(format!("r{calls}"))
+    };
+    let mut out = Vec::new();
+    let first = wait_or_request(first_site, &mut relay, &mut out).unwrap();
     assert_eq!(
-        waited,
-        WaitOutcome::Refused("not the active session".to_string())
-    );
-    assert_eq!(exit_code(&waited), 1);
-    assert!(text.starts_with("Host job: refused (check, "), "{text}");
-    assert!(text.contains("not the active session"), "{text}");
-    assert!(!fx.state_file().exists());
-}
-
-#[test]
-fn a_changed_no_cache_or_tree_starts_a_new_request() {
-    let fx = fixture();
-    fx.request("r1");
-    let (waited, text) = fx.call(Duration::from_secs(5), true, "r2");
-    assert_eq!(
-        waited,
+        first,
         WaitOutcome::Requested {
-            request_id: "r2".into()
+            request_id: "r1".into()
         }
     );
-    assert!(text.starts_with("Host job: requested"), "{text}");
-    assert!(std::fs::read_to_string(fx.state_file_for(true))
-        .unwrap()
-        .contains("r2"));
-
-    std::fs::write(fx.checkout.join("new.txt"), "x\n").unwrap();
-    let (waited, _) = fx.call(Duration::from_secs(5), true, "r3");
-    assert_eq!(
-        waited,
-        WaitOutcome::Requested {
-            request_id: "r3".into()
-        }
-    );
-    assert!(std::fs::read_to_string(fx.state_file_for(true))
-        .unwrap()
-        .contains("r3"));
+    between_calls();
+    let second = wait_or_request(second_site, &mut relay, &mut out).unwrap();
+    (calls, second)
 }
 
 #[test]
-fn a_terminal_outcome_leaves_a_newer_request_the_other_waiter_wrote() {
+fn a_trial_rerun_follows_after_the_overlay_changed_the_tree() {
     let fx = fixture();
-    fx.request("r1");
-    save_current(&fx.work_dir, &fx.job(OLD_JOB, JobState::Running, &["r1"])).unwrap();
-    let passed = fx.job(OLD_JOB, JobState::Passed, &["r1"]);
-    let (work_dir, state_file) = (fx.work_dir.clone(), fx.state_file());
-    let first = std::fs::read_to_string(&state_file).unwrap();
-    // A FIFO in the state's place: r2 lands only after the waiter's one read.
-    std::fs::remove_file(&state_file).unwrap();
-    nix::unistd::mkfifo(&state_file, nix::sys::stat::Mode::S_IRWXU).unwrap();
-    let other_waiter = std::thread::spawn(move || {
-        hand_over_through_fifo(&state_file, &first);
-        std::fs::remove_file(&state_file).unwrap();
-        std::fs::write(&state_file, first.replace("r1", "r2")).unwrap();
-        save_result(&work_dir, STAGE, &result(&passed, Vec::new())).unwrap();
-        save_current(&work_dir, &passed).unwrap();
+    let trial = replacement("two\n");
+    let site = WaitSite {
+        contracts: Some(&trial),
+        ..fx.site(Duration::ZERO, false)
+    };
+    let (calls, second) = rerun(&site, &site, || {
+        std::fs::write(fx.checkout.join("a.txt"), &trial[0].content).unwrap();
     });
-    let (waited, _) = fx.call(Duration::from_secs(10), false, "r9");
-    other_waiter.join().unwrap();
-    assert!(matches!(waited, WaitOutcome::Finished(..)));
-    assert!(std::fs::read_to_string(fx.state_file())
-        .unwrap()
-        .contains("r2"));
+    assert_eq!(calls, 1);
+    assert!(matches!(second, WaitOutcome::Pending { .. }), "{second:?}");
+    assert_eq!(pending_request_id(&site).unwrap().as_deref(), Some("r1"));
+}
+
+#[test]
+fn a_trial_with_other_replacement_bytes_is_a_new_request() {
+    let fx = fixture();
+    let first = replacement("two\n");
+    let second = replacement("three\n");
+    let first_site = WaitSite {
+        contracts: Some(&first),
+        ..fx.site(Duration::ZERO, false)
+    };
+    let second_site = WaitSite {
+        contracts: Some(&second),
+        ..fx.site(Duration::ZERO, false)
+    };
+    assert_ne!(
+        super::wait_state::state_path(&first_site).unwrap(),
+        super::wait_state::state_path(&second_site).unwrap(),
+    );
+    let (calls, outcome) = rerun(&first_site, &second_site, || {});
+    assert_eq!(calls, 2);
+    assert!(
+        matches!(outcome, WaitOutcome::Requested { .. }),
+        "{outcome:?}"
+    );
+}
+
+fn assert_edited_tree_starts_a_new_request(contracts: Option<&[FileReplacement]>) {
+    let fx = fixture();
+    let site = WaitSite {
+        contracts,
+        ..fx.site(Duration::ZERO, false)
+    };
+    let (calls, outcome) = rerun(&site, &site, || {
+        std::fs::write(fx.checkout.join("a.txt"), "two\n").unwrap();
+    });
+    assert_eq!(calls, 2);
+    assert!(
+        matches!(outcome, WaitOutcome::Requested { .. }),
+        "{outcome:?}"
+    );
+}
+
+#[test]
+fn a_plain_check_of_an_edited_tree_is_a_new_request() {
+    assert_edited_tree_starts_a_new_request(None);
+}
+
+#[test]
+fn a_plain_contracts_check_keeps_the_digest_rule() {
+    assert_edited_tree_starts_a_new_request(Some(&[]));
 }

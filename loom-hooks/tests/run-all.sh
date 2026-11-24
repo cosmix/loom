@@ -214,6 +214,7 @@ run_test "containment: effective cwd tracking and physical path classes" "$SCRIP
 run_test "_common: block ledger line, safety refusals and UTF-8 cut" "$SCRIPT_DIR/common-block-ledger.sh"
 run_test "worktree-isolation: traversal resolves against the effective cwd" "$SCRIPT_DIR/worktree-isolation-traversal-resolve.sh"
 run_test "worktree-isolation: git targets inside the worktree or scratch only" "$SCRIPT_DIR/worktree-isolation-git-target.sh"
+run_test "worktree-isolation: main checkout paths are blocked in a stage worktree" "$SCRIPT_DIR/worktree-isolation-main-checkout.sh"
 run_test "loom-control-complete: completion rewritten to the pinned command" "$SCRIPT_DIR/loom-control-complete-rewrite.sh"
 run_test "worktree-file-guard: own harness tool-results output is readable" "$SCRIPT_DIR/worktree-file-guard-harness-output.sh"
 run_test "commit-filter: git in a scratch repository is allowed for subagents" "$SCRIPT_DIR/commit-filter-scratch-repo.sh"

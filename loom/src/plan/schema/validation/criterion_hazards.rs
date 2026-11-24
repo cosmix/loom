@@ -16,8 +16,10 @@ use super::search_args::SearchArgs;
 use super::shell_lex::{lex, simple_commands, SimpleCommand, Word};
 
 mod masked_exit;
+mod negated_search;
 mod ungrantable;
 use masked_exit::masks_exit_status;
+use negated_search::negates_search;
 pub(super) use ungrantable::criterion_needs_ungrantable_resource;
 
 /// How deep the scan follows command substitutions and `sh -c` scripts.
@@ -46,6 +48,7 @@ const LAUNCHERS: [&str; 15] = [
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum Hazard {
     MaskedExit,
+    NegatedSearch,
     HomeFromExpansion,
     BareMktempDir,
     Network(&'static str),
@@ -72,6 +75,9 @@ impl Hazard {
                 "masks its exit status (a final `|| true`, `|| :`, `|| exit 0`, `; true` or \
                  `; :`), so it passes whatever happens"
             }
+            Self::NegatedSearch => "negates a search over a command's output (`! <command> | rg ...`), \
+                so it passes whenever that command dies without printing a matching line; assert on \
+                the command's own exit status, or have it write a file and search the file",
             Self::HomeFromExpansion => {
                 "assigns HOME from a variable or command substitution, so tools that keep \
                  toolchains, caches or config under HOME start empty"
@@ -179,6 +185,9 @@ fn scan_into(
     let tokens = lex(command);
     if tail && masks_exit_status(&tokens) {
         found.insert(Hazard::MaskedExit);
+    }
+    if tail && negates_search(&tokens) {
+        found.insert(Hazard::NegatedSearch);
     }
     let simples = simple_commands(&tokens);
     let last_index = simples.len().saturating_sub(1);

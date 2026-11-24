@@ -36,9 +36,10 @@ fn recovery(kind: RequestKind, id: &str, id8: &str) -> String {
     match kind {
         RequestKind::Complete | RequestKind::Check | RequestKind::FreezeContracts => format!(
             "If no `LOOM relay: received {kind} {id8}` line follows, rerun this exact command \
-             alone, in the foreground, with stdout unfiltered. A rerun within 120 s follows the \
-             same request and prints its `Host job:` line instead of a new `received` line; \
-             follow that line. {HOOK_REPLY_PRECEDENCE}\n\
+             alone, in the foreground, with stdout unfiltered. A rerun on an unchanged tree \
+             (or a rerun of a replacement trial even after the tree changes) follows the same \
+             request and prints its `Host job:` line instead of a new \
+             `received` line; follow that line. {HOOK_REPLY_PRECEDENCE}\n\
              Check later with: loom request status {id}"
         ),
         // A rerun records the note twice (deduplication is by request id), and

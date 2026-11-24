@@ -116,6 +116,8 @@ loom:
 
 A plan-level list of every baseline or ledger file a stage could loosen to turn its own gate green: a size ledger such as this repository's `loom/maintainability-baseline.txt`, a knowledge-check baseline, a lint allowlist, a coverage floor. Entries are exact paths relative to the repository root, with no globs and no `..`. A change that loosens a listed file in a `standard` or `integration-verify` stage raises `TI-ratchet-<path>` (Section 5), which the stage reverts or disputes. Values are read as ceilings: a new key or a higher value loosens, a removed key or a lower value does not. A stage that shrinks a function and lowers its ledger row therefore raises nothing. A file that does not parse as such a ledger, a new file and a deleted file raise on any change (Section 5).
 
+A stage that shrinks code a ledger records lowers or removes its own rows in the same commit; no stage owns a ledger on behalf of the others, because the repository's commit hook may refuse a commit with a stale row. Never write "do not edit" for a ratchet file in a stage description: tightening is always allowed, and the event above already stops a loosening.
+
 ## 5. What completion enforces in v2
 
 `loom stage complete` runs acceptance first, with the zero-test guard, then the goal-backward checks, then the v2 checks in the order below:

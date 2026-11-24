@@ -1,9 +1,8 @@
 //! The review gate at stage completion (DESIGN D12).
 //!
 //! A v2 `standard` or `integration-verify` stage completes only when a
-//! well-formed review round is recorded, the latest one saw exactly the
-//! worktree's current changes (across a merge-base move, see `base_move`),
-//! and no finding, own or carried, is open.
+//! well-formed review round is recorded, the latest one covers the
+//! worktree's current changes, and no finding, own or carried, is open.
 
 use anyhow::{bail, Context, Result};
 use serde_json::Value;
@@ -15,6 +14,7 @@ use std::path::Path;
 
 use super::base_move;
 use super::fingerprint::{self, ChangeFingerprint};
+use super::frozen_cover::{frozen_digests, only_intact_frozen};
 use super::store::{self, OpenFinding, ReviewRound};
 use crate::models::stage::{Stage, StageType};
 use crate::utils::text::single_line;
@@ -53,7 +53,7 @@ pub fn check_at_completion(
 }
 
 /// Fail, listing every problem at once, unless the latest well-formed review
-/// round saw exactly the `current` changes and no finding is open. `current`
+/// round covers the `current` changes and no finding is open. `current`
 /// must come from the same observer as the rounds' fingerprints: the daemon.
 pub fn check(stage: &Stage, work_dir: &Path, current: &ChangeFingerprint) -> Result<()> {
     let rounds = store::load_rounds(work_dir, &stage.id)?;
@@ -158,9 +158,9 @@ fn ledger_text(text: &str) -> String {
         .collect()
 }
 
-/// Why `latest` no longer covers the `current` changes, if it does not. After
-/// a merge-base move the round still covers a tree whose stage changes are the
-/// reviewed ones (`base_move`); one that cannot be compared is stale.
+/// Why `latest` no longer covers the `current` changes. On the same base,
+/// accepted frozen replacements preserve coverage. After a merge-base move,
+/// `base_move` must prove the stage changes are the reviewed ones.
 fn stale_review(
     stage: &Stage,
     work_dir: &Path,
@@ -185,7 +185,15 @@ fn stale_review(
             ),
         }
     } else {
-        same_base_changes(latest, current)
+        let changed = fingerprint::changed_since(&latest.files, &current.files);
+        if latest.base == current.base
+            && !changed.is_empty()
+            && frozen_digests(stage, work_dir)
+                .is_some_and(|frozen| only_intact_frozen(&changed, &current.files, &frozen))
+        {
+            return None;
+        }
+        same_base_changes(&changed)
     };
     Some(format!(
         "review round {} saw {}, but the worktree is now at {} ({since})",
@@ -194,7 +202,7 @@ fn stale_review(
 }
 
 /// Whether `latest` covers the `current` changes as the gate judges it, a
-/// merge-base move included; [`covers_review`] alone reads no git.
+/// merge-base move or accepted frozen replacement included.
 pub fn round_covers(
     stage: &Stage,
     work_dir: &Path,
@@ -205,8 +213,7 @@ pub fn round_covers(
 }
 
 /// The paths whose digests differ from what `latest` saw, or the base change.
-fn same_base_changes(latest: &ReviewRound, current: &ChangeFingerprint) -> String {
-    let changed = fingerprint::changed_since(&latest.files, &current.files);
+fn same_base_changes(changed: &[String]) -> String {
     if changed.is_empty() {
         "the base commit changed".to_string()
     } else {
@@ -265,6 +272,54 @@ fn failure_message(
          the files changed since the latest review."
     ));
     message
+}
+
+#[cfg(test)]
+mod test_support {
+    use super::*;
+    use crate::verify::review::report::Finding;
+    use crate::verify::review::store::{finding_id, RecordedFinding, RECORD_VERSION};
+
+    fn finding(claim: &str) -> Finding {
+        Finding {
+            severity: "major".to_string(),
+            file: "src/a.rs".to_string(),
+            line: 42,
+            claim: claim.to_string(),
+            scenario: Some("empty input → panic".to_string()),
+            rule: None,
+        }
+    }
+
+    pub(super) fn round(
+        number: u32,
+        at: &ChangeFingerprint,
+        claims: &[&str],
+        resolved: &[&str],
+    ) -> ReviewRound {
+        let findings = claims
+            .iter()
+            .enumerate()
+            .map(|(index, claim)| RecordedFinding {
+                id: finding_id(number, index + 1),
+                finding: finding(claim),
+            });
+        ReviewRound {
+            version: RECORD_VERSION,
+            round: number,
+            agent_id: format!("agent-{number}"),
+            harvested_at: chrono::Utc::now(),
+            fingerprint: at.value.clone(),
+            base: at.base.clone(),
+            behaviour: at.behaviour.clone(),
+            files: at.files.clone(),
+            malformed: None,
+            findings: findings.collect(),
+            resolved: resolved.iter().map(|id| id.to_string()).collect(),
+            unresolved: Vec::new(),
+            suggestion_memory_ids: Vec::new(),
+        }
+    }
 }
 
 #[cfg(test)]

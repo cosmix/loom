@@ -20,6 +20,11 @@ mod tests;
 #[cfg(test)]
 mod phases_contract_tests;
 
+// The frozen contract builds its stage by assigning `status` to `Stage::default()`.
+#[cfg(test)]
+#[allow(clippy::field_reassign_with_default)]
+mod adjudication_reason_contract_tests;
+
 #[cfg(test)]
 mod phases_tests;
 

@@ -254,6 +254,21 @@ loom_path_class() {
     printf 'outside'
 }
 
+# loom_path_in_main_checkout <abs-physical-path> - 0 for an outside-class
+# path at or under the main checkout, unless the checkout contains HOME.
+loom_path_in_main_checkout() {
+    local abs="$1" wt repo home
+    wt=$(loom_current_worktree 2>/dev/null) || return 1
+    while [[ "$wt" == */ && "$wt" != / ]]; do wt="${wt%/}"; done
+    repo=$(_loom_physical_or_lexical "${wt%/.worktrees/*}")
+    [[ "$repo" != / ]] && _loom_under "$abs" "$repo" || return 1
+    # A checkout containing HOME must leave tool installs accessible.
+    if [[ -n "${HOME:-}" ]] && home=$(_loom_physical_dir "$HOME") && _loom_under "$home" "$repo"; then
+        return 1
+    fi
+    [[ "$(loom_path_class "$abs")" == outside ]]
+}
+
 # _loom_scratch_mention_unsafe <token> - 0 when <token> names LOOM_SCRATCH_DIR
 # other than as a plain `$LOOM_SCRATCH_DIR` (next character not a name
 # character) or `${LOOM_SCRATCH_DIR}` read. Stricter than "not preceded by $

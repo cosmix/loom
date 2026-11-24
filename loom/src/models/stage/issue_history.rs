@@ -150,16 +150,34 @@ impl Stage {
         }
     }
 
-    /// Record `reason` as the review reason, archiving a different one it
-    /// replaces.
+    /// During `NeedsAdjudication`, append new reasons to the current round
+    /// and ignore repeats that already appear as whole lines. In other
+    /// statuses, archive a different reason when replacing it.
     pub fn replace_review_reason(&mut self, reason: String) {
-        if self.review_reason.as_deref() != Some(reason.as_str()) {
-            self.retire_review_reason(
-                "replaced by a newer review reason",
-                IssueDisposition::Superseded,
-            );
-            self.review_reason = Some(reason);
+        if self.review_reason.as_deref() == Some(reason.as_str()) {
+            return;
         }
+        if self.status == StageStatus::NeedsAdjudication {
+            if let Some(current) = &mut self.review_reason {
+                let incoming: Vec<_> = reason.lines().collect();
+                let already_present = !incoming.is_empty()
+                    && current
+                        .lines()
+                        .collect::<Vec<_>>()
+                        .windows(incoming.len())
+                        .any(|lines| lines == incoming.as_slice());
+                if !already_present {
+                    current.push('\n');
+                    current.push_str(&reason);
+                }
+                return;
+            }
+        }
+        self.retire_review_reason(
+            "replaced by a newer review reason",
+            IssueDisposition::Superseded,
+        );
+        self.review_reason = Some(reason);
     }
 
     /// Put the stage back in `WaitingForDeps` for `loom stage reset`, the one

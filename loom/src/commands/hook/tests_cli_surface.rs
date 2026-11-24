@@ -17,3 +17,9 @@ fn reviewer_brief_takes_no_arguments() {
     assert!(Cli::try_parse_from(["loom", "hook", "reviewer-brief"]).is_ok());
     assert!(Cli::try_parse_from(["loom", "hook", "reviewer-brief", "--x"]).is_err());
 }
+
+#[test]
+fn idle_stop_takes_no_arguments() {
+    assert!(Cli::try_parse_from(["loom", "hook", "idle-stop"]).is_ok());
+    assert!(Cli::try_parse_from(["loom", "hook", "idle-stop", "--x"]).is_err());
+}

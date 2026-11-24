@@ -7,6 +7,7 @@
 
 mod base_move;
 pub mod fingerprint;
+mod frozen_cover;
 pub mod gate;
 pub mod handoffs;
 mod observer;
@@ -14,3 +15,6 @@ pub mod prose;
 pub mod report;
 pub mod store;
 pub mod verdict_records;
+
+#[cfg(test)]
+mod frozen_cover_contract_tests;
