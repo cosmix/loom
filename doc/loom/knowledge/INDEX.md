@@ -218,13 +218,13 @@
 | [planner-follow-ups-followups](concerns/planner-follow-ups-followups.md) | Planner, chat, guidance, kickoff and typed-config open follow-ups | 221 |
 | [planner-ui-repair-followups](concerns/planner-ui-repair-followups.md) | UI | 213 |
 | [planning-document-model-followups](concerns/planning-document-model-followups.md) |  | 173 |
-| [planning-session-sandbox-limits](concerns/planning-session-sandbox-limits.md) |  | 236 |
+| [planning-session-sandbox-limits](concerns/planning-session-sandbox-limits.md) |  | 234 |
 | [platform-and-commit-gaps](concerns/platform-and-commit-gaps.md) |  | 249 |
 | [review-remediation-followups](concerns/review-remediation-followups.md) | Open review suggestions and findings left out of the remediation plan | 113 |
 | [runtime-and-session-safety](concerns/runtime-and-session-safety.md) |  | 201 |
 | [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) |  | 394 |
 | [source-graph-known-gaps](concerns/source-graph-known-gaps.md) | Limits | 94 |
-| [source-graph-review-backlog](concerns/source-graph-review-backlog.md) | Todo | 295 |
+| [source-graph-review-backlog](concerns/source-graph-review-backlog.md) | Todo | 287 |
 | [stage-exits-and-guards-followups](concerns/stage-exits-and-guards-followups.md) | Out-of-scope rows, open reviewer suggestions, proposed checks after exits plan | 63 |
 | [state-confinement-gaps](concerns/state-confinement-gaps.md) | Open confinement gaps: caches, task outputs, macOS networking, stage cache | 77 |
 | [token-accounting-and-proof-defects](concerns/token-accounting-and-proof-defects.md) |  | 323 |

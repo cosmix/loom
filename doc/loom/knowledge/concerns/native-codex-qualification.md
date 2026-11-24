@@ -6,7 +6,7 @@
 
 No criterion could run a real Codex job (acceptance is confined: no network, no `~/.codex`), so `codex.backend = native`, the default, is unqualified against real jobs; an operator qualifies it on a disposable worktree. The eight items, in the order to run them ([backend design](../architecture/codex-concurrency.md)):
 
-1. `codex --version` matches `0.169.0`; otherwise re-measure the method table in `doc/plans/briefs/native-codex-workers/common.md` section 8.
+1. `codex --version` matches `0.169.0`; otherwise re-measure the app-server methods the native backend calls ([backend design](../architecture/codex-concurrency.md)).
 2. One real job in workspace-write mode (the only mode; hosts where bubblewrap cannot nest are refused): the report arrives, `git status` shows only the briefed files, and `loom usage` attributes the thread.
 3. A cancel during a tool call and a job run to its deadline both end with ownership `released`.
 4. Whether `codex app-server` honours the proxy variables for its streaming connection.

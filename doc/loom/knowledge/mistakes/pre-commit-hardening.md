@@ -74,7 +74,7 @@ newline-enumeration mutant actually fail.
 
 ## The Pre-Commit Markdown Autofix Ran Over Every Tracked File and Corrupted Content (2026-10-20)
 
-**What happened:** each `loom stage commit` left six archived plans modified and the tree dirty. The autofix also changed content: `_: &Runtime` became `*: &Runtime` in a code line of `REVIEW-PLAN-container-backend.md`, and `loom-*containers` became `loom-_containers`. The changes were reverted with `git restore`.
+**What happened:** each `loom stage commit` left six archived plans modified and the tree dirty. The autofix also changed content: `_: &Runtime` became `*: &Runtime` in a code line of an archived review plan, and `loom-*containers` became `loom-_containers`. The changes were reverted with `git restore`.
 
 **Why:** `loom/.githooks/pre-commit` ran `bunx markdownlint-cli2 --fix` over every tracked `.md`, including `doc/plans/archive`, which the gate's markdownlint excludes, and re-staged only the staged files.
 

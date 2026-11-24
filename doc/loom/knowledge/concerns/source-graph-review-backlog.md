@@ -218,10 +218,6 @@ README.md` that already passes at HEAD: a pattern starting with `--` after `-F -
 
 - `loom/src/host_verify/apply.rs::unapplied_terminal_records` reads each stage current record only. A terminal unapplied job replaced by a newer submit is applied only while the in-memory retry list survives. Open.
 
-## Reachable Label Missing From Brief Section 4.2
-
-- `loom/src/host_verify/child_complete.rs::verify`: the `reachable` label (`loom/src/host_verify/mod.rs::JobRecord`) and acceptance-first gating of completion checks are not in `doc/plans/briefs/host-verification/common.md` section 4.2. Open.
-
 ## Verification Read Grant Is Undocumented
 
 - `loom/src/sandbox/settings.rs::STATE_READ_DIRS` `STATE_READ_DIRS` includes `verification`, so every session reads other stages check logs. The grant is in place; a sentence documenting it is open.
@@ -273,10 +269,6 @@ README.md` that already passes at HEAD: a pattern starting with `--` after `-F -
 ## Spawn Observer Warns Only On Group Store Failure
 
 - `loom/src/host_verify/child.rs::record_groups` only warns when `append_group` fails. On macOS the recorded group is the only route by which cancel, deadline and restart reach a criterion. Open.
-
-## Waiting Progress Wording In Brief
-
-- `doc/plans/briefs/host-verification/common.md` (the "Queued or running" step) says a waiting call prints each new progress summary. `wait.rs` prints none until the terminal text, which keeps `Host job:` as the first line. The brief should say so. Open.
 
 ## kill_led_groups On Restart-Interrupted Records
 

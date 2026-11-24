@@ -80,7 +80,7 @@
 **Why:** The contract phase had no automatic path out of a plan defect. A Contract session may not dispute (`relay/matrix.rs`), a refused freeze parks the stage for a human, and harness was the only way to let the writer touch module wiring, but harness freezes what it matches.
 **Prevention:** A stage never waits on a human for something loom or an agent can resolve. Deterministic checks guide the agent. A refused freeze is disputed and adjudicated, never parked: the adjudicator either sends a fresh writer back with what to fix or amends the plan's contract setup. A human is reached only after the dispute budget is spent, through one named command. Any new park or block state must name the automatic path that leaves it. Genuine human input stays: an agent's `AskUserQuestion`, `loom stage block`, and an adjudicator rejecting a criterion dispute all mean a person is needed, and loom does not suppress them.
 
-**Fix:** doc/plans/PLAN-contract-phase-autonomy.md.
+**Fix:** the contract-phase-autonomy plan.
 
 ## Frozen Contracts Failed the Stage's Own Lint Because the Freeze Ran Only the Format Gate
 

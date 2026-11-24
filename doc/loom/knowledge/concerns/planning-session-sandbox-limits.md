@@ -57,8 +57,6 @@ top-level paths", "Locked plans locked mid-session"); the implementation matches
   denied write falls back to an in-memory knowledge catalog, not a graph layer. Reword: `loom map`
   refreshes the source graph and `loom knowledge context` the knowledge catalog, both under
   `.loom/cache/context-v1`.
-- `doc/plans/feat-planner/briefs/feat-planner-06-session-sandbox/planning-sandbox/w1-settings.md` states
-  `read_denies(...) -> ReadDenies`; the function returns `anyhow::Result<ReadDenies>`.
 
 ## Planning Session Bridge Follow-ups
 

@@ -88,7 +88,7 @@
 
 **What happened:** plan 12 replaced the feature screen with a step status page. Vision and Metaplan show a path that is no link, Pressure test, Review and Run are blank, Conversation lands on Run, and a finished feature opens on the blank Run page. Concept mode works but only a header tab or a chip reaches it. The operator found all of this on first use, after 12 plans were marked done.
 
-**Why:** the brief said to build to the mockup literally (`briefs/feat-planner-12-ui-repair/common.md:14-16`) and decision 6 overrode the spec's first-screen table (`doc/product/feat-planner/index.md:102-110`) without anyone noticing the conflict. Criteria checked structure, CSS and copy; none walked a user task.
+**Why:** the plan 12 brief said to build to the mockup literally and decision 6 overrode the spec's first-screen table (`doc/product/feat-planner/index.md:102-110`) without anyone noticing the conflict. Criteria checked structure, CSS and copy; none walked a user task.
 
 **Prevention:** a UI plan's acceptance includes scripted journeys in a real browser against real documents: start a feature, review a finished one down to source, change a section by chat and by direct edit. A mockup that overrides the spec changes the spec in the same plan.
 

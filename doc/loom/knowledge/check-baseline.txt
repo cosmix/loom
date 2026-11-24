@@ -1,10 +1,2 @@
 # Knowledge check baseline: structural issues `loom knowledge check --strict --baseline` tolerates.
 # One issue per line: <kind> <file> [<detail>]. Regenerate with `loom knowledge check --write-baseline <file>`.
-missing-source-ref architecture/planning-trace.md doc/plans/briefs/trace-screens-redesign/design.md
-missing-source-ref concerns/native-codex-qualification.md doc/plans/briefs/native-codex-workers/common.md
-missing-source-ref concerns/planning-session-sandbox-limits.md doc/plans/feat-planner/briefs/feat-planner-06-session-sandbox/planning-sandbox/w1-settings.md
-missing-source-ref concerns/runtime-and-session-safety.md w2-run-ui.md
-missing-source-ref concerns/source-graph-review-backlog.md doc/plans/briefs/host-verification/common.md
-missing-source-ref concerns/token-accounting-and-proof-defects.md doc/plans/optim-token/archive/DONE-PLAN-04-dependency-findings.md
-missing-source-ref mistakes/planner-design-brainstorm.md doc/plans/briefs/trace-screens-redesign/design.md
-missing-source-ref mistakes/pre-commit-hardening.md REVIEW-PLAN-container-backend.md

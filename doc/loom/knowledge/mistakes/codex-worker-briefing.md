@@ -123,7 +123,7 @@ exists, or pin the interface inline in the brief so codex does not wait for it.
 
 ## A `cd` Into a Brief Directory Persists Into the Forwarder Spawn (2026-10-28)
 
-**What happened:** wave 2 of the concept-web stage spawned its codex forwarders while the main session's working directory was `doc/plans/briefs/feat-planner-05-concept-mode/`, left there by an earlier `cd`. Codex started in that directory, and one unit's direct supervisor ended inconsistent.
+**What happened:** wave 2 of the concept-web stage spawned its codex forwarders while the main session's working directory was that plan's brief directory under `doc/plans/briefs/`, left there by an earlier `cd`. Codex started in that directory, and one unit's direct supervisor ended inconsistent.
 
 **Why:** the Bash tool carries `cd` from one call to the next, and a forwarder starts in the main session's current directory.
 

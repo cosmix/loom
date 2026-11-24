@@ -194,7 +194,7 @@ lagged the worktree fix until merge.
 
 **Prevention:** A new execution mode for a forwarded worker must be traced through every reader of the old mode's evidence: `codex_lifecycle` reconcile, `loom subagents watch` codex binding and stall detection, token discovery, and status. A test that runs the forwarder in each mode and asserts the stage's `execution_models` closes it.
 
-**Fix:** doc/plans/PLAN-contract-phase-autonomy.md, stage contract-collection, worker W4.
+**Fix:** the contract-phase-autonomy plan, stage contract-collection, worker W4.
 
 ## A Direct-Mode Codex Forward Reported `succeeded` After 25 to 70 Seconds With Nothing Written (2026-10-26)
 

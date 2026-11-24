@@ -2,7 +2,7 @@
 
 > Shell
 
-The planner web app (`web/src/plan/`) follows `web/src/plan/ui/DESIGN.md`, the design record a designer worker set for the redesign; read it before touching layout, type or colour (`ui/design.css` holds its tokens and the button scale). The brief bundles `doc/plans/feat-planner/briefs/feat-planner-12-ui-repair/` and `feat-planner-13-planner-redesign/` hold the per-screen values each plan used. Product contract: `doc/product/feat-planner/section_05.md`, `section_06.md`, `section_08.md`, `section_09.md`. The feature screens (layout route, spine, offers, pages, wire) are in [Planner Feature Screens](planner-feature-screens.md).
+The planner web app (`web/src/plan/`) follows `web/src/plan/ui/DESIGN.md`, the design record a designer worker set for the redesign; read it before touching layout, type or colour (`ui/design.css` holds its tokens and the button scale). Product contract: `doc/product/feat-planner/section_05.md`, `section_06.md`, `section_08.md`, `section_09.md`. The feature screens (layout route, spine, offers, pages, wire) are in [Planner Feature Screens](planner-feature-screens.md).
 
 ## Header and dock
 
