@@ -1,9 +1,10 @@
 import { repoRel } from "@/plan/files/address";
+import { newId } from "@/plan/id";
 import { serverInfoAtom } from "@/plan/state/atoms";
 import { store } from "@/state/store";
 
 export type SaveDraftResult = "saved" | "too_large" | "storage_full" | "unavailable";
-export type Draft = { openedHash: string; text: string; savedAt: number };
+export type Draft = { openedHash: string; text: string; savedAt: number; editorId: string };
 
 type StoredDraft = Draft & { projectKey: string; path: string };
 type Entry = { key: string; draft: StoredDraft; bytes: number };
@@ -12,13 +13,15 @@ const PREFIX = "loom-plan-draft:";
 const MAX_DRAFT = 1024 * 1024;
 const MAX_TOTAL = 2 * MAX_DRAFT;
 const encoder = new TextEncoder();
+// One id per page load: tabs editing one document keep separate recovery copies.
+const TAB_ID = newId();
 
 function projectKey(): string | null {
   return store.get(serverInfoAtom)?.project_key || null;
 }
 
-function keyFor(project: string, path: string, hash: string): string {
-  return `${PREFIX}${project}:${path}:${hash}`;
+function keyFor(project: string, path: string, hash: string, editorId: string): string {
+  return `${PREFIX}${project}:${path}:${hash}:${editorId}`;
 }
 
 function readEntries(storage: Storage): Entry[] {
@@ -40,10 +43,11 @@ function readEntries(storage: Storage): Entry[] {
       typeof draft.projectKey !== "string" ||
       typeof draft.path !== "string" ||
       typeof draft.openedHash !== "string" ||
+      typeof draft.editorId !== "string" ||
       typeof draft.text !== "string" ||
       typeof draft.savedAt !== "number" ||
       !Number.isFinite(draft.savedAt) ||
-      key !== keyFor(draft.projectKey, draft.path, draft.openedHash)
+      key !== keyFor(draft.projectKey, draft.path, draft.openedHash, draft.editorId)
     )
       continue;
     entries.push({ key, draft: draft as StoredDraft, bytes: encoder.encode(draft.text).length });
@@ -52,6 +56,7 @@ function readEntries(storage: Storage): Entry[] {
 }
 
 // Paths are keyed repo-relative, so `product/a.md` and `doc/product/a.md` share their drafts.
+// Orphan copies of closed tabs stay until the 2 MiB eviction trims them.
 export function loadDraft(path: string, openedHash: string): string | null {
   return findDrafts(path).find((draft) => draft.openedHash === openedHash)?.text ?? null;
 }
@@ -64,27 +69,39 @@ export function findDrafts(path: string): Draft[] {
     return readEntries(localStorage)
       .filter(({ draft }) => draft.projectKey === project && draft.path === rel)
       .reverse()
-      .map(({ draft: { openedHash, text, savedAt } }) => ({ openedHash, text, savedAt }));
+      .map(({ draft: { openedHash, text, savedAt, editorId } }) => ({
+        openedHash,
+        text,
+        savedAt,
+        editorId,
+      }));
   } catch {
     return [];
   }
 }
 
-export function clearDrafts(path: string): void {
+export function clearDrafts(path: string, editorId: string = TAB_ID): void {
   try {
     const project = projectKey();
     if (!project) return;
     const storage = localStorage;
     const rel = repoRel(path);
     for (const { key, draft } of readEntries(storage)) {
-      if (draft.projectKey === project && draft.path === rel) storage.removeItem(key);
+      if (draft.projectKey === project && draft.path === rel && draft.editorId === editorId) {
+        storage.removeItem(key);
+      }
     }
   } catch {
     // Storage may be blocked by the browser.
   }
 }
 
-export function saveDraft(docPath: string, openedHash: string, text: string): SaveDraftResult {
+export function saveDraft(
+  docPath: string,
+  openedHash: string,
+  text: string,
+  editorId: string = TAB_ID,
+): SaveDraftResult {
   const path = repoRel(docPath);
   const bytes = encoder.encode(text).length;
   if (bytes > MAX_DRAFT) return "too_large";
@@ -92,7 +109,7 @@ export function saveDraft(docPath: string, openedHash: string, text: string): Sa
     const project = projectKey();
     if (!project) return "unavailable";
     const storage = localStorage;
-    const key = keyFor(project, path, openedHash);
+    const key = keyFor(project, path, openedHash, editorId);
     const entries = readEntries(storage).filter((entry) => entry.key !== key);
     let total = entries.reduce((sum, entry) => sum + entry.bytes, bytes);
     while (total > MAX_TOTAL && entries.length) {
@@ -104,6 +121,7 @@ export function saveDraft(docPath: string, openedHash: string, text: string): Sa
       projectKey: project,
       path,
       openedHash,
+      editorId,
       text,
       savedAt: Date.now(),
     });

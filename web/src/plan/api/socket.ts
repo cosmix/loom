@@ -46,6 +46,7 @@ class PlanSocketConnection {
   private socket: WebSocket | undefined;
   private timer: ReturnType<typeof setTimeout> | undefined;
   private stopped = false;
+  private stopAuth: (() => void) | undefined;
   private attempts = 0;
   private receivedHello = false;
 
@@ -62,6 +63,9 @@ class PlanSocketConnection {
 
   start(): void {
     this.setPhase("connecting");
+    this.stopAuth = this.store.sub(unauthorizedAtom, () => {
+      if (this.store.get(unauthorizedAtom)) this.unauthorized();
+    });
     void this.probe();
   }
 
@@ -95,12 +99,34 @@ class PlanSocketConnection {
   }
 
   dispose(): void {
+    this.stopAuth?.();
     this.stopped = true;
     if (this.timer !== undefined) this.cancel(this.timer);
     this.socket?.close();
     this.socket = undefined;
     this.handlers.clear();
     this.resyncHandlers.clear();
+  }
+
+  // Any REST call answered 401 proves the token is gone; a reconnect would only be refused.
+  private unauthorized(): void {
+    this.stopped = true;
+    if (this.timer !== undefined) {
+      this.cancel(this.timer);
+      this.timer = undefined;
+    }
+    const current = this.socket;
+    this.socket = undefined;
+    current?.close();
+    this.setPhase("unauthorized");
+  }
+
+  // Clearing `socket` first makes the retired socket's handlers ignore its close event.
+  private resync(): void {
+    const current = this.socket;
+    this.socket = undefined;
+    current?.close();
+    this.retry();
   }
 
   private setPhase(next: Phase): void {
@@ -203,11 +229,13 @@ class PlanSocketConnection {
       value = JSON.parse(String(data));
     } catch (error) {
       console.warn("plan socket: invalid frame", error);
+      this.resync();
       return;
     }
     const parsed = socketMessageSchema.safeParse(value);
     if (!parsed.success) {
       console.warn("plan socket: invalid frame", parsed.error);
+      this.resync();
       return;
     }
     this.store.set(connectionAtom, (current) => ({ ...current, lastMessageAt: Date.now() }));
@@ -237,9 +265,7 @@ class PlanSocketConnection {
     };
     current.onerror = () => {
       if (this.stopped || this.socket !== current) return;
-      this.socket = undefined;
-      current.close();
-      this.retry();
+      this.resync();
     };
   }
 

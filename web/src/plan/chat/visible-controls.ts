@@ -1,10 +1,9 @@
 import { createElement, type JSX } from "react";
 
+import { codePointLabel } from "@/lib/visible-bidi";
+
 export function visibleControls(text: string): string {
-  return text.replace(/\p{Cf}/gu, (character) => {
-    const hex = character.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0");
-    return `⟨U+${hex}⟩`;
-  });
+  return text.replace(/\p{Cf}/gu, codePointLabel);
 }
 
 /** The style that keeps server text out of the surrounding text's bidirectional reordering. */

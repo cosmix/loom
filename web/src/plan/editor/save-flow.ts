@@ -111,6 +111,10 @@ function saveResult(state: SaveFlowState, result: ApiResult<SaveResult>): SaveFl
         submittedText: null,
       };
     case "invalid":
+      // The verdict belongs to the submitted text; text typed since was never validated.
+      if (state.submittedText !== null && state.text !== state.submittedText) {
+        return { ...state, status: "idle", validation: null, submittedText: null };
+      }
       return { ...state, status: "invalid", validation: value.validation, submittedText: null };
   }
 }

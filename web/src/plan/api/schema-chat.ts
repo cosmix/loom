@@ -249,6 +249,7 @@ const resultFrameSchema = commandResultSchema.extend({ frame: z.literal("result"
 const queueReturnedFrameSchema = z.strictObject({
   frame: z.literal("queue_returned"),
   texts: z.array(z.string()),
+  cause: z.enum(["pressure", "recovery"]).optional(),
 });
 export const chatFrameSchema = z.discriminatedUnion("frame", [
   snapshotFrameSchema,

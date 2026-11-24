@@ -1,6 +1,7 @@
 import { CopyIcon } from "lucide-react";
 import { type JSX, useRef } from "react";
 
+import { visibleBidi } from "@/lib/visible-bidi";
 import { CopyButton, selectContents } from "@/plan/markdown/copy-button";
 
 /**
@@ -30,7 +31,8 @@ export function PlainCodeBlock({
       </div>
       {/* Focusable so a keyboard can scroll a long line sideways. */}
       <pre tabIndex={0}>
-        <code ref={code}>{value}</code>
+        {/* The copy control keeps the true bytes; only the display neutralises bidi controls. */}
+        <code ref={code}>{visibleBidi(value)}</code>
       </pre>
       {note ? <p className="md-code-note">{note}</p> : null}
     </div>

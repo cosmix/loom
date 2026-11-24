@@ -122,6 +122,7 @@ describe("status socket watchdog", () => {
     const dispose = connectStatusSocket(store, dependencies());
     const socket = FakeSocket.instances[0];
     socket.open();
+    socket.receive(full(fixture));
 
     tick(30000);
     expect(store.get(connectionAtom).phase).toBe("live");
@@ -177,11 +178,60 @@ describe("status socket watchdog", () => {
     dispose();
   });
 
+  it("goes live only on the first applied full", () => {
+    const store = createStore();
+    const dispose = connectStatusSocket(store, dependencies());
+    const socket = FakeSocket.instances[0];
+    socket.open();
+    expect(store.get(connectionAtom).phase).toBe("connecting");
+
+    socket.receive(tickMessage);
+    expect(store.get(connectionAtom).phase).toBe("connecting");
+
+    socket.receive(full(fixture));
+    expect(store.get(connectionAtom).phase).toBe("live");
+    dispose();
+  });
+
+  it("reconnects when no snapshot was applied for 30s, even while frames arrive", () => {
+    const store = createStore();
+    const dispose = connectStatusSocket(store, dependencies());
+    const socket = FakeSocket.instances[0];
+    socket.open();
+    socket.receive("not json");
+
+    tick(30000);
+
+    expect(store.get(connectionAtom)).toMatchObject({
+      phase: "reconnecting",
+      message: "no snapshot for 30s",
+    });
+    expect(socket.closed).toBe(true);
+    dispose();
+  });
+
+  it("drops ticks before a snapshot without counting them as a snapshot", () => {
+    const store = createStore();
+    const dispose = connectStatusSocket(store, dependencies());
+    const socket = FakeSocket.instances[0];
+    socket.open();
+    socket.receive(tickMessage);
+
+    tick(25000);
+    expect(store.get(connectionAtom).phase).toBe("connecting");
+    socket.receive(tickMessage);
+    tick(5000);
+
+    expect(store.get(connectionAtom)).toMatchObject({ message: "no snapshot for 30s" });
+    dispose();
+  });
+
   it("checks on visibilitychange and stops watching once disposed", () => {
     const store = createStore();
     const dispose = connectStatusSocket(store, dependencies());
     const socket = FakeSocket.instances[0];
     socket.open();
+    socket.receive(full(fixture));
 
     clock += 60000;
     document.dispatchEvent(new Event("visibilitychange"));

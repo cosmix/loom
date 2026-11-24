@@ -1,6 +1,7 @@
 import type { PhrasingContent } from "mdast";
 import { Fragment, type JSX, type MouseEvent, type ReactNode } from "react";
 
+import { visibleBidi } from "@/lib/visible-bidi";
 import { visibleControls } from "@/plan/chat/visible-controls";
 import { repoRel, resolveLink, toAddress } from "@/plan/files/address";
 import { rawHtmlText, type RenderContext } from "@/plan/markdown/context";
@@ -131,10 +132,10 @@ function markText(value: string, pattern: RegExp | null): ReactNode {
 /** Inline code that is exactly a document's path links to that document. */
 function CodeSpan({ value, context }: { value: string; context: RenderContext }): JSX.Element {
   const target = repoRel(value);
-  if (!context.docPaths.has(target)) return <code>{value}</code>;
+  if (!context.docPaths.has(target)) return <code>{visibleBidi(value)}</code>;
   return (
     <DocLink path={target} anchor={null} context={context}>
-      <code>{value}</code>
+      <code>{visibleBidi(value)}</code>
     </DocLink>
   );
 }
@@ -151,7 +152,7 @@ function renderInline(
 ): ReactNode {
   switch (node.type) {
     case "text":
-      return markText(node.value, context.marks);
+      return markText(visibleBidi(node.value), context.marks);
     case "emphasis":
       return <em>{renderInlines(node.children, context, insideLink)}</em>;
     case "strong":
@@ -163,9 +164,9 @@ function renderInline(
     case "break":
       return <br />;
     case "html":
-      return rawHtmlText(node.value);
+      return rawHtmlText(visibleBidi(node.value));
     case "footnoteReference":
-      return <sup className="md-footnote-ref">[{node.label ?? node.identifier}]</sup>;
+      return <sup className="md-footnote-ref">[{visibleBidi(node.label ?? node.identifier)}]</sup>;
     case "link":
       return (
         <SafeLink url={node.url} context={context}>
@@ -174,10 +175,10 @@ function renderInline(
       );
     case "image":
       // Never an <img>: the app loads nothing a document points at.
-      if (insideLink) return node.alt || node.url;
+      if (insideLink) return visibleBidi(node.alt || node.url);
       return (
         <SafeLink url={node.url} context={context}>
-          {node.alt || node.url}
+          {visibleBidi(node.alt || node.url)}
         </SafeLink>
       );
     case "linkReference":
@@ -194,7 +195,7 @@ function renderReference(
   const label =
     node.type === "linkReference"
       ? renderInlines(node.children, context, true)
-      : node.alt || node.label || node.identifier;
+      : visibleBidi(node.alt || node.label || node.identifier);
   const url = referenceUrl(node.identifier, context);
   if (url === null || (insideLink && node.type === "imageReference")) return label;
   return (

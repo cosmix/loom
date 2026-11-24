@@ -1,6 +1,7 @@
 import type { List, ListItem, Paragraph, PhrasingContent, RootContent } from "mdast";
 import { Fragment, type JSX, type ReactNode } from "react";
 
+import { visibleBidi } from "@/lib/visible-bidi";
 import { CodeBlock } from "@/plan/markdown/code-block";
 import { rawHtmlText, type RenderContext } from "@/plan/markdown/context";
 import { coversValue } from "@/plan/markdown/covers";
@@ -86,7 +87,7 @@ function renderBlock(node: RootContent, context: RenderContext, tight: boolean):
     case "code":
       return <CodeBlock value={node.value} lang={node.lang ?? null} />;
     case "html": {
-      const text = rawHtmlText(node.value);
+      const text = rawHtmlText(visibleBidi(node.value));
       return text ? <p className="md-raw">{text}</p> : null;
     }
     case "table":
@@ -94,7 +95,7 @@ function renderBlock(node: RootContent, context: RenderContext, tight: boolean):
     case "footnoteDefinition":
       return (
         <div className="md-footnote">
-          <span className="md-footnote-label">[{node.label ?? node.identifier}]</span>
+          <span className="md-footnote-label">[{visibleBidi(node.label ?? node.identifier)}]</span>
           {renderBlockNodes(node.children, context)}
         </div>
       );

@@ -80,6 +80,28 @@ it("queue_returned ignored without a pending interrupt", () => {
   expect(store.get(queueReturnedAtom)).toEqual([]);
 });
 
+it.each(["pressure", "recovery"] as const)(
+  "queue_returned with cause %s refills without a pending interrupt",
+  (cause) => {
+    const store = createStore();
+
+    applyChatFrame(store, { frame: "queue_returned", texts: ["Held"], cause });
+
+    expect(store.get(queueReturnedAtom)).toEqual(["Held"]);
+  },
+);
+
+it("queue_returned with a cause leaves a registered interrupt intent unconsumed", () => {
+  const store = createStore();
+  markInterruptPending(store, "stop");
+
+  applyChatFrame(store, { frame: "queue_returned", texts: ["Held"], cause: "pressure" });
+  applyChatFrame(store, { frame: "queue_returned", texts: ["Returned"] });
+  applyChatFrame(store, { frame: "queue_returned", texts: ["Unsolicited"] });
+
+  expect(store.get(queueReturnedAtom)).toEqual(["Returned"]);
+});
+
 it("queue_returned is accepted after a successful interrupt result only once", async () => {
   const store = createStore();
   const pending = registerPending(store, "stop");

@@ -1,5 +1,6 @@
 import { type JSX, type ReactNode, useId } from "react";
 
+import { visibleBidi } from "@/lib/visible-bidi";
 import type { RenderContext } from "@/plan/markdown/context";
 import {
   type CoverGroup,
@@ -38,14 +39,15 @@ function RefBody({ item, context }: { item: CoverRef; context: RenderContext }):
   if (item.kind === "heading") {
     return (
       <DocLink path={item.path} anchor={item.anchor} context={context}>
-        {item.title}
+        {visibleBidi(item.title)}
       </DocLink>
     );
   }
-  const title = item.kind === "missing" ? `${item.raw}: not found in the spec` : undefined;
+  const title =
+    item.kind === "missing" ? `${visibleBidi(item.raw)}: not found in the spec` : undefined;
   return (
     <span className="md-covers__raw" title={title}>
-      {item.text}
+      {visibleBidi(item.text)}
     </span>
   );
 }
@@ -59,7 +61,7 @@ function SectionHead({ group, context }: { group: CoverGroup; context: RenderCon
       <span className="md-covers__number">{sectionNumber(number)}</span>{" "}
       {section ? (
         <DocLink path={section.path} anchor={null} context={context}>
-          {section.title}
+          {visibleBidi(section.title)}
         </DocLink>
       ) : (
         <span className="md-covers__unknown">{unknown}</span>

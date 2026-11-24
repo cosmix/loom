@@ -58,7 +58,7 @@ type PlanSocket = ReturnType<typeof connectPlanSocket>;
 type Versions = { tree: number; doc: number; validation: number };
 
 /** `null` marks the document gone: the open one refetches and finds it missing. */
-const markChanged = (store: Store, path: string, hash: string | null): void =>
+export const markChanged = (store: Store, path: string, hash: string | null): void =>
   store.set(docChangedAtom, (current) => ({ ...current, [path]: hash }));
 
 function subscribeChanges(socket: PlanSocket, store: Store, versions: Versions): (() => void)[] {

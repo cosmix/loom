@@ -39,14 +39,32 @@ describe("draft storage", () => {
     expect(loadDraft("a.md", "h1")).toBe("other project");
     useProject("first");
     expect(findDrafts("a.md")).toEqual([
-      { openedHash: "h2", text: "two", savedAt: 2 },
-      { openedHash: "h1", text: "one", savedAt: 1 },
+      { openedHash: "h2", text: "two", savedAt: 2, editorId: expect.any(String) },
+      { openedHash: "h1", text: "one", savedAt: 1, editorId: expect.any(String) },
     ]);
     clearDrafts("a.md");
     expect(loadDraft("a.md", "h1")).toBeNull();
     expect(loadDraft("a.md:other", "h1")).toBe("other path");
     useProject("second");
     expect(loadDraft("a.md", "h1")).toBe("other project");
+  });
+
+  it("keeps one copy per tab and clears only the calling tab's copy", () => {
+    const now = vi.spyOn(Date, "now");
+    now.mockReturnValue(1);
+    saveDraft("a.md", "h1", "tab one", "tab-1");
+    now.mockReturnValue(2);
+    saveDraft("a.md", "h1", "tab two", "tab-2");
+    expect(findDrafts("a.md").map((draft) => draft.text)).toEqual(["tab two", "tab one"]);
+    clearDrafts("a.md", "tab-1");
+    expect(findDrafts("a.md").map((draft) => draft.text)).toEqual(["tab two"]);
+    clearDrafts("a.md", "tab-2");
+    expect(findDrafts("a.md")).toEqual([]);
+  });
+
+  it("names the editor that wrote each copy", () => {
+    saveDraft("a.md", "h1", "tab one", "tab-1");
+    expect(findDrafts("a.md").map((draft) => draft.editorId)).toEqual(["tab-1"]);
   });
 
   it("handles unavailable storage and missing project information", () => {
@@ -113,7 +131,12 @@ describe("draft paths", () => {
     expect(loadDraft("doc/product/a.md", "h1")).toBe("from doc-relative");
     expect(saveDraft("doc/product/a.md", "h1", "from repo-relative")).toBe("saved");
     expect(findDrafts("product/a.md")).toEqual([
-      { openedHash: "h1", text: "from repo-relative", savedAt: expect.any(Number) },
+      {
+        openedHash: "h1",
+        text: "from repo-relative",
+        savedAt: expect.any(Number),
+        editorId: expect.any(String),
+      },
     ]);
     expect(localStorage.length).toBe(1);
 

@@ -64,7 +64,10 @@ describe("terminal view", () => {
     renderView(terminalStage(), factory.factory, timers.deps);
 
     const first = await waitForMount(factory);
-    act(() => FakeSocket.instances[0].open());
+    act(() => {
+      FakeSocket.instances[0].open();
+      FakeSocket.instances[0].ready();
+    });
     await waitFor(() => expect(first.calls.readOnly).toEqual([true]));
     fireEvent.click(well());
     expect(well().dataset.mode).toBe("view");
@@ -72,7 +75,10 @@ describe("terminal view", () => {
     expect(screen.getByText("double-click to take control")).toBeTruthy();
     fireEvent.doubleClick(well());
     await waitFor(() => expect(factory.doubles).toHaveLength(2));
-    act(() => FakeSocket.instances[1].open());
+    act(() => {
+      FakeSocket.instances[1].open();
+      FakeSocket.instances[1].ready();
+    });
 
     expect(factory.doubles[1].calls.readOnly).toEqual([false]);
     expect(factory.doubles[1].calls.focused).toBe(1);
@@ -94,7 +100,10 @@ describe("terminal view", () => {
 
     fireEvent.click(key());
     await waitFor(() => expect(factory.doubles).toHaveLength(2));
-    act(() => FakeSocket.instances[1].open());
+    act(() => {
+      FakeSocket.instances[1].open();
+      FakeSocket.instances[1].ready();
+    });
     await waitFor(() => expect(key().getAttribute("aria-checked")).toBe("true"));
     expect(well().dataset.mode).toBe("control");
     await waitFor(() => expect(shown()).toBe("controlling|release"), { timeout: 2000 });

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   RETRY_DROPPED_MS,
   RETRY_WAITING_MS,
+  STARTUP_TIMEOUT_MS,
   TerminalConnection,
   type TerminalDeps,
   type TerminalMode,
@@ -115,15 +116,75 @@ beforeEach(() => {
 });
 
 describe("terminal connection", () => {
-  it("live on open", () => {
+  it("live after the ready frame, not on open", () => {
     const { connection, states } = connect();
     const socket = FakeSocket.instances[0];
 
     expect(socket.url).toBe("ws://127.0.0.1:7373/ws/terminal/stage%2Fa/control");
     expect(socket.binaryType).toBe("arraybuffer");
     socket.open();
+    expect(states.at(-1)?.phase).toBe("connecting");
+
+    socket.receive('{"ready":true}');
 
     expect(states.at(-1)).toMatchObject({ phase: "live", mode: "control" });
+    connection.close();
+  });
+
+  it("an attach that keeps failing never reports live and ends dropped", () => {
+    const { connection, states } = connect();
+    FakeSocket.instances[0].open();
+    FakeSocket.instances[0].closeFromServer(1005, "");
+    fireNextTimer();
+    FakeSocket.instances[1].open();
+    FakeSocket.instances[1].closeFromServer(1005, "");
+
+    expect(states.some((state) => state.phase === "live")).toBe(false);
+    expect(states.at(-1)?.phase).toBe("dropped");
+    expect(timers.some((timer) => !timer.cancelled)).toBe(false);
+    connection.close();
+  });
+
+  it("a socket that opens and never sends ready is retried after the startup deadline", () => {
+    const { connection, states } = connect();
+    const first = FakeSocket.instances[0];
+    first.open();
+    const deadline = timers.find((timer) => !timer.cancelled);
+    expect(deadline?.delay).toBe(STARTUP_TIMEOUT_MS);
+
+    fireNextTimer();
+
+    expect(first.closed).toBe(true);
+    expect(states.at(-1)).toMatchObject({ phase: "connecting", reason: "terminal did not start" });
+    expect(timers.some((timer) => !timer.cancelled && timer.delay === RETRY_DROPPED_MS)).toBe(true);
+    connection.close();
+  });
+
+  it("the ready frame resets the retry budget", () => {
+    const { connection, states } = connect();
+    FakeSocket.instances[0].open();
+    FakeSocket.instances[0].receive('{"ready":true}');
+    FakeSocket.instances[0].closeFromServer(1006);
+    fireNextTimer();
+    FakeSocket.instances[1].open();
+    FakeSocket.instances[1].receive('{"ready":true}');
+    FakeSocket.instances[1].closeFromServer(1006);
+
+    expect(states.at(-1)?.phase).toBe("connecting");
+    expect(timers.some((timer) => !timer.cancelled && timer.delay === RETRY_DROPPED_MS)).toBe(true);
+    connection.close();
+  });
+
+  it("without a ready frame in between, the second drop ends in dropped", () => {
+    const { connection, states } = connect();
+    FakeSocket.instances[0].open();
+    FakeSocket.instances[0].receive('{"ready":true}');
+    FakeSocket.instances[0].closeFromServer(1006);
+    fireNextTimer();
+    FakeSocket.instances[1].open();
+    FakeSocket.instances[1].closeFromServer(1006);
+
+    expect(states.at(-1)?.phase).toBe("dropped");
     connection.close();
   });
 
@@ -149,7 +210,9 @@ describe("terminal connection", () => {
       { code: 1009, phase: "refused", reason: "input too large", retry: false },
       { code: 4004, phase: "refused", reason: "server reason", retry: false },
       { code: 4008, phase: "refused", reason: "server reason", retry: false },
+      { code: 4011, phase: "refused", reason: "server reason", retry: false },
       { code: 4009, phase: "waiting", reason: "server reason", retry: true },
+      { code: 4010, phase: "connecting", reason: "server reason", retry: true },
       { code: 1006, phase: "connecting", reason: "server reason", retry: true },
     ] as const;
 
@@ -266,7 +329,7 @@ describe("terminal connection", () => {
     const socket = FakeSocket.instances[0];
     socket.open();
     socket.closeFromServer(1006);
-    const pending = timers[0];
+    const pending = timers.find((timer) => timer.delay === RETRY_DROPPED_MS)!;
 
     connection.close();
     pending.callback();
@@ -290,14 +353,17 @@ describe("terminal connection", () => {
   });
 
   it("writes binary server frames and ignores text frames", () => {
-    const { connection, output } = connect();
+    const { connection, output, states } = connect();
     const socket = FakeSocket.instances[0];
     socket.open();
 
     socket.receive(new Uint8Array([0x1b, 0x5b, 0x41]).buffer);
     socket.receive("reserved");
+    socket.receive('{"ready":false}');
+    socket.receive('{"other":1}');
 
     expect(output.map((bytes) => Array.from(bytes))).toEqual([[0x1b, 0x5b, 0x41]]);
+    expect(states.some((state) => state.phase === "live")).toBe(false);
     connection.close();
   });
 });

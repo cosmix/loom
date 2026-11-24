@@ -8,10 +8,14 @@ vi.mock("./codemirror", () => ({ createSourceEditor: vi.fn() }));
 const PLAN_PREFIX = "/src/plan/";
 
 // The lazy chunk: the only modules that may import @codemirror/* or @lezer/* statically.
-// codemirror.ts imports the other three; line-break.ts is pure and imports no CodeMirror.
-const CHUNK_MODULES = ["codemirror", "live-preview", "md-commands", "marks-gutter"].map(
-  (name) => `/src/plan/editor/${name}.ts`,
-);
+// codemirror.ts imports the other four; line-break.ts is pure and imports no CodeMirror.
+const CHUNK_MODULES = [
+  "codemirror",
+  "live-preview",
+  "md-commands",
+  "marks-gutter",
+  "view-handle",
+].map((name) => `/src/plan/editor/${name}.ts`);
 
 // Every plan source except the chunk modules and tests, keyed relative to src/plan.
 const allPlanSources = import.meta.glob(
@@ -116,7 +120,7 @@ describe("CodeMirror lazy boundary", () => {
   });
 
   it("keeps the chunk helpers behind codemirror.ts", () => {
-    const helper = /(?:^|\/)(?:live-preview|md-commands|marks-gutter)$/;
+    const helper = /(?:^|\/)(?:live-preview|md-commands|marks-gutter|view-handle)$/;
     const violations = planSources.flatMap(([path, source]) =>
       moduleSpecifiers(path, source)
         .filter((specifier) => helper.test(specifier.text))

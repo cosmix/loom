@@ -96,7 +96,7 @@ afterEach(() => {
 });
 
 describe("status socket", () => {
-  it("opens the expected socket URL and goes live on open", () => {
+  it("opens the expected socket URL and goes live on the first full", () => {
     const store = createStore();
     const fetchImpl = vi.fn();
     vi.stubGlobal("fetch", fetchImpl);
@@ -107,6 +107,8 @@ describe("status socket", () => {
     expect(store.get(snapshotAtom)).toBeNull();
 
     FakeSocket.instances[0].open();
+    expect(store.get(connectionAtom).phase).toBe("connecting");
+    FakeSocket.instances[0].receive(full(fixture));
     expect(store.get(connectionAtom).phase).toBe("live");
     // The socket's first message is the whole snapshot: nothing is fetched.
     expect(fetchImpl).not.toHaveBeenCalled();

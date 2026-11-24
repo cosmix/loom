@@ -12,13 +12,18 @@ type Job = { path: string; openedHash: string; text: string };
  * which is too much work per keystroke. The pending write is flushed when the page is hidden
  * or unloading, when the window loses focus and on unmount, so a pause never loses text.
  * `cancel` drops the pending write; call it before clearing drafts so a late flush cannot
- * bring one back.
+ * bring one back. `beforeWrite` runs ahead of each write.
  */
-export function useDraftWriter(onResult: (result: SaveDraftResult) => void) {
+export function useDraftWriter(
+  onResult: (result: SaveDraftResult) => void,
+  beforeWrite?: () => void,
+) {
   const job = useRef<Job | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const report = useRef(onResult);
   report.current = onResult;
+  const before = useRef(beforeWrite);
+  before.current = beforeWrite;
 
   const cancel = useCallback(() => {
     clearTimeout(timer.current);
@@ -29,7 +34,9 @@ export function useDraftWriter(onResult: (result: SaveDraftResult) => void) {
     clearTimeout(timer.current);
     const pending = job.current;
     job.current = null;
-    if (pending) report.current(saveDraft(pending.path, pending.openedHash, pending.text));
+    if (!pending) return;
+    before.current?.();
+    report.current(saveDraft(pending.path, pending.openedHash, pending.text));
   }, []);
 
   const schedule = useCallback(

@@ -1,4 +1,5 @@
 {
+  "plugins": ["unicorn", "typescript", "oxc", "react"],
   "ignorePatterns": ["dist/**", "src/components/ui/**", "src/aurora-ui/**"],
   "rules": {
     "no-restricted-imports": [
@@ -11,13 +12,27 @@
           }
         ]
       }
-    ]
+    ],
+    "react/rules-of-hooks": "error",
+    "react/refs": "off",
+    "react/set-state-in-effect": "off",
+    "react/immutability": "off",
+    "react/static-components": "off",
+    "react/globals": "off",
+    "react/jsx-key": "off",
+    "react/exhaustive-deps": "off"
   },
   "overrides": [
     {
       "files": ["src/api/zod.ts"],
       "rules": {
         "no-restricted-imports": "off"
+      }
+    },
+    {
+      "files": ["**/*.test.tsx", "**/*.test.ts"],
+      "rules": {
+        "react/rules-of-hooks": "off"
       }
     }
   ]

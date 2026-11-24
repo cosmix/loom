@@ -333,9 +333,12 @@ export function applyChatFrame(store: Store, frame: ChatFrame): void {
       resolvePending(store, frame);
       break;
     case "queue_returned": {
+      // A caused frame (pressure, recovery) answers no interrupt of this tab: it needs no intent.
       const interrupts = pendingInterrupts.get(store);
-      if (!interrupts?.size) break;
-      interrupts.delete(interrupts.values().next().value!);
+      if (frame.cause === undefined) {
+        if (!interrupts?.size) break;
+        interrupts.delete(interrupts.values().next().value!);
+      }
       store.set(queueReturnedAtom, frame.texts);
       break;
     }

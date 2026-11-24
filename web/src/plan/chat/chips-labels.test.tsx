@@ -72,6 +72,9 @@ it("a selection chip is one row: its quoted start, then its source, then the rem
   const store = setup();
   mount(store);
   add(store, source());
+  expect(screen.getByRole("group", { name: "Pending attachments" })).toBe(
+    screen.getByLabelText("Pending attachments"),
+  );
   const row = screen.getByLabelText("Pending attachments").querySelector(".chat-chip")!;
   const parts = [...row.children].map((child) => child.className);
   const open = parts.indexOf("chat-chip-open");
@@ -183,6 +186,7 @@ it("a sent file chip shows the name and size and fetches no section status", () 
     { ...baseTurn, open: true },
   );
   const tray = screen.getByLabelText("Sent attachments");
+  expect(screen.getByRole("group", { name: "Sent attachments" })).toBe(tray);
   expect(tray.textContent).toContain("notes.pdf");
   expect(tray.textContent).toContain("2.0 KiB");
   expect(screen.queryByRole("button", { name: /remove/i })).toBeNull();
