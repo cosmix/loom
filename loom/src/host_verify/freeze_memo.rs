@@ -3,8 +3,9 @@
 //! A job's tree is pinned (the run ends by checking its binding again), so two
 //! contracts with the same build key (`verify::contracts::failed_builds`)
 //! compile the same code. Only a compile rejection is shared, as the adapter
-//! reads it: a transient failure (rustc killed, a missing `cargo nextest`) reds
-//! its own contract only. A `failed` run says something about its own test, and
+//! reads it: a build the toolchain or the boundary stopped (rustc killed, a
+//! missing `cargo nextest`) is refused by the freeze (`judge_run`), so it never
+//! reaches the memo. A `failed` run says something about its own test, and
 //! a contract with no adapter is never shared because nothing is known about
 //! what its command builds.
 

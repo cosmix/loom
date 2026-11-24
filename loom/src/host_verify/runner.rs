@@ -16,11 +16,12 @@ use std::time::{Duration, Instant};
 use anyhow::{ensure, Context, Result};
 use chrono::Utc;
 
+use super::runner_records::{compare_and_set, end_record, fail_unheld_running, Cas};
 pub use super::signals::recover_after_restart;
 use super::signals::{kill_groups, retire};
 pub(crate) use super::spawn::is_session_variable;
 use super::spawn::{reaped_outcome, spawn_child};
-use super::{bounded_detail, store, JobKind, JobRecord, JobState};
+use super::{store, JobKind, JobRecord, JobState};
 use crate::models::stage::Stage;
 use crate::process::OwnedProcess;
 
@@ -67,13 +68,6 @@ pub struct HostJobRunner {
     running: HashMap<String, RunningJob>,
 }
 
-/// The outcome of a compare-and-set on a job's record.
-enum Cas {
-    Applied(JobRecord),
-    /// The record moved on; this is the job's record as it stands, if any.
-    Refused(Option<JobRecord>),
-}
-
 impl HostJobRunner {
     pub fn new(work_dir: PathBuf, config: RunnerConfig) -> Self {
         Self {
@@ -91,12 +85,19 @@ impl HostJobRunner {
         self
     }
 
-    /// End cancelled, overdue and oversized jobs, reap exited children, then
-    /// start queued jobs while a slot is free. Returns exactly the records of
+    /// End cancelled, overdue and oversized jobs, reap exited children, fail
+    /// `Running` records no runner holds, then start queued jobs while a slot
+    /// is free. Returns exactly the records of
     /// the jobs this call ended or reaped. A failure on one job is logged and
     /// retried on the next tick; it never stops the others.
     pub fn tick(&mut self) -> Result<Vec<JobRecord>> {
         let mut ended = self.settle_held();
+        // Before `start_queued`: its promotion of a waiting job needs the
+        // stranded current record terminal first.
+        match fail_unheld_running(&self.work_dir, &|id| self.running.contains_key(id)) {
+            Ok(failed) => ended.extend(failed),
+            Err(error) => warn_job("-", "could not settle unheld host jobs", &error),
+        }
         // Records settled above are already final; a failure to list or start
         // queued jobs must not drop them.
         match self.start_queued() {
@@ -355,35 +356,6 @@ pub(super) fn budget_for_job(record: &JobRecord, work_dir: &Path) -> Result<(Dur
         "verification policy changed while calculating its budget"
     );
     Ok((Duration::from_secs(secs), after))
-}
-
-/// Under the stage lock, apply `change` to the job's record when it is still
-/// the stage's current job in state `expected`.
-fn compare_and_set(
-    work_dir: &Path,
-    stage_id: &str,
-    job_id: &str,
-    expected: JobState,
-    change: impl FnOnce(&mut JobRecord),
-) -> Result<Cas> {
-    let _lock = store::lock_stage(work_dir, stage_id)?;
-    match store::load_current(work_dir, stage_id)? {
-        Some(mut record) if record.id == job_id && record.state == expected => {
-            change(&mut record);
-            store::save_current(work_dir, &record)?;
-            Ok(Cas::Applied(record))
-        }
-        Some(record) if record.id == job_id => Ok(Cas::Refused(Some(record))),
-        _ => Ok(Cas::Refused(store::load_job_record(
-            work_dir, stage_id, job_id,
-        )?)),
-    }
-}
-
-fn end_record(record: &mut JobRecord, state: JobState, detail: Option<String>) {
-    record.state = state;
-    record.detail = detail.as_deref().map(bounded_detail);
-    record.finished_at = Some(Utc::now());
 }
 
 /// Why a running job must end now, if it must.

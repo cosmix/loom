@@ -19,7 +19,7 @@ use super::{
 };
 use crate::fs::safe_fs::{
     safe_create_dir_all_in_workdir, safe_locked_write_in_workdir, safe_open_dirfd,
-    safe_rename_in_workdir,
+    safe_remove_tree_in_workdir, safe_rename_in_workdir,
 };
 use crate::fs::safe_read::{is_not_found, read_bounded};
 use crate::fs::safe_replace::publish_in_dir;
@@ -27,11 +27,12 @@ use crate::utils::sha256_hex;
 
 const GENERATIONS: &str = "generations";
 const READY: &[u8] = b"complete\n";
-#[path = "store_generation_gc.rs"]
-mod gc;
 
 pub(super) fn cleanup(dir: &Path) -> Result<()> {
-    gc::cleanup(dir)
+    // Cleanup visits at most 4096 entries. A staged generation holds one
+    // stage's frozen files. Revisit if freeze sets grow past a few thousand files.
+    let dirfd = safe_open_dirfd(dir)?;
+    safe_remove_tree_in_workdir(dirfd.as_raw_fd(), Path::new("staging"))
 }
 
 pub(super) fn write_initial(

@@ -55,26 +55,37 @@ fn freeze_rejects_non_contract_changes() {
 #[test]
 fn freeze_rejects_passing_contract() {
     assert_eq!(classify(&ran(1, 0), Some(0)), RunOutcome::Passed);
-    let error = judge_run(&spec(), cargo_test(), ran(1, 0), Some(0), None).expect_err("green");
+    let error =
+        judge_run(&spec(), cargo_test(), ran(1, 0), Some(0), None, false).expect_err("green");
     assert!(error.contains("passes before implementation"), "{error}");
 }
 
 #[test]
 fn freeze_rejects_unselected_contract() {
-    let error = judge_run(&spec(), cargo_test(), ran(0, 0), Some(0), None).expect_err("unselected");
+    let error =
+        judge_run(&spec(), cargo_test(), ran(0, 0), Some(0), None, false).expect_err("unselected");
     assert!(error.contains("did not select"), "{error}");
 }
 
 #[test]
 fn freeze_reports_failing_and_unverified_runs() {
-    let report = judge_run(&spec(), cargo_test(), ran(1, 1), Some(101), None).expect("red run");
+    let report =
+        judge_run(&spec(), cargo_test(), ran(1, 1), Some(101), None, false).expect("red run");
     assert_eq!(report.outcome, "failed");
     assert_eq!(report.adapter.as_deref(), Some("cargo-test"));
     assert_eq!(report.exit_code, Some(101));
 
-    let report = judge_run(&spec(), None, RunSummary::default(), Some(2), None).expect("exit 2");
+    let report =
+        judge_run(&spec(), None, RunSummary::default(), Some(2), None, false).expect("exit 2");
     assert_eq!(report.outcome, UNVERIFIED);
-    assert!(judge_run(&spec(), None, RunSummary::default(), Some(0), None).is_err());
+    assert!(judge_run(&spec(), None, RunSummary::default(), Some(0), None, false).is_err());
+}
+
+#[test]
+fn an_unparsed_run_without_an_exit_code_is_refused() {
+    let error = judge_run(&spec(), None, RunSummary::default(), None, None, false)
+        .expect_err("a signal-killed run");
+    assert!(error.contains("without an exit code"), "{error}");
 }
 
 /// What a failed attempt leaves for the operator: a refusal's own

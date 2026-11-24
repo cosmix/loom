@@ -236,6 +236,7 @@ describe("suite", () => {{
             parsed,
             exit_code,
             None,
+            false,
         )
         .expect_err("a failing sibling must not stand in for the missing exact test");
         assert!(refused.contains("did not select"), "{refused}");

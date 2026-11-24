@@ -1,5 +1,6 @@
 //! Waiting checks survive busy slots and daemon restarts.
 use super::runner::{fail_queued, HostJobRunner};
+use super::runner_records::fail_unheld_running;
 use super::submit::submit;
 use super::tests_runner::{
     queue, running, shell, state_root, tick_until, write_stage, PASS, STAGE,
@@ -80,6 +81,57 @@ fn a_waiting_check_survives_a_restart() {
         r.id == next.id && r.state == JobState::Passed
     });
     assert_eq!(store::load_pending(&work, STAGE).unwrap(), None);
+}
+
+#[test]
+fn a_running_job_without_a_child_is_failed_and_the_waiting_check_runs() {
+    let (_tmp, work) = state_root();
+    let now = Utc::now();
+    let mut first = queued(submit(&work, &subset("r1", &[1]), now).unwrap());
+    first.state = JobState::Running;
+    first.started_at = Some(now);
+    first.pid = None;
+    store::save_current(&work, &first).unwrap();
+    let (next, _) = waiting(submit(&work, &subset("r2", &[2]), now).unwrap());
+    let mut runner = HostJobRunner::new(work.clone(), shell(PASS, 1));
+    let ended = runner.tick().unwrap();
+    let failed = ended
+        .iter()
+        .find(|record| record.id == first.id)
+        .unwrap_or_else(|| panic!("the tick did not fail the stranded job: {ended:?}"));
+    assert_eq!(failed.state, JobState::Failed);
+    assert_eq!(failed.detail.as_deref(), Some("verify-host never started"));
+    tick_until(&mut runner, &work, STAGE, |r| {
+        r.id == next.id && r.state == JobState::Passed
+    });
+}
+
+#[test]
+fn a_running_job_this_runner_holds_is_never_failed_by_the_scan() {
+    let (_tmp, work) = state_root();
+    let now = Utc::now();
+    let mut first = queued(submit(&work, &subset("r1", &[1]), now).unwrap());
+    first.state = JobState::Running;
+    first.started_at = Some(now);
+    first.pid = None;
+    store::save_current(&work, &first).unwrap();
+    let held = fail_unheld_running(&work, &|_| true).unwrap();
+    assert!(held.is_empty());
+    let kept = store::load_current(&work, STAGE).unwrap().unwrap();
+    assert_eq!(kept.state, JobState::Running);
+    assert_eq!(kept.detail, first.detail);
+    let failed = fail_unheld_running(&work, &|_| false).unwrap();
+    assert_eq!(failed.len(), 1);
+    assert_eq!(failed[0].id, first.id);
+    assert_eq!(failed[0].state, JobState::Failed);
+    assert_eq!(
+        failed[0].detail.as_deref(),
+        Some("verify-host never started")
+    );
+    assert_eq!(
+        store::load_current(&work, STAGE).unwrap().unwrap().state,
+        JobState::Failed
+    );
 }
 
 #[test]

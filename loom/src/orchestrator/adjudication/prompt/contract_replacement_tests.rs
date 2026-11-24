@@ -1,9 +1,11 @@
 //! The contract briefing of a dispute that carries a replacement for the
 //! frozen file: it is reviewed by reading, never presented as a run result.
 
-use super::tests::{contract_fixture, freeze, input_of, ContractFixture};
+use super::tests::{contract_fixture, freeze, harness_fixture, input_of, ContractFixture};
 use super::*;
 use crate::models::dispute::FileReplacement;
+use crate::verify::contracts::test_support::pinned;
+use crate::verify::contracts::trial::current_tree;
 
 const FROZEN: &str = "#[test]\nfn rejects_x() { assert!(rejects(\"x\")); }\n";
 /// Does not compile: judging it by running anything would be a mistake.
@@ -12,9 +14,19 @@ const BROKEN_REPLACEMENT: &str = "#[test]\nfn rejects_x( { assert!(;\n";
 /// A fixture whose frozen test passes and whose worktree file is unmodified,
 /// disputing with `replacement`.
 fn fixture_with(replacement: Option<&str>) -> ContractFixture {
-    let mut fx = contract_fixture();
+    let fx = contract_fixture();
     freeze(&fx.work_dir, &[("tests/x_contract.rs", FROZEN)]);
     fs::write(fx.site.path.join("tests/x_contract.rs"), FROZEN).unwrap();
+    dispute_replacement(fx, replacement)
+}
+
+/// A fixture over a real registered worktree (a git tree the trial line can
+/// read), disputing with `replacement`.
+fn real_worktree_with(replacement: &str) -> ContractFixture {
+    dispute_replacement(harness_fixture(), Some(replacement))
+}
+
+fn dispute_replacement(mut fx: ContractFixture, replacement: Option<&str>) -> ContractFixture {
     fx.request.kind = DisputeKind::Contract {
         contract_ids: vec!["rejects-x".to_string()],
         replacements: replacement
@@ -159,20 +171,48 @@ fn the_assertions_a_replacement_drops_are_listed_and_must_be_covered() {
     assert!(section.contains("\nnone\n"), "{section}");
 }
 
-/// The trial line names the commit the recorded passing trial ran at.
+/// The head and tree digest of the fixture's worktree as it is now.
+fn state_of(fx: &ContractFixture) -> (String, String) {
+    current_tree(&pinned(&fx.worktree), &fx.stage).unwrap()
+}
+
+/// The trial line names the commit the recorded passing trial ran at, while
+/// the worktree still holds the tree the trial ran on.
 #[test]
 fn the_proposed_replacement_names_the_trial_that_passed() {
-    let fx = fixture_with(Some(BROKEN_REPLACEMENT));
+    let fx = real_worktree_with(BROKEN_REPLACEMENT);
     assert!(!build(&input_of(&fx)).evidence.contains("Trial: passed"));
-    save_passing_trial(&fx.work_dir, "demo", "abc123", BROKEN_REPLACEMENT);
+    let (head, digest) = state_of(&fx);
+    save_passing_trial(&fx.work_dir, (&head, &digest), BROKEN_REPLACEMENT);
 
     let prompt = build(&input_of(&fx));
 
-    assert!(prompt.evidence.contains(
-        "Trial: passed in a confined host job at abc123 (format and static gates, then the \
+    assert!(prompt.evidence.contains(&format!(
+        "Trial: passed in a confined host job at {head} (format and static gates, then the \
          contracts)"
-    ));
+    )));
     assert!(!prompt.evidence.contains("no matching trial receipt"));
+}
+
+/// A trial of these bytes on an older tree is no evidence for the tree the
+/// stage holds now, and the line says so instead of showing a pass.
+#[test]
+fn a_trial_of_an_older_tree_is_not_shown_as_current() {
+    let fx = real_worktree_with(BROKEN_REPLACEMENT);
+    let (head, digest) = state_of(&fx);
+    save_passing_trial(&fx.work_dir, (&head, &digest), BROKEN_REPLACEMENT);
+    fs::write(fx.worktree.join("src_extra.rs"), "pub fn extra() {}\n").unwrap();
+
+    let prompt = build(&input_of(&fx));
+
+    assert!(
+        prompt
+            .evidence
+            .contains("but the stage's tree no longer matches"),
+        "{}",
+        prompt.evidence
+    );
+    assert!(!prompt.evidence.contains("Trial: passed"));
 }
 
 /// Without a receipt (never run, or pruned) the line says so, since the
@@ -193,7 +233,11 @@ fn without_a_receipt_the_trial_line_says_none_is_recorded() {
 #[test]
 fn a_receipt_of_other_bytes_is_no_trial_of_this_filing() {
     let fx = fixture_with(Some(BROKEN_REPLACEMENT));
-    save_passing_trial(&fx.work_dir, "demo", "abc123", "an earlier replacement\n");
+    save_passing_trial(
+        &fx.work_dir,
+        ("abc123", "digest"),
+        "an earlier replacement\n",
+    );
 
     let prompt = build(&input_of(&fx));
 
@@ -203,11 +247,12 @@ fn a_receipt_of_other_bytes_is_no_trial_of_this_filing() {
     assert!(!prompt.evidence.contains("Trial: passed"));
 }
 
-/// Leave a passing contracts check of stage `stage_id` at `head` and its
-/// receipt, which hashed `content` for the disputed file.
-fn save_passing_trial(work_dir: &Path, stage_id: &str, head: &str, content: &str) {
+/// Leave a passing contracts check of stage `demo` at `head` on the tree
+/// `tree_digest` and its receipt, which hashed `content` for the disputed file.
+fn save_passing_trial(work_dir: &Path, (head, tree_digest): (&str, &str), content: &str) {
     use crate::host_verify::{new_job_id, store, JobKind, JobRecord, JobResult, JobState};
     use crate::verify::contracts::trial::{TrialFile, TrialReceipt, RECEIPT_FILE};
+    let stage_id = "demo";
     let record = JobRecord {
         id: new_job_id(),
         submission_order: 1,
@@ -215,7 +260,7 @@ fn save_passing_trial(work_dir: &Path, stage_id: &str, head: &str, content: &str
         session_id: "session-1".to_string(),
         kind: JobKind::Check,
         head: head.to_string(),
-        tree_digest: "digest".to_string(),
+        tree_digest: tree_digest.to_string(),
         no_cache: false,
         criteria: None,
         contracts: true,
@@ -240,6 +285,7 @@ fn save_passing_trial(work_dir: &Path, stage_id: &str, head: &str, content: &str
     store::save_result(work_dir, stage_id, &result).unwrap();
     let receipt = TrialReceipt {
         head: head.to_string(),
+        tree_digest: tree_digest.to_string(),
         files: vec![TrialFile {
             path: "tests/x_contract.rs".to_string(),
             sha256: crate::utils::sha256_hex(content.as_bytes()),

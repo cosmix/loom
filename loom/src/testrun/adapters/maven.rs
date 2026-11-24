@@ -118,8 +118,9 @@ impl TestRunnerAdapter for Maven {
         })
     }
 
+    /// Surefire logs the aggregate needed by `parse` at INFO level.
     fn single_test_command(&self, _file: &str, test: &str, _package_dir: &Path) -> String {
-        format!("mvn -q test -Dtest={}", shell_quote(test))
+        format!("mvn test -Dtest={}", shell_quote(test))
     }
 
     fn select_command(&self, _targets: &[TestTarget], _package_dir: &Path) -> Option<String> {
@@ -171,7 +172,7 @@ mod tests {
             "AlphaTest#passes",
             Path::new("."),
         );
-        assert_eq!(command, "mvn -q test -Dtest='AlphaTest#passes'");
+        assert_eq!(command, "mvn test -Dtest='AlphaTest#passes'");
     }
 
     #[test]

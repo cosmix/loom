@@ -81,7 +81,7 @@ fn interrupted_generations_preserve_the_committed_snapshot() {
         old_bytes
     );
     refreeze_set(tmp.path(), "s1", &files, &[]).unwrap();
-    assert_eq!(std::fs::read_dir(dir.join("staging")).unwrap().count(), 0);
+    assert!(!dir.join("staging").exists());
     let published = load_freeze(tmp.path(), "s1").unwrap().unwrap();
     assert_eq!(published.version, GENERATION_RECORD_VERSION);
     assert_eq!(
@@ -106,6 +106,28 @@ fn staging_cleanup_does_not_follow_symlinks() {
     std::os::unix::fs::symlink(&outside, staging.join("link")).unwrap();
     generation::cleanup(&dir).unwrap();
     assert!(!staging.join("link").exists());
+    assert_eq!(std::fs::read(outside.join("keep")).unwrap(), b"user data");
+}
+
+#[test]
+fn staging_cleanup_removes_a_large_nested_tree_and_keeps_link_targets() {
+    let tmp = TempDir::new().unwrap();
+    let dir = tmp.path().join("stage");
+    let staging = dir.join("staging");
+    let mut nested = staging.clone();
+    for _ in 0..3 {
+        nested.push("nested");
+        std::fs::create_dir_all(&nested).unwrap();
+        for i in 0..70 {
+            std::fs::write(nested.join(format!("file-{i}")), b"frozen").unwrap();
+        }
+    }
+    let outside = tmp.path().join("outside");
+    std::fs::create_dir(&outside).unwrap();
+    std::fs::write(outside.join("keep"), b"user data").unwrap();
+    std::os::unix::fs::symlink(&outside, nested.join("link")).unwrap();
+    generation::cleanup(&dir).unwrap();
+    assert!(!staging.exists());
     assert_eq!(std::fs::read(outside.join("keep")).unwrap(), b"user data");
 }
 

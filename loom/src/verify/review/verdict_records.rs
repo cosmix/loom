@@ -93,10 +93,21 @@ pub(in crate::verify) fn update<T: Serialize>(
 ) -> Result<()> {
     let root = canonical_work_dir(work_dir, stage_id)?;
     let dir = store::stage_dir(&root, stage_id);
-    locked_dir_update(&dir, || {
+    with_reviews_locked(work_dir, stage_id, || {
         let json = serde_json::to_string_pretty(&build()?)?;
         atomic_write_locked(&dir.join(file), &json)
     })
+}
+
+/// Run `f` holding the stage's `reviews/` directory lock, the lock every
+/// writer of a review round or verdict record takes.
+pub(crate) fn with_reviews_locked<T>(
+    work_dir: &Path,
+    stage_id: &str,
+    f: impl FnOnce() -> Result<T>,
+) -> Result<T> {
+    let root = canonical_work_dir(work_dir, stage_id)?;
+    locked_dir_update(&store::stage_dir(&root, stage_id), f)
 }
 
 #[cfg(test)]

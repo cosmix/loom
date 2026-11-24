@@ -25,6 +25,8 @@ mod drift_contract_tests;
 pub(crate) mod failed_builds;
 pub mod format_gate;
 pub(crate) mod freeze;
+#[cfg(test)]
+mod freeze_red_contract_tests;
 pub(crate) mod frozen_restore;
 pub mod frozen_set;
 mod record_view;
@@ -36,6 +38,8 @@ pub mod store;
 #[cfg(test)]
 pub(crate) mod test_support;
 pub mod trial;
+#[cfg(test)]
+mod trial_admission_contract_tests;
 #[cfg(test)]
 mod trial_contract_tests;
 

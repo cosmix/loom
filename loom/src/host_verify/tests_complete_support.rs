@@ -25,7 +25,10 @@ use crate::stage_service::observer::stage_worktree_and_target;
 pub(crate) use crate::test_git::git;
 use crate::test_git::TestRepo;
 use crate::verify::review::fingerprint;
-use crate::verify::review::store::{next_round, write_round, ReviewRound, RECORD_VERSION};
+use crate::verify::review::report::Finding;
+use crate::verify::review::store::{
+    finding_id, next_round, write_round, RecordedFinding, ReviewRound, RECORD_VERSION,
+};
 use crate::verify::transitions::{load_stage, save_stage, update_stage};
 
 pub(crate) const STAGE: &str = "stage-a";
@@ -246,30 +249,7 @@ impl Fixture {
     /// gate passes, or at another one when `stale`, so the gate finds the
     /// latest round stale.
     pub(crate) fn record_review(&self, stale: bool) {
-        let (repo, target) = stage_worktree_and_target(&self.work_dir, &self.load_stage())
-            .expect("the stage's worktree and target");
-        let mut seen = fingerprint::compute_local(&repo, &target).expect("the fingerprint");
-        if stale {
-            seen.value = format!("sha256:{}", "0".repeat(64));
-            seen.base = String::new();
-            seen.behaviour.clear();
-        }
-        let round = ReviewRound {
-            version: RECORD_VERSION,
-            round: next_round(&self.work_dir, STAGE).expect("the next round"),
-            agent_id: "reviewer".to_string(),
-            harvested_at: Utc::now(),
-            fingerprint: seen.value,
-            base: seen.base,
-            behaviour: seen.behaviour,
-            files: seen.files,
-            malformed: None,
-            findings: Vec::new(),
-            resolved: Vec::new(),
-            unresolved: Vec::new(),
-            suggestion_memory_ids: Vec::new(),
-        };
-        write_round(&self.work_dir, STAGE, &round).expect("record the review round");
+        record_review_round(&self.work_dir, stale, 0);
     }
 
     /// Hand the stage to another session, as a handoff or a reset does.
@@ -343,6 +323,50 @@ impl Fixture {
         assert!(!self.receipt_names(record), "a refused run has no receipt");
         latest
     }
+}
+
+/// Record the stage's next review round with `open_findings` open findings,
+/// as [`Fixture::record_review`] describes.
+pub(crate) fn record_review_round(work_dir: &Path, stale: bool, open_findings: usize) {
+    let stage = load_stage(STAGE, work_dir).expect("load stage");
+    let (repo, target) =
+        stage_worktree_and_target(work_dir, &stage).expect("the stage's worktree and target");
+    let mut seen = fingerprint::compute_local(&repo, &target).expect("the fingerprint");
+    if stale {
+        seen.value = format!("sha256:{}", "0".repeat(64));
+        seen.base = String::new();
+        seen.behaviour.clear();
+    }
+    let number = next_round(work_dir, STAGE).expect("the next round");
+    let findings = (1..=open_findings)
+        .map(|k| RecordedFinding {
+            id: finding_id(number, k),
+            finding: Finding {
+                severity: "high".to_string(),
+                file: "src/lib.rs".to_string(),
+                line: 1,
+                claim: "an open finding".to_string(),
+                scenario: None,
+                rule: None,
+            },
+        })
+        .collect();
+    let round = ReviewRound {
+        version: RECORD_VERSION,
+        round: number,
+        agent_id: "reviewer".to_string(),
+        harvested_at: Utc::now(),
+        fingerprint: seen.value,
+        base: seen.base,
+        behaviour: seen.behaviour,
+        files: seen.files,
+        malformed: None,
+        findings,
+        resolved: Vec::new(),
+        unresolved: Vec::new(),
+        suggestion_memory_ids: Vec::new(),
+    };
+    write_round(work_dir, STAGE, &round).expect("record the review round");
 }
 
 fn outcome(label: &str, passed: bool) -> CriterionOutcome {

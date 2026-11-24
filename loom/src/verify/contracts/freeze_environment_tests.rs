@@ -26,12 +26,14 @@ fn red() -> RunSummary {
 }
 
 fn judge(summary: RunSummary, stdout: &str, stderr: &str) -> Result<ContractRunReport, String> {
+    let compile_rejected = summary.build_failed;
     judge_run(
         &spec(),
         registry::by_name("cargo-test"),
         summary,
         Some(101),
         Some((stdout, stderr)),
+        compile_rejected,
     )
 }
 

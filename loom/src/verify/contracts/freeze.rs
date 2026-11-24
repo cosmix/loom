@@ -7,14 +7,17 @@ use std::time::Duration;
 
 use crate::daemon::ContractRunReport;
 use crate::git::worktree::WorktreeGit;
+use crate::models::dispute::tail_to_byte_limit;
 use crate::models::stage::CommandConfinement;
 use crate::plan::schema::ContractSpec;
-use crate::testrun::{classify, RunOutcome, RunSummary, TestRunnerAdapter};
+use crate::testrun::recognize::combined_output;
+use crate::testrun::{classify, RunOutcome, RunOutput, RunSummary, TestRunnerAdapter};
 use crate::verify::contracts::changes::{changed_paths, harness_files, stage_base};
 use crate::verify::contracts::collection::{
     freeze_scaffold, stage_scaffold, ScaffoldCheck, ScaffoldEdit,
 };
 use crate::verify::contracts::format_gate::{format_problems, static_problems};
+use crate::verify::contracts::refusal::run_output_line;
 use crate::verify::contracts::site::ContractSite;
 use crate::verify::contracts::{is_contract_or_harness, normalize};
 use crate::verify::criteria::confined_stage_cache;
@@ -79,22 +82,27 @@ pub(crate) fn check_changes(inputs: &FreezeInputs<'_>) -> Result<(), Vec<String>
     }
 }
 
-/// D8 step 3 for one run: `Failed` or `BuildFailed` is required. An adapter
-/// that could not read the output, or no adapter at all, leaves only the
-/// exit code, which must then be non-zero. With the run's `(stdout, stderr)`,
-/// a red whose output carries an environment marker is refused: such a red
-/// proves nothing about the implementation. `BuildFailed` stays accepted.
+/// D8 step 3 for one run. A red is a failing test, a compiler rejection
+/// (`compile_rejected`, the adapter's reading of the output), or a non-zero
+/// exit the runner could not read (no adapter, or output it did not
+/// recognise). A build the toolchain or the boundary stopped, and a run that
+/// ended without an exit code (a signal stopped it), are refused: neither says
+/// anything about the implementation. With the run's `(stdout, stderr)`, a red
+/// whose output carries an environment marker is refused as well; a compiler
+/// rejection stays accepted.
 pub(crate) fn judge_run(
     contract: &ContractSpec,
     adapter: Option<&dyn TestRunnerAdapter>,
     summary: RunSummary,
     exit: Option<i32>,
     streams: Option<(&str, &str)>,
+    compile_rejected: bool,
 ) -> Result<ContractRunReport, String> {
     let id = &contract.id;
     let outcome = match adapter.map(|_| classify(&summary, exit)) {
         Some(RunOutcome::Failed) => "failed",
-        Some(RunOutcome::BuildFailed) => BUILD_FAILED,
+        Some(RunOutcome::BuildFailed) if compile_rejected => BUILD_FAILED,
+        Some(RunOutcome::BuildFailed) => return Err(stopped_build_refusal(id, streams)),
         Some(RunOutcome::Passed) => {
             return Err(format!(
                 "contract `{id}` passes before implementation, so it cannot tell right from \
@@ -118,6 +126,9 @@ pub(crate) fn judge_run(
             ))
         }
     };
+    if exit.is_none() {
+        return Err(signal_stopped_refusal(id));
+    }
     if outcome != BUILD_FAILED {
         refuse_environment_red(id, streams)?;
     }
@@ -127,6 +138,39 @@ pub(crate) fn judge_run(
         outcome: outcome.to_string(),
         exit_code: exit,
     })
+}
+
+/// The refusal for a run a signal ended before it produced an exit code.
+fn signal_stopped_refusal(id: &str) -> String {
+    format!(
+        "contract `{id}` ended without an exit code (a signal stopped it), so its red \
+         proves nothing about the implementation: run the freeze again"
+    )
+}
+
+/// The most of a stopped build's output its refusal quotes, from its end.
+const STOPPED_BUILD_TAIL_BYTES: usize = 2048;
+
+/// The refusal for a build the toolchain or the boundary stopped before the
+/// compiler judged the code, quoting the end of its output.
+fn stopped_build_refusal(id: &str, streams: Option<(&str, &str)>) -> String {
+    let quoted = streams.map_or_else(
+        || "(no output)".to_string(),
+        |(stdout, stderr)| {
+            let output = RunOutput {
+                stdout,
+                stderr,
+                exit_code: None,
+            };
+            let tail = tail_to_byte_limit(&combined_output(&output), STOPPED_BUILD_TAIL_BYTES);
+            run_output_line(&tail)
+        },
+    );
+    format!(
+        "contract `{id}`: the build stopped before the compiler judged the code (a toolchain \
+         or boundary failure), so its red proves nothing about the implementation; its output \
+         ends:\n{quoted}"
+    )
 }
 
 /// Refuse a red whose `(stdout, stderr)` carries an environment marker. The
@@ -316,6 +360,8 @@ pub(crate) fn refuse(stage_id: &str, problems: Vec<String>, fix: &str) -> Result
 }
 
 mod prepared;
+#[cfg(test)]
+pub(crate) use prepared::judge_prepared_result;
 pub(crate) use prepared::{prepare_contract, run_prepared, JudgedRun, PreparedContract};
 
 #[cfg(test)]

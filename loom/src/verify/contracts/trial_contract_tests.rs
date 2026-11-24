@@ -86,6 +86,7 @@ fn a_filing_needs_a_passing_trial() {
     let sha = "1".repeat(64);
     let receipt = TrialReceipt {
         head: head.clone(),
+        tree_digest: "digest".to_string(),
         files: vec![TrialFile {
             path: FILE.to_string(),
             sha256: sha.clone(),
@@ -93,20 +94,23 @@ fn a_filing_needs_a_passing_trial() {
     };
     let replacements = vec![(FILE.to_string(), sha.clone())];
 
-    let missing = receipt_covers(None, &head, &replacements).expect_err("no receipt");
+    let missing = receipt_covers(None, &head, "digest", &replacements).expect_err("no receipt");
     assert!(
         missing.contains("loom check") && missing.contains("--replacement"),
         "the refusal must name the trial command, got: {missing}"
     );
     let other_head = "b".repeat(40);
     assert!(
-        receipt_covers(Some(&receipt), &other_head, &replacements).is_err(),
+        receipt_covers(Some(&receipt), &other_head, "digest", &replacements).is_err(),
         "a receipt for another head must not cover the filing"
     );
     let other_bytes = vec![(FILE.to_string(), "2".repeat(64))];
     assert!(
-        receipt_covers(Some(&receipt), &head, &other_bytes).is_err(),
+        receipt_covers(Some(&receipt), &head, "digest", &other_bytes).is_err(),
         "a receipt for other bytes must not cover the filing"
     );
-    assert_eq!(receipt_covers(Some(&receipt), &head, &replacements), Ok(()));
+    assert_eq!(
+        receipt_covers(Some(&receipt), &head, "digest", &replacements),
+        Ok(())
+    );
 }
