@@ -32,20 +32,20 @@ pub fn keychain_argv() -> (&'static str, [&'static str; 4]) {
     )
 }
 
-/// Resolve a claude.ai OAuth access token.
+/// Resolve a claude.ai OAuth access token and plan from the same credential source.
 ///
 /// On macOS, tries the Keychain first, then falls back (on every OS) to
-/// `~/.claude/.credentials.json`. Returns `Err` when neither source yields a
-/// usable token - never partial information, and never the token itself in
-/// the error.
-pub fn access_token(home: &Path) -> Result<String> {
-    resolve_token(home, keychain_token)
+/// `~/.claude/.credentials.json`. Returns a generic error if no usable token is found.
+pub fn account(home: &Path) -> Result<(String, Option<String>)> {
+    resolve_account(home, keychain_raw)
 }
 
-/// Read plan metadata from the same credential source as the access token.
-pub fn account(home: &Path) -> Result<(String, Option<String>)> {
+fn resolve_account(
+    home: &Path,
+    keychain: impl FnOnce() -> Option<String>,
+) -> Result<(String, Option<String>)> {
     let raw = if cfg!(target_os = "macos") {
-        keychain_raw()
+        keychain()
             .filter(|raw| extract_access_token(raw).is_some())
             .or_else(|| file_raw(home))
     } else {
@@ -66,21 +66,6 @@ fn extract_plan(raw: &str) -> Option<String> {
         .map(crate::context::untrusted::inline_safe)
 }
 
-/// [`access_token`] with the Keychain lookup injected, so a test reads only the
-/// credentials file it was given and never the host's own login.
-fn resolve_token(home: &Path, keychain: impl FnOnce() -> Option<String>) -> Result<String> {
-    if cfg!(target_os = "macos") {
-        if let Some(token) = keychain() {
-            return Ok(token);
-        }
-    }
-    file_token(home).ok_or_else(|| anyhow!("no claude.ai login"))
-}
-
-fn keychain_token() -> Option<String> {
-    extract_access_token(&keychain_raw()?)
-}
-
 fn keychain_raw() -> Option<String> {
     let (program, args) = keychain_argv();
     let mut command = Command::new(program);
@@ -93,10 +78,6 @@ fn keychain_raw() -> Option<String> {
     }
     let stdout = String::from_utf8(output.stdout).ok()?;
     Some(stdout)
-}
-
-fn file_token(home: &Path) -> Option<String> {
-    extract_access_token(&file_raw(home)?)
 }
 
 fn file_raw(home: &Path) -> Option<String> {

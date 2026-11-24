@@ -1,4 +1,4 @@
-use super::{next_line, read_lines, stat, Line, MAX_LINE_BYTES};
+use super::{next_line, read_lines, read_range, stat, Line, MAX_LINE_BYTES};
 use crate::tokens::tests_fixture::append;
 use std::fs;
 use std::io::Cursor;
@@ -82,6 +82,25 @@ fn stat_reports_size_and_inode() {
     assert_eq!(before.len, 4);
     assert_eq!(after.len, 7);
     assert_ne!(before.inode, after.inode, "a replaced file has a new inode");
+}
+
+#[test]
+fn read_range_returns_the_bytes_or_none_for_a_short_file() {
+    let tmp = TempDir::new().expect("tempdir");
+    let path = tmp.path().join("t.jsonl");
+    fs::write(&path, "abcdef\n").expect("write");
+
+    assert_eq!(
+        read_range(&path, 1, 4).expect("read"),
+        Some(b"bcd".to_vec())
+    );
+    assert_eq!(
+        read_range(&path, 0, 7).expect("read"),
+        Some(b"abcdef\n".to_vec())
+    );
+    assert_eq!(read_range(&path, 3, 8).expect("read"), None);
+    assert_eq!(read_range(&path, 5, 5).expect("read"), Some(vec![]));
+    assert_eq!(read_range(&path, 6, 2).expect("read"), Some(vec![]));
 }
 
 #[test]

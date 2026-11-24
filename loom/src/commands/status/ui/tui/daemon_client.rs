@@ -25,11 +25,10 @@ pub fn connect(work_dir: &Path) -> Result<UnixStream> {
         .set_write_timeout(Some(SOCKET_TIMEOUT))
         .context("Failed to set write timeout")?;
 
-    let token = read_auth_token(socket_path.parent().unwrap_or(work_dir)).unwrap_or_default();
     write_message(
         &mut stream,
         &Request::Ping {
-            auth_token: token.clone(),
+            auth_token: user_token(work_dir),
         },
     )
     .context("Failed to send Ping")?;
@@ -49,13 +48,21 @@ pub fn connect(work_dir: &Path) -> Result<UnixStream> {
     Ok(stream)
 }
 
-/// Subscribe to status updates.
-pub fn subscribe(stream: &mut UnixStream) -> Result<()> {
-    let token = crate::commands::common::work_dir_path()
-        .ok()
-        .and_then(|work_dir| read_auth_token(&work_dir))
-        .unwrap_or_default();
-    write_message(stream, &Request::SubscribeStatus { auth_token: token })
+/// The user token of the daemon serving `work_dir`, read from the resolved
+/// state root beside its socket; empty when unreadable.
+pub(crate) fn user_token(work_dir: &Path) -> String {
+    read_auth_token(
+        crate::daemon::socket_path(work_dir)
+            .parent()
+            .unwrap_or(work_dir),
+    )
+    .unwrap_or_default()
+}
+
+/// Subscribe to status updates on a stream connected to the daemon of `work_dir`.
+pub fn subscribe(stream: &mut UnixStream, work_dir: &Path) -> Result<()> {
+    let auth_token = user_token(work_dir);
+    write_message(stream, &Request::SubscribeStatus { auth_token })
         .context("Failed to send SubscribeStatus")?;
 
     let response: Response =
@@ -139,6 +146,25 @@ mod tests {
         assert!(check_disconnect_for_io_error(
             std::io::ErrorKind::ConnectionAborted
         ));
+    }
+
+    #[test]
+    fn subscribe_sends_the_token_of_the_given_work_dir() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::write(dir.path().join("user.token"), "tok-abc\n").unwrap();
+        let (mut client, mut server) = UnixStream::pair().unwrap();
+        let daemon = std::thread::spawn(move || {
+            let request: Request = read_message(&mut server).unwrap();
+            write_message(&mut server, &Response::Ok).unwrap();
+            request
+        });
+
+        subscribe(&mut client, dir.path()).unwrap();
+
+        match daemon.join().unwrap() {
+            Request::SubscribeStatus { auth_token } => assert_eq!(auth_token, "tok-abc"),
+            other => panic!("unexpected request: {other:?}"),
+        }
     }
 
     #[test]

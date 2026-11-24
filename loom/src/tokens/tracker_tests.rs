@@ -1,12 +1,12 @@
 use super::{
-    log_change, read_sources, scan_until, spawn_token_tracker, write_flow, LastLine::Wait, Pass,
-    CHECKPOINT_FILE,
+    log_change, scan_until, spawn_token_tracker, write_flow, LastLine::Wait, Pass, CHECKPOINT_FILE,
 };
 use crate::tokens::accumulate::{AgentState, MESSAGE_TABLE_CAP};
 use crate::tokens::checkpoint::{Checkpoint, MAX_CHECKPOINT_BYTES};
 use crate::tokens::discover::Source;
 use crate::tokens::flow_build::build_flow;
 use crate::tokens::model::{flow_path, read_flow, AgentKind, TokenUsage, BUCKET_SECS, FLOW_FILE};
+use crate::tokens::source_read::read_sources;
 use crate::tokens::tail::{self, MAX_LINE_BYTES};
 use crate::tokens::tests_fixture::{
     agents_of, append, body, bulky_body, claude_line, stage, unix_now, usage, Fixture, SESSION_UUID,
@@ -389,3 +389,6 @@ fn unreadable_file_warning_flattens_the_untrusted_path() {
     assert!(!failure.contains(['\u{1b}', '\n']), "{failure:?}");
     assert!(advanced.contains(&("alpha", "main-x")));
 }
+
+#[path = "tracker_rewrite_tests.rs"]
+mod rewrite;

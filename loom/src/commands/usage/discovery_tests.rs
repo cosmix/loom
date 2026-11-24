@@ -57,9 +57,24 @@ fn stage_filter_matches_only_worktree_suffix() {
             file("-repo"),
         ],
         &HashSet::from(["measure".to_owned()]),
+        Some("-repo"),
     );
     assert_eq!(files.len(), 1);
     assert_eq!(files[0].project_slug, "-repo--worktrees-measure");
+}
+
+#[test]
+fn stage_filter_ignores_another_repositorys_worktree() {
+    let files = filter_stages(
+        vec![
+            file("-repo--worktrees-core"),
+            file("-other--worktrees-core"),
+        ],
+        &HashSet::from(["core".to_owned()]),
+        Some("-repo"),
+    );
+    assert_eq!(files.len(), 1);
+    assert_eq!(files[0].project_slug, "-repo--worktrees-core");
 }
 
 #[test]

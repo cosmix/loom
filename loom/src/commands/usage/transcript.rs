@@ -19,9 +19,10 @@ use chrono::{DateTime, Utc};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
-use std::io::{BufRead, BufReader};
+use std::io;
 use std::path::PathBuf;
 
+use super::bounded_lines;
 use super::transcript_attachment::attachment_entry;
 use super::transcript_merge::merge_request;
 use super::transcript_types::{AttachmentEntry, SYNTHETIC_MODEL};
@@ -51,27 +52,28 @@ pub fn parse(
     file: &super::discovery::DiscoveredFile,
     range: &super::time_range::TimeRange,
 ) -> anyhow::Result<Transcript> {
-    let handle = File::open(&file.path)
+    let handle = bounded_lines::open_regular(&file.path)
         .with_context(|| format!("Failed to read transcript {}", file.path.display()))?;
-    let mut scan = scan_lines(BufReader::new(handle), range);
+    let mut scan = scan_lines(handle, range)
+        .with_context(|| format!("Failed to read transcript {}", file.path.display()))?;
     mark_fresh_start(&mut scan);
     Ok(build_transcript(file, scan))
 }
 
-fn scan_lines(reader: BufReader<File>, range: &super::time_range::TimeRange) -> Scan {
+fn scan_lines(file: File, range: &super::time_range::TimeRange) -> io::Result<Scan> {
     let mut scan = Scan::default();
-    for (ordinal, line) in reader.lines().enumerate() {
+    bounded_lines::for_each_line(file, |ordinal, line| {
         let Some(value) = decoded_line(line, &mut scan.diagnostics) else {
             scan.note_unplaced_row();
-            continue;
+            return;
         };
         if scan.first_user_entry.is_none() {
             scan.first_user_entry = first_user_entry_from(&value);
         }
         capture_project_path(&mut scan.project_path, &value);
         scan.add_row(&value, ordinal, range);
-    }
-    scan
+    })?;
+    Ok(scan)
 }
 
 impl Scan {
@@ -157,24 +159,12 @@ fn capture_project_path(project_path: &mut Option<PathBuf>, value: &Value) {
         .map(PathBuf::from);
 }
 
-fn decoded_line(
-    line: std::io::Result<String>,
-    diagnostics: &mut TranscriptDiagnostics,
-) -> Option<Value> {
-    let line = match line {
-        Ok(line) => line,
-        Err(_) => {
-            diagnostics.malformed_rows += 1;
-            return None;
-        }
-    };
-    match serde_json::from_str(&line) {
-        Ok(value) => Some(value),
-        Err(_) => {
-            diagnostics.malformed_rows += 1;
-            None
-        }
+fn decoded_line(line: Option<&str>, diagnostics: &mut TranscriptDiagnostics) -> Option<Value> {
+    let value = line.and_then(|text| serde_json::from_str(text).ok());
+    if value.is_none() {
+        diagnostics.malformed_rows += 1;
     }
+    value
 }
 
 fn build_transcript(file: &super::discovery::DiscoveredFile, scan: Scan) -> Transcript {

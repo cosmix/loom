@@ -14,6 +14,11 @@ pub mod model;
 pub mod poller;
 mod shared;
 
+#[cfg(test)]
+mod account_switch_contract_tests;
+#[cfg(test)]
+mod freshness_contract_tests;
+
 /// `resets_at` values further apart than this belong to different reset
 /// periods. Real history alternates `resets_at` by one second between polls.
 pub const RESET_TOLERANCE_SECS: u64 = 300;

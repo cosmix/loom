@@ -41,6 +41,18 @@ pub fn write_provider(work_root: &Path, provider: &str, quota: &ProviderQuota) -
     atomic_write(&path, &content)
 }
 
+/// Remove a provider's cached reading. Clearing an absent file is a no-op,
+/// so a machine without that provider stays silent.
+pub fn clear_provider(work_root: &Path, provider: &str) -> Result<()> {
+    reject_symlink(&quota_dir(work_root))?;
+    let path = provider_path(work_root, provider);
+    reject_symlink(&path)?;
+    match std::fs::remove_file(&path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        result => result.with_context(|| format!("removing {}", path.display())),
+    }
+}
+
 /// Read and sanitize a provider's cached quota, or `None` when the file is
 /// absent, oversized, unreadable, or fails to parse. Never deletes the file.
 ///

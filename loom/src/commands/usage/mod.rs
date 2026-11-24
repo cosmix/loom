@@ -15,6 +15,7 @@
 mod accounting;
 mod agent_sidecar;
 mod args;
+mod bounded_lines;
 mod claude_provider;
 mod claude_usage;
 pub(crate) mod codex_discovery;
@@ -373,6 +374,8 @@ mod forward_root_tests;
 
 #[cfg(test)]
 mod attribution_contract_tests;
+#[cfg(test)]
+mod bounded_read_contract_tests;
 #[cfg(test)]
 #[path = "comparison_tests.rs"]
 mod comparison_tests;

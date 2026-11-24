@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result};
 use ratatui::{backend::CrosstermBackend, Terminal};
 
-use super::daemon_client::{connect, is_socket_disconnected, subscribe};
+use super::daemon_client::{connect, is_socket_disconnected, subscribe, user_token};
 use super::event_handler::{handle_key_event, handle_mouse_event, is_scroll_key, KeyEventResult};
 use super::ledger::{self, LedgerView};
 use super::plan_overview::{render_plan_overview, scroll_alias};
@@ -18,9 +18,7 @@ use super::renderer::render_completion;
 use super::state::{GraphState, LiveStatus, TuiActivityLog};
 use crate::commands::status::render::attention_model::attention_entries;
 use crate::commands::status::render::print_completion_summary;
-use crate::daemon::{
-    read_auth_token, write_message, CompletionSummary, Request, Response, ResponseFrameReader,
-};
+use crate::daemon::{write_message, CompletionSummary, Request, Response, ResponseFrameReader};
 use crate::orchestrator::busy;
 use crate::orchestrator::scheduling_report::{self, Alert};
 use crate::orchestrator::tick::{self, Tick};
@@ -128,31 +126,38 @@ impl TuiApp {
             }
             print_completion_summary(&summary);
         }
+        if self.interrupted() {
+            std::process::exit(130);
+        }
         result
     }
 
     fn connect_and_subscribe(work_path: &Path) -> Result<UnixStream> {
         let mut stream = connect(work_path)?;
-        subscribe(&mut stream)?;
+        subscribe(&mut stream, work_path)?;
         stream
             .set_read_timeout(Some(Duration::from_millis(50)))
             .ok();
         Ok(stream)
     }
 
+    /// The handler only clears `running`; the event loop leaves on its next
+    /// iteration and the caller restores the terminal. It also serves SIGTERM
+    /// and SIGHUP (the `ctrlc` `termination` feature).
     fn install_exit_handler(&self) -> Result<()> {
         let running = self.running.clone();
-        ctrlc::set_handler(move || {
-            running.store(false, Ordering::SeqCst);
-            crate::utils::cleanup_terminal_crossterm();
-            std::process::exit(0);
-        })
-        .context("Failed to set Ctrl+C handler")
+        ctrlc::set_handler(move || running.store(false, Ordering::SeqCst))
+            .context("Failed to set Ctrl+C handler")
+    }
+
+    /// `running` is cleared only by the exit handler, so false means a signal arrived.
+    fn interrupted(&self) -> bool {
+        !self.running.load(Ordering::SeqCst)
     }
 
     fn unsubscribe(&self, stream: &mut UnixStream, work_path: &Path) {
-        let token = read_auth_token(work_path).unwrap_or_default();
-        let _ = write_message(stream, &Request::Unsubscribe { auth_token: token });
+        let auth_token = user_token(work_path);
+        let _ = write_message(stream, &Request::Unsubscribe { auth_token });
     }
 
     /// Refresh scheduler alerts from the state directory, at most once per second.
@@ -257,20 +262,22 @@ impl TuiApp {
             }
             Ok(None) => {}
             Err(error) if is_socket_disconnected(&error) => {
-                self.socket_closed = true;
                 if self.plan_report.is_none() && !self.completed_with_failures() {
                     self.load_report(work_path);
                 }
                 if self.plan_report.is_some() {
+                    self.socket_closed = true;
                     return Ok(false);
                 }
                 if self.completion_summary.is_some() {
+                    self.socket_closed = true;
                     return Ok(true);
                 }
-                self.last_error = Some("Daemon exited".to_string());
-                self.render()?;
-                std::thread::sleep(Duration::from_millis(500));
-                return Ok(true);
+                // The daemon may only have shut a slow subscriber: resubscribe,
+                // and report it exited only when every attempt fails.
+                let recovered = self.reconnect_after_read_error(&error, stream, work_path)?;
+                *reader = ResponseFrameReader::new(Duration::from_secs(30));
+                return Ok(recovered);
             }
             Err(error) => {
                 let recovered = self.reconnect_after_read_error(&error, stream, work_path)?;
@@ -291,6 +298,9 @@ impl TuiApp {
     ) -> Result<bool> {
         self.last_error = Some(format!("Reconnecting after a status read error: {error}"));
         for attempt in 1..=RECONNECT_ATTEMPTS {
+            if self.interrupted() {
+                return Ok(true);
+            }
             if let Ok(new_stream) = Self::connect_and_subscribe(work_path) {
                 *stream = new_stream;
                 return Ok(false);

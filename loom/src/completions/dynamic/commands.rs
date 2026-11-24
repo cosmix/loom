@@ -17,14 +17,6 @@ fn command_at_path<'a>(root: &'a Command, path: &[&str]) -> Option<&'a Command> 
     Some(current)
 }
 
-fn find_command_named<'a>(root: &'a Command, name: &str) -> Option<&'a Command> {
-    root.get_subcommands().find_map(|command| {
-        command_matches(command, name)
-            .then_some(command)
-            .or_else(|| find_command_named(command, name))
-    })
-}
-
 fn visible_subcommand_names(command: &Command) -> Vec<String> {
     let mut names: Vec<String> = command
         .get_subcommands()
@@ -41,10 +33,10 @@ pub fn complete_commands(prefix: &str) -> Result<Vec<String>> {
     Ok(filter_owned(visible_subcommand_names(&root), prefix))
 }
 
-/// Complete subcommands for a parent command.
-pub fn complete_subcommands(parent: &str, prefix: &str) -> Result<Vec<String>> {
+/// Complete subcommands for the command at `parent`, e.g. `["stage", "review"]`.
+pub fn complete_subcommands(parent: &[&str], prefix: &str) -> Result<Vec<String>> {
     let root = crate::cli::Cli::command();
-    let Some(command) = find_command_named(&root, parent) else {
+    let Some(command) = command_at_path(&root, parent) else {
         return Ok(Vec::new());
     };
     Ok(filter_owned(visible_subcommand_names(command), prefix))
@@ -145,10 +137,11 @@ pub fn complete_trigger_types(prefix: &str) -> Result<Vec<String>> {
     ))
 }
 
-/// Commands that have subcommands (and thus should not get value completions).
-pub fn has_subcommands(command: &str) -> bool {
+/// Whether the command at `command` has subcommands (and thus should not get
+/// value completions).
+pub fn has_subcommands(command: &[&str]) -> bool {
     let root = crate::cli::Cli::command();
-    find_command_named(&root, command).is_some_and(|command| command.has_subcommands())
+    command_at_path(&root, command).is_some_and(|command| command.has_subcommands())
 }
 
 /// Filter a list of candidates by prefix.

@@ -71,7 +71,11 @@ mod tests {
     #[test]
     fn stage_ids_require_safe_path_components() {
         for (id, valid) in [
-            ("stage-1.a_b", true),
+            ("stage-1.a_b", false),
+            ("stage-1_a-b", true),
+            (".hidden", false),
+            ("01-foo", false),
+            ("con", false),
             ("", false),
             (".", false),
             ("..", false),

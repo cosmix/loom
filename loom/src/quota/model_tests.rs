@@ -53,9 +53,18 @@ fn reset_text_formats_a_future_reset_time() {
 }
 
 #[test]
-fn age_secs_clamps_a_future_observed_at_to_zero() {
+fn age_secs_clamps_future_observations_within_the_skew_limit_to_zero() {
     assert_eq!(age_secs(1_000, 1_500), 500);
-    assert_eq!(age_secs(1_500, 1_000), 0);
+    assert_eq!(age_secs(1_300, 1_000), 0);
+    assert_eq!(age_secs(1_301, 1_000), STALE_AFTER_SECS);
+}
+
+#[test]
+fn age_secs_treats_a_future_or_extreme_reading_as_stale() {
+    assert!(age_secs(i64::MIN, 1_000_000) >= STALE_AFTER_SECS);
+    assert!(age_secs(1_010_000, 1_000_000) >= STALE_AFTER_SECS);
+    assert_eq!(age_secs(1_000_100, 1_000_000), 0);
+    assert_eq!(age_secs(999_000, 1_000_000), 1_000);
 }
 
 #[test]

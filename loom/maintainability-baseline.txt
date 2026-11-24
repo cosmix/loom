@@ -7,7 +7,6 @@
 # Every value is exact. If code shrinks, lower or remove its entry; if it grows,
 # refactor it back. New violations must be refactored or explicitly recorded.
 
-file src/commands/graph/tests.rs 425
 file src/fs/work_dir.rs 429
 file src/fs/work_dir/tests.rs 869
 file src/models/stage/methods.rs 492
@@ -28,8 +27,6 @@ file tests/integration/plan_verify.rs 1027
 function src/cli/dispatch.rs dispatch 57
 function src/commands/clean/mod.rs print_summary 52
 function src/commands/clean/worktrees.rs clean_worktrees 109
-function src/commands/graph/display.rs build_graph_display 52
-function src/commands/graph/tests.rs test_build_graph_display_shows_all_deps 70
 function src/commands/graph/tree.rs build_tree_display 57
 function src/commands/init/plan_setup.rs initialize_with_plan 181
 function src/commands/knowledge/tests.rs test_knowledge_update_in_worktree_writes_to_worktree 74

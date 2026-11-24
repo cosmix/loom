@@ -92,6 +92,22 @@ pub(crate) fn read_fragment(path: &Path, offset: u64, len: u64) -> io::Result<Op
     Ok(Some(String::from_utf8_lossy(&bytes).into_owned()))
 }
 
+/// The bytes `[start, end)` of the file: `None` when it holds fewer than `end`
+/// bytes, empty when `end <= start`. Opens as [`read_lines`] does.
+pub(crate) fn read_range(path: &Path, start: u64, end: u64) -> io::Result<Option<Vec<u8>>> {
+    let Some(size) = end.checked_sub(start).filter(|size| *size > 0) else {
+        return Ok(Some(Vec::new()));
+    };
+    let mut file = OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(path)?;
+    file.seek(SeekFrom::Start(start))?;
+    let mut bytes = Vec::new();
+    file.take(size).read_to_end(&mut bytes)?;
+    Ok((bytes.len() as u64 == size).then_some(bytes))
+}
+
 /// Reads the next `\n`-terminated line into `line` (without the `\n`), keeping
 /// at most `max` bytes of it and consuming the rest unbuffered. Returns the
 /// bytes consumed, newline included, and whether the line was cut at `max`;

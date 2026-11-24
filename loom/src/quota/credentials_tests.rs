@@ -28,10 +28,9 @@ fn account_reads_token_and_plan_together() {
     );
 }
 
-/// Shadows the glob-imported [`super::access_token`]: the tests below read the
-/// credentials file only, never the host's Keychain.
+/// Read an access token from the test credentials file with a stub Keychain lookup.
 fn access_token(home: &Path) -> Result<String> {
-    super::resolve_token(home, || None)
+    super::resolve_account(home, || None).map(|(token, _)| token)
 }
 
 fn write_credentials(home: &Path, body: &str) {
@@ -88,15 +87,31 @@ fn a_credentials_file_with_an_empty_token_is_an_error() {
 }
 
 const FILE_CREDENTIALS: &str = r#"{"claudeAiOauth":{"accessToken":"sk-file-token"}}"#;
+const KEYCHAIN_CREDENTIALS: &str = r#"{"claudeAiOauth":{"accessToken":"sk-keychain-token"}}"#;
 
 #[test]
 fn a_keychain_miss_falls_back_to_the_credentials_file() {
     let home = tempdir().unwrap();
     write_credentials(home.path(), FILE_CREDENTIALS);
 
-    let token = resolve_token(home.path(), || None).unwrap();
+    let token = resolve_account(home.path(), || None)
+        .map(|(token, _)| token)
+        .unwrap();
 
     assert_eq!(token, "sk-file-token");
+}
+
+#[test]
+fn a_keychain_miss_still_reads_the_plan_from_the_file() {
+    let home = tempdir().unwrap();
+    write_credentials(
+        home.path(),
+        r#"{"claudeAiOauth":{"accessToken":"sk-file-token","subscriptionType":"max"}}"#,
+    );
+
+    let (_, plan) = resolve_account(home.path(), || None).unwrap();
+
+    assert_eq!(plan.as_deref(), Some("max"));
 }
 
 #[cfg(target_os = "macos")]
@@ -105,7 +120,9 @@ fn a_keychain_token_wins_over_the_credentials_file() {
     let home = tempdir().unwrap();
     write_credentials(home.path(), FILE_CREDENTIALS);
 
-    let token = resolve_token(home.path(), || Some("sk-keychain-token".to_owned())).unwrap();
+    let token = resolve_account(home.path(), || Some(KEYCHAIN_CREDENTIALS.to_owned()))
+        .map(|(token, _)| token)
+        .unwrap();
 
     assert_eq!(token, "sk-keychain-token");
 }
@@ -116,7 +133,9 @@ fn the_keychain_is_not_consulted_off_macos() {
     let home = tempdir().unwrap();
     write_credentials(home.path(), FILE_CREDENTIALS);
 
-    let token = resolve_token(home.path(), || Some("sk-keychain-token".to_owned())).unwrap();
+    let token = resolve_account(home.path(), || Some(KEYCHAIN_CREDENTIALS.to_owned()))
+        .map(|(token, _)| token)
+        .unwrap();
 
     assert_eq!(token, "sk-file-token");
 }
@@ -129,7 +148,9 @@ fn the_error_never_carries_a_token() {
         r#"{"claudeAiOauth":{"accessToken":"","refreshToken":"sk-refresh-secret"}}"#,
     );
 
-    let error = resolve_token(home.path(), || None).unwrap_err();
+    let error = resolve_account(home.path(), || None)
+        .map(|(token, _)| token)
+        .unwrap_err();
 
     assert!(!format!("{error:#}").contains("sk-refresh-secret"));
 }

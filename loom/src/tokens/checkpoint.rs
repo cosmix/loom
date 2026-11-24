@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
 use std::path::Path;
 
-pub(super) const CHECKPOINT_VERSION: u32 = 4;
+pub(super) const CHECKPOINT_VERSION: u32 = 5;
 pub(super) const MAX_CHECKPOINT_BYTES: usize = 8 * 1024 * 1024;
 
 /// What [`Checkpoint::save`] did.
@@ -112,13 +112,18 @@ impl Checkpoint {
     }
 
     /// Empties the message-id table of every agent not in `keep`, given as
-    /// `(stage id, agent key)`. A later line of a cleared file that repeats an
-    /// id counts it again.
+    /// `(stage id, agent key)`, and marks it shed. Totals stay exact until the
+    /// file next grows; the agent is then rebuilt from offset 0, because a
+    /// revised line for a forgotten id would otherwise be counted twice. An
+    /// agent whose table is already empty (a Codex agent has none) is left
+    /// alone.
     pub(super) fn clear_tables_except(&mut self, keep: &HashSet<(&str, &str)>) {
         for (stage_id, agents) in &mut self.stages {
             for (key, agent) in agents {
-                if !keep.contains(&(stage_id.as_str(), key.as_str())) {
+                let kept = keep.contains(&(stage_id.as_str(), key.as_str()));
+                if !kept && !agent.file.messages.order.is_empty() {
                     agent.file.messages = MessageTable::default();
+                    agent.file.table_shed = true;
                 }
             }
         }

@@ -215,7 +215,7 @@ fn run(this: Broadcaster, base: PathBuf, running: Arc<AtomicBool>, terminals: bo
 
 fn daemon_session(work_path: &Path) -> Result<UnixStream> {
     let mut stream = daemon_client::connect(work_path)?;
-    daemon_client::subscribe(&mut stream)?;
+    daemon_client::subscribe(&mut stream, work_path)?;
     stream.set_read_timeout(Some(Duration::from_millis(50)))?;
     Ok(stream)
 }

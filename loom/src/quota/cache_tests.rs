@@ -45,6 +45,33 @@ fn write_provider_refuses_a_symlinked_target_and_leaves_it_untouched() {
 }
 
 #[test]
+fn clear_provider_removes_the_file_and_is_a_no_op_when_absent() {
+    let dir = tempdir().unwrap();
+    clear_provider(dir.path(), "claude").unwrap();
+    assert!(!quota_dir(dir.path()).exists());
+
+    write_provider(dir.path(), "claude", &sample_quota()).unwrap();
+    clear_provider(dir.path(), "claude").unwrap();
+    assert!(!provider_path(dir.path(), "claude").exists());
+    clear_provider(dir.path(), "claude").unwrap();
+}
+
+#[test]
+fn clear_provider_refuses_a_symlinked_target_and_leaves_it_in_place() {
+    let dir = tempdir().unwrap();
+    let real_target = dir.path().join("elsewhere.json");
+    std::fs::write(&real_target, "untouched").unwrap();
+
+    std::fs::create_dir_all(quota_dir(dir.path())).unwrap();
+    let link_path = provider_path(dir.path(), "claude");
+    std::os::unix::fs::symlink(&real_target, &link_path).unwrap();
+
+    assert!(clear_provider(dir.path(), "claude").is_err());
+    assert_eq!(std::fs::read_link(&link_path).unwrap(), real_target);
+    assert_eq!(std::fs::read_to_string(&real_target).unwrap(), "untouched");
+}
+
+#[test]
 fn write_provider_ignores_a_planted_symlink_at_the_old_tmp_path() {
     let dir = tempdir().unwrap();
     let real_target = dir.path().join("elsewhere.json");

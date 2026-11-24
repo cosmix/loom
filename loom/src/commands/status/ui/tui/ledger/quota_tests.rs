@@ -242,6 +242,13 @@ fn an_overlong_error_is_truncated_into_the_room_left_or_dropped() {
 }
 
 #[test]
+fn an_empty_suffix_with_no_room_does_not_underflow() {
+    let mut spans = vec![Span::raw("x".repeat(10))];
+    append_suffixes(&mut spans, vec![String::new()], 10);
+    assert_eq!(spans.len(), 1);
+}
+
+#[test]
 fn without_quota_the_footer_is_one_line() {
     let data = fixture();
     let rows = rows(&data, 120, 40, false);

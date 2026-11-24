@@ -114,6 +114,31 @@ fn tui_receives_fragmented_completion_before_daemon_eof() {
     assert!(app.last_error.is_none());
 }
 
+#[test]
+fn a_pending_interrupt_stops_reconnecting() {
+    let home = tempfile::TempDir::new().unwrap();
+    let _redirect = crate::user_config::redirect_user_config(home.path().join("config.toml"));
+    let dir = tempfile::TempDir::new().unwrap();
+    let (sender, mut receiver) = UnixStream::pair().unwrap();
+    receiver
+        .set_read_timeout(Some(Duration::from_millis(5)))
+        .unwrap();
+    drop(sender);
+    let mut app = headless_app();
+    app.running.store(false, Ordering::SeqCst);
+    let mut reader = ResponseFrameReader::new(Duration::from_secs(1));
+
+    let started = Instant::now();
+    let keep_going = app.advance(&mut receiver, dir.path(), &mut reader).unwrap();
+
+    assert!(!keep_going);
+    assert!(
+        started.elapsed() < Duration::from_millis(300),
+        "the interrupted session still waited: {:?}",
+        started.elapsed()
+    );
+}
+
 mod report {
     use std::path::PathBuf;
 

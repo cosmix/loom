@@ -21,14 +21,11 @@ const RESERVED_NAMES: &[&str] = &[
     "com8", "com9", "lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9",
 ];
 
-/// Whether a stage ID is safe to use as a filesystem path component.
+/// [`validate_id`] as a predicate for stage path components.
+/// IDs are nonempty and at most 128 bytes, with only ASCII alphanumerics, `-` and `_`.
+/// Reserved names and `NN-` prefixes are forbidden, as are `.`, `/`, `\`, and `..`.
 pub fn valid_stage_path_component(id: &str) -> bool {
-    !id.is_empty()
-        && id != "."
-        && !id.contains("..")
-        && id
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || ".-_".contains(c))
+    validate_id(id).is_ok()
 }
 
 /// Validates that an ID is safe for use in file paths.
@@ -182,6 +179,16 @@ pub fn clap_knowledge_content_validator(s: &str) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn valid_stage_path_component_follows_validate_id() {
+        for id in ["stage-1", "a_b"] {
+            assert!(valid_stage_path_component(id), "{id:?}");
+        }
+        for id in ["stage-1.a_b", ".hidden", "01-foo", "con", "", "a/b", ".."] {
+            assert!(!valid_stage_path_component(id), "{id:?}");
+        }
+    }
 
     #[test]
     fn test_validate_id_valid() {

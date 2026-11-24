@@ -273,6 +273,20 @@ fn clearing_tables_spares_the_listed_agents_and_keeps_their_totals() {
 }
 
 #[test]
+fn clear_tables_except_marks_only_non_empty_tables_shed() {
+    let mut checkpoint = bulky(&["a1", "a2"]);
+    checkpoint.agent(&source(AgentKind::Subagent, "a3"));
+    let keep = HashSet::from([("alpha", "a1")]);
+
+    checkpoint.clear_tables_except(&keep);
+
+    let shed = |key: &str| checkpoint.stages["alpha"][key].file.table_shed;
+    assert!(!shed("a1"), "a kept table is untouched");
+    assert!(shed("a2"), "a cleared table is marked");
+    assert!(!shed("a3"), "an empty table is not marked");
+}
+
+#[test]
 fn load_reporting_names_why_it_fell_back() {
     let fx = Fixture::new();
     let dir = fx.tokens_dir();

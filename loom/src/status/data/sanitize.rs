@@ -18,6 +18,7 @@
 
 use super::{BlockDetail, CodexJob, StageSummary};
 use crate::context::untrusted::{inline_safe, multiline_safe, whole_safe};
+use crate::fs::stage_events::StageEvent;
 
 #[path = "sanitize_token_flow.rs"]
 mod token_flow;
@@ -145,6 +146,16 @@ fn bound_close_reason(value: &mut Option<String>) {
 }
 
 pub(super) use crate::validation::valid_stage_path_component as valid_stage_id;
+
+/// Sanitize events from the stage event log, which sessions can write.
+pub(super) fn sanitized_stage_event(mut event: StageEvent) -> Option<StageEvent> {
+    if !valid_stage_id(&event.stage_id) {
+        return None;
+    }
+    event.session.iter_mut().for_each(flatten);
+    bound_close_reason(&mut event.reason);
+    Some(event)
+}
 
 #[cfg(test)]
 mod tests {
@@ -298,7 +309,11 @@ mod tests {
 
     #[test]
     fn stage_ids_that_could_escape_a_directory_are_rejected() {
-        assert!(valid_stage_id("stage-1.a_b"));
+        assert!(!valid_stage_id("stage-1.a_b"));
+        assert!(valid_stage_id("stage-1_a-b"));
+        assert!(!valid_stage_id(".hidden"));
+        assert!(!valid_stage_id("01-foo"));
+        assert!(!valid_stage_id("con"));
         assert!(!valid_stage_id(""));
         assert!(!valid_stage_id("."));
         assert!(!valid_stage_id(".."));
@@ -318,3 +333,7 @@ mod close_reason_tests;
 #[cfg(test)]
 #[path = "sanitize_whole_text_tests.rs"]
 mod whole_text_tests;
+
+#[cfg(test)]
+#[path = "sanitize_stage_event_tests.rs"]
+mod stage_event_tests;
