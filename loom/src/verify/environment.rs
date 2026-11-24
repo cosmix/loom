@@ -38,6 +38,10 @@ const HOST_MARKERS: [&str; 7] = [
     "no space left on device",
 ];
 
+/// Lowercase socket error codes a refused loopback bind or dial prints. Codes
+/// only: "failed to start server" also opens unrelated failures.
+const BIND_REFUSAL_MARKERS: [&str; 2] = ["eaddrinuse", "failedtoopensocket"];
+
 /// The most bytes of a denial line a message carries.
 const DENIAL_LINE_MAX_BYTES: usize = 300;
 
@@ -64,9 +68,51 @@ pub fn sandbox_denial(output: &str) -> Option<String> {
             .chain(&DENIAL_MARKERS)
             .any(|marker| has_marker(&lower, marker))
     })?;
+    Some(cut_line(line))
+}
+
+/// `line` trimmed and cut to [`DENIAL_LINE_MAX_BYTES`] on a character boundary.
+fn cut_line(line: &str) -> String {
     let line = line.trim();
     let end = line.floor_char_boundary(DENIAL_LINE_MAX_BYTES);
-    Some(line[..end].to_string())
+    line[..end].to_string()
+}
+
+/// The note for a run that most likely failed because macOS confinement gave it
+/// no loopback networking: [`bind_refusal_hint`] when `loopback_refused` and the
+/// run neither timed out nor exited zero. It does not consult [`run_denial`]: a
+/// run that reached a test count still gets the note.
+pub fn refused_bind_note(
+    loopback_refused: bool,
+    timed_out: bool,
+    exit_code: Option<i32>,
+    stdout: &str,
+    stderr: &str,
+) -> Option<String> {
+    (loopback_refused && !timed_out && exit_code != Some(0))
+        .then(|| bind_refusal_hint(stdout, stderr))
+        .flatten()
+}
+
+/// The note naming the loopback opt-in when a line of `stderr`, then `stdout`,
+/// holds a socket error code as a token; `None` when no line does. The match
+/// ignores case and quotes the line as printed. No platform or exit-code gate:
+/// see [`refused_bind_note`].
+pub fn bind_refusal_hint(stdout: &str, stderr: &str) -> Option<String> {
+    let line = stderr.lines().chain(stdout.lines()).find(|line| {
+        let lower = line.to_lowercase();
+        BIND_REFUSAL_MARKERS
+            .iter()
+            .any(|marker| has_marker(&lower, marker))
+    })?;
+    Some(format!(
+        "refused bind? this run had no loopback networking (macOS confinement) and printed: \
+         {}; tests that listen or dial on loopback need \
+         sandbox.network.allow_local_binding: true in the plan or stage, which an operator \
+         sets; the run still fails, and if it fails only because of where completion runs, \
+         dispute it",
+        cut_line(line)
+    ))
 }
 
 /// The sandbox denial in a run's `stderr` then `stdout`, if any.

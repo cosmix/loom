@@ -21,14 +21,7 @@ pub(super) struct Replay(pub(super) &'static str);
 
 impl ProbeRunner for Replay {
     fn run(&self, _command: &str, _package_dir: &Path) -> Result<ProbeRun> {
-        Ok(ProbeRun {
-            stdout: self.0.to_string(),
-            stderr: String::new(),
-            exit_code: Some(0),
-            timed_out: false,
-            output_complete: true,
-            cached: None,
-        })
+        Ok(ProbeRun::finished(self.0, "", Some(0)))
     }
 }
 
@@ -45,7 +38,7 @@ impl ProbeRunner for Recording {
 
 pub(super) struct Fixture {
     _tmp: TempDir,
-    work_dir: PathBuf,
+    pub(super) work_dir: PathBuf,
     pub(super) worktree: PathBuf,
     pub(super) stage: Stage,
 }

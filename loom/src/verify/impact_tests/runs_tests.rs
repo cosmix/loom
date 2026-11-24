@@ -157,12 +157,8 @@ fn cached_zero_test_tail(tests_executed: Option<u64>) -> ProbeRun {
     const ZERO_TEST_BLOCK: &str = "running 0 tests\n\n\
         test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n";
     ProbeRun {
-        stdout: ZERO_TEST_BLOCK.repeat(2),
-        stderr: String::new(),
-        exit_code: Some(0),
-        timed_out: false,
-        output_complete: true,
         cached: Some(CachedRun { tests_executed }),
+        ..ProbeRun::finished(ZERO_TEST_BLOCK.repeat(2), "", Some(0))
     }
 }
 
@@ -233,14 +229,7 @@ fn incomplete_capture_of_a_run_that_could_not_start_stays_inconclusive() {
 
 /// A finished, completely captured run printing `stdout` and `stderr`.
 fn finished(stdout: &str, stderr: &str, exit_code: Option<i32>) -> ProbeRun {
-    ProbeRun {
-        stdout: stdout.to_string(),
-        stderr: stderr.to_string(),
-        exit_code,
-        timed_out: false,
-        output_complete: true,
-        cached: None,
-    }
+    ProbeRun::finished(stdout, stderr, exit_code)
 }
 
 /// The failed tests are read from the whole output, so a name printed before
@@ -381,5 +370,24 @@ fn two_selections_denied_alike_keep_a_note_naming_each_command() {
             notes.iter().any(|note| note.ends_with(&running)),
             "no note names {command}: {notes:?}"
         );
+    }
+}
+
+/// The note is read from the whole output: the marker sits before more than
+/// 8 KiB of filler, outside the recorded tail, and the kind stays unparsed.
+#[test]
+fn an_incomplete_failing_capture_keeps_the_bind_note() {
+    let filler = "filler line of test output\n".repeat(400);
+    let stdout = format!("code: \"EADDRINUSE\"\n{filler}");
+    for refused in [true, false] {
+        let mut run = ProbeRun::finished(stdout.clone(), "", Some(101));
+        run.output_complete = false;
+        run.loopback_refused = refused;
+        let Run::Failed(failure) = judge("cargo test x".to_string(), cargo(), &run) else {
+            panic!("a failing exit with incomplete output must fail");
+        };
+        assert!(matches!(failure.kind, FailureKind::Unparsed { .. }));
+        let note = failure.note.unwrap_or_default();
+        assert_eq!(note.contains("allow_local_binding"), refused, "{note}");
     }
 }

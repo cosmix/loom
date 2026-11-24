@@ -1,4 +1,6 @@
 pub mod before_after;
+#[cfg(test)]
+mod bind_refusal_contract_tests;
 pub(crate) mod budget;
 pub(crate) mod completion;
 pub mod context;

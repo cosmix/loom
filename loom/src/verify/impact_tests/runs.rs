@@ -113,6 +113,9 @@ pub(super) struct Failure {
     /// empty when the runner's output does not name them.
     pub(super) failed_tests: Vec<String>,
     pub(super) output: String,
+    /// The loopback opt-in note ([`ProbeRun::bind_note`]), read from the run's
+    /// whole output before `output` is cut.
+    pub(super) note: Option<String>,
 }
 
 impl Site<'_> {
@@ -215,6 +218,7 @@ fn judge_parsed(command: String, adapter: &dyn TestRunnerAdapter, run: &ProbeRun
         kind,
         failed_tests: failed_tests(adapter, run),
         output: output_tail(run),
+        note: run.bind_note(),
     })
 }
 
@@ -238,6 +242,7 @@ fn judge_incomplete_capture(
         },
         failed_tests: failed_tests(adapter, run),
         output: output_tail(run),
+        note: run.bind_note(),
     })
 }
 

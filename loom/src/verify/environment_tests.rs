@@ -2,7 +2,7 @@
 //! and when a run's own verdict wins over the marker words in its output.
 //! Assertion messages are fixed text without marker words.
 
-use super::environment::{environment_marker, run_denial, sandbox_denial};
+use super::environment::{environment_marker, refused_bind_note, run_denial, sandbox_denial};
 
 #[test]
 fn the_first_matching_line_is_named_trimmed() {
@@ -99,4 +99,26 @@ fn a_run_with_a_parsed_summary_or_build_failure_names_no_denial() {
         Some("error: CouldntReadCurrentDirectory")
     );
     assert_eq!(run_denial("true", "ok\n", "", Some(1)), None);
+}
+
+#[test]
+fn a_refused_bind_note_needs_a_refused_loopback_and_a_failing_finished_run() {
+    let printed = "code: \"EADDRINUSE\"\n";
+    let note = |refused, timed_out, exit| refused_bind_note(refused, timed_out, exit, "", printed);
+    assert_eq!(note(false, false, Some(1)), None, "loopback was available");
+    assert_eq!(note(true, true, None), None, "a timed-out run");
+    assert_eq!(note(true, false, Some(0)), None, "a zero-exit run");
+    let held = note(true, false, Some(1));
+    assert!(
+        held.as_deref()
+            .is_some_and(|text| text.contains("allow_local_binding")),
+        "{held:?}"
+    );
+}
+
+#[test]
+fn a_counted_failing_run_still_gets_the_refused_bind_note() {
+    let counted = "code: \"EADDRINUSE\"\nrunning 1 test\ntest t::k ... FAILED\n\n\
+        test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out\n";
+    assert!(refused_bind_note(true, false, Some(101), counted, "").is_some());
 }

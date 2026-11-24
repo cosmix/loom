@@ -66,14 +66,7 @@ impl ProbeRunner for &Base {
         self.seen
             .borrow_mut()
             .push(Seen::Run(package_dir.to_path_buf()));
-        Ok(ProbeRun {
-            stdout: String::new(),
-            stderr: BUILD_FAILURE.to_string(),
-            exit_code: Some(101),
-            timed_out: false,
-            output_complete: true,
-            cached: None,
-        })
+        Ok(ProbeRun::finished("", BUILD_FAILURE, Some(101)))
     }
 }
 
@@ -118,6 +111,7 @@ fn failed(kind: FailureKind) -> Failed {
             command: "cargo test -- tests::adds".to_string(),
             kind,
             output: BUILD_FAILURE.to_string(),
+            note: None,
         },
         accepted: None,
     }

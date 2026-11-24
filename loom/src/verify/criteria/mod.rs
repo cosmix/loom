@@ -116,6 +116,8 @@ pub use memory_journals::{memory_journals_grant, MemoryJournals};
 pub(crate) use output::{format_criterion_result, running_block};
 pub(in crate::verify) use probe::{CachedRun, CriteriaProbe, ProbeRun, ProbeRunner};
 pub use result::{AcceptanceResult, CriterionResult};
+#[cfg(test)]
+pub(crate) use runner::refuses_loopback;
 pub use runner::{run_acceptance, run_acceptance_with_config};
 pub use spawn_observer::{set_spawn_observer, GroupAnchor, SpawnObserver, SpawnObserverGuard};
 pub(crate) use zero_tests::has_test_summary;

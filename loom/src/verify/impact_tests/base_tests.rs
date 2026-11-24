@@ -16,17 +16,14 @@ use tempfile::TempDir;
 fn cargo_run(failed: u32) -> ProbeRun {
     let passed = 3 - failed;
     let verdict = if failed == 0 { "ok" } else { "FAILED" };
-    ProbeRun {
-        stdout: format!(
+    ProbeRun::finished(
+        format!(
             "running 3 tests\n\ntest result: {verdict}. {passed} passed; {failed} failed; 0 \
              ignored; 0 measured; 0 filtered out; finished in 0.00s\n"
         ),
-        stderr: String::new(),
-        exit_code: Some(if failed == 0 { 0 } else { 101 }),
-        timed_out: false,
-        output_complete: true,
-        cached: None,
-    }
+        "",
+        Some(if failed == 0 { 0 } else { 101 }),
+    )
 }
 
 /// Answers every run with `answer`, recording each package directory and the
@@ -115,6 +112,7 @@ fn failed(failed: u64) -> Failed {
                 failed: Some(failed),
             },
             output: "test result: FAILED".to_string(),
+            note: None,
         },
         accepted: None,
     }
@@ -194,15 +192,11 @@ fn more_failures_than_at_the_base_stay_a_failure() {
 fn a_selection_that_does_not_build_at_the_base_either_stays_a_failure() {
     let (repo, base) = stage_repo();
     let canned = Canned::new(|| {
-        Ok(ProbeRun {
-            stdout: String::new(),
-            stderr: include_str!("../../testrun/fixtures/cargo-test/build-error.stderr")
-                .to_string(),
-            exit_code: Some(101),
-            timed_out: false,
-            output_complete: true,
-            cached: None,
-        })
+        Ok(ProbeRun::finished(
+            "",
+            include_str!("../../testrun/fixtures/cargo-test/build-error.stderr"),
+            Some(101),
+        ))
     });
     let mut broken = failed(0);
     broken.failure.kind = FailureKind::DoesNotBuild;
@@ -326,14 +320,11 @@ fn a_base_that_cannot_be_compared_keeps_the_failure_with_why() {
 
 /// What a run the sandbox killed prints: nothing the adapter reads.
 fn sandbox_refused() -> Result<ProbeRun> {
-    Ok(ProbeRun {
-        stdout: String::new(),
-        stderr: "bwrap: setting up uid map failed\n".to_string(),
-        exit_code: Some(1),
-        timed_out: false,
-        output_complete: true,
-        cached: None,
-    })
+    Ok(ProbeRun::finished(
+        "",
+        "bwrap: setting up uid map failed\n",
+        Some(1),
+    ))
 }
 
 #[test]

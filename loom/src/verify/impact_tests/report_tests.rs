@@ -20,16 +20,12 @@ struct TwoFail;
 
 impl ProbeRunner for TwoFail {
     fn run(&self, _command: &str, _package_dir: &Path) -> anyhow::Result<ProbeRun> {
-        Ok(ProbeRun {
-            stdout: "running 3 tests\n\ntest result: FAILED. 1 passed; 2 failed; 0 ignored; 0 \
-                     measured; 0 filtered out; finished in 0.00s\n"
-                .to_string(),
-            stderr: String::new(),
-            exit_code: Some(101),
-            timed_out: false,
-            output_complete: true,
-            cached: None,
-        })
+        Ok(ProbeRun::finished(
+            "running 3 tests\n\ntest result: FAILED. 1 passed; 2 failed; 0 ignored; 0 \
+             measured; 0 filtered out; finished in 0.00s\n",
+            "",
+            Some(101),
+        ))
     }
 }
 
@@ -277,7 +273,7 @@ fn failures_past_the_kept_ones_are_named_as_not_disputable() {
     let failures: Vec<ImpactFailure> = (0..=MAX_OBSERVED_FAILURES).map(failure).collect();
     let last = format!("IT-pytest:p{MAX_OBSERVED_FAILURES}");
 
-    let message = failure_message("s", &failures);
+    let message = failure_message("s", &failures, &[]);
 
     assert!(
         message.contains(&format!("so {last} cannot be disputed")),
@@ -285,5 +281,5 @@ fn failures_past_the_kept_ones_are_named_as_not_disputable() {
     );
     assert!(!message.contains(&format!("--test {last}")), "{message}");
     assert!(message.contains("--test IT-pytest:p0 "), "{message}");
-    assert!(!failure_message("s", &failures[..1]).contains("cannot be disputed"));
+    assert!(!failure_message("s", &failures[..1], &[]).contains("cannot be disputed"));
 }

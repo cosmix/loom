@@ -47,14 +47,7 @@ impl ProbeRunner for Recorder {
     fn run(&self, command: &str, package_dir: &Path) -> Result<ProbeRun> {
         let call = (command.to_string(), package_dir.to_path_buf());
         self.commands.borrow_mut().push(call);
-        Ok(ProbeRun {
-            stdout: CARGO_PASS.to_string(),
-            stderr: String::new(),
-            exit_code: Some(0),
-            timed_out: false,
-            output_complete: true,
-            cached: None,
-        })
+        Ok(ProbeRun::finished(CARGO_PASS, "", Some(0)))
     }
 }
 
@@ -64,14 +57,7 @@ struct NotFound;
 
 impl ProbeRunner for NotFound {
     fn run(&self, _command: &str, _package_dir: &Path) -> Result<ProbeRun> {
-        Ok(ProbeRun {
-            stdout: String::new(),
-            stderr: String::new(),
-            exit_code: Some(127),
-            timed_out: false,
-            output_complete: true,
-            cached: None,
-        })
+        Ok(ProbeRun::finished("", "", Some(127)))
     }
 }
 

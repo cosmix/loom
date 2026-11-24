@@ -34,12 +34,8 @@ impl ProbeRunner for Counting {
     fn run(&self, _command: &str, _package_dir: &Path) -> Result<ProbeRun> {
         self.calls.set(self.calls.get() + 1);
         Ok(ProbeRun {
-            stdout: self.stdout.to_string(),
-            stderr: self.stderr.to_string(),
-            exit_code: Some(self.exit),
-            timed_out: false,
             output_complete: self.output_complete,
-            cached: None,
+            ..ProbeRun::finished(self.stdout, self.stderr, Some(self.exit))
         })
     }
 }

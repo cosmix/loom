@@ -124,16 +124,12 @@ struct Recorder(RefCell<Vec<String>>);
 impl ProbeRunner for Recorder {
     fn run(&self, command: &str, _package_dir: &Path) -> anyhow::Result<ProbeRun> {
         self.0.borrow_mut().push(command.to_string());
-        Ok(ProbeRun {
-            stdout: "running 2 tests\n\ntest result: ok. 2 passed; 0 failed; 0 ignored; 0 \
-                     measured; 0 filtered out; finished in 0.00s\n"
-                .to_string(),
-            stderr: String::new(),
-            exit_code: Some(0),
-            timed_out: false,
-            output_complete: true,
-            cached: None,
-        })
+        Ok(ProbeRun::finished(
+            "running 2 tests\n\ntest result: ok. 2 passed; 0 failed; 0 ignored; 0 \
+             measured; 0 filtered out; finished in 0.00s\n",
+            "",
+            Some(0),
+        ))
     }
 }
 
