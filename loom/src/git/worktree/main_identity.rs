@@ -21,10 +21,14 @@ pub(crate) fn main_identity_exists(state: &Path) -> bool {
     }
 }
 
+/// A directory pinned by canonical path and inode. The device number is not
+/// pinned: this record outlives the process, and `st_dev` is assigned at mount
+/// time, so an APFS volume gets a different one after a reboot while every
+/// inode stays the same. A directory replaced at the same path gets a new
+/// inode; reusing the old inode from another volume needs a mount there.
 #[derive(Serialize, Deserialize)]
 struct Directory {
     path: PathBuf,
-    device: u64,
     inode: u64,
 }
 
@@ -35,7 +39,6 @@ impl Directory {
         ensure!(meta.is_dir(), "{} is not a directory", path.display());
         Ok(Self {
             path,
-            device: meta.dev(),
             inode: meta.ino(),
         })
     }
@@ -43,7 +46,7 @@ impl Directory {
     fn verify(&self) -> Result<PathBuf> {
         let now = Self::capture(self.path.clone())?;
         ensure!(
-            now.path == self.path && now.device == self.device && now.inode == self.inode,
+            now.path == self.path && now.inode == self.inode,
             "checkout identity directory changed: {}",
             self.path.display()
         );

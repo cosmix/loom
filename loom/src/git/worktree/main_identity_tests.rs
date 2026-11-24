@@ -26,6 +26,24 @@ fn restart_uses_captured_identity_and_refuses_changed_directory() {
     assert!(require_main_identity(&repo).is_err());
 }
 
+/// A reboot remounts the volume under a new device number; the inodes stay.
+/// An anchor written before the reboot still verifies.
+#[test]
+fn identity_survives_a_device_number_change() {
+    let (_tmp, repo, _) = setup();
+    let state = repo.join(".loom/work");
+    fs::create_dir_all(&state).unwrap();
+    capture_main_identity(&repo, &state).unwrap();
+    let anchor = state.join(FILE);
+    let mut identity: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&anchor).unwrap()).unwrap();
+    for directory in ["checkout", "git_dir", "common_dir"] {
+        identity[directory]["device"] = serde_json::json!(1);
+    }
+    fs::write(&anchor, serde_json::to_vec(&identity).unwrap()).unwrap();
+    require_main_identity(&repo).unwrap();
+}
+
 #[test]
 fn unanchored_existing_state_requires_operator_recovery() {
     let (_tmp, repo, _) = setup();
