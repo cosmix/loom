@@ -264,10 +264,19 @@ fn a_passing_trial_records_its_receipt() {
         before,
         "the frozen file must be restored"
     );
+    assert_eq!(
+        load_receipt(&fx.work_dir, STAGE).unwrap(),
+        None,
+        "a trial the runner has not settled is no receipt"
+    );
+    let mut done = record.clone();
+    done.state = JobState::Passed;
+    store::save_current(&fx.work_dir, &done).unwrap();
     let receipt = load_receipt(&fx.work_dir, STAGE)
         .unwrap()
         .expect("a receipt");
     assert_eq!(receipt.head, record.head);
+    assert_eq!(receipt.tree_digest, record.tree_digest);
     assert_eq!(receipt.files.len(), 1);
     assert_eq!(receipt.files[0].path, CONTRACT_FILE);
     assert_eq!(receipt.files[0].sha256, sha256_hex(replacement.as_bytes()));

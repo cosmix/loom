@@ -4,16 +4,13 @@
 use anyhow::Result;
 use std::path::Path;
 
-use super::{judge_run, BUILD_FAILED, CONTRACT_TIMEOUT, UNVERIFIED};
+use super::{judge_run, CONTRACT_TIMEOUT, UNVERIFIED};
 use crate::daemon::ContractRunReport;
-use crate::models::dispute::tail_to_byte_limit;
 use crate::models::stage::CommandConfinement;
 use crate::plan::schema::ContractSpec;
 use crate::stage_cache::StageCache;
-use crate::testrun::recognize::combined_output;
 use crate::testrun::{RunOutput, RunSummary, TestRunnerAdapter};
 use crate::verify::contracts::failed_builds::BuildKey;
-use crate::verify::contracts::refusal::run_output_line;
 use crate::verify::contracts::resolve_adapter;
 use crate::verify::contracts::run_dir::{resolve_run, ContractRun};
 use crate::verify::criteria::{
@@ -91,7 +88,9 @@ pub(crate) fn run_prepared(
     Ok(judge_prepared_result(contract, adapter, &run, emit))
 }
 
-fn judge_prepared_result(
+/// Judges one prepared contract run: the report or a refusal, and whether the
+/// compiler rejected the code.
+pub(crate) fn judge_prepared_result(
     contract: &ContractSpec,
     adapter: Option<&dyn TestRunnerAdapter>,
     run: &CriterionResult,
@@ -122,18 +121,16 @@ fn judge_prepared_result(
         exit_code: run.exit_code,
     };
     let summary = adapter.map_or_else(RunSummary::default, |adapter| adapter.parse(&output));
+    let compile_failed = adapter.is_some_and(|adapter| adapter.compile_rejected(&output));
     let judged = judge_run(
         contract,
         adapter,
         summary,
         output.exit_code,
         Some((output.stdout, output.stderr)),
+        compile_failed,
     );
     warn_if_unverified(contract, adapter, &judged, emit);
-    let compile_failed = adapter.is_some_and(|adapter| adapter.compile_rejected(&output));
-    if !compile_failed {
-        warn_if_build_stopped(contract, &judged, &output, emit);
-    }
     JudgedRun {
         judged,
         compile_failed,
@@ -161,38 +158,11 @@ fn warn_if_unverified(
     }
 }
 
-/// The most of a run's output the build-stopped warning quotes, from its end.
-const STOPPED_BUILD_TAIL_BYTES: usize = 2048;
-
-/// Warn, quoting the end of the output, when the runner read a build failure
-/// that is not the compiler rejecting the code: the toolchain or the boundary
-/// stopped the build, so contracts sharing it run their own build and nothing
-/// else records why.
-fn warn_if_build_stopped(
-    contract: &ContractSpec,
-    judged: &Result<ContractRunReport, String>,
-    output: &RunOutput<'_>,
-    emit: fn(&str),
-) {
-    if !judged
-        .as_ref()
-        .is_ok_and(|report| report.outcome == BUILD_FAILED)
-    {
-        return;
-    }
-    let tail = tail_to_byte_limit(&combined_output(output), STOPPED_BUILD_TAIL_BYTES);
-    emit(&format!(
-        "warning: contract `{}`: the build stopped before the compiler judged the code, so \
-         no other contract shares it; its output ends:\n{}",
-        contract.id,
-        run_output_line(&tail)
-    ));
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::testrun::registry;
+    use crate::verify::contracts::freeze::BUILD_FAILED;
     use crate::verify::contracts::test_support::contract;
     use std::time::Duration;
 
@@ -250,19 +220,22 @@ mod tests {
     }
 
     #[test]
-    fn a_build_stopped_before_the_compiler_is_warned_with_its_output() {
+    fn a_build_stopped_before_the_compiler_is_refused_with_its_output() {
         let (judged, lines) = judged_lines(
             "error: failed to run `rustc` to learn about target-specific information\n",
         );
-        assert_eq!(judged.judged.unwrap().outcome, BUILD_FAILED);
-        assert!(!judged.compile_failed);
-        assert_eq!(lines.len(), 1, "{lines:?}");
-        assert!(lines[0].contains("the build stopped"), "{lines:?}");
+        let message = judged.judged.unwrap_err();
         assert!(
-            lines[0].contains("failed to run `rustc` to learn about target-specific"),
-            "{lines:?}"
+            message.contains("before the compiler judged the code"),
+            "{message}"
         );
-        assert_eq!(lines[0].lines().count(), 2, "the output is one quoted line");
+        assert!(
+            message.contains("failed to run `rustc` to learn about target-specific"),
+            "{message}"
+        );
+        assert_eq!(message.lines().count(), 2, "the output is one quoted line");
+        assert!(!judged.compile_failed);
+        assert!(lines.is_empty(), "{lines:?}");
     }
 
     #[test]
@@ -270,6 +243,26 @@ mod tests {
         let (judged, lines) =
             judged_lines("error: could not compile `fx` (test \"x\") due to 1 previous error\n");
         assert!(judged.compile_failed);
+        assert_eq!(judged.judged.unwrap().outcome, BUILD_FAILED);
         assert!(lines.is_empty(), "{lines:?}");
+    }
+
+    #[test]
+    fn a_counted_failure_without_an_exit_code_is_refused() {
+        let run = CriterionResult::new(
+            "cargo test".to_string(),
+            false,
+            "running 1 test\ntest result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; \
+             0 filtered out\n"
+                .to_string(),
+            String::new(),
+            None,
+            Duration::ZERO,
+            false,
+        );
+        let adapter = registry::by_name("cargo-test");
+        let judged = judge_prepared_result(&contract(), adapter, &run, |_| {});
+        let message = judged.judged.unwrap_err();
+        assert!(message.contains("without an exit code"), "{message}");
     }
 }

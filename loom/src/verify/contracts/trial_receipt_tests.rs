@@ -2,10 +2,13 @@
 //! contracts trial by submission order, never a failed, withdrawn or plain
 //! check, and never a malformed receipt.
 
+use std::path::Path;
+
 use chrono::Utc;
 
 use super::*;
-use crate::host_verify::{new_job_id, JobResult};
+use crate::host_verify::{new_job_id, store as job_store, JobKind, JobRecord, JobResult, JobState};
+use crate::utils::sha256_hex;
 
 const STAGE: &str = "stage-a";
 
@@ -55,6 +58,7 @@ fn job(
 fn receipt(content: &str) -> TrialReceipt {
     TrialReceipt {
         head: "a".repeat(40),
+        tree_digest: "digest".to_string(),
         files: vec![TrialFile {
             path: "tests/x_contract.rs".to_string(),
             sha256: sha256_hex(content.as_bytes()),
@@ -97,6 +101,31 @@ fn the_newest_passing_contracts_trial_is_the_receipt() {
 }
 
 #[test]
+fn a_running_trial_with_a_passing_result_is_no_receipt() {
+    let tmp = tempfile::tempdir().unwrap();
+    let work = tmp.path();
+    job(work, 1, true, JobState::Running, true, &bytes("running"));
+    assert_eq!(load_receipt(work, STAGE).unwrap(), None);
+}
+
+#[test]
+fn a_receipt_of_another_tree_does_not_cover() {
+    let head = "a".repeat(40);
+    let loaded = receipt("same");
+    let files = vec![(
+        "tests/x_contract.rs".to_string(),
+        sha256_hex("same".as_bytes()),
+    )];
+    assert_eq!(
+        receipt_covers(Some(&loaded), &head, "digest", &files),
+        Ok(())
+    );
+    let refusal = receipt_covers(Some(&loaded), &head, "other-digest", &files)
+        .expect_err("another tree digest");
+    assert!(refusal.contains("different tree"), "{refusal}");
+}
+
+#[test]
 fn a_stage_without_jobs_has_no_receipt() {
     let tmp = tempfile::tempdir().unwrap();
     assert_eq!(load_receipt(tmp.path(), STAGE).unwrap(), None);
@@ -110,6 +139,7 @@ fn a_filing_must_name_the_trialled_set_exactly() {
     let pair = |file: &str, sha: &str| (file.to_string(), sha.repeat(64));
     let receipt = TrialReceipt {
         head: head.clone(),
+        tree_digest: "digest".to_string(),
         files: [("a.rs", "1"), ("b.rs", "2")]
             .iter()
             .map(|(path, sha)| TrialFile {
@@ -119,8 +149,11 @@ fn a_filing_must_name_the_trialled_set_exactly() {
             .collect(),
     };
     let both = [pair("a.rs", "1"), pair("b.rs", "2")];
-    assert_eq!(receipt_covers(Some(&receipt), &head, &both), Ok(()));
-    let subset = receipt_covers(Some(&receipt), &head, &both[..1]).expect_err("a subset");
+    assert_eq!(
+        receipt_covers(Some(&receipt), &head, "digest", &both),
+        Ok(())
+    );
+    let subset = receipt_covers(Some(&receipt), &head, "digest", &both[..1]).expect_err("a subset");
     assert!(
         subset.contains("loom check")
             && subset.contains("--replacement")
@@ -128,15 +161,16 @@ fn a_filing_must_name_the_trialled_set_exactly() {
         "{subset}"
     );
     let superset = [pair("a.rs", "1"), pair("b.rs", "2"), pair("c.rs", "3")];
-    assert!(receipt_covers(Some(&receipt), &head, &superset).is_err());
+    assert!(receipt_covers(Some(&receipt), &head, "digest", &superset).is_err());
     let repeated = [pair("a.rs", "1"), pair("a.rs", "1")];
-    assert!(receipt_covers(Some(&receipt), &head, &repeated).is_err());
+    assert!(receipt_covers(Some(&receipt), &head, "digest", &repeated).is_err());
 }
 
 #[test]
 fn files_cover_ignores_the_head_and_still_checks_every_file_and_its_bytes() {
     let receipt = TrialReceipt {
         head: "old-head".to_string(),
+        tree_digest: "digest".to_string(),
         files: vec![TrialFile {
             path: "tests/x.rs".to_string(),
             sha256: "aa".to_string(),
@@ -146,5 +180,5 @@ fn files_cover_ignores_the_head_and_still_checks_every_file_and_its_bytes() {
     assert_eq!(receipt_files_cover(&receipt, &pair("aa")), Ok(()));
     assert!(receipt_files_cover(&receipt, &pair("bb")).is_err());
     assert!(receipt_files_cover(&receipt, &[]).is_err());
-    assert!(receipt_covers(Some(&receipt), "new-head", &pair("aa")).is_err());
+    assert!(receipt_covers(Some(&receipt), "new-head", "digest", &pair("aa")).is_err());
 }

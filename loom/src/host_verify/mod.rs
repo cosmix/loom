@@ -17,6 +17,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 pub mod apply;
+mod apply_binding;
 mod apply_rejection;
 pub(crate) mod apply_retry;
 pub mod child;
@@ -34,6 +35,7 @@ mod freeze_refuse;
 pub(crate) mod gates;
 pub(crate) mod pending;
 pub mod runner;
+mod runner_records;
 mod signals;
 mod spawn;
 pub mod store;
@@ -48,7 +50,11 @@ mod wait_state;
 #[cfg(test)]
 mod child_cache_tests;
 #[cfg(test)]
+mod runner_orphan_contract_tests;
+#[cfg(test)]
 mod tests_apply;
+#[cfg(test)]
+mod tests_apply_gate_lock;
 #[cfg(test)]
 mod tests_apply_recovery;
 #[cfg(test)]
@@ -109,6 +115,8 @@ mod tests_wait_live_log;
 mod tests_wait_refusal;
 #[cfg(test)]
 mod verdict_complete_contract_tests;
+#[cfg(test)]
+mod verdict_history_contract_tests;
 
 /// Most bytes a record's `detail` keeps.
 pub(crate) const DETAIL_MAX_BYTES: usize = 512;

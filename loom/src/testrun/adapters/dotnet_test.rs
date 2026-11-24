@@ -64,6 +64,18 @@ static NO_MATCH: LazyLock<Regex> =
 static BUILD_ERROR: LazyLock<Regex> =
     LazyLock::new(|| pattern(r"(?i)\berror CS\d+\b|\bBuild FAILED\b"));
 
+/// Backslash-escapes the VSTest filter operator characters in `value`.
+fn vstest_escape(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len());
+    for ch in value.chars() {
+        if matches!(ch, '\\' | '(' | ')' | '&' | '|' | '=' | '!' | '~') {
+            escaped.push('\\');
+        }
+        escaped.push(ch);
+    }
+    escaped
+}
+
 impl TestRunnerAdapter for DotnetTest {
     fn name(&self) -> &'static str {
         "dotnet-test"
@@ -83,22 +95,25 @@ impl TestRunnerAdapter for DotnetTest {
     }
 
     /// A project or solution operand still runs its whole suite. An assembly
-    /// operand, a test filter, and a listing command do not.
+    /// operand, a test filter, and either listing flag (`--list-tests`, `-t`) do not.
     fn is_full_run(&self, argv: &[String]) -> bool {
         let Some(args) = command_args(argv, COMMAND) else {
             return false;
         };
         !has_flag(&args, "--filter")
             && !has_flag(&args, "--list-tests")
+            && !has_flag(&args, "-t")
             && positionals(&args, VALUE_FLAGS)
                 .iter()
                 .all(|operand| !operand.to_ascii_lowercase().ends_with(".dll"))
     }
 
-    /// The filter is single-quoted: inside double quotes `sh` would still
-    /// expand a `$` or backtick in the name.
+    /// Single quotes prevent shell expansion, and backslashes escape VSTest
+    /// operator characters. For an xUnit theory, `FullyQualifiedName` holds
+    /// `Namespace.Class.Method` without arguments, so the contract's `test`
+    /// names the method.
     fn single_test_command(&self, _file: &str, test: &str, _package_dir: &Path) -> String {
-        let filter = shell_quote(&format!("FullyQualifiedName={test}"));
+        let filter = shell_quote(&format!("FullyQualifiedName={}", vstest_escape(test)));
         format!("dotnet test --filter {filter}")
     }
 
@@ -151,9 +166,20 @@ mod tests {
     }
 
     #[test]
+    fn filter_characters_are_escaped() {
+        let command = ADAPTER.single_test_command("UnitTest1.cs", "Ns.C.M(x: 1)", Path::new("."));
+        assert!(command.contains(r"M\(x: 1\)"));
+        let command = ADAPTER.single_test_command("UnitTest1.cs", r"a=b|c&d!e~f\g", Path::new("."));
+        assert!(command.contains(r"a\=b\|c\&d\!e\~f\\g"));
+    }
+
+    #[test]
     fn hostile_test_name_stays_one_filter_word() {
         let command = ADAPTER.single_test_command("UnitTest1.cs", HOSTILE_NAME, Path::new("."));
-        assert_one_word(&command, &format!("FullyQualifiedName={HOSTILE_NAME}"));
+        assert_one_word(
+            &command,
+            &format!("FullyQualifiedName={}", vstest_escape(HOSTILE_NAME)),
+        );
     }
 
     #[test]
@@ -172,6 +198,7 @@ mod tests {
         assert!(!ADAPTER.is_full_run(&argv(&["dotnet", "test", "--filter=Name=Alpha"])));
         assert!(!ADAPTER.is_full_run(&argv(&["dotnet", "test", "FixtureDotnet.dll"])));
         assert!(!ADAPTER.is_full_run(&argv(&["dotnet", "test", "--list-tests"])));
+        assert!(!ADAPTER.is_full_run(&argv(&["dotnet", "test", "-t"])));
         assert!(!ADAPTER.is_full_run(&argv(&["dotnet", "build"])));
     }
 

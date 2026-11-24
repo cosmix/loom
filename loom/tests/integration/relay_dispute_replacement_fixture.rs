@@ -235,6 +235,7 @@ impl Fixture {
         store::save_result(&self.work_dir, STAGE, &result).expect("save the trial result");
         let receipt = TrialReceipt {
             head,
+            tree_digest: digest::tree_digest_in(&git).expect("read the worktree digest"),
             files: vec![TrialFile {
                 path: CONTRACT_FILE.to_string(),
                 sha256: sha256_hex(text),

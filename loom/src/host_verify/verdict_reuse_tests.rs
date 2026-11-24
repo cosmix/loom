@@ -115,6 +115,49 @@ fn a_later_verdict_run_outranks_the_passing_run() {
     assert_eq!(fx.load_stage().status, StageStatus::NeedsAdjudication);
 }
 
+/// A passing completion, then a newer failed one whose job record is then
+/// damaged by `damage` (given the newer job's directory).
+fn pass_then_damaged_failure(fx: &Fixture, damage: impl FnOnce(&std::path::Path)) {
+    fx.passed();
+    let newer = fx.finished(
+        JobKind::Complete,
+        JobState::Failed,
+        &[("acceptance-0", false)],
+    );
+    damage(&store::job_dir(&fx.work_dir, STAGE, &newer.id).expect("the newer job's directory"));
+}
+
+#[test]
+#[serial_test::serial]
+fn an_unreadable_newer_completion_refuses_reuse() {
+    let fx = held();
+    pass_then_damaged_failure(&fx, |dir| {
+        std::fs::write(dir.join("record.json"), b"not json").expect("corrupt the record");
+    });
+
+    let start = submit(&fx);
+
+    let VerdictStart::Ineligible(reason) = start else {
+        panic!("expected Ineligible, got {start:?}");
+    };
+    assert!(reason.contains("cannot be ordered"), "{reason}");
+    assert_eq!(fx.load_stage().status, StageStatus::NeedsAdjudication);
+}
+
+#[test]
+#[serial_test::serial]
+fn a_current_completion_without_its_job_directory_outranks_the_pass() {
+    let fx = held();
+    pass_then_damaged_failure(&fx, |dir| {
+        std::fs::remove_dir_all(dir).expect("remove the newer job's directory");
+    });
+
+    let start = submit(&fx);
+
+    assert!(!matches!(start, VerdictStart::Reused { .. }), "{start:?}");
+    assert_eq!(fx.load_stage().status, StageStatus::NeedsAdjudication);
+}
+
 #[test]
 #[serial_test::serial]
 fn a_stale_review_refuses_the_stage_without_a_job() {

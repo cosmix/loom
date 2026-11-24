@@ -63,8 +63,9 @@ impl TestRunnerAdapter for SwiftTest {
     }
 
     /// Take the last suite total; earlier lines count nested suites again.
-    /// An `error:` before any suite starts is a compiler failure, while an
-    /// assertion diagnostic after a suite starts belongs to a test failure.
+    /// An `error:` before the first suite indicates a build failure only if no
+    /// `Executed N tests` total was parsed. Concatenating stdout and stderr
+    /// loses the order of messages across the two streams.
     fn parse(&self, out: &RunOutput<'_>) -> RunSummary {
         let text = combined_output(out);
         let suite_start = SUITE_STARTED.find(&text).map(|found| found.start());
@@ -77,7 +78,7 @@ impl TestRunnerAdapter for SwiftTest {
             }
             _ => RunSummary::default(),
         };
-        summary.build_failed = build_failed;
+        summary.build_failed = build_failed && summary.executed.is_none();
         summary
     }
 }
@@ -133,6 +134,22 @@ mod tests {
             name: Some("ModuleTests.FooTests/testBar".to_string()),
         }];
         assert_eq!(ADAPTER.select_command(&targets, Path::new(".")), None);
+    }
+
+    #[test]
+    fn parsed_counts_win_over_an_earlier_error_line() {
+        let out = RunOutput {
+            stdout: concat!(
+                "error: a diagnostic printed before the run\n",
+                "Test Suite 'All tests' started at 2024-01-01 00:00:00.000\n",
+                "Test Case '-[M.T testA]' failed (0.001 seconds).\n",
+                "Test Suite 'All tests' failed at 2024-01-01 00:00:00.010.\n",
+                "\t Executed 1 test, with 1 failure (0 unexpected) in 0.001 (0.002) seconds\n",
+            ),
+            stderr: "",
+            exit_code: Some(1),
+        };
+        assert_eq!(classify(&ADAPTER.parse(&out), Some(1)), RunOutcome::Failed);
     }
 
     #[test]

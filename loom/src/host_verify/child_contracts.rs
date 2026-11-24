@@ -262,6 +262,7 @@ fn save_receipt(work_dir: &Path, record: &JobRecord, files: Vec<TrialFile>) -> R
     }
     let receipt = TrialReceipt {
         head: record.head.clone(),
+        tree_digest: record.tree_digest.clone(),
         files,
     };
     let bytes = serde_json::to_vec(&receipt).context("cannot serialize the trial receipt")?;

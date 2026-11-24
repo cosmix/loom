@@ -13,11 +13,11 @@
 //! first and only then the stage and the checkpoint, so the transition and
 //! the checkpoints must exist before it does.
 
-use std::fmt;
 use std::path::Path;
 
 use anyhow::{Context, Result};
 
+use super::apply_binding::{binding_failed, binding_reason, verify_bound_run, with_gates_held};
 use super::apply_rejection::{
     receipt_recorded, record_acceptance, record_failure, record_rejection,
 };
@@ -26,10 +26,8 @@ use super::{
 };
 use crate::fs::locking::locked_dir_update;
 use crate::fs::session_files::load_session_exact;
-use crate::handoff::completion::content::VerificationSnapshot;
 use crate::models::session::{Session, SessionStatus, SessionType};
 use crate::models::stage::{Stage, StageStatus, StageType};
-use crate::native_worker::index::stage_disposition;
 use crate::stage_service::ownership::owns_stage_as;
 use crate::verify::transitions::{load_stage, update_stage};
 
@@ -56,24 +54,6 @@ pub enum Applied {
     Ignored(String),
     /// The stage went back to a fresh session, for the reason given.
     HandedBack(String),
-}
-
-/// A binding the passing run no longer satisfies. Raised inside the stage
-/// update so the transition is refused and the caller can tell it from an
-/// I/O failure.
-#[derive(Debug)]
-struct BindingFailed(String);
-
-impl fmt::Display for BindingFailed {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(&self.0)
-    }
-}
-
-impl std::error::Error for BindingFailed {}
-
-pub(super) fn binding_failed(reason: impl Into<String>) -> anyhow::Error {
-    anyhow::Error::new(BindingFailed(reason.into()))
 }
 
 /// Apply the finished job `record`, then mark it applied. A job already
@@ -190,6 +170,8 @@ fn apply_passed(work_dir: &Path, record: &JobRecord) -> Result<Applied> {
     if let Some(reason) = check_outside_lock(work_dir, record)? {
         return record_rejection(work_dir, &stage, record, &result, &reason);
     }
+    #[cfg(test)]
+    super::apply_binding::hooks::run_before_completion_lock();
     match complete_stage(work_dir, record, &result)? {
         Ok(completed) => {
             settle_completed(work_dir, &completed, record, &result)?;
@@ -232,15 +214,6 @@ fn check_outside_lock(work_dir: &Path, record: &JobRecord) -> Result<Option<Stri
     Ok(gates::refusal(work_dir, &record.stage_id))
 }
 
-/// The reason of a binding failure; any other error is a failure to read or
-/// write state and stays an error.
-pub(super) fn binding_reason(error: anyhow::Error) -> Result<String> {
-    match error.downcast_ref::<BindingFailed>() {
-        Some(failed) => Ok(failed.0.clone()),
-        None => Err(error),
-    }
-}
-
 /// The stage/session binding completion requires: the stage is `Executing`
 /// and the session owns it as a stage or knowledge session. Shared with block
 /// and dispute through `session_owns_stage_as`; `Executing` is completion's
@@ -263,8 +236,10 @@ fn validate_active_identity(work_dir: &Path, stage_id: &str, session_id: &str) -
 
 /// Complete the stage under the sessions-directory lock, which canonical
 /// session writers also take, from the identity check through the transition.
-/// `Ok(Err(reason))` names the binding that failed; `Err` is a failure to
-/// read or write state.
+/// The completion gates run again under it and the reviews lock
+/// (`with_gates_held`), so a review round recorded since `check_outside_lock`
+/// is not missed. `Ok(Err(reason))` names the binding that failed; `Err` is
+/// a failure to read or write state.
 fn complete_stage(
     work_dir: &Path,
     record: &JobRecord,
@@ -273,8 +248,10 @@ fn complete_stage(
     let sessions_dir = work_dir.join("sessions");
     let completed = locked_dir_update(&sessions_dir, || {
         validate_active_identity(work_dir, &record.stage_id, &record.session_id)?;
-        update_stage(&record.stage_id, work_dir, |stage| {
-            bind_and_complete(stage, work_dir, record, result)
+        with_gates_held(work_dir, &record.stage_id, || {
+            update_stage(&record.stage_id, work_dir, |stage| {
+                bind_and_complete(stage, work_dir, record, result)
+            })
         })
     });
     match completed {
@@ -305,38 +282,6 @@ fn bind_and_complete(
     }
     stage.completed_commit = Some(result.head.clone());
     stage.try_complete(None)
-}
-
-/// The binding every completion from a run requires: the run passed at the
-/// requested head, the stage's committed content is still that head, and the
-/// check definition is the one the run was bound to.
-pub(super) fn verify_bound_run(
-    stage: &Stage,
-    work_dir: &Path,
-    record: &JobRecord,
-    result: &JobResult,
-) -> Result<()> {
-    if let Some(blocker) = stage_disposition(work_dir, &stage.id).blocker(&stage.id) {
-        return Err(binding_failed(blocker));
-    }
-    if !result.passed || result.head != record.head {
-        return Err(binding_failed("the run does not verify the requested head"));
-    }
-    let snapshot = VerificationSnapshot::capture(stage, work_dir).map_err(|error| {
-        binding_failed(format!("completion content is not committed: {error:#}"))
-    })?;
-    if snapshot.commit != result.head {
-        return Err(binding_failed(format!(
-            "the run verified {} but the stage's committed content is now {}",
-            result.head, snapshot.commit
-        )));
-    }
-    if result.policy_hash.as_deref() != Some(snapshot.policy.as_str()) {
-        return Err(binding_failed(
-            "the stage's check definition changed since the run",
-        ));
-    }
-    Ok(())
 }
 
 /// The steps after the transition, each skipped once done: retiring the

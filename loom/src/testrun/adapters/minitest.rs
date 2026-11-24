@@ -5,7 +5,7 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
-use crate::testrun::command::{distinct_files, regex_literal, shell_quote, shell_word};
+use crate::testrun::command::{distinct_files, marker_choice, regex_literal, shell_quote, shell_word};
 use crate::testrun::recognize::{
     combined_output, command_args, has_flag, last_match, pattern, positionals,
 };
@@ -79,6 +79,10 @@ fn has_name_filter(args: &[String]) -> bool {
             .any(|word| word.starts_with("-n") && !word.starts_with("--"))
 }
 
+fn ruby(package_dir: &Path) -> &'static str {
+    marker_choice(package_dir, &["Gemfile"], "bundle exec ruby", "ruby")
+}
+
 impl TestRunnerAdapter for Minitest {
     fn name(&self) -> &'static str {
         "minitest"
@@ -113,17 +117,17 @@ impl TestRunnerAdapter for Minitest {
         false
     }
 
-    fn single_test_command(&self, file: &str, test: &str, _package_dir: &Path) -> String {
+    fn single_test_command(&self, file: &str, test: &str, package_dir: &Path) -> String {
         let file = shell_word(file);
         let name = shell_quote(&format!("/^{}$/", regex_literal(test)));
-        format!("ruby -Itest {file} -n {name}")
+        format!("{} -Itest {file} -n {name}", ruby(package_dir))
     }
 
     /// Run each selected file once, including every test named in that file.
-    fn select_command(&self, targets: &[TestTarget], _package_dir: &Path) -> Option<String> {
+    fn select_command(&self, targets: &[TestTarget], package_dir: &Path) -> Option<String> {
         let runs: Vec<String> = distinct_files(targets)
             .into_iter()
-            .map(|file| format!("ruby -Itest {}", shell_word(file)))
+            .map(|file| format!("{} -Itest {}", ruby(package_dir), shell_word(file)))
             .collect();
         (!runs.is_empty()).then(|| runs.join(" && "))
     }
@@ -167,6 +171,27 @@ mod tests {
         assert_eq!(
             command,
             "ruby -Itest test/model_test.rb -n '/^test_alpha_passes$/'"
+        );
+    }
+
+    #[test]
+    fn a_bundler_project_runs_through_bundle_exec() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("Gemfile"), "").unwrap();
+        let command =
+            ADAPTER.single_test_command("test/model_test.rb", "test_alpha_passes", dir.path());
+        assert_eq!(
+            command,
+            "bundle exec ruby -Itest test/model_test.rb -n '/^test_alpha_passes$/'"
+        );
+
+        let targets = ["test/a_test.rb", "test/b_test.rb"].map(|file| TestTarget {
+            file: file.to_string(),
+            name: None,
+        });
+        assert_eq!(
+            ADAPTER.select_command(&targets, dir.path()).as_deref(),
+            Some("bundle exec ruby -Itest test/a_test.rb && bundle exec ruby -Itest test/b_test.rb")
         );
     }
 

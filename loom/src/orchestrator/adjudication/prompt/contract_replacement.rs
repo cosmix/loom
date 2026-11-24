@@ -6,11 +6,14 @@
 
 use super::super::diff::unified_diff;
 use super::super::{fenced, KindPromptInput};
+use crate::git::worktree::WorktreeGit;
 use crate::models::dispute::{DisputeKind, FileReplacement};
 use crate::plan::schema::ContractSpec;
 use crate::utils::sha256_hex;
 use crate::verify::contracts::normalize;
-use crate::verify::contracts::trial::{load_receipt, receipt_files_cover};
+use crate::verify::contracts::trial::{
+    current_tree, load_receipt, receipt_covers, receipt_files_cover,
+};
 use crate::verify::integrity::lost_statements;
 
 /// The evidence headings whose fences the truncation pass halves
@@ -57,11 +60,20 @@ pub(super) fn contracts_in<'a>(
         .collect()
 }
 
-/// The trial line of each `## Proposed replacement` section: admission files
-/// replacements only once a trial of the same bytes passed at the worktree's
-/// head, so the newest receipt names the commit it ran at when it covers every
-/// `(file, sha256)` pair of this filing. A receipt that was pruned, cannot be
-/// read or ran other bytes is said to be missing.
+/// The head and tree digest the stage's worktree holds now, or `None` when the
+/// worktree is gone or cannot be read.
+fn current_state(input: &KindPromptInput<'_>) -> Option<(String, String)> {
+    let git = WorktreeGit::pinned_in_project_of(input.work_dir, input.worktree?).ok()?;
+    current_tree(&git, input.stage).ok()
+}
+
+/// The trial line of each `## Proposed replacement` section, from the newest
+/// receipt and the tree as it is now:
+/// - the receipt covers every `(file, sha256)` pair of this filing and ran on
+///   the tree the stage holds now: it passed, at the commit it names;
+/// - it covers the pairs but the tree differs (or cannot be read): the trial
+///   passed once and is no evidence for the tree as it is;
+/// - otherwise (pruned, unreadable or other bytes): no receipt is recorded.
 fn trial_line(input: &KindPromptInput<'_>) -> String {
     let pairs: Vec<(String, String)> = proposed(input)
         .iter()
@@ -69,11 +81,22 @@ fn trial_line(input: &KindPromptInput<'_>) -> String {
         .collect();
     match load_receipt(input.work_dir, &input.stage.id) {
         Ok(Some(receipt)) if receipt_files_cover(&receipt, &pairs).is_ok() => {
-            format!(
-                "Trial: passed in a confined host job at {} (format and static gates, then the \
-                 contracts)\n\n",
-                receipt.head
-            )
+            let current = current_state(input).is_some_and(|(head, digest)| {
+                receipt_covers(Some(&receipt), &head, &digest, &pairs).is_ok()
+            });
+            if current {
+                format!(
+                    "Trial: passed in a confined host job at {} (format and static gates, then \
+                     the contracts)\n\n",
+                    receipt.head
+                )
+            } else {
+                format!(
+                    "Trial: a trial of these bytes passed at {}, but the stage's tree no longer \
+                     matches the one it ran on, so it is no evidence for the tree as it is now\n\n",
+                    receipt.head
+                )
+            }
         }
         _ => "Trial: no matching trial receipt is still recorded\n\n".to_string(),
     }

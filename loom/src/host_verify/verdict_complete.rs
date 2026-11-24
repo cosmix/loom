@@ -16,20 +16,19 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 
-use super::apply::{binding_failed, binding_reason, verify_bound_run, Applied, APPLIED_MARKER};
+use super::apply::{Applied, APPLIED_MARKER};
+use super::apply_binding::{binding_failed, binding_reason, verify_bound_run, with_gates_held};
 use super::apply_rejection::first_summary_line;
 use super::submit::{submit, Submission, SubmitRequest};
-use super::verdict_reuse::{self, latest_of};
+use super::verdict_reuse::{self, counted_result, latest_of};
 use super::{digest, gates, store, JobKind, JobRecord, JobResult, JobState};
 use crate::fs::dispute_lock::lock_stage_dispute_dir_for_daemon;
 use crate::git::worktree::{stage_worktree_path, WorktreeGit};
 use crate::handoff::completion::content::committed_content;
-use crate::handoff::completion::policy::effective_policy_hash;
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::adjudication::{
     hand_back_held_stage, is_held_for_completion, is_verdict_held,
 };
-use crate::verify::completion::IMPACT_TESTS_LABEL;
 use crate::verify::contracts::refusal::run_output_line;
 use crate::verify::transitions::{load_stage, update_stage};
 
@@ -87,10 +86,14 @@ pub(crate) fn submit_verdict_completion(
             stage.id
         )));
     }
-    let Some(latest) = latest_of(work_dir, &stage.id, &[JobKind::Complete])? else {
-        return Ok(VerdictStart::Ineligible(
-            "no `loom stage complete` request of the stage is on record".to_string(),
-        ));
+    let latest = match latest_of(work_dir, &stage.id, &[JobKind::Complete])? {
+        Ok(Some(latest)) => latest,
+        Ok(None) => {
+            return Ok(VerdictStart::Ineligible(
+                "no `loom stage complete` request of the stage is on record".to_string(),
+            ));
+        }
+        Err(reason) => return Ok(VerdictStart::Ineligible(reason)),
     };
     match counted_result(work_dir, stage, &latest)? {
         Ok(result) => start_at_requested_head(work_dir, stage, &latest, &result, now),
@@ -110,57 +113,6 @@ fn deciding_job(work_dir: &Path, stage_id: &str) -> Result<Option<String>> {
     let applied = store::load_job_file(work_dir, stage_id, &record.id, APPLIED_MARKER)?.is_some();
     let settled = record.state.is_terminal() && applied;
     Ok((!settled).then_some(record.id))
-}
-
-/// The result of the latest completion run `record` when it can stand for a
-/// completion without a session, else why it cannot: it left a result bound
-/// to the stage's current check definition, and it passed or failed only its
-/// impact tests. A sibling verdict that amended criteria, re-froze contracts
-/// or changed the plan moves the policy, and the stage then needs a session
-/// that reads the new one.
-fn counted_result(
-    work_dir: &Path,
-    stage: &Stage,
-    record: &JobRecord,
-) -> Result<std::result::Result<JobResult, &'static str>> {
-    let Some(result) = store::load_result(work_dir, &stage.id, &record.id)? else {
-        return Ok(Err(
-            "the stage's latest `loom stage complete` run left no result",
-        ));
-    };
-    if !run_counts(record.state, &result) {
-        return Ok(Err(
-            "the stage's latest `loom stage complete` run failed more than its impact tests",
-        ));
-    }
-    let policy = effective_policy_hash(stage, work_dir)?;
-    if result.policy_hash.as_deref() != Some(policy.as_str()) {
-        return Ok(Err(
-            "the stage's check definition changed since its latest `loom stage complete` run",
-        ));
-    }
-    Ok(Ok(result))
-}
-
-/// Impact tests run in the child, so the run an accepted impact-tests dispute
-/// follows always failed; the rerun counts the accepted failure as a note.
-/// Any other failed check, or a pipeline error, needs the agent.
-fn run_counts(state: JobState, result: &JobResult) -> bool {
-    let failed: Vec<&str> = result
-        .criteria
-        .iter()
-        .filter(|outcome| !outcome.passed)
-        .map(|outcome| outcome.label.as_str())
-        .collect();
-    match state {
-        JobState::Passed => true,
-        JobState::Failed => {
-            result.error.is_none()
-                && !failed.is_empty()
-                && failed.iter().all(|label| *label == IMPACT_TESTS_LABEL)
-        }
-        _ => false,
-    }
 }
 
 /// When the stage's worktree is committed and clean at the head of `latest`,
@@ -235,7 +187,9 @@ fn submit_at(
 /// The head of the stage's latest completion request.
 #[cfg(test)]
 pub(crate) fn latest_completion_head(work_dir: &Path, stage_id: &str) -> Result<Option<String>> {
-    Ok(latest_of(work_dir, stage_id, &[JobKind::Complete])?.map(|record| record.head))
+    Ok(latest_of(work_dir, stage_id, &[JobKind::Complete])?
+        .map_err(anyhow::Error::msg)?
+        .map(|record| record.head))
 }
 
 /// Apply the finished verdict completion `record`: complete the held stage
@@ -284,6 +238,8 @@ fn apply_passed(work_dir: &Path, record: &JobRecord) -> Result<Applied> {
     if let Some(refusal) = gates::refusal(work_dir, &record.stage_id) {
         return hand_back(work_dir, record, vec![refusal]);
     }
+    #[cfg(test)]
+    super::apply_binding::hooks::run_before_completion_lock();
     match complete_held(work_dir, record, &result)? {
         Ok(()) => Ok(Applied::Completed {
             commit: result.head,
@@ -296,7 +252,10 @@ fn apply_passed(work_dir: &Path, record: &JobRecord) -> Result<Applied> {
 /// stage's dispute claim and its stage file. `Ok(Err(reason))` names the
 /// binding that failed; `Err` is a failure to read or write state. The claim
 /// drops before this returns, so the caller may hand the stage back, which
-/// takes it again: two `flock` descriptors in one process conflict.
+/// takes it again: two `flock` descriptors in one process conflict. The
+/// completion gates run again under the claim and the reviews lock
+/// (`with_gates_held`), so a review round recorded since they last passed is
+/// not missed.
 pub(super) fn complete_held(
     work_dir: &Path,
     record: &JobRecord,
@@ -305,8 +264,10 @@ pub(super) fn complete_held(
     let completed = {
         let disputes = work_dir.join("disputes").join(&record.stage_id);
         let _claim = lock_stage_dispute_dir_for_daemon(&disputes)?;
-        update_stage(&record.stage_id, work_dir, |stage| {
-            bind_and_complete_held(stage, work_dir, record, result)
+        with_gates_held(work_dir, &record.stage_id, || {
+            update_stage(&record.stage_id, work_dir, |stage| {
+                bind_and_complete_held(stage, work_dir, record, result)
+            })
         })
     };
     match completed {

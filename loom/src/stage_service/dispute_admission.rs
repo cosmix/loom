@@ -7,7 +7,6 @@ use std::path::Path;
 
 use crate::fs::session_files::load_session_exact_unlocked;
 use crate::git::worktree::WorktreeGit;
-use crate::host_verify::digest;
 use crate::models::dispute::{
     select_events, select_findings, select_impact, DisputeKind, FileReplacement,
     MAX_REPLACEMENT_BYTES,
@@ -17,7 +16,7 @@ use crate::utils::sha256_hex;
 use crate::verify::contracts::drift::{frozen_drift, Drift, DriftKind};
 use crate::verify::contracts::site::stage_site;
 use crate::verify::contracts::store::{contract_files, load_freeze, FreezeRecord, FrozenFile};
-use crate::verify::contracts::trial::{load_receipt, receipt_covers};
+use crate::verify::contracts::trial::{current_tree, load_receipt, receipt_covers};
 use crate::verify::impact_tests::{check_failure_id, load_observed};
 use crate::verify::review::store::open_findings;
 
@@ -228,7 +227,8 @@ fn check_no_drift(work_dir: &Path, stage: &Stage, record: &FreezeRecord) -> Resu
 }
 
 /// A filing with replacements needs a passing trial of the same bytes at the
-/// worktree's HEAD (`loom check <stage> --contracts --replacement ...`), so the
+/// worktree's current HEAD and on its current tree, uncommitted changes
+/// included (`loom check <stage> --contracts --replacement ...`), so the
 /// adjudicator never judges a replacement that does not run. A filing without
 /// replacements needs none.
 fn check_trial(work_dir: &Path, stage: &Stage, replacements: &[FileReplacement]) -> Result<()> {
@@ -237,7 +237,7 @@ fn check_trial(work_dir: &Path, stage: &Stage, replacements: &[FileReplacement])
     }
     let (worktree_root, _) = stage_site(work_dir, stage)?;
     let git = WorktreeGit::pinned_in_project_of(work_dir, &worktree_root)?;
-    let head = digest::head_in(&git)?;
+    let (head, tree_digest) = current_tree(&git, stage)?;
     let receipt = load_receipt(work_dir, &stage.id)?;
     let files: Vec<(String, String)> = replacements
         .iter()
@@ -248,7 +248,8 @@ fn check_trial(work_dir: &Path, stage: &Stage, replacements: &[FileReplacement])
             )
         })
         .collect();
-    receipt_covers(receipt.as_ref(), &head, &files).map_err(|refusal| anyhow!(refusal))
+    receipt_covers(receipt.as_ref(), &head, &tree_digest, &files)
+        .map_err(|refusal| anyhow!(refusal))
 }
 
 /// The dispute to record: `kind` with every id checked against what exists
