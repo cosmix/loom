@@ -14,10 +14,10 @@ use crate::fs::safe_fs::safe_open_append;
 use crate::models::dispute::{feedback_file, truncate_to_byte_limit, Citation, DisputeKind};
 use crate::utils::text::single_line;
 
-const MAX_FEEDBACK_BYTES: usize = 64 * 1024;
-const SECTION_SEPARATOR: &str = "\n---\n\n";
-const DROPPED_NOTICES: &str =
-    "Earlier notices of this round were dropped: the file passed 64 KiB.\n";
+mod section;
+use section::append_section;
+#[cfg(test)]
+use section::SECTION_SEPARATOR;
 
 /// Failure lines the completion section lists before it summarises the rest.
 const MAX_COMPLETION_FAILURES: usize = 20;
@@ -42,27 +42,6 @@ fn open_feedback(path: &Path) -> Result<File> {
     let name = path.file_name().context("feedback path has no filename")?;
     safe_open_append(dir, Path::new(name))
         .with_context(|| format!("Failed to open {}", path.display()))
-}
-
-fn append_section(work_dir: &Path, stage_id: &str, body: &str) -> Result<()> {
-    let path = feedback_path(work_dir, stage_id);
-    let mut file = open_feedback(&path)?;
-    let len = file
-        .metadata()
-        .with_context(|| format!("Failed to stat {}", path.display()))?
-        .len();
-    let separator = if len == 0 { "" } else { SECTION_SEPARATOR };
-    let size = len.saturating_add((separator.len() + body.len()) as u64);
-    let prefix = if size > MAX_FEEDBACK_BYTES as u64 {
-        file.set_len(0)
-            .with_context(|| format!("Failed to truncate {}", path.display()))?;
-        DROPPED_NOTICES
-    } else {
-        separator
-    };
-    file.write_all(prefix.as_bytes())
-        .and_then(|()| file.write_all(body.as_bytes()))
-        .with_context(|| format!("Failed to append to {}", path.display()))
 }
 
 /// Append rejection feedback: the adjudicator concluded the disputed check (an
