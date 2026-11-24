@@ -1,3 +1,5 @@
+use crate::plan::parser::closing_run;
+
 pub(super) fn widen_fences(
     prefix: &str,
     fence_start: usize,
@@ -12,13 +14,14 @@ pub(super) fn widen_fences(
         &prefix[fence_start + fence_len..]
     );
 
-    let after_indent = suffix.trim_start_matches(' ');
-    let indent = suffix.len() - after_indent.len();
-    let after_run = after_indent.trim_start_matches('`');
-    let suffix = if after_indent.len() - after_run.len() < wanted {
-        format!("{}{fence}{after_run}", &suffix[..indent])
-    } else {
-        suffix.to_string()
+    // The suffix starts at the closing fence line; widen its run to match.
+    let closing_line = suffix.split('\n').next().unwrap_or(suffix);
+    let suffix = match closing_run(closing_line) {
+        Some(run) if run < wanted => {
+            let indent = closing_line.len() - closing_line.trim_start_matches(' ').len();
+            format!("{}{fence}{}", &suffix[..indent], &suffix[indent + run..])
+        }
+        _ => suffix.to_string(),
     };
     (prefix, suffix)
 }

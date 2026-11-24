@@ -98,21 +98,23 @@ pub(super) fn fix_work_symlink(repo_root: &Path) -> Result<()> {
 /// Fix an invalid work directory (neither dir nor symlink)
 ///
 /// The path is derived from [`state_dir`], the same resolver
-/// `check_work_dir_state` uses, and MUST stay in step with the detector: the
-/// directory branch below is a recursive delete, so aiming it at the other
-/// layout's directory would destroy that workspace's stages, sessions,
-/// signals, handoffs and memory while the real corruption survived.
+/// `check_work_dir_state` uses, and MUST stay in step with the detector. The
+/// detector reports only a path that is not a directory, so one that is a
+/// directory here was swapped in after the check: it may hold the workspace's
+/// stages, sessions, signals, handoffs and memory, and is refused rather than
+/// deleted.
 pub(super) fn fix_invalid_work(repo_root: &Path) -> Result<()> {
     let (work_path, _layout) = state_dir(repo_root);
     let metadata = fs::symlink_metadata(&work_path)
         .with_context(|| format!("Failed to inspect {}", work_path.display()))?;
-    // Only a real directory takes a recursive delete; a file, socket, FIFO or device is unlinked.
-    if metadata.file_type().is_dir() {
-        fs::remove_dir_all(&work_path)
-    } else {
-        fs::remove_file(&work_path)
-    }
-    .with_context(|| format!("Failed to remove {}", work_path.display()))?;
+    anyhow::ensure!(
+        !metadata.file_type().is_dir(),
+        "{} is a directory now, not the invalid file that was reported; it was left in place. Run `loom repair` again",
+        work_path.display()
+    );
+    // A file, socket, FIFO or device is unlinked.
+    fs::remove_file(&work_path)
+        .with_context(|| format!("Failed to remove {}", work_path.display()))?;
     // The settings files may carry a LOOM_WORK_DIR pin naming the directory
     // we just deleted. Left in place, it shadows WorkDir::new's upward
     // search in every later session of this repo (see
@@ -269,9 +271,9 @@ pub(super) enum WorkspaceFix {
 
 impl WorkspaceFix {
     /// Whether `loom init` may apply this without being asked. `InvalidWork`
-    /// is the only `false`: its fix is a recursive delete of the state
-    /// directory, keyed on shape detection a sibling plan stage rewrites, so
-    /// it stays with an explicit `loom repair --fix`.
+    /// is the only `false`: its fix unlinks the path the shape detection
+    /// reported as the state directory, so it stays with an explicit
+    /// `loom repair --fix`.
     fn unattended(&self) -> bool {
         !matches!(self, Self::InvalidWork)
     }

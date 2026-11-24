@@ -16,6 +16,7 @@ use super::bridge;
 use super::protocol::{CLOSE_ATTACH_FAILED, CLOSE_BUSY, CLOSE_SERVER_STOPPING, READY_FRAME};
 use super::pty::PtyChild;
 use super::resolve::{self, attach_args, Target};
+use super::tmux_program;
 use super::{Mode, WindowSize};
 use crate::commands::status::web::{TerminalLane, MAX_INBOUND_BYTES};
 use crate::web_server::access::{same_origin, AccessPolicy};
@@ -235,7 +236,7 @@ pub(super) fn close_with(socket: &mut WebSocket<TcpStream>, code: u16, reason: &
 }
 
 fn tmux_command(target: &Target, control: bool) -> Command {
-    let mut command = Command::new("tmux");
+    let mut command = tmux_program::command();
     command.args(attach_args(target, mode(control)));
     command.env_remove("TMUX");
     command.env("TERM", "xterm-256color");

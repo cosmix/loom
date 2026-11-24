@@ -20,8 +20,8 @@
 # Not guarded: complete and subagents:control (pinned by loom-control-complete.sh
 #   and loom-control-subagents.sh), memory and telemetry (swept from disk).
 #
-# Call marker: a call that passes and runs any control kind (the guarded kinds
-#   plus complete and subagents:control) also gets an empty file
+# Call marker: a call that passes and runs any control kind (a kind for which
+#   relay_kind_is_control in _relay_kinds.sh succeeds) also gets an empty file
 #   $LOOM_SCRATCH_DIR/.pre-<tool_use_id>. The relay hook relays a control ticket
 #   for the lead only when the ticket was written at or after that marker, so a
 #   ticket a subagent planted in the shared scratch directory earlier cannot be

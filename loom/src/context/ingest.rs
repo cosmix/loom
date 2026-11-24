@@ -35,18 +35,26 @@ pub struct IngestReport {
     pub issues: Vec<CatalogIssue>,
 }
 
+impl IngestReport {
+    /// The report of a build of `knowledge_root` that produced `catalog` from
+    /// `files` fingerprinted files.
+    pub(crate) fn for_build(knowledge_root: &Path, catalog: &Catalog, files: usize) -> Self {
+        Self {
+            knowledge_root: knowledge_root.to_path_buf(),
+            files,
+            chunks: catalog.chunks.len(),
+            revision: catalog.revision.clone(),
+            issues: catalog.issues.clone(),
+        }
+    }
+}
+
 /// Build a catalog from the knowledge tree. Pure and side-effect free: reads
 /// bytes, writes nothing.
 pub fn ingest(knowledge_root: &Path) -> Result<(Catalog, IngestReport)> {
     let (catalog, fingerprints) = catalog::build_with_fingerprints(knowledge_root)?;
 
-    let report = IngestReport {
-        knowledge_root: knowledge_root.to_path_buf(),
-        files: fingerprints.len(),
-        chunks: catalog.chunks.len(),
-        revision: catalog.revision.clone(),
-        issues: catalog.issues.clone(),
-    };
+    let report = IngestReport::for_build(knowledge_root, &catalog, fingerprints.len());
 
     Ok((catalog, report))
 }

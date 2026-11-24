@@ -25,8 +25,9 @@ export const RETRY_DROPPED_MS = 1000;
 export const STARTUP_TIMEOUT_MS = 10000;
 
 /**
- * Below the server's 64 KiB `max_frame_size` (`bridge.rs`), leaving headroom
- * so a single frame never brushes the cap.
+ * Below the server's 64 KiB inbound cap (`MAX_INBOUND_BYTES`, applied as the
+ * message and frame size limit in `terminal/upgrade.rs`), leaving headroom so a
+ * single frame never brushes the cap.
  */
 const MAX_SEND_CHUNK_BYTES = 32 * 1024;
 

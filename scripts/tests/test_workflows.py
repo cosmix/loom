@@ -1,3 +1,4 @@
+import ast
 from fnmatch import fnmatchcase
 from pathlib import Path
 import re
@@ -52,6 +53,34 @@ def filter_patterns(ci, name):
         for line in filters.splitlines()
         if line.strip().startswith("- ")
     ]
+
+
+def covered(path, patterns):
+    for pattern in patterns:
+        if pattern.endswith("/**"):
+            prefix = pattern[:-3]
+            if path == prefix or path.startswith(prefix + "/"):
+                return True
+        elif fnmatchcase(path, pattern):
+            return True
+    return False
+
+
+def repository_paths_read(source):
+    """Repository-relative paths this module builds from ROOT and WORKFLOWS."""
+    roots = {"ROOT": Path("."), "WORKFLOWS": Path(".github/workflows")}
+    paths = set()
+    for node in ast.walk(ast.parse(source)):
+        if (
+            isinstance(node, ast.BinOp)
+            and isinstance(node.op, ast.Div)
+            and isinstance(node.left, ast.Name)
+            and node.left.id in roots
+            and isinstance(node.right, ast.Constant)
+            and isinstance(node.right.value, str)
+        ):
+            paths.add((roots[node.left.id] / node.right.value).as_posix())
+    return paths
 
 
 class WorkflowTests(unittest.TestCase):
@@ -134,6 +163,23 @@ class WorkflowTests(unittest.TestCase):
             key_block(self.ci, "hook-syntax"),
         )
         self.assertIn("doc/loom/knowledge/**", filter_patterns(self.ci, "shell"))
+
+    def test_shell_filter_covers_every_file_this_module_reads(self):
+        # hook-syntax is the only job that runs this module, so a change to a
+        # file it reads must match the filter that starts that job.
+        paths = repository_paths_read(Path(__file__).read_text(encoding="utf-8"))
+        self.assertIn(".github/workflows", paths)
+        self.assertIn("loom/build/assets.rs", paths)
+        patterns = filter_patterns(self.ci, "shell")
+        for path in sorted(paths | {Path(__file__).relative_to(ROOT).as_posix()}):
+            with self.subTest(path=path):
+                self.assertTrue(covered(path, patterns), f"{path} is missing from the shell filter")
+
+    def test_shell_filter_covers_the_knowledge_check_implementation(self):
+        patterns = filter_patterns(self.ci, "shell")
+        for path in ("loom/src/fs/knowledge/mod.rs", "loom/src/commands/knowledge/mod.rs"):
+            with self.subTest(path=path):
+                self.assertTrue(covered(path, patterns), f"{path} is missing from the shell filter")
 
     def test_dependabot_updates_actions(self):
         config = (ROOT / ".github/dependabot.yml").read_text(encoding="utf-8")

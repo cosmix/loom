@@ -19,6 +19,7 @@ Desktop.ini
 /.bash_profile
 /.bashrc
 /.codex
+# /.gitattributes is tracked on purpose; this rule only covers an untracked mirage.
 /.gitattributes
 /.gitconfig
 /.gitmodules

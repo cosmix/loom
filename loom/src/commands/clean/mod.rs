@@ -2,6 +2,7 @@
 //! Usage: loom clean [--all] [--worktrees] [--sessions] [--state]
 
 mod base_graphs;
+mod detached;
 mod relay_dirs;
 #[cfg(test)]
 mod root_contract_tests;

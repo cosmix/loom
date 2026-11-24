@@ -252,7 +252,9 @@ impl ProseSources {
 }
 
 /// Derive prose authority from a PROJECT-relative path. `None` means the file
-/// is excluded from both chunking and fingerprinting.
+/// is not chunked (archived, or a `done-` plan). It is still fingerprinted:
+/// `chunks_and_fingerprints` and `prose_fingerprints` fingerprint every
+/// readable file, so a change to it moves the structural revision.
 pub(crate) fn prose_lifecycle(
     relative: &Path,
     explicit: Option<LifecycleState>,

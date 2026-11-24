@@ -57,7 +57,9 @@ use super::lifecycle;
 use super::shutdown::ShutdownHook;
 use super::wire::{chat::ChatFrame, message::PlanMessage, team::DraftTeamView};
 use crate::plan_session::bridge::host::SessionHost;
-use crate::plan_session::bridge::{Bridge, BridgeConfig, BridgeEvent, EndCause, EndMode, TurnPins};
+use crate::plan_session::bridge::{
+    input_unsaved, Bridge, BridgeConfig, BridgeEvent, EndCause, EndMode, TurnPins,
+};
 use crate::plan_session::kind::SessionKind;
 use crate::plan_session::model::{ChatDelta, SessionView};
 use crate::plan_session::scope::KickoffSize;
@@ -286,6 +288,11 @@ fn follow_sessions(
     let (weak, events) = (Arc::downgrade(ctx), Arc::downgrade(bridge));
     bridge.subscribe(Box::new(move |event| {
         let (Some(ctx), Some(bridge)) = (weak.upgrade(), events.upgrade()) else {
+            // Shutdown dropped the context: nothing here can save the returned input, and
+            // recovery would otherwise remove the session's own copy.
+            if matches!(event, BridgeEvent::InputReturned { .. }) {
+                input_unsaved();
+            }
             return;
         };
         match event {

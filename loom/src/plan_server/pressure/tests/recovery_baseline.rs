@@ -18,6 +18,7 @@ use crate::plan_session::bridge::registry::ChildRecord;
 use crate::plan_session::bridge::{RecoveredSession, RecoveryReport};
 use crate::plan_session::kind::SessionKind;
 use crate::process::sandbox_probe::skip_without_group_signals;
+use crate::test_stand_in::StandIn;
 
 const BASELINE: &str = "config-baseline.json";
 const BLOCK: &str = "config-block.json";
@@ -145,14 +146,14 @@ fn a_baseline_replaced_during_the_check_still_blocks_and_is_kept() {
     fs::create_dir_all(settings.parent().unwrap()).unwrap();
     fs::write(&settings, "{}").unwrap();
 
-    let mut child = Command::new("sleep").arg("1").spawn().unwrap();
+    let mut child = StandIn::exits_alone(Command::new("sleep").arg("1"));
     let mut report = interrupted_run();
     report.torn_down[0].children.push(ChildRecord {
         label: "codex".to_owned(),
         pid: child.id(),
         start_time: None,
     });
-    let reaper = thread::spawn(move || child.wait());
+    let reaper = thread::spawn(move || child.wait_within(Duration::from_secs(10)));
     let (root, later) = (f.root.clone(), runtime.clone());
     let new_run = thread::spawn(move || {
         thread::sleep(Duration::from_millis(200));
@@ -162,7 +163,7 @@ fn a_baseline_replaced_during_the_check_still_blocks_and_is_kept() {
     let line = check_baseline(&f.root, &runtime, &report, Duration::from_secs(10));
 
     new_run.join().unwrap();
-    reaper.join().unwrap().unwrap();
+    assert!(reaper.join().unwrap().success());
     let line = line.expect("the interrupted run's edit was not reported");
     assert!(line.contains(CONFIG_CHANGED), "{line}");
     let block = fs::read_to_string(runtime.dir.join(BLOCK)).expect("the edit wrote no block");

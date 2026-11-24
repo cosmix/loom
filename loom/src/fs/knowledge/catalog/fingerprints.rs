@@ -20,7 +20,11 @@ pub(crate) fn root_index_fingerprint(root: &Path) -> anyhow::Result<Option<FileF
     match fs::symlink_metadata(root.join(index)) {
         Ok(metadata) if metadata.file_type().is_file() => {}
         Ok(_) => return Ok(None),
-        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
+        // A knowledge root that is a regular file holds no INDEX.md, as
+        // `markdown_files` finds no files under it.
+        Err(error) if matches!(error.kind(), ErrorKind::NotFound | ErrorKind::NotADirectory) => {
+            return Ok(None)
+        }
         Err(error) => {
             return Err(error)
                 .with_context(|| format!("Failed to inspect {}", root.join(index).display()))

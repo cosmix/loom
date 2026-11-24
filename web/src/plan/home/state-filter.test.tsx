@@ -1,5 +1,4 @@
-import { fireEvent, screen, within } from "@testing-library/react";
-import { act } from "react";
+import { act, fireEvent, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { expect, it } from "vitest";
 

@@ -18,6 +18,8 @@ use crate::git::cleanup::{
 };
 use crate::models::worktree::Worktree;
 
+use super::detached::{held_worktrees, worktree_stage_ids, HeldWorktree};
+
 /// Non-destructive default for a flagless `loom clean`.
 ///
 /// Only prunes stale git worktree references (which cannot lose committed
@@ -105,31 +107,40 @@ pub(crate) fn unmerged_loom_branches(repo_root: &Path) -> UnmergedBranches {
     }
 }
 
-/// Show any `loom/*` branches that carry unmerged commits and require the user
+/// Show any `loom/*` branches that carry unmerged commits, and any worktree whose HEAD holds
+/// commits the target branch lacks (a detached HEAD no branch names), and require the user
 /// to confirm before they are deleted.
 ///
 /// Returns `Ok(true)` when it is safe to proceed:
-/// - no `loom/*` branches have unmerged work (nothing to lose), or
+/// - no `loom/*` branch or worktree has unmerged work (nothing to lose), or
 /// - the user typed `y`, or `LOOM_CLEAN_YES=1` was set.
 ///
 /// Returns `Ok(false)` to abort (user declined, or non-interactive stdin with
 /// unmerged work and no `LOOM_CLEAN_YES`).
 pub(super) fn confirm_branch_deletion(repo_root: &Path) -> Result<bool> {
-    confirm_branch_deletion_listing(unmerged_loom_branches(repo_root))
+    let listing = unmerged_loom_branches(repo_root);
+    let held = held_worktrees(repo_root, &listing.target_branch, &listing.branches)?;
+    confirm_branch_deletion_listing(listing, held)
 }
 
-fn confirm_branch_deletion_listing(listing: UnmergedBranches) -> Result<bool> {
+fn confirm_branch_deletion_listing(
+    listing: UnmergedBranches,
+    held: Vec<HeldWorktree>,
+) -> Result<bool> {
     if let Some(error) = listing.listing_error {
         anyhow::bail!("cannot inspect loom branches before cleanup: {error}");
     }
     let (target_branch, unmerged) = (listing.target_branch, listing.branches);
 
-    if unmerged.is_empty() {
+    if unmerged.is_empty() && held.is_empty() {
         // Nothing committed-but-unmerged would be lost.
         return Ok(true);
     }
 
-    print_unmerged_branches(&target_branch, &unmerged);
+    if !unmerged.is_empty() {
+        print_unmerged_branches(&target_branch, &unmerged);
+    }
+    print_held_worktrees(&target_branch, &held);
     if std::env::var("LOOM_CLEAN_YES").is_ok_and(|v| v == "1" || v.eq_ignore_ascii_case("true")) {
         println!(
             "  {} LOOM_CLEAN_YES set — proceeding without prompt.",
@@ -140,13 +151,13 @@ fn confirm_branch_deletion_listing(listing: UnmergedBranches) -> Result<bool> {
     if !std::io::stdin().is_terminal() {
         println!();
         println!(
-            "{} Refusing to delete unmerged branches non-interactively. \
+            "{} Refusing to delete unmerged branches or worktrees non-interactively. \
              Re-run with LOOM_CLEAN_YES=1 to override.",
             "✗".red().bold()
         );
         return Ok(false);
     }
-    print!("\nDelete these unmerged branches and their worktrees? (y/N): ");
+    print!("\nDelete these unmerged branches and worktrees? (y/N): ");
     std::io::stdout().flush().ok();
     let mut response = String::new();
     std::io::stdin().read_line(&mut response)?;
@@ -177,6 +188,28 @@ fn print_unmerged_branches(target_branch: &str, unmerged: &[(String, usize)]) {
     );
 }
 
+fn print_held_worktrees(target_branch: &str, held: &[HeldWorktree]) {
+    if held.is_empty() {
+        return;
+    }
+    println!();
+    println!(
+        "{} The following {} worktree(s) hold commits that are not on {} or cannot be checked, \
+         and will be deleted:",
+        "⚠".yellow().bold(),
+        held.len(),
+        target_branch.dimmed()
+    );
+    for worktree in held {
+        println!(
+            "    {} {} ({})",
+            "•".yellow(),
+            format!(".worktrees/{}", worktree.stage_id).cyan(),
+            worktree.why
+        );
+    }
+}
+
 /// Clean up all loom worktrees and their branches
 ///
 /// Returns (worktrees_removed, branches_removed) counts
@@ -203,13 +236,7 @@ pub(super) fn clean_worktrees(repo_root: &Path) -> Result<(usize, usize)> {
     }
 
     // Collect all stage IDs from .worktrees/ directory
-    let stage_ids: Vec<String> = fs::read_dir(&worktrees_dir)
-        .into_iter()
-        .flatten()
-        .flatten()
-        .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
-        .map(|entry| entry.file_name().to_string_lossy().to_string())
-        .collect();
+    let stage_ids = worktree_stage_ids(&worktrees_dir)?;
 
     // Use shared cleanup utilities for batch cleanup
     let config = CleanupConfig::forced();
@@ -342,7 +369,7 @@ mod tests {
                 branches,
                 listing_error: Some("git branch --list failed".into()),
             };
-            let error = confirm_branch_deletion_listing(listing).unwrap_err();
+            let error = confirm_branch_deletion_listing(listing, Vec::new()).unwrap_err();
             assert!(error.to_string().contains("cannot inspect loom branches"));
         }
     }
@@ -354,6 +381,6 @@ mod tests {
             branches: Vec::new(),
             listing_error: None,
         };
-        assert!(confirm_branch_deletion_listing(listing).unwrap());
+        assert!(confirm_branch_deletion_listing(listing, Vec::new()).unwrap());
     }
 }

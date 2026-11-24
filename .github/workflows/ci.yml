@@ -77,11 +77,15 @@ jobs:
               - "dev-install.sh"
               - "doc/loom/knowledge/**"
               - "loom/.githooks/**"
+              - "loom/build/**"
+              - "loom/src/fs/knowledge/**"
+              - "loom/src/commands/knowledge/**"
+              - ".github/workflows/**"
+              - ".github/dependabot.yml"
               - "loom/tests/completion_shell_paths.sh"
               - "skills/loom-auth/SKILL.md"
               - "skills/loom-c/SKILL.md"
               - "skills/loom-concurrency/SKILL.md"
-              - ".github/workflows/ci.yml"
 
   # Rust jobs cache dependencies; fresh source mtimes rebuild the workspace.
   lint:
@@ -364,41 +368,51 @@ jobs:
       # The real-binary hook tests skip without a current binary; a skip here
       # would be a silent pass, so the steps below require one.
       - name: Build the loom binary
+        id: build
         run: cargo build --locked --bin loom --manifest-path loom/Cargo.toml
 
       - name: Knowledge check
         run: loom/target/debug/loom knowledge check --strict --baseline doc/loom/knowledge/check-baseline.txt
 
       - name: Run the hook tests
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: LOOM_HOOK_TEST_REQUIRE_BINARY=1 bash loom-hooks/tests/run-all.sh
 
       # BSD tool shims put a padded wc, BSD stat and BSD date ahead of the GNU
       # tools, the way macOS runs the hooks.
       - name: Run the hook tests with BSD tool shims
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: LOOM_HOOK_TEST_REQUIRE_BINARY=1 LOOM_HOOK_TEST_BSD=1 bash loom-hooks/tests/run-all.sh
 
       - name: Pre-commit partial-staging regression
+        if: ${{ !cancelled() }}
         run: ./scripts/test-pre-commit-partial-staging.sh
 
       - name: Development installer regression
+        if: ${{ !cancelled() }}
         run: python3 -m unittest discover -s scripts/tests -p test_dev_install.py
 
       - name: Installer regression
+        if: ${{ !cancelled() }}
         run: python3 -m unittest discover -s scripts/tests -p test_install.py
 
       - name: Workflow regression
+        if: ${{ !cancelled() }}
         run: python3 -m unittest discover -s scripts/tests -p test_workflows.py
 
       - name: Changelog section priority regression
+        if: ${{ !cancelled() }}
         run: bash scripts/tests/changelog-section-priority.sh
 
       - name: Install bun
+        if: ${{ !cancelled() }}
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
 
       # The skill examples build against tokio offline, from the registry cache.
       # loom enables no tokio macros, so its own fetch leaves tokio-macros out;
       # a scratch crate with the examples' features fills the cache.
       - name: Fetch the Cargo registry
+        if: ${{ !cancelled() }}
         run: |
           cargo fetch --locked --manifest-path loom/Cargo.toml
           cargo new --bin --quiet "$RUNNER_TEMP/tokio-cache"
@@ -406,11 +420,13 @@ jobs:
           cargo fetch --manifest-path "$RUNNER_TEMP/tokio-cache/Cargo.toml"
 
       - name: Terminal reader and skill example regressions
+        if: ${{ !cancelled() }}
         run: python3 -m unittest discover -s scripts/tests -p test_terminal_and_skill_examples.py
 
       # The script skips a shell it cannot run, for machines without one. This
       # job installs them all, so a skip here would be a silent pass.
       - name: Completion shell path regression
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: |
           output=$(bash loom/tests/completion_shell_paths.sh)
           echo "$output"
@@ -452,6 +468,13 @@ jobs:
         uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
         with:
           toolchain: stable
+
+      - name: Cache Cargo dependencies
+        if: ${{ !cancelled() && steps.bash32.outcome == 'success' }}
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          workspaces: loom
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Build the loom binary
         if: ${{ !cancelled() && steps.bash32.outcome == 'success' }}

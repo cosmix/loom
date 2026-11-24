@@ -1,8 +1,6 @@
 //! Summary jobs running directly under Codex, outside the session bridge.
 
 use std::collections::BTreeMap;
-use std::fs::File;
-use std::io::{Read, Seek, SeekFrom};
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, ExitStatus};
@@ -360,16 +358,11 @@ fn prune_logs(dir: &Path) {
     }
 }
 
+/// The last 2 KiB of the log, lossily decoded; empty when it cannot be read. The shared tail
+/// opens without following a symlink.
 fn log_tail(path: &Path) -> String {
-    let read = || -> std::io::Result<Vec<u8>> {
-        let mut file = File::open(path)?;
-        let offset = file.metadata()?.len().saturating_sub(2048);
-        file.seek(SeekFrom::Start(offset))?;
-        let mut bytes = Vec::new();
-        file.take(2048).read_to_end(&mut bytes)?;
-        Ok(bytes)
-    };
-    String::from_utf8_lossy(&read().unwrap_or_default()).into_owned()
+    let bytes = crate::pressure::codex_run::log_tail(path, 2048).unwrap_or_default();
+    String::from_utf8_lossy(&bytes).into_owned()
 }
 
 #[cfg(test)]

@@ -4,6 +4,7 @@
 //! session gets a final write. The final writes run concurrently on the driver. The driver
 //! keeps each live session's record current for a later recovery.
 
+use std::cell::Cell;
 use std::collections::HashMap;
 use std::path::Path;
 use std::thread;
@@ -41,6 +42,24 @@ pub struct RecoveryReport {
     pub torn_down: Vec<RecoveredSession>,
     /// `(id, socket, why)`; the socket is empty when no record named one.
     pub left_alone: Vec<(String, String, String)>,
+}
+
+thread_local! {
+    /// Set by a listener of the `InputReturned` that `return_input` is publishing on this
+    /// thread; listeners run inline, so the flag cannot belong to another recovery.
+    static UNSAVED: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Called by an `InputReturned` listener that could not save the texts anywhere durable. It
+/// must run on the listener's own thread, before the listener returns. Recovery then keeps
+/// the session directory (and its `pending.json`), so the next restart returns them again.
+pub fn input_unsaved() {
+    UNSAVED.with(|unsaved| unsaved.set(true));
+}
+
+/// Whether `input_unsaved` ran on this thread since the last call; clears it.
+pub(crate) fn take_unsaved() -> bool {
+    UNSAVED.with(Cell::take)
 }
 
 const RESTARTED: &str = "the server restarted";
@@ -173,14 +192,16 @@ impl Bridge {
             }
         }
         terminate_children(&record.children);
+        // The texts leave `pending.json` only once a listener has saved them elsewhere; a
+        // listener that cannot save them keeps the directory for the next restart.
         let texts = read_pending(dir);
+        if !texts.is_empty() {
+            if let Err(why) = self.return_input(&record.id, texts) {
+                return left(why);
+            }
+        }
         if let Err(error) = remove_session_dir(dir) {
             return left(format!("cannot remove its directory: {error:#}"));
-        }
-        if !texts.is_empty() {
-            let id = record.id.clone();
-            let returned = BridgeEvent::InputReturned { id, texts };
-            self.lock().outbox.push(Out::Event(returned));
         }
         let ended = BridgeEvent::Ended {
             id: record.id.clone(),
@@ -194,6 +215,22 @@ impl Bridge {
             kind: record.kind,
             children: record.children,
         })
+    }
+
+    /// Hand `texts` to the listeners now, on this thread and in turn with any other flush,
+    /// and report whether they were all saved: a listener that could not save them calls
+    /// `input_unsaved` before it returns, and one that panics counts as not having saved.
+    pub(crate) fn return_input(&self, id: &str, texts: Vec<String>) -> Result<(), String> {
+        UNSAVED.with(|unsaved| unsaved.set(false));
+        let returned = BridgeEvent::InputReturned {
+            id: id.to_owned(),
+            texts,
+        };
+        self.flush_event(returned);
+        match take_unsaved() {
+            true => Err("its returned input could not be saved".to_owned()),
+            false => Ok(()),
+        }
     }
 
     /// Rebuild the live session from its spool and transcript (the driver reads both from

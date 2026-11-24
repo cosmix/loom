@@ -277,14 +277,28 @@ fn corrupt_checkpoint_rescans() {
 fn checkpoint_resumes_from_offset() {
     let fx = Fx::new();
     let now = unix_now();
+    // The scanner fingerprints the first and last 4 KiB of what it has read, and a rewrite
+    // inside those bytes restarts the file. Lines without usage keep A's rewrite between the
+    // two windows, so only a scan that resumes from the saved offset can skip it.
+    let filler = json!({"type": "user", "timestamp": iso(now - 100),
+        "message": {"role": "user", "content": "x".repeat(1024)}})
+    .to_string();
+    let padding = vec![filler; 16];
     let a = claude_line("msg_A1", now - 90, &usage(0, 0, 0, 10));
-    fx.add_stage("alpha", &uuid(1), &body(std::slice::from_ref(&a)));
+    let initial = [
+        padding.as_slice(),
+        std::slice::from_ref(&a),
+        padding.as_slice(),
+    ]
+    .concat();
+    fx.add_stage("alpha", &uuid(1), &body(&initial));
     fx.scan(now);
 
     let a2 = claude_line("msg_A2", now - 90, &usage(0, 0, 0, 99));
     assert_eq!(a2.len(), a.len(), "A2 must keep A's byte length");
     let b = claude_line("msg_B1", now - 60, &usage(0, 0, 0, 5));
-    overwrite_in_place(&fx.transcript(&uuid(1)), &body(&[a2, b]));
+    let rewritten = [padding.as_slice(), &[a2], padding.as_slice(), &[b]].concat();
+    overwrite_in_place(&fx.transcript(&uuid(1)), &body(&rewritten));
     let flow = fx.scan(now);
 
     assert_eq!(main_agent(stage(&flow, "alpha")).total.output, 15);

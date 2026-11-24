@@ -1,5 +1,4 @@
-import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { act } from "react";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import traceFixture from "@/plan/api/fixtures/trace.json";

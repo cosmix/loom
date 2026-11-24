@@ -47,9 +47,14 @@ pub(super) fn oversized_file(relative_path: &Path, content: &str) -> Option<Cata
 }
 
 /// Flag a generated `INDEX.md` whose byte size exceeds `MAX_INDEX_BYTES`.
-/// `None` when the index has not been generated yet.
+/// `None` when the index has not been generated yet or is not a regular file:
+/// the fingerprint skips a symlink at that name, so its target is not measured.
 pub(super) fn oversized_index(root: &Path) -> Option<CatalogIssue> {
-    let bytes = fs::metadata(root.join(INDEX_FILENAME)).ok()?.len();
+    let metadata = fs::symlink_metadata(root.join(INDEX_FILENAME)).ok()?;
+    if !metadata.file_type().is_file() {
+        return None;
+    }
+    let bytes = metadata.len();
     (bytes > MAX_INDEX_BYTES).then_some(CatalogIssue::OversizedIndex { bytes })
 }
 
