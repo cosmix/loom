@@ -282,7 +282,7 @@ export function PendingChips() {
   const keys = chipKeys(pending);
   if (!pending.length && !note && upload.busy === 0 && upload.problems.length === 0) return null;
   return (
-    <div aria-label="Pending attachments">
+    <div role="group" aria-label="Pending attachments">
       <div className="chat-chip-list">
         {pending.slice(0, count).map((draft, index) => (
           <PendingChip
@@ -356,7 +356,7 @@ export function SentChips({ item, turn }: { item: Extract<Item, { type: "user" }
   const open = useOpenChip();
   if (!item.attachments.length) return null;
   return (
-    <div aria-label="Sent attachments" className="chat-chips">
+    <div role="group" aria-label="Sent attachments" className="chat-chips">
       {item.attachments.map((a, index) => {
         if (a.kind === "file" && a.file) return <FileChip key={index} file={a.file} />;
         const changed = result?.files?.some(

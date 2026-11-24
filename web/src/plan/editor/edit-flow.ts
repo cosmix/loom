@@ -2,7 +2,7 @@ import { useAtomValue, useStore } from "jotai/react";
 import { useCallback, useEffect, useReducer, useRef, useState, type Dispatch } from "react";
 
 import type { DocView } from "@/plan/api/schema-files";
-import { fetchDoc, saveDoc } from "@/plan/files/api";
+import { fetchDoc, markChanged, saveDoc } from "@/plan/files/api";
 import { docChangedAtom, treeAtom } from "@/plan/files/atoms";
 import { renamedPlan } from "@/plan/files/tree";
 import { treeDocs } from "@/plan/files/tree-docs";
@@ -14,7 +14,9 @@ import type { StageSpan } from "./editor-provenance";
 import { pendingEditFor, requestEditAtom } from "./request-edit";
 import { initialSaveFlow, saveFlow, type SaveFlowEvent, type SaveFlowState } from "./save-flow";
 
-type Start = { flow: SaveFlowState; restored: boolean };
+// `adopted` is the editor id of the stored draft this tab took over, so discard and a clean
+// save remove that copy too; clearDrafts alone only removes this page load's own copies.
+type Start = { flow: SaveFlowState; restored: boolean; adopted: string | null };
 
 /**
  * The opening state: a requested edit (plan 9's Restore) or a stored draft. Text for
@@ -30,13 +32,20 @@ function startState(doc: DocView, store: Store): Start {
       request.openedHash === doc.hash
         ? saveFlow(base, { type: "change", text: request.text })
         : merge(request.text);
-    return { flow, restored: false };
+    return { flow, restored: false, adopted: null };
   }
   const drafts = findDrafts(doc.path);
   const same = drafts.find((draft) => draft.openedHash === doc.hash);
-  if (same) return { flow: saveFlow(base, { type: "change", text: same.text }), restored: true };
+  if (same) {
+    const flow = saveFlow(base, { type: "change", text: same.text });
+    return { flow, restored: true, adopted: same.editorId };
+  }
   const older = drafts[0];
-  return { flow: older ? merge(older.text) : base, restored: false };
+  return {
+    flow: older ? merge(older.text) : base,
+    restored: false,
+    adopted: older?.editorId ?? null,
+  };
 }
 
 export function draftNote(result: SaveDraftResult | null): string | null {
@@ -74,10 +83,12 @@ type Latest = { current: SaveFlowState };
 
 function useFlowActions(
   path: string,
+  store: Store,
   latest: Latest,
   dispatch: Dispatch<SaveFlowEvent>,
   canAuthor: boolean,
   cancelDraft: () => void,
+  clearAll: () => void,
 ) {
   const author = useRef(canAuthor);
   author.current = canAuthor;
@@ -89,11 +100,14 @@ function useFlowActions(
       const { status, text, openedHash } = latest.current;
       if (!author.current || status === "saving") return;
       dispatch({ type: "save" });
-      void saveDoc(path, text, openedHash, withErrors).then((result) =>
-        dispatch({ type: "result", result }),
-      );
+      void saveDoc(path, text, openedHash, withErrors).then((result) => {
+        dispatch({ type: "result", result });
+        // Marks the open document stale so the reading view refetches without the watcher.
+        if (result.ok && result.value.result === "saved")
+          markChanged(store, path, result.value.hash);
+      });
     },
-    [path, latest, dispatch],
+    [path, store, latest, dispatch],
   );
 
   const compare = useCallback(async () => {
@@ -110,9 +124,9 @@ function useFlowActions(
 
   const discard = useCallback(() => {
     cancelDraft();
-    clearDrafts(path);
+    clearAll();
     dispatch({ type: "discard" });
-  }, [path, dispatch, cancelDraft]);
+  }, [dispatch, cancelDraft, clearAll]);
 
   return { compareError, save, compare, discard };
 }
@@ -126,8 +140,24 @@ export function useEditFlow(doc: DocView, canAuthor: boolean) {
   const latest = useRef(state);
   latest.current = state;
   const { path } = doc;
-  const { schedule: scheduleDraft, cancel: cancelDraft } = useDraftWriter(setDraftResult);
-  const actions = useFlowActions(path, latest, dispatch, canAuthor, cancelDraft);
+  // The adopted copy is removed ahead of this load's first draft write, so a later reload
+  // cannot find it and bring back text discarded from a newer copy. Once removed (or cleared
+  // by a discard or clean save) it is dropped: that editor id may now belong to a tab still
+  // open, whose newer copy must not be deleted.
+  const adopted = useRef(start.adopted);
+  const clearAdopted = useCallback(() => {
+    if (adopted.current) clearDrafts(path, adopted.current);
+    adopted.current = null;
+  }, [path]);
+  const { schedule: scheduleDraft, cancel: cancelDraft } = useDraftWriter(
+    setDraftResult,
+    clearAdopted,
+  );
+  const clearAll = useCallback(() => {
+    clearDrafts(path);
+    clearAdopted();
+  }, [path, clearAdopted]);
+  const actions = useFlowActions(path, store, latest, dispatch, canAuthor, cancelDraft, clearAll);
 
   useEffect(() => {
     if (pendingEditFor(store, path)) store.set(requestEditAtom, null);
@@ -136,10 +166,10 @@ export function useEditFlow(doc: DocView, canAuthor: boolean) {
   useEffect(() => {
     if (!state.clearDrafts) return;
     cancelDraft();
-    clearDrafts(path);
+    clearAll();
     setRestored(false);
     dispatch({ type: "draftsCleared" });
-  }, [state.clearDrafts, path, cancelDraft]);
+  }, [state.clearDrafts, cancelDraft, clearAll]);
 
   const change = useCallback(
     (text: string) => {

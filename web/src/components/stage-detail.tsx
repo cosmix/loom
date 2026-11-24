@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatElapsed } from "@/lib/format";
+import { visibleBidi } from "@/lib/visible-bidi";
 
 /// One label/value pair; the hint explains the field on hover.
 export interface Row {
@@ -124,7 +125,7 @@ export function StageSummaryText({ summary }: { summary: string | null }) {
       aria-label="stage summary"
       className="stage-summary max-h-24 max-w-[78ch] overflow-y-auto text-[13.5px] leading-relaxed whitespace-pre-line"
     >
-      {summary}
+      {visibleBidi(summary)}
     </p>
   );
 }

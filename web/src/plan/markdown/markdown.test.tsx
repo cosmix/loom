@@ -1,5 +1,5 @@
-import { cleanup } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { cleanup, fireEvent, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import hostile from "@/plan/markdown/fixtures/hostile.md?raw";
 import { expectInert, linkNamed, renderMarkdown } from "@/plan/markdown/render-test-utils";
@@ -128,5 +128,28 @@ describe("Markdown against hostile input", () => {
     expect(link?.getAttribute("href")).toBe("/files/missing.md");
     expect(link?.className).toContain("md-missing");
     expect(link?.getAttribute("title")).toBe("not found");
+  });
+
+  it("shows bidirectional controls as code points and keeps joiners", () => {
+    const writeText = vi.fn<(text: string) => Promise<void>>().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    const emoji = "\u{1F468}\u200D\u{1F469}\u200D\u{1F467}";
+    const joined = "a\u200Cb";
+    const source = `a\u202Eb ${emoji} ${joined}\n\n\`c\u2066d\`\n\n\`\`\`\ne\u202Ef\n\`\`\`\n`;
+    try {
+      const { container } = renderMarkdown(source);
+      const text = container.textContent ?? "";
+      expect(text).toContain("a\u27E8U+202E\u27E9b");
+      expect(text).toContain("c\u27E8U+2066\u27E9d");
+      expect(text).toContain("e\u27E8U+202E\u27E9f");
+      expect(text).not.toMatch(/[\u202E\u2066]/u);
+      expect(text).toContain(emoji);
+      expect(text).toContain(joined);
+
+      fireEvent.click(screen.getByRole("button", { name: "Copy code" }));
+      expect(writeText).toHaveBeenCalledWith("e\u202Ef");
+    } finally {
+      Reflect.deleteProperty(navigator, "clipboard");
+    }
   });
 });

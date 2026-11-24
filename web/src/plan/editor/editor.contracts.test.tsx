@@ -213,8 +213,8 @@ describe("editor contracts", () => {
     ) as Record<string, string>;
     const staticImport =
       /^\s*(?:import|export)\b[^;]*?\bfrom\s*["']@codemirror\/|^\s*import\s*["']@codemirror\//m;
-    // The chunk is these four modules; line-break.ts is pure and imports no CodeMirror.
-    const chunk = ["codemirror", "live-preview", "md-commands", "marks-gutter"].map(
+    // The chunk is these five modules; line-break.ts is pure and imports no CodeMirror.
+    const chunk = ["codemirror", "live-preview", "md-commands", "marks-gutter", "view-handle"].map(
       (name) => `/src/plan/editor/${name}.ts`,
     );
 

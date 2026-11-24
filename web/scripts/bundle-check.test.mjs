@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -178,6 +178,21 @@ describe("bundle-check CLI", () => {
       encoding: "utf8",
     });
   const outcome = ({ status, stdout, stderr }) => ({ status, stdout, stderr });
+
+  // No override: a sentinel that occurs in no chunk of the real build must fail here.
+  it.skipIf(!existsSync(resolve(webDir, "dist/.vite/manifest.json")))(
+    "passes against the committed dist",
+    () => {
+      const { LOOM_BUNDLE_CHECK_DIST: _override, ...env } = process.env;
+      const result = spawnSync(process.execPath, [resolve(scriptDir, "bundle-check.mjs")], {
+        cwd: webDir,
+        encoding: "utf8",
+        env,
+      });
+      expect(result.stderr).toBe("");
+      expect(result.status).toBe(0);
+    },
+  );
 
   it("runs identically from the web directory and repository root", () => {
     const dist = writeDist(clean);

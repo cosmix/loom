@@ -66,9 +66,10 @@ it("ignores a tick or state before the socket's first full", () => {
   socket.receive(tick("2099-01-01T00:00:00Z"));
   socket.receive(state("2099-01-01T00:00:00Z"));
   expect(store.get(snapshotAtom)).toBeNull();
-  expect(store.get(connectionAtom).phase).toBe("live");
+  expect(store.get(connectionAtom).phase).toBe("connecting");
 
   socket.receive(full(fixture));
+  expect(store.get(connectionAtom).phase).toBe("live");
   socket.receive(tick("2099-01-01T00:00:01Z"));
   expect(store.get(snapshotAtom)?.generated_at).toBe("2099-01-01T00:00:01Z");
   dispose();

@@ -93,6 +93,24 @@ describe("Covers lines", () => {
     expect(container.querySelectorAll(".md-covers a")).toHaveLength(2);
   });
 
+  it("shows a bidirectional control in a ref, a heading title or a section title as its label", () => {
+    const rlo = String.fromCodePoint(0x202e);
+    const lookup = lookupOf({
+      2: sectionOf(S02, `Asset${rlo}library`, { "the-five-kinds": `The${rlo}five kinds` }),
+    });
+    const { container } = renderCovers(
+      `Covers: section_02#the-five-kinds, section_02#gone${rlo}x\n`,
+      lookup,
+    );
+    const text = container.querySelector(".md-covers")?.textContent ?? "";
+    expect(text).toContain("Asset⟨U+202E⟩library");
+    expect(text).toContain("The⟨U+202E⟩five kinds");
+    expect(text).toContain("gone⟨U+202E⟩x");
+    expect(container.innerHTML).not.toContain(rlo);
+    const missing = container.querySelector('[data-state="missing"] .md-covers__raw');
+    expect(missing?.getAttribute("title")).toBe("section_02#gone⟨U+202E⟩x: not found in the spec");
+  });
+
   it("holds a heading the section has not finished loading as pending, not missing", () => {
     const loading = lookupOf({ 2: sectionOf(S02, "Asset library", {}, false) });
     const { container } = renderCovers("Covers: section_02#unpacking-rules\n", loading);

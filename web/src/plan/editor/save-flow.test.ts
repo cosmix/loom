@@ -145,6 +145,21 @@ describe("saveFlow edits after a verdict", () => {
     expect(state).toMatchObject({ status: "idle", text: "edit, then more" });
   });
 
+  it("drops a verdict for older text, so Save with errors cannot force newer text", () => {
+    let state = saveFlow(initialSaveFlow("original", "h1"), { type: "change", text: "edit" });
+    state = saveFlow(state, { type: "save" });
+    state = saveFlow(state, { type: "change", text: "newer edit" });
+    state = saveFlow(state, { type: "result", result: { ok: true, value: invalid } });
+    expect(state).toMatchObject({ status: "idle", validation: null, text: "newer edit" });
+  });
+
+  it("keeps the verdict when the text is unchanged since the submission", () => {
+    let state = saveFlow(initialSaveFlow("original", "h1"), { type: "change", text: "edit" });
+    state = saveFlow(state, { type: "save" });
+    state = saveFlow(state, { type: "result", result: { ok: true, value: invalid } });
+    expect(state.status).toBe("invalid");
+  });
+
   it("keeps a conflict while the user edits the merge", () => {
     let state = saveFlow(initialSaveFlow("original", "h1"), { type: "change", text: "mine" });
     state = saveFlow(state, {

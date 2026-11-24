@@ -297,8 +297,8 @@
     "file": "assets/feature-mark.js",
     "name": "feature-mark",
     "imports": [
-      "_heading-parts.js",
-      "_react.js"
+      "_react.js",
+      "_heading-parts.js"
     ],
     "css": [
       "assets/feature-mark.css"
@@ -412,7 +412,8 @@
       "_use-media-query.js",
       "_quota-meters.js",
       "_zod.js",
-      "_heading-parts.js"
+      "_heading-parts.js",
+      "_feature-mark.js"
     ]
   },
   "_quota-meters.css": {
@@ -1807,6 +1808,7 @@
       "_sentence-text.js",
       "_heading-parts.js",
       "plan.html",
+      "_feature-mark.js",
       "_store.js",
       "_quota-meters.js"
     ]

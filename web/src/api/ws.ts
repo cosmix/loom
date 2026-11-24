@@ -15,7 +15,8 @@ export interface SocketDeps {
 
 // The server sends a `tick` on every collect (every 1-2s, loom feed.rs), so 30s
 // without any message means the socket is dead even though no close event fired
-// (a half-open TCP connection never fires one).
+// (a half-open TCP connection never fires one). A socket that never applies a
+// snapshot is stale after the same time even if dropped frames keep arriving.
 const WATCHDOG_CHECK_MS = 5000;
 const STALE_AFTER_MS = 30000;
 const BACKOFF_MS = [1000, 2000, 4000, 8000, 10000] as const;
@@ -45,6 +46,7 @@ class StatusSocketConnection {
   private opened = false;
   // Set by the socket's first `full`; deltas before it have no snapshot to change.
   private primed = false;
+  private unprimedSince = 0;
   private readonly every: typeof setInterval;
   private readonly stopEvery: typeof clearInterval;
   private readonly now: () => number;
@@ -105,6 +107,10 @@ class StatusSocketConnection {
       }
       return;
     }
+    if (!this.primed && this.now() - this.unprimedSince >= STALE_AFTER_MS) {
+      this.reconnect("no snapshot for 30s");
+      return;
+    }
     const phase = this.store.get(connectionAtom).phase;
     if (
       (phase === "live" || phase === "error") &&
@@ -128,7 +134,7 @@ class StatusSocketConnection {
     }
     this.attemptStartedAt = this.now();
     this.opened = false;
-    this.primed = false;
+    this.unprime();
     const socket = new this.Socket(this.url);
     this.socket = socket;
     // Every handler checks it's still the current socket: a superseded
@@ -140,7 +146,6 @@ class StatusSocketConnection {
       this.opened = true;
       this.attempts = 0;
       this.lastMessageAt = this.now();
-      this.setConnection("live");
     };
     socket.onmessage = (event) => {
       if (this.stopped || this.socket !== socket) return;
@@ -158,12 +163,17 @@ class StatusSocketConnection {
     };
   }
 
+  private unprime(): void {
+    this.primed = false;
+    this.unprimedSince = this.now();
+  }
+
   private receiveMessage(data: unknown): void {
     let value: unknown;
     try {
       value = JSON.parse(String(data));
     } catch (error) {
-      this.primed = false;
+      this.unprime();
       this.setConnection("error", "invalid JSON frame");
       console.error("dashboard: bad frame", error);
       return;
@@ -173,7 +183,7 @@ class StatusSocketConnection {
       // A rejected frame leaves the snapshot behind the server, so later deltas
       // would apply to stale data and a valid tick would hide the error. Drop
       // deltas until a `full` parses.
-      this.primed = false;
+      this.unprime();
       this.setConnection("error", issueMessage(result.issues));
       console.error("dashboard: bad frame", result.issues);
       return;

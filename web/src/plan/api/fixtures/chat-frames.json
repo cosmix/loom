@@ -79,5 +79,15 @@
   {
     "frame": "queue_returned",
     "texts": ["Review the updated plan for missing steps."]
+  },
+  {
+    "frame": "queue_returned",
+    "texts": ["Held while the pressure round started."],
+    "cause": "pressure"
+  },
+  {
+    "frame": "queue_returned",
+    "texts": ["Not delivered before the server restarted."],
+    "cause": "recovery"
   }
 ]

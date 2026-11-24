@@ -36,6 +36,9 @@ export class FakeSocket {
     this.readyState = FakeSocket.OPEN;
     this.onopen?.(new Event("open"));
   }
+  ready(): void {
+    this.onmessage?.({ data: '{"ready":true}' } as MessageEvent);
+  }
   send(data: string | ArrayBufferLike | Blob | ArrayBufferView): void {
     this.sent.push(data);
   }
@@ -246,6 +249,9 @@ export async function mounted(stage = terminalStage()) {
 
 export async function live(stage = terminalStage()) {
   const terminal = await mounted(stage);
-  act(() => FakeSocket.instances[0].open());
+  act(() => {
+    FakeSocket.instances[0].open();
+    FakeSocket.instances[0].ready();
+  });
   return terminal;
 }

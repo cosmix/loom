@@ -22,9 +22,11 @@ function useLeaving(doc: DocView, flow: EditFlow, dirty: boolean) {
   }, [leaveTo, navigate]);
   useEffect(() => {
     if (!closing || state.status === "saving") return;
-    if (state.status === "saved") setLeaveTo(toAddress(doc.path));
-    else setClosing(false);
-  }, [closing, state.status, doc.path]);
+    // Text typed while the save was in flight is not on disk: stay and keep it.
+    if (state.status === "saved" && state.text === state.savedText) {
+      setLeaveTo(toAddress(doc.path));
+    } else setClosing(false);
+  }, [closing, state.status, state.text, state.savedText, doc.path]);
 
   const leave = () => setLeaveTo(toAddress(doc.path));
   return {

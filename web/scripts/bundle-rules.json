@@ -47,7 +47,7 @@
       "Could not load pressure options",
       "Commit or stash the blocking changes first",
       "No heading matches this filter.",
-      "This feature has no metaplan, so no Plan follow-ups can start."
+      "Commit the changes under doc/ first"
     ]
   }
 }

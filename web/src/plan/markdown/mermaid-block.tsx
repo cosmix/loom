@@ -2,6 +2,7 @@ import { type JSX, useEffect, useId, useState } from "react";
 
 import { mermaidThemeVariables, useThemeSignature } from "@/plan/markdown/mermaid-theme";
 import { PlainCodeBlock } from "@/plan/markdown/plain-code-block";
+import { sanitizeDiagram } from "@/plan/markdown/sanitize-diagram";
 
 type Drawn = { svg: string } | { error: true };
 
@@ -20,7 +21,9 @@ async function draw(source: string, reactId: string): Promise<Drawn> {
       themeVariables: mermaidThemeVariables(),
     });
     const { svg } = await mermaid.render(id, source);
-    return { svg };
+    const safe = sanitizeDiagram(svg);
+    if (safe === null) throw new Error("diagram is not an svg");
+    return { svg: safe };
   } catch {
     // A failed parse leaves its error graphic in the body; remove it.
     document.getElementById(`d${id}`)?.remove();
@@ -59,7 +62,8 @@ export function MermaidBlock({ source }: { source: string }): JSX.Element {
     <figure
       className="md-diagram"
       aria-label="Mermaid diagram"
-      // The svg is mermaid's own output under securityLevel "strict" (sanitised, no scripts).
+      // The svg is mermaid's output (securityLevel "strict") reduced by `sanitizeDiagram`, because
+      // mermaid's sanitiser allows HTML inside `foreignObject`.
       dangerouslySetInnerHTML={{ __html: drawn.svg }}
     />
   );
