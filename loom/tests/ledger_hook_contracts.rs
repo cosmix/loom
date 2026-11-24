@@ -9,6 +9,10 @@ use std::process::{Command, Output, Stdio};
 use std::time::Duration;
 use tempfile::TempDir;
 
+#[path = "test_support/mod.rs"]
+mod test_support;
+use test_support::git_repo::{self, RepoBuilder};
+
 const LEDGER: &str = "loom/maintainability-baseline.txt";
 const TIGHTENED_ROW: &str = "function src/a.rs f 60";
 
@@ -63,12 +67,12 @@ impl Fixture {
             "# Maintainability ledger\n# Rows only shrink.\nfile src/a.rs 500\n{TIGHTENED_ROW}\n"
         );
         fs::write(fx.repo.join(LEDGER), ledger).expect("write ledger");
-        fx.git(&["init", "-q"]);
-        fx.git(&["config", "user.name", "Ledger Test"]);
-        fx.git(&["config", "user.email", "ledger@example.invalid"]);
-        fx.git(&["config", "commit.gpgsign", "false"]);
-        fx.git(&["add", "."]);
-        fx.git(&["commit", "-q", "-m", "base"]);
+        RepoBuilder::default()
+            .identity("Ledger Test", "ledger@example.invalid")
+            .no_seed()
+            .init_in(&fx.repo);
+        git_repo::git(&fx.repo, &["add", "."]);
+        git_repo::git(&fx.repo, &["commit", "-q", "-m", "base"]);
         fx
     }
 
@@ -76,9 +80,9 @@ impl Fixture {
     /// variable, the fakes first on PATH, and HOME and TMPDIR inside the fixture.
     fn command(&self, program: &str) -> Command {
         let mut command = Command::new(program);
+        git_repo::isolate(&mut command);
         for (key, _) in std::env::vars_os() {
-            let name = key.to_string_lossy();
-            if name.starts_with("LOOM_") || name.starts_with("GIT_") {
+            if key.to_string_lossy().starts_with("LOOM_") {
                 command.env_remove(&key);
             }
         }
@@ -88,7 +92,6 @@ impl Fixture {
             .env("PATH", format!("{}:{path}", self.bin.display()))
             .env("HOME", &self.home)
             .env("TMPDIR", &self.tmpdir)
-            .env("GIT_CONFIG_NOSYSTEM", "1")
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -100,25 +103,13 @@ impl Fixture {
             .unwrap_or_else(|error| panic!("run {what}: {error:#}"))
     }
 
-    fn git(&self, args: &[&str]) -> String {
-        let mut command = self.command("git");
-        command.args(args);
-        let output = self.output(command, "git");
-        assert!(
-            output.status.success(),
-            "git {args:?}: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        String::from_utf8_lossy(&output.stdout).into_owned()
-    }
-
     fn stage_source_edit(&self) {
         fs::write(
             self.repo.join("loom/src/a.rs"),
             "fn f() {\n    let _x = 1;\n}\n",
         )
         .expect("edit a.rs");
-        self.git(&["add", "loom/src/a.rs"]);
+        git_repo::git(&self.repo, &["add", "loom/src/a.rs"]);
     }
 
     /// Run the real pre-commit hook; returns its exit code and both streams.
@@ -136,7 +127,7 @@ impl Fixture {
     }
 
     fn staged(&self) -> Vec<String> {
-        self.git(&["diff", "--cached", "--name-only"])
+        git_repo::git(&self.repo, &["diff", "--cached", "--name-only"])
             .lines()
             .map(str::to_string)
             .collect()
