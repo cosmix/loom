@@ -12,11 +12,10 @@
 
 ### Layering Violations
 
-Lower layers import from higher ones. Each edge was checked against the tree; the full list, with the module cycles, is in [Core Abstractions](architecture/core-abstractions.md#layering-violations-known-issues).
+Lower layers import from higher ones. Each edge was checked against the tree (the HMAC helpers moved to `utils/hmac.rs`, and `git` no longer imports `orchestrator`); the full list, with the module cycles, is in [Core Abstractions](architecture/core-abstractions.md#layering-violations-known-issues).
 
 - daemon calls commands: `loom/src/daemon/server/client.rs::authorize_preface` (`commands::stage::admin_proof::verify_and_consume_admin_proof`)
 - orchestrator calls commands: `loom/src/orchestrator/core/coherence.rs::begin_scheduling_pass` (`commands::stage::complete::strip_privileged_env_for_runtime`) and `loom/src/orchestrator/skip.rs::skip_stage` (`commands::stage::native_gate::ensure_no_native_workers`)
-- git imports orchestrator: `loom/src/git/cleanup/orphans.rs` (`orchestrator::merge_lifecycle::{CleanupOutcome, MergeLifecycle}`)
 - models imports plan, verify, git, assets and fs: `models/stage/{types,checks,methods}.rs` and `models/dispute_criterion.rs` (`plan`), `models/dispute.rs` (`verify`), `models/stage/merge_block.rs` (`git`), `models/forward_receipt/transcript/argv.rs` (`assets`), `models/stage/sandbox_config.rs` (`fs::permissions`)
 
 ## Code Quality Concerns
@@ -49,7 +48,7 @@ Full detail: [native-codex-qualification.md](concerns/native-codex-qualification
 
 ## Automatic-Knowledge Plan Followups
 
-Three open items: four production-dead `KnowledgeDir` methods kept alive only by each other's tests, a
+Three open items: one production-dead `KnowledgeDir` method (`read_target`), a
 writer/reader plan-key normalisation mismatch, and a `LOOM_PERMISSIONS_WORKTREE` constant with no non-test consumer.
 Refresh source reads are bounded (`SourceRead` hashes through a fixed 16 KiB buffer and retains at most
 `MAX_EXTRACTED_FILE_BYTES`); source windows read through a separate path that needs its own bound audit. The topic also
@@ -59,7 +58,7 @@ Full detail: [automatic-knowledge-source-graph-followups.md](concerns/automatic-
 
 ## Tier-1 Knowledge Housekeeping Backlog
 
-`loom knowledge check --strict` enforces the tier-1 limits (250 lines per file, 40 per section), the tier-2 limits (400 per file, 80 per section), resolvable source references and a byte budget on `INDEX.md` (`MAX_INDEX_BYTES`, `loom/src/fs/knowledge/catalog/size.rs`). `INDEX.md` is over that budget and `doc/loom/knowledge/check-baseline.txt` records it as `oversized-index`, so the gate is `loom knowledge check --strict --baseline doc/loom/knowledge/check-baseline.txt`; every new topic adds an INDEX row, so shrinking the index is the open work.
+`loom knowledge check --strict` enforces the tier-1 limits (250 lines per file, 40 per section), the tier-2 limits (400 per file, 80 per section), resolvable source references and a byte budget on `INDEX.md` (`MAX_INDEX_BYTES` = 24,576, `loom/src/fs/knowledge/catalog/size.rs`). `INDEX.md` is under that budget, and the gate is `loom knowledge check --strict --baseline doc/loom/knowledge/check-baseline.txt`; every new topic adds an INDEX row, so keep blurbs short.
 What remains of the CLI's own rough edges: `replace-section`'s CRLF/trailing-blank-line quirks, `update`'s stdin-vs-inline trim mismatch, no blurb flag on `update`, and no in-place heading rename (delete-section plus update is the workaround).
 
 → [Knowledge CLI Gaps](concerns/knowledge-cli-gaps.md)
@@ -169,8 +168,8 @@ The merge/recovery edge cases: `loom stage merge`'s worktree-cwd requirement, a 
 revert path, the `BranchMissing` phantom-merge risk, the heuristic `BaseConflict` carve-out,
 `retry --force` racing orphan-recovery, the completion-broker's
 post-transition nonce-burn ordering, the attribution code that has nothing left to attribute, the
-editor residual between stash and pop, the `update-ref` window,
-accumulating autostash backup refs, `human-review --force-complete` requiring no operator proof by design, a
+`update-ref` window,
+`human-review --force-complete` requiring no operator proof by design, a
 newline inside a refused fast-forward path, and a loom gate error that parks a stage with no self-recovery (no
 dispute covers loom's own gates, a deliberate block is never retried; proposed: a could-not-evaluate gate result).
 
@@ -243,3 +242,9 @@ Open items from the plan-summary levels and fragment column, the three-theme pal
 ## Open Items After the Helper Consolidation
 
 Symlink, FIFO and size-cap gaps in writers the consolidation left alone, remaining private-index and read-only-runner copies, process-group diagnostics, frontmatter and path edge cases, and a proposal to make `loom subagents watch` wait for codex forwarder registration. See [consolidation-followups](concerns/consolidation-followups.md). Guard gaps and leftover unisolated git calls in tests: [consolidation-followups](concerns/consolidation-followups.md).
+
+## Review Remediation Follow-Ups
+
+Reviewer suggestions the November 2026 remediation plan left open (merge quarantine, returned planner input, dashboard and runtime, orchestration, tokens, hooks and CI, web sockets and drafts, contract tooling, knowledge and graph) and the findings it left out, each with its reason.
+
+→ [Review Remediation Follow-Ups](concerns/review-remediation-followups.md)

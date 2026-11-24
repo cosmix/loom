@@ -223,9 +223,9 @@ prompt spells the schema out.
 
 **Why:** the dispute was filed before the frozen file was edited.
 
-**Prevention:** apply the exact proposed edit to the frozen file and commit it before `dispute-contract`, then cite the commit with `--evidence-commit`. This prescription contradicted the rule never to edit a frozen file; see [Needs-More-Evidence Feedback Asked for a Frozen-File Edit](#needs-more-evidence-feedback-asked-for-a-frozen-file-edit-2026-11-17) for the `--replacement` flow that replaced it. A source site that builds a struct with a trailing `..Default::default()` for a field a later plan adds carries `#[allow(clippy::needless_update)]` (precedent `loom/src/map/views/tests.rs:313`), and a frozen contract that does the same needs the same allow.
+**Prevention:** never edit a frozen file. Edit a copy in `LOOM_SCRATCH_DIR` and attach it with `loom stage dispute-contract --replacement <frozen-file>=<path>` (`commands/stage/dispute_kinds.rs::read_replacement`; the daemon applies an accepted replacement in `orchestrator/adjudication/apply_contract_replacement.rs`). The first prescription here, committing the edit to the frozen file before the dispute, contradicted that rule; see [Needs-More-Evidence Feedback Asked for a Frozen-File Edit](#needs-more-evidence-feedback-asked-for-a-frozen-file-edit-2026-11-17). A source site that builds a struct with a trailing `..Default::default()` for a field a later plan adds carries `#[allow(clippy::needless_update)]` (precedent `loom/src/map/views/tests.rs:313`), and a frozen contract that does the same needs the same allow.
 
-**Fix:** the second dispute carried the applied edit and its commit.
+**Fix:** the second dispute carried the edit; the `--replacement` flow now carries it inline.
 
 ## Needs-More-Evidence Feedback Asked for a Frozen-File Edit (2026-11-17)
 

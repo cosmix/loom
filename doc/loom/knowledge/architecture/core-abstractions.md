@@ -104,16 +104,13 @@ proof.
 
 Correct dependency direction: commands/ -> orchestrator/ -> models/ (top), daemon/ / git/ / plan/ (middle), fs/ (bottom).
 
-Upward edges in production code (test modules excluded), each checked against the tree:
+Upward edges in production code (test modules excluded), each checked against the tree. The HMAC helpers live in `utils/hmac.rs`, so `handoff` and `commands` share them without an edge between the two; no `git` module imports `orchestrator`, and `subagent_lifecycle` imports no `commands`:
 
 - **daemon -> commands:** `daemon/server/client.rs:89` (`commands::stage::admin_proof::verify_and_consume_admin_proof`).
 - **orchestrator -> commands:** `orchestrator/core/coherence.rs:41` (`commands::stage::complete::strip_privileged_env_for_runtime`) and `orchestrator/skip.rs:45` (`commands::stage::native_gate::ensure_no_native_workers`).
-- **handoff -> commands:** `handoff/completion/attest.rs:14` (`commands::stage::admin_hmac::{constant_time_eq, hmac_sha256}`; the other user is `commands/stage/admin_proof.rs:6`).
-- **subagent_lifecycle -> commands:** `subagent_lifecycle/claude.rs:8` imports `StartedAgentTypeIndex` through `commands::subagents::ledger`, which only re-exports `provider_data::ledger`.
-- **git -> orchestrator:** `git/cleanup/orphans.rs:10` (`orchestrator::merge_lifecycle::{CleanupOutcome, MergeLifecycle}`).
 - **process -> daemon:** `process/sandbox_probe/needs.rs:8` (`daemon::{socket_path_fits, SUN_PATH_MAX}`, defined in `daemon/socket.rs`). `daemon` imports `process`, so `process` is the lower layer.
 - **models -> plan, verify, git, assets, fs:** `plan` at `models/dispute_criterion.rs:7` and `models/stage/{checks,types,methods}.rs`, `verify` at `models/dispute.rs:15-18`, `git` at `models/stage/merge_block.rs:8`, `assets` at `models/forward_receipt/transcript/argv.rs:24`, `fs::permissions` at `models/stage/sandbox_config.rs:161`.
-- **stage_service -> daemon:** `ContractRunReport` is defined in `stage_service/mod.rs:43` and re-exported by `daemon/protocol.rs:93`; `stage_service/contracts_choices.rs:15`, `verify/contracts/*` and `host_verify/*` import it through `crate::daemon`. The edge `daemon -> stage_service` (`daemon/server/contracts.rs:18`) is a downward call.
+- **verify, host_verify -> daemon:** `ContractRunReport` is defined in `stage_service/mod.rs:43` and re-exported by `daemon/protocol.rs`; `verify/contracts/{store,freeze,freeze/prepared}.rs` and `host_verify/{freeze,freeze_format,freeze_memo}.rs` import it through `crate::daemon`, and `stage_service` itself imports it from its own module. The edge `daemon -> stage_service` (`daemon/server/contracts.rs:18`) is a downward call.
 - **handoff <-> orchestrator (cycle):** `handoff/mod.rs:28` re-exports `orchestrator::continuation` (the continuation code lives in `orchestrator` because of its spawner and signal dependencies) and `handoff/session_content.rs:21` imports `orchestrator::monitor::stage_context_tokens`; `orchestrator/continuation/context.rs:9-10`, `orchestrator/core/stage_handoff.rs:3`, `orchestrator/core/inbox_drain/complete.rs:13` and `orchestrator/monitor/completion_blockers.rs:6` import `crate::handoff`.
 
 ### Edges of `context`, `telemetry` and `process`

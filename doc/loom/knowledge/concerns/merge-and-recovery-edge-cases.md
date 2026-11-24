@@ -27,17 +27,9 @@ Gaps around the [Merge Resolver Spawn Loop](../patterns/merge-and-recovery.md#me
 
 `orchestrator/merge_attribution.rs` (`attribute_main_repo_merge`, `reconcile_main_repo_active_merge`, called from `orchestrator/core/recovery.rs`) and `commands/stage/complete.rs` `route_complete_conflict` rules 3-8 assume loom's merge leaves a `MERGE_HEAD` in the main checkout. Loom creates none now (`git/merge/mod.rs` `merge_stage` computes the merge with `merge-tree`), so for loom's own merges there is nothing to attribute. An operator's `MERGE_HEAD` attributes as `GlobalUnattributed`, which mutates nothing. The code is a removal candidate; its tests and the router arms go with it.
 
-## Editor Saves Between the Stash and the Pop
-
-Accepted residual: the reapply stashes, fast-forwards, then pops. An editor that holds an affected file open can save stale content in that window and overwrite the popped result. The backup ref holds the pre-merge content.
-
 ## The Target Can Be Checked Out Between the Location Check and the Ref Update
 
 `advance_target` checks where the target is checked out, then runs `update-ref`. An operator who checks the target out in that window leaves R's index behind HEAD. This cannot be detected without racing again.
-
-## Autostash Backup Refs Accumulate
-
-A successful reapply keeps its backup ref under `refs/loom/autostash/` as a safety copy and nothing prunes them. Delete them with `git update-ref -d` once the work is confirmed.
 
 ## `human-review --force-complete` Requires No Operator Proof, by Design
 

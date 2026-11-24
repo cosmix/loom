@@ -18,48 +18,52 @@ Graph synchronization and the StageCompleted monitor handler both reach `try_aut
 
 `merge_stage(stage_id, target, repo_root, work_dir, gate)` runs under `MergeLock`. It never checks out a
 branch, runs a three-way merge, or creates `MERGE_HEAD` in the operator's main checkout R. Only when
-the target is checked out in R does it change R's files: `git merge --ff-only`, plus the stash, the
-`reset --hard` and the untracked-file removal of the reapply path:
+the target is checked out in R does it change R's files: `git merge --ff-only`, after moving aside the
+untracked files the merge replaces with identical bytes. It never stashes, resets or rewrites R's tracked
+work:
 
 1. An operator operation in progress in R (`MERGE_HEAD`, `CHERRY_PICK_HEAD`, `REVERT_HEAD`,
    `rebase-merge/`, `rebase-apply/`) returns `Blocked(OperatorOperation { marker })`.
-2. The target guard (`target_guard::check_locked`, see [Target Guard](target-guard.md)) returns
+2. A quarantine left by an earlier attempt for this stage (`checkout_files::held_block`, see
+   [Merge Checkout State](#merge-checkout-state)) returns `Blocked(CheckoutRestoreIncomplete { .. })` before any
+   other work.
+3. The target guard (`target_guard::check_locked`, see [Target Guard](target-guard.md)) returns
    `Blocked(TargetHeld { target, accepted, observed })` while the target moved outside loom and the
    operator has not accepted it. It runs before the `AlreadyUpToDate` check and for every gate mode: the
    control-path bypass covers a stage's own paths, never a moved target. `accepted` is empty when the
    record cannot be read, `observed` when the live tip cannot be read.
-3. `T0 = rev-parse refs/heads/<target>`, `B = rev-parse refs/heads/loom/<id>`; names are qualified because a tag named like a branch would shadow it (see [Branch resolution](#branch-resolution)). `B` already in `T0` is `AlreadyUpToDate`.
-4. `merge_tree` (`git/merge/tree.rs`) runs `git merge-tree --write-tree --name-only --no-messages -z T0 B`.
+4. `T0 = rev-parse refs/heads/<target>`, `B = rev-parse refs/heads/loom/<id>`; names are qualified because a tag named like a branch would shadow it (see [Branch resolution](#branch-resolution)). `B` already in `T0` is `AlreadyUpToDate`.
+5. `merge_tree` (`git/merge/tree.rs`) runs `git merge-tree --write-tree --name-only --no-messages -z T0 B`.
    Exit 0 is clean (tree id first), exit 1 is a conflict (tree id, then the conflicted paths). Exit 1
    with empty stdout (bad revision) or any other code is an error. A conflict returns
    `Conflict { conflicting_files }` and R is untouched. After a clean tree, the control-path gate
    checks the exact landing diff (see [The merge gate](#the-merge-gate)).
-5. Clean: `commit_merge` (lazily, through `PendingMerge`) calls `signing::commit_tree`, which runs `git commit-tree <tree> -p T0 -p B -m "Merge loom/<id> into <target>"`
+6. Clean: `commit_merge` (lazily, through `PendingMerge`) calls `signing::commit_tree`, which runs `git commit-tree <tree> -p T0 -p B -m "Merge loom/<id> into <target>"`
    and adds `-S` when `commit.gpgsign` is true (under `SIGN_TIMEOUT`, with the signing environment the
    daemon captured at startup; see [Daemon-Owned Commits](daemon-owned-commits.md)). A signing failure
    is a downcastable `CommitTreeError { signing: true }`. The commit always has two parents, even when
    `B` already contains `T0` after a resolver merged the target in. Stats come from `git diff --shortstat T0 M`.
-6. `advance_target` (`tree.rs`) moves the target to the merge commit `M`, by where the target is
+7. `advance_target` (`tree.rs`) moves the target to the merge commit `M`, by where the target is
    checked out (`git worktree list --porcelain`):
    - nowhere (R on another branch or detached included): `git update-ref -m "loom: merge loom/<id>"
 refs/heads/<target> M T0`. A refusal because the target moved is `Blocked(TargetMoved)`.
    - in another worktree: `Blocked(TargetCheckedOutElsewhere { path })`.
    - in R: `advance_in_checkout` (`git/merge/checkout_apply.rs`), a guarded fast-forward that keeps the
-     operator's uncommitted work. See [Merge Checkout State](#merge-checkout-state).
+     operator's uncommitted work or refuses the merge. See [Merge Checkout State](#merge-checkout-state).
 
    After the advance `record_merge` calls `record_advance`, which moves the guard's accepted tip to `M`;
    a failed `record_advance` only warns, and the next guard check evaluates the move.
 
-`MergeResult` is `Success { files_changed, insertions, deletions, backup_ref, stash }`,
+`MergeResult` is `Success { files_changed, insertions, deletions }`,
 `Conflict { conflicting_files }`, `AlreadyUpToDate`, `Held { reason }` or `Blocked(MergeBlock)`. `MergeBlock`
 (`git/merge/tree.rs`) is `OperatorOperation { marker }`, `TargetCheckedOutElsewhere { path }`, `TargetMoved`,
-`UncommittedOverlap { paths }`, `FastForwardRefused { detail }`, `StashNotRestored { backup_ref }`,
-`StashResetRefused { backup_ref }`, `CheckoutRestoreIncomplete { source_rev, failures, changes }` (`changes` is a
-`RollbackChanges`, `git/merge/stash_report.rs`) or `TargetHeld { target, accepted, observed }`. `MergeBlock` is stored on
+`UncommittedOverlap { paths }`, `FastForwardRefused { detail }`,
+`CheckoutRestoreIncomplete { quarantine, failures, detail }` (files moved aside that could not be put back, or an
+earlier attempt's quarantine still holding files) or `TargetHeld { target, accepted, observed }`. `MergeBlock` is stored on
 the stage (`Stage.merge.block`, `#[serde(tag = "kind")]`) and has an operator-facing `Display`.
 `loom run` refuses git older than 2.40 (`commands/run/git_preflight.rs`, called from
 `run_startup_preflights`) because `merge-tree --write-tree` needs it. `git/runner.rs` gives
-`merge-tree`, `commit-tree`, `update-ref` and `stash` the 120 s mutation timeout. Every runner command also sets
+`merge-tree`, `commit-tree` and `update-ref` the 120 s mutation timeout. Every runner command also sets
 `GIT_NO_REPLACE_OBJECTS=1` and `GIT_GRAFT_FILE=/dev/null/loom-no-grafts` and passes `-c core.commitGraph=false`, so a
 session-planted `refs/replace/*`, `info/grafts` or commit-graph cannot change the merge gate's diff or an ancestry
 test ([Sandbox gaps](../concerns/sandbox-and-confinement-gaps.md)).
@@ -100,7 +104,7 @@ The daemon's `land_stage_merge` and auto-merge route `Held` to `NeedsHumanReview
 
 ## The stage merge record
 
-`Stage.merge: MergeRecord { block, stash, unrestored }` is flattened into the stage-file keys `merge_block`, `merge_stash` and `merge_unrestored_stashes`. The latest stash note survives later outcomes; unrestored backup refs are retained once each and the status surface reports those that still exist.
+`Stage.merge: MergeRecord { block, conflict_since, handbacks, handback_refusal }` is flattened into the stage-file keys `merge_block`, `merge_conflict_since`, `merge_handbacks` and `merge_handback_refusal` (`models/stage/merge_block.rs`). A `CheckoutRestoreIncomplete` block names its quarantine directory, and `MergeBlock::holds_displaced_files` is true while that directory exists.
 
 Typed block state and its failure information clear when the stage leaves MergeBlocked. Untyped progressive-completion failures retain their infrastructure diagnosis, and recovery preserves failed commit-ahead probes as work with the actual error in its reason.
 
@@ -134,29 +138,24 @@ The DONE rename is committed from an isolated index rooted at the observed targe
 
 ## Merge Checkout State
 
-When the target branch is checked out in the operator's main checkout R, `advance_in_checkout` (`git/merge/checkout_apply.rs`) advances it to the merge commit `M` without a merge in R. R's `HEAD` must equal `T0` (the target tip the merge was computed against); otherwise the result is `Blocked(TargetMoved)`. The merge commit is written lazily through `PendingMerge` (`git/merge/tree.rs`): a target checked out elsewhere, or any blocking classification, writes no commit object. Only the `Reapply` path commits early, for the dry run.
+When the target branch is checked out in the operator's main checkout R, `advance_in_checkout` (`git/merge/checkout_apply.rs`) advances it to the merge commit `M` without a merge in R. R's `HEAD` must be the symbolic ref of the target and equal `T0` (the target tip the merge was computed against); otherwise the result is `Blocked(TargetMoved)`. The merge commit is written lazily through `PendingMerge` (`git/merge/tree.rs`): a target checked out elsewhere, or any blocking classification, writes no commit object. Only the quarantine path (`land_displacing`) commits before moving files, so the quarantine compares against the merged tree.
 
-`classify` (`git/merge/checkout_state.rs`, pure) compares `git status --porcelain=v2 -z --untracked-files=all` with `git diff --name-status -z --no-renames T0 M`. A path is touched when T0..M modifies, adds or deletes it. Directory/file prefix overlaps count as overlaps; only an exact untracked path may be byte-compared and removed. Every `git status` in R runs with `GIT_OPTIONAL_LOCKS=0`.
+Loom never stashes, resets or rewrites R's tracked work. `classify` (`git/merge/checkout_state.rs`, pure) compares `git status --porcelain=v2 -z --untracked-files=all` with `git diff --name-status -z --no-renames T0 M`. A path is touched when T0..M modifies, adds or deletes it. Directory/file prefix overlaps count as overlaps; only an exact untracked path may be byte-compared and moved. Every `git status` in R runs with `GIT_OPTIONAL_LOCKS=0`. A touched path that is not valid UTF-8 is `FastForwardRefused`.
 
-| Case                                                                                                     | Action                                                                       |
-| -------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| No tracked change and no untracked file on a touched path                                                | `git merge --ff-only M`; git carries the local changes                       |
-| Only overlap: untracked files M adds, byte-identical to the blob, regular files (a symlink never counts) | remove them, then fast-forward; a rollback restores them with their exec bit |
-| Tracked overlap, dry run clean                                                                           | reapply (below)                                                              |
-| Tracked overlap with a predicted conflict, an untracked file that differs, or any unmerged index entry   | `Blocked(UncommittedOverlap { paths })`; R untouched                         |
+| Case                                                                                                     | Action                                                              |
+| -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| No tracked change and no untracked file on a touched path                                                | `git merge --ff-only M`; git carries the local changes              |
+| Only overlap: untracked files M adds, byte-identical to the blob, regular files (a symlink never counts) | move them into the quarantine, then fast-forward                    |
+| Tracked change on a touched path, an untracked file that differs, or any unmerged index entry            | `Blocked(UncommittedOverlap { paths })`; R untouched, nothing moved |
 
-Status does not list ignored files, so `CheckoutProbe` (`checkout_files.rs`) looks on disk for local files at every path M adds and at their parent prefixes: an equal regular file is removed, anything else is `UncommittedOverlap`. This keeps `git merge --ff-only` from overwriting an ignored file the branch adds with `git add -f`.
+Status does not list ignored files, so `DiskProbe` (`checkout_files.rs`) looks on disk for local files at every path M adds and at their parent prefixes: an equal regular file is moved aside, anything else is `UncommittedOverlap`. This keeps `git merge --ff-only` from overwriting an ignored file the branch adds with `git add -f`.
 
-The dry run takes a snapshot commit `S` (`snapshot_changes`, `git/merge/checkout_stash.rs`), then runs `git merge-tree --write-tree --merge-base=T0 M S`; exit 0 is clean. `S` has the shape `git stash` writes, built from plumbing over one private copy of the index, which keeps its modification time and skip-worktree bits. `git stash create` and `git stash push` are not used: they recurse into gitlinks and have no `--ignore-submodules`, so a planted gitlink's clean filter would run on the host. A gitlink's moved commit and files modified inside a submodule stay in place, out of the stash. A checkout with no tracked change returns no snapshot and lands directly. A failing snapshot (an unmerged index, an intent-to-add entry) or a failing store is `UncommittedOverlap`.
+**The quarantine** (`checkout_files/displace.rs`). `displace_files` creates `<git dir>/loom-displaced/<stage>-<unix nanos>/` with `mkdirat` (mode 0700, refusing a link at either level and a stage id containing `/`) and moves each file in with `renameat` into a name loom just made, so nothing is replaced; entries are opened `O_NONBLOCK`. The comparison with the blob is made on the moved entry through the quarantine's descriptor, so bytes the operator wrote at an earlier moment are never deleted. A file that cannot be moved, or whose moved bytes differ, stays in the quarantine and the merge is blocked. Source and quarantine must share a filesystem (`EXDEV` moves nothing and blocks the merge). When the fast-forward lands and the checkout holds the same bytes, `discard` removes the copies; when it does not land, `restore` puts each file back with `linkat` (which fails with `EEXIST` rather than replace an entry now at the path, and works on Linux and macOS alike, unlike the Linux-only `renameat2(RENAME_NOREPLACE)`) and drops the quarantine name. What cannot be put back stays in the quarantine and the result is `CheckoutRestoreIncomplete { quarantine, failures, detail }`, with `detail` set when the failure is not explained by the restore alone (a fast-forward git applied to another branch).
 
-Reapply: `update-ref refs/loom/autostash/<stage>-<unix-secs>-<stash sha12> S ""` records a backup ref (the empty old value means never overwrite). `store_unchanged` then takes the real index's lock with `write-tree`, compares the checkout with the snapshot and runs `git stash store`; a change after the snapshot stops here, with the work still in the checkout. `reset_checkout` runs `reset --hard --no-recurse-submodules` in R, `merge --ff-only M` advances, and `pop_stash` restores by commit id: it finds the entry holding `S`, runs `stash apply --index <S>`, falling back to `stash apply <S>`, and drops that entry. An entry no longer in the list is refused and nothing is applied, since `refs/stash` is shared with every worktree. Backup refs are kept after a successful reapply as a safety copy and are not pruned. `--autostash` is never used because it writes conflict markers into the checkout.
+**An earlier quarantine holds the stage.** `held_block` (`checkout_files/held.rs`) runs in `merge_stage` right after the operator-operation check: while a directory named `<stage>-<digits>` exists under `loom-displaced`, no merge of that stage lands, because the emptied paths would take the branch's bytes and the block pointing at the quarantine would be cleared. It returns `CheckoutRestoreIncomplete` with no failures and a `detail` naming the remedy (move each file back, delete the directory, retry). A quarantine root that cannot be read as a directory is an error, not a block. `loom stage merge` refuses with the same remedy (`commands/stage/merge/landing.rs::refuse_displaced_files`), the inbox `merge --resolved` handler checks `holds_displaced_files` early, and progressive completion states the remedy (`progressive_complete/report.rs`). Deleting the directory releases the stage.
 
-Known limits, as with `git stash push`: from the comparison to the end of the reset lie several process spawns, seconds on a large checkout, and an edit made then is lost; a directory over a tracked file plus another change deletes the untracked files in that directory. An entry pushed between `pop_stash`'s lookup and its drop gets dropped in place of `S`'s entry.
-
-A reset that fails with the checkout still as the snapshot recorded it is `StashResetRefused { backup_ref }`: the changes never left, and the stash entry and backup ref are spare copies. A reset that ran partway is treated as an errored fast-forward below. A rollback that cannot restore every removed untracked file is `CheckoutRestoreIncomplete { source_rev, failures, changes }`, whose `RollbackChanges` says where the tracked changes are (`NoBackup`, `InCheckout`, `Restored`, `Stashed`, `ResetRefused`; `git/merge/stash_report.rs`).
-
-A refused fast-forward (or an error from it) is always a typed block: git's named paths give `UncommittedOverlap`, otherwise `FastForwardRefused { detail }`. `after_errored_fast_forward` (`git/merge/fast_forward.rs`) splits two cases. A clean refusal (git exited non-zero having changed nothing) pops the stash pushed for the reapply first, then classifies; when the pop fails, the result is `StashNotRestored { backup_ref }` and the target did not move. An errored fast-forward (spawn failure, or the runner's timeout killing git) does not pop: removed untracked files are written back only where absent, the stash entry stays, and the result is `StashNotRestored { backup_ref }` (`FastForwardRefused` when no stash was pushed). When the merge landed and both pops fail, the result is `Success { stash: Some(StashReapply { restored: false, .. }) }`, not a block; the stage's merge note records it (see [the stage merge record](#the-stage-merge-record)).
+A refused fast-forward (or an error from it) is always a typed block (`git/merge/fast_forward.rs`). The merge counts as landed only when `refs/heads/<target>` names `M` afterwards; a branch switch or detach after the `HEAD` check makes git advance another ref, which is a block and never an advance. A refusal restores the displaced files first. Git's named paths give `UncommittedOverlap`; a clean refusal that moved the target is `TargetMoved`; one where git advanced the ref `HEAD` now points at is `FastForwardRefused` naming that ref; otherwise `FastForwardRefused { detail }` (git's message on one line, at most 300 characters). An errored fast-forward (spawn failure, or the runner's timeout killing git) restores only where the path is absent and reports what stayed.
 
 Operator operations include `sequencer/` as well as `MERGE_HEAD`, `CHERRY_PICK_HEAD`, `REVERT_HEAD`, `rebase-merge/` and `rebase-apply/`; an unreadable git dir is an error. A worktree whose directory is gone does not count as checking out the target.
 
-Blocked results are retried by the daemon (`retry_blocked_merge`, `merge_handler/blocked_retry.rs`). The retry skips an attempt when `git::merge::blocked_merge_inputs` (`git/merge/inputs.rs`) equals the inputs of the last attempt. The fingerprint hashes the target, branch and R `HEAD` ids, R's porcelain-v2 status, size and mtime of the paths it names, the block's watched paths, whether `index.lock` exists, `git worktree list`, and the operator marker. Only `UncommittedOverlap`, `TargetCheckedOutElsewhere` and `OperatorOperation` are memoized, and not when a watched path is a directory. A memo entry expires after 10 minutes. `FastForwardRefused` is retried at most once a minute. The memo lives in `Orchestrator.blocked_merge_inputs`. Retry memos (`blocked_merge_inputs`, `refused_merge_attempts`) are pruned at the start of each spawn-loop pass for stages no longer `MergeBlocked` with a typed block (`prune_retry_memos`, `merge_handler/blocked_retry.rs`). A blocked attempt writes a commit object only on the tracked-overlap reapply path, and the memo bounds repeats. A stage whose block is `StashNotRestored` or `StashResetRefused`, or whose `merge.unrestored` lists a backup ref under `refs/loom/autostash/` that still exists (`git rev-parse --verify --quiet`), is not retried at all: its operator changes sit only in that stash and ref, and the working tree may be half updated, so a retry would stash again under a new ref. Retries resume once the operator restores the changes and deletes the ref. `prune_retry_memos` keeps a memo when the stage file cannot be read.
+Blocked results are retried by the daemon (`retry_blocked_merge`, `merge_handler/blocked_retry.rs`). The retry skips an attempt when `git::merge::blocked_merge_inputs` (`git/merge/inputs.rs`) equals the inputs of the last attempt. The fingerprint hashes the target, branch and R `HEAD` ids, R's porcelain-v2 status, size and mtime of the paths it names, the block's watched paths, whether `index.lock` exists, `git worktree list`, and the operator marker. Only `UncommittedOverlap`, `TargetCheckedOutElsewhere` and `OperatorOperation` are memoized, and not when a watched path is a directory. A memo entry expires after 10 minutes. `FastForwardRefused` is retried at most once a minute. The memo lives in `Orchestrator.blocked_merge_inputs`. Retry memos (`blocked_merge_inputs`, `refused_merge_attempts`) are pruned at the start of each spawn-loop pass for stages no longer `MergeBlocked` with a typed block (`prune_retry_memos`), keeping a memo when the stage file cannot be read. A stage whose block names a quarantine directory that still exists (`holds_displaced_files`) is not retried at all, and no stage is retried while the target guard holds the target.

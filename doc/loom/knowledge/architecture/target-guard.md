@@ -84,7 +84,7 @@ Open findings the plan's reviewers left, none a security gap beyond the residual
 
 **Behavior**
 
-- Ancestry tests against the live target ref remain outside the daemon's settle paths: `verify/transitions/state.rs` (two sites, `is_ancestor_of(.., branch_ref(target_branch), ..)`), `git/cleanup/orphans.rs`, `orchestrator/merge_lifecycle/containment.rs`. They run for stages already marked merged through a guarded path; moving them to `merged_into_accepted` is open.
+- Ancestry tests against the live target ref remain outside the daemon's settle paths: `verify/transitions/state.rs` (two sites, `is_ancestor_of(.., branch_ref(target_branch), ..)`), `orchestrator/merge_lifecycle/orphans.rs`, `orchestrator/merge_lifecycle/containment.rs`. They run for stages already marked merged through a guarded path; moving them to `merged_into_accepted` is open.
 - `record_merge` (`git/merge/mod.rs`) only warns when `record_advance` fails, so loom's own merge commit is evaluated against the old accepted tip next tick and can raise a `StageWork` or `ControlPaths` hold on loom's own merge; one retry or a louder message is open.
 - A contended-lock hold is not announced, but `record_merge_block` (`merge_handler/auto_merge_outcome.rs`) persists and prints it, so a CLI merge between `update-ref` and `record_advance` can make a concurrent daemon auto-merge record a false `MergeBlocked` for one tick. Skipping the tick without persisting is open.
 - `fmt_target_held` (`git/merge/tree.rs`) says the record could not be read for any empty `accepted`; `error_hold` also leaves it empty when the record is readable with no entry and the check failed for another reason.

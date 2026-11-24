@@ -14,13 +14,14 @@
 - `git/worktree/base.rs` - Base branch resolution for dependencies
 - `git/worktree/settings.rs` - Worktree symlinks (.loom/work, .claude/CLAUDE.md, CLAUDE.md)
 - `git/merge/mod.rs` - `merge_stage`: `merge-tree` + `commit-tree`, never git in the operator's checkout; `MergeResult`, `MergeBlock`
-- `git/merge/tree.rs` - `merge_tree`, `commit_merge`, `advance_target`; `checkout_apply.rs` (`advance_in_checkout`) and `checkout_state.rs` (`classify`) guard the fast-forward into the operator's checkout; `checkout_stash.rs` builds and stores the stash commit from plumbing; `stash_report.rs` holds `RollbackChanges`
+- `git/merge/tree.rs` - `merge_tree`, `commit_merge`, `advance_target`; `checkout_apply.rs` (`advance_in_checkout`) and `checkout_state.rs` (`classify`) guard the fast-forward into the operator's checkout, which never stashes or resets tracked work (a tracked overlap is refused as `UncommittedOverlap`)
 - `git/merge/resolved.rs` - `check_resolved_worktree`: validates a resolver's worktree before landing; `inputs.rs` - `blocked_merge_inputs` fingerprint for the blocked retry
 - `git/merge/control_paths.rs` - `MergeGate::{Enforce, Bypass}` and the control-path check (`git diff -z`, case-insensitive) that `merge_stage` runs under the lock
-- `git/merge/checkout_files.rs` - `CheckoutProbe`: ignored local files at paths a merge adds; `fast_forward.rs` - the refused-fast-forward typing; `operation.rs` - operator operations in R (`sequencer/` included)
+- `git/merge/checkout_files.rs` - `DiskProbe`: ignored local files at paths a merge adds; `checkout_files/displace.rs` - `displace_files` moves identical untracked files into the `<git dir>/loom-displaced/<stage>-<nanos>/` quarantine and `Displaced::discard`/`restore` settle it; `checkout_files/held.rs` - `held_block` refuses a merge while that quarantine exists; `fast_forward.rs` - the refused-fast-forward typing; `operation.rs` - operator operations in R (`sequencer/` included)
 - `git/merge/in_progress.rs` - Single source of truth for `MERGE_HEAD` detection (handles `.git`-as-file, relative gitdirs, octopus merges)
 - `git/merge/lock.rs` - Stable-inode OS lock that serializes concurrent merges without stale-file reclamation races
 - `git/merge/status.rs` - `check_merge_state` (Merged | Pending | Conflict | BranchMissing | Unknown)
+- `git/cleanup/removal.rs` - `require_stage_contained`, the one predicate that gates destroying a stage's worktree and branches; `orchestrator/merge_lifecycle/containment.rs` calls it, and `merge_lifecycle/orphans.rs` cleans orphaned worktrees against the accepted tip. Remnant repair (`git/worktree/operations.rs`) never runs `git worktree prune`: it is repository-wide
 - `git/branch/mod.rs` - Branch creation, deletion, ancestry checks (module root; re-exports from `operations.rs`, `cleanup.rs`, `ancestry.rs`, `status.rs`, `naming.rs`, `info.rs`); `branch_ref` qualifies a branch name as `refs/heads/<name>` for every proof and guard
 
 ## File System State

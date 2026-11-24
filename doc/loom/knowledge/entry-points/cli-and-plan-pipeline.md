@@ -28,7 +28,7 @@
 | `memory`      | `commands/memory/handlers/mod.rs` | Session memory journal                         |
 | `review`      | `commands/review/mod.rs`          | Generate review docs from memories             |
 | `self-update` | `commands/self_update/mod.rs`     | Update loom binary                             |
-| `clean`       | `commands/clean/mod.rs`           | Clean up resources                             |
+| `clean`       | `commands/clean/mod.rs`           | Clean up resources; resolves the main checkout from any subdirectory (`commands::common::main_repo_root`) and refuses inside a stage worktree; `detached.rs` holds back a worktree whose detached HEAD keeps commits no `loom/*` branch lists |
 | `repair`      | `commands/repair.rs`              | Fix workspace issues                           |
 | `map`         | `commands/map.rs`                 | Codebase structure analysis                    |
 | `pressure`    | `commands/pressure/mod.rs`        | Plan pressure-testing driver (Claude + Codex)  |

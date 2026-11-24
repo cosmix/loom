@@ -39,8 +39,7 @@ each copy stays are in [canonical-helpers](../patterns/canonical-helpers.md). Pa
 - `git/changes.rs`: no test rejects removing `set_modified`, so a racily clean file (same second,
   same size) could be trusted on stat data and missed; add a test that sets a file mtime equal to the
   index mtime. A third 40/64-hex object-id check sits beside `git/merge/control_paths.rs` and
-  `context/worktree_graph.rs`; share one. `git/merge/checkout_stash.rs` keeps a second
-  private-index-copy mechanism beside `PrivateIndex`.
+  `context/worktree_graph.rs`; share one.
 - `git/merge/control_paths.rs` `hooks_dir_prefix`: a relative `hooksPath` outside the repository
   errors and holds every merge, while an absolute outside path returns `None`; reconcile.
 - `fs/knowledge/catalog/evidence.rs` `parse_status_paths` still hand-parses porcelain v1 `-z`

@@ -56,7 +56,7 @@ logged in"); `CARGO_HOME`, `RUSTUP_HOME` (locations CI images relocate); `SCCACH
 `LC_CTYPE`, `TERM`, `TERMINFO`, `TERMINFO_DIRS`, `COLORTERM`, `TERM_PROGRAM`, `SHELL`; `DISPLAY`,
 `WAYLAND_DISPLAY`, `XAUTHORITY`, `DBUS_SESSION_BUS_ADDRESS`, `XDG_RUNTIME_DIR`; `TMUX_TMPDIR`, `TMUX`,
 `TMUX_PANE`, `TMPDIR`; the proxy variables in both cases (`HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`,
-`ALL_PROXY`); and the CA bundle locations `SSL_CERT_FILE`, `SSL_CERT_DIR`, `NIX_SSL_CERT_FILE`.
+`ALL_PROXY`); and the CA bundle locations `SSL_CERT_FILE`, `SSL_CERT_DIR`, `NIX_SSL_CERT_FILE`. A proxy variable whose URL carries userinfo is a credential: `verify/criteria/confine.rs::apply_confined_environment` calls `stage_cache::drop_credentialed_proxies`, which removes it from every confined command. It is dropped, never stripped, because a stripped URL fails with 407 and the policy matches the `GOPROXY` rule. Provision commands behind an authenticated proxy therefore lose the proxy unless the stage sets `command_confinement: inherit`.
 `TERMINFO*` pair with `TERM`: without the capability database the name is unresolvable (kitty), and
 a tmux probe on it exits non-zero like "the server is not accepting clients".
 

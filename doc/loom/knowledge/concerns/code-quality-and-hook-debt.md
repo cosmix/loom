@@ -134,7 +134,7 @@ node is already terminal.
 
 ## Pinned Git Gitlink Route Is Unverified
 
-The route is closed in the runner and has its fixtures: `without_gitlink_recursion` (`git/runner.rs`) adds `--ignore-submodules=dirty` behind every global option form, so a pinned or unpinned `git status` or `git diff` starts nothing inside a gitlink (`git/runner/tests.rs`, `git/runner/global_option_tests.rs`). `git stash create` and `git stash push` have no such option, so `git/merge/checkout_stash.rs` avoids them. The cost: uncommitted content inside a gitlink no longer shows in `status`, `diff` or the completion check; a moved gitlink commit still shows.
+The route is closed in the runner and has its fixtures: `without_gitlink_recursion` (`git/runner.rs`) adds `--ignore-submodules=dirty` behind every global option form, so a pinned or unpinned `git status` or `git diff` starts nothing inside a gitlink (`git/runner/tests.rs`, `git/runner/global_option_tests.rs`). `git stash create` and `git stash push` have no such option, so no loom code path runs them. The cost: uncommitted content inside a gitlink no longer shows in `status`, `diff` or the completion check; a moved gitlink commit still shows.
 
 ## Observer Source Uses Path-Only Locate
 
@@ -292,10 +292,6 @@ Two accepted edges of `loom-hooks/loom-relay-guard.sh`, both from the shared tok
 
 - **Quoted descriptor digit.** `loom check s --criterion '2'>log` redirects stdout in bash (a quoted `2` is not a descriptor), but the glued flag in `LOOM_TOKEN_META` reads it as fd 2, so the guard passes it. Fix: mark quote-derived words as non-descriptors.
 - **Comments are not modelled.** An unmatched `(` inside a `#` comment (`# (draft` on one line, `loom check s` on the next) raises the next command's depth to 1, and the guard falsely refuses it as captured. Modelling `#` in the tokenizer changes every hook that sources `_parser.sh`, so it needs its own change with the full hook suite.
-
-## Blocking Guards Allow an Empty Payload
-
-`worktree-file-guard.sh` and `credential-guard.sh` allow a tool call whose hook input is empty, and `loom-hooks/tests/worktree-file-guard-truncated-input.sh` asserts it ("expected empty input to remain allowed"). An input reader that fails silently therefore turns these blocking guards into allows: under a macOS host job the old `loom_run_bounded` fallback returned no input and three guard tests saw exit 0 ([the fallback mistake](../mistakes/hooks-shell-portability.md)). `codex-forward-guard.sh` blocks the same empty payload. Open decision: whether a blocking guard should tell an empty stdin apart from a failed read, or fail closed on both.
 
 ## Tests Shell Out to Perl and Python
 

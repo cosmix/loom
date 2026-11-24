@@ -47,7 +47,7 @@ two paths should agree.
 
 ## Tier-1 Knowledge Housekeeping Backlog
 
-`loom knowledge check --strict` enforces the tier-1 limits (250 lines per file, 40 per section), the tier-2 limits (400 lines per file, 80 per section, `fs/knowledge/catalog/size.rs`), resolvable source references and the `INDEX.md` byte budget (`MAX_INDEX_BYTES`). `INDEX.md` is over that budget; the committed baseline `doc/loom/knowledge/check-baseline.txt` records it as `oversized-index`, and the gate is `loom knowledge check --strict --baseline doc/loom/knowledge/check-baseline.txt`.
+`loom knowledge check --strict` enforces the tier-1 limits (250 lines per file, 40 per section), the tier-2 limits (400 lines per file, 80 per section, `fs/knowledge/catalog/size.rs`), resolvable source references and the `INDEX.md` byte budget (`MAX_INDEX_BYTES` = 24,576). `INDEX.md` is under that budget; the committed baseline `doc/loom/knowledge/check-baseline.txt` records only unresolved source references, and the gate is `loom knowledge check --strict --baseline doc/loom/knowledge/check-baseline.txt`.
 
 What remains is discipline:
 
@@ -70,7 +70,7 @@ exact-once substitutions, and pipe the result to `replace-section` from a file. 
 inert heredoc bodies (quoted delimiter, inert reader), but a long body still belongs in a file fed on
 stdin; name that file `.distill-body-*` so the main-agent edit advisory ignores it.
 
-`INDEX.md` has a byte budget (`MAX_INDEX_BYTES`, `fs/knowledge/catalog/size.rs`) that `loom knowledge check` reports as
+`INDEX.md` has a byte budget (`MAX_INDEX_BYTES` = 24,576, `fs/knowledge/catalog/size.rs`) that `loom knowledge check` reports as
 `OversizedIndex`; the SessionStart knowledge-orient line reports its current size. Every new tier-2 topic adds a row, so each one has to be paid for with shorter
 blurbs (`loom knowledge annotate <target> --blurb`) or by merging small topics.
 
