@@ -77,6 +77,9 @@ for cmd in "${blocked[@]}"; do
     allow "$WT" "$cmd" HOME="$REPO"
 done
 block main-checkout "$WT" 'cat ~/repo/src/main.rs' HOME="$TMP"
+block main-checkout "$WT" "make -C$REPO/src test"
+block main-checkout "$WT" "tar -C$REPO -xf x.tar"
+block main-checkout "$WT" 'tar -C~/repo/src -xf x.tar' HOME="$TMP"
 
 allow "$WT" "cat $REPO/.loom/work/signals/s.md"
 allow "$WT" "cat $WT/src/x.rs"
@@ -85,6 +88,9 @@ allow "$WT" "ls $FIXTURE_HOME/.cargo/bin"
 allow "$WT" "echo \"the brief mentions $REPO/src here\""
 allow "$WT" 'git status'
 allow "$WT" "cat $SCRATCH/x" LOOM_SCRATCH_DIR="$SCRATCH"
+allow "$WT" 'cc -I/usr/include -c x.c'
+allow "$WT" "make -C$WT/src test"
+allow "$WT" "make -C$SCRATCH test" LOOM_SCRATCH_DIR="$SCRATCH"
 allow "$WT" "cat $REPO-neighbor/src/x"
 allow "$REPO" "cat $REPO/src/main.rs"
 

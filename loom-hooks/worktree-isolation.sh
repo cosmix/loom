@@ -272,12 +272,14 @@ check_cross_worktree_tokens() {
 }
 
 # A whitespace-bearing token only counts when it starts with an absolute path.
+# A leading `NAME=`, `--flag=` or one short option (`-C/path`, `-I/path`) is stripped first.
 check_main_checkout_tokens() {
-    local tok abs assignment='^([a-zA-Z_][a-zA-Z0-9_]*|--[^/=]+)='
+    local tok abs assignment='^([a-zA-Z_][a-zA-Z0-9_]*|--[^/=]+)=' short_option='^-[A-Za-z](/|~/)'
     [[ -n "${LOOM_TOKENS[*]+x}" ]] || return 1
     for tok in "${LOOM_TOKENS[@]}"; do
         if loom_token_is_word "$tok"; then
             if [[ "$tok" =~ $assignment ]]; then tok="${tok#*=}"; fi
+            if [[ "$tok" =~ $short_option ]]; then tok="${tok:2}"; fi
         else
             [[ "$tok" == /* ]] || continue
             tok="${tok%%[[:space:]]*}"
