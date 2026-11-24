@@ -5,8 +5,9 @@
 //! step queues its events and chat deltas in the outbox, and `flush` hands them to the
 //! listeners after the lock is released, in order, from one thread at a time. A listener may
 //! call back into the bridge: its own flush returns at once and the running one delivers what
-//! it queued. A listener that panics is logged and skipped; the others and the flushing
-//! thread (the driver, a command, recovery, drain) go on.
+//! it queued. Recovery's returned input is the one caller that waits for its turn, because it
+//! needs the listeners' verdict inline. A listener that panics is logged and skipped; the
+//! others and the flushing thread (the driver, a command, recovery, drain) go on.
 
 pub mod background;
 mod catalogue;
@@ -19,6 +20,7 @@ mod ending;
 mod error;
 mod fetches;
 mod flow;
+mod flush;
 pub mod host;
 mod launch;
 mod local;
@@ -106,13 +108,14 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-use self::commands::Out;
 pub use self::ending::TEARDOWN_FAILED;
 pub use self::error::BridgeError;
 use self::host::SessionHost;
 pub use self::launch::{GuidanceFn, LaunchGuidance, StartRequest};
 pub use self::opening::OPENING_NOT_SUBMITTED;
-pub use self::recovery::{RecoveredSession, RecoveryReport};
+#[cfg(test)]
+pub(crate) use self::recovery::take_unsaved;
+pub use self::recovery::{input_unsaved, RecoveredSession, RecoveryReport};
 use self::registry::{transcripts_of, Feeds};
 use self::session::Inner;
 use super::kind::SessionKind;
@@ -338,46 +341,6 @@ impl Bridge {
     }
     fn lock(&self) -> MutexGuard<'_, Inner> {
         guard(&self.inner)
-    }
-    /// Hand the outbox to the listeners; returns at once while another call is doing it.
-    fn flush(&self) {
-        loop {
-            let claimed =
-                self.flushing
-                    .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst);
-            if claimed.is_err() {
-                return;
-            }
-            loop {
-                let batch = std::mem::take(&mut self.lock().outbox);
-                if batch.is_empty() {
-                    break;
-                }
-                self.publish(batch);
-            }
-            self.flushing.store(false, Ordering::SeqCst);
-            // A step that queued while this call was finishing found the flag still set.
-            if self.lock().outbox.is_empty() {
-                return;
-            }
-        }
-    }
-    fn publish(&self, batch: Vec<Out>) {
-        let events = guard(&self.listeners).clone();
-        let deltas = guard(&self.chat_listeners).clone();
-        for out in batch {
-            match out {
-                Out::Event(event) => events.iter().for_each(|listener| hear(listener, &event)),
-                Out::Delta(delta) => deltas.iter().for_each(|listener| hear(listener, &*delta)),
-            }
-        }
-    }
-}
-/// Call one listener. A panic stays here: unwinding into the flush would drop the rest of the
-/// batch for every listener and stop the flushing thread (recovery would never finish).
-fn hear<T>(listener: &Listener<T>, value: &T) {
-    if catch_unwind(AssertUnwindSafe(|| listener(value))).is_err() {
-        tracing::error!("a session bridge listener panicked");
     }
 }
 /// Lock, recovering the data a panicking holder left: each step leaves it consistent.

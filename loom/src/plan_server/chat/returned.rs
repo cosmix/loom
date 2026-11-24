@@ -23,6 +23,7 @@ use crate::plan_server::context::PlanContext;
 use crate::plan_server::ids::BrowserId;
 use crate::plan_server::wire::chat::{ChatFrame, QueueReturnCause};
 use crate::plan_server::wire::message::PlanMessage;
+use crate::plan_session::bridge::input_unsaved;
 
 const HOLDER_FILE: &str = "chat-holder.json";
 pub(super) const RETURNED_FILE: &str = "returned-input.json";
@@ -78,10 +79,15 @@ fn read_file<T: for<'de> Deserialize<'de>>(ctx: &PlanContext, name: &str) -> Opt
     }
 }
 
-fn write_file(ctx: &PlanContext, name: &str, bytes: &[u8]) {
+/// Whether the file was written.
+fn write_file(ctx: &PlanContext, name: &str, bytes: &[u8]) -> bool {
     let dir = &ctx.runtime().dir;
-    if let Err(error) = replace_private(dir, Path::new(name), bytes) {
-        tracing::warn!(file = name, %error, "cannot save the returned-input state");
+    match replace_private(dir, Path::new(name), bytes) {
+        Ok(_) => true,
+        Err(error) => {
+            tracing::warn!(file = name, %error, "cannot save the returned-input state");
+            false
+        }
     }
 }
 
@@ -123,7 +129,9 @@ pub(super) fn follow_holder(ctx: &Arc<PlanContext>) {
                     holder: tag(&browser),
                 };
                 match serde_json::to_vec(&file) {
-                    Ok(bytes) => write_file(&ctx, HOLDER_FILE, &bytes),
+                    Ok(bytes) => {
+                        write_file(&ctx, HOLDER_FILE, &bytes);
+                    }
                     Err(error) => tracing::warn!(%error, "cannot encode the chat holder"),
                 }
             }
@@ -135,20 +143,23 @@ pub(super) fn follow_holder(ctx: &Arc<PlanContext>) {
     }));
 }
 
-/// Write the waiting entries, or remove the file when none wait. Entries are persisted when
-/// they arrive and again after their frame is handed to the hub: a failed write can deliver
-/// twice, never lose.
-fn persist(ctx: &PlanContext, entries: &[Entry]) {
+/// Write the waiting entries, or remove the file when none wait; whether the file now holds
+/// them. Entries are persisted when they arrive, and again after the frame carrying them is
+/// handed to the hub (the frame is sent first): a failed write can deliver twice, never lose.
+fn persist(ctx: &PlanContext, entries: &[Entry]) -> bool {
     if entries.is_empty() {
         remove_file(ctx, RETURNED_FILE);
-        return;
+        return true;
     }
     let file = EntriesFile {
         entries: entries.to_vec(),
     };
     match serde_json::to_vec(&file) {
         Ok(bytes) => write_file(ctx, RETURNED_FILE, &bytes),
-        Err(error) => tracing::warn!(%error, "cannot encode the returned input"),
+        Err(error) => {
+            tracing::warn!(%error, "cannot encode the returned input");
+            false
+        }
     }
 }
 
@@ -169,7 +180,8 @@ fn frame(texts: Vec<String>) -> PlanMessage {
 }
 
 /// Recovery returned `texts`: keep them for the prior holder and hand them over now when one of
-/// its tabs is open.
+/// its tabs is open. Recovery removes the session's own copy once this returns, so a failed
+/// first write reports it (`input_unsaved`) and recovery keeps that copy.
 pub(super) fn on_returned(ctx: &PlanContext, state: &ChatState, texts: Vec<String>) {
     let mut returned = lock(&state.returned);
     let holder = returned.prior.clone();
@@ -177,7 +189,9 @@ pub(super) fn on_returned(ctx: &PlanContext, state: &ChatState, texts: Vec<Strin
         holder: holder.clone(),
         texts,
     });
-    persist(ctx, &returned.entries);
+    if !persist(ctx, &returned.entries) {
+        input_unsaved();
+    }
     let open = returned
         .browser
         .clone()
@@ -188,7 +202,7 @@ pub(super) fn on_returned(ctx: &PlanContext, state: &ChatState, texts: Vec<Strin
     let texts = drain(&mut returned.entries, |entry| *entry == holder);
     // The frame goes first: a crash between the send and this write delivers twice, never loses.
     ctx.hub().send_to_browser(&browser, &frame(texts));
-    persist(ctx, &returned.entries);
+    let _ = persist(ctx, &returned.entries);
 }
 
 /// A tab of `browser` opens: the frame carrying what waits for it, after the snapshot.
@@ -210,6 +224,6 @@ pub(super) fn on_open(
     if texts.is_empty() {
         return None;
     }
-    persist(ctx, &returned.entries);
+    let _ = persist(ctx, &returned.entries);
     Some(frame(texts))
 }
