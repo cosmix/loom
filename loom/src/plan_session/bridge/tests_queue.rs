@@ -344,6 +344,7 @@ fn a_compact_boundary_with_no_stop_after_it_goes_idle() {
     let s = fixture_replay::session(&h);
     let mut replay = fixture_replay::Replay::load("p2-compact", &s);
     replay.until(&s, "2026-11-10T06:40:26.485Z");
+    replay.consumed(&h, &s);
     h.wait_state(&s, SessionState::Idle);
     send(&h, &s, "/compact");
     wait_until("the compact", || h.sent(&s) == ["/compact"]);

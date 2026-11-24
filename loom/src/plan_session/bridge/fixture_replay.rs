@@ -10,6 +10,7 @@
 //! the line before it, keeps its place after that line), so a test can write a fixture up to a
 //! moment, all at once (a replay from offset 0), spool first, or as the live session wrote it.
 
+use std::collections::{BTreeMap, HashSet};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -20,7 +21,7 @@ use chrono::{DateTime, Utc};
 use serde_json::Value;
 
 use super::background::{BackgroundTask, TaskState};
-use super::fake_host::{Harness, Sess};
+use super::fake_host::{wait_until, Harness, Sess};
 use super::BridgeEvent;
 use crate::plan_session::kind::SessionKind;
 
@@ -97,6 +98,35 @@ impl Replay {
     pub(super) fn until(&mut self, s: &Sess, at: &str) {
         let at: DateTime<Utc> = at.parse().unwrap();
         self.write(s, |line| line.at <= at);
+    }
+
+    /// Wait until the bridge applied every spool line written so far. A write only appends to
+    /// the files; the bridge tails them on its own tick, so a session that was idle before the
+    /// write still reads idle until its `UserPromptSubmit` is applied. Wait here before a
+    /// state check or a send that the replayed events would change. A spool line counts as
+    /// applied when `Flow::applied` holds a key for its `received_at` (two lines of one time
+    /// are told apart by their distinct texts); the transcripts have no such mark.
+    pub(super) fn consumed(&self, h: &Harness, s: &Sess) {
+        let mut wanted: BTreeMap<DateTime<Utc>, HashSet<&str>> = BTreeMap::new();
+        for line in &self.lines {
+            if !line.written || line.stream != Stream::Spool {
+                continue;
+            }
+            let record: Value = serde_json::from_str(&line.text).unwrap();
+            let at = record["received_at"].as_str().unwrap().parse().unwrap();
+            wanted.entry(at).or_default().insert(&line.text);
+        }
+        wait_until("the bridge applied the replayed spool", || {
+            let inner = h.bridge.lock();
+            let Some(session) = inner.sessions.get(&s.id) else {
+                return false;
+            };
+            let applied = &session.flow.applied;
+            let read = |(at, texts): (&DateTime<Utc>, &HashSet<&str>)| {
+                applied.iter().filter(|key| key.0 == *at).count() >= texts.len()
+            };
+            wanted.iter().all(read)
+        });
     }
 
     /// Every line not yet written, at once.
