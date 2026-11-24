@@ -107,6 +107,7 @@ fn eof_with_a_live_daemon_reconnects() {
     let home = TempDir::new().unwrap();
     let _redirect = redirect_user_config(home.path().join("config.toml"));
     let root = TempDir::new().unwrap();
+    std::fs::write(root.path().join("user.token"), "probe-token").unwrap();
     let socket = socket_path(root.path());
     if skip_without_unix_socket("eof_with_a_live_daemon_reconnects", &socket) {
         return;
