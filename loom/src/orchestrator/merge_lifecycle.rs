@@ -31,8 +31,11 @@ use crate::git::cleanup::{cleanup_after_merge, needs_cleanup, CleanupConfig, Cle
 
 use super::session_registry::live_sessions_for_stage;
 
+mod cleanup_guard;
 mod containment;
 pub mod orphans;
+
+pub use cleanup_guard::should_defer_cleanup;
 
 /// What the cleanup step did.
 ///
@@ -128,6 +131,9 @@ impl<'a> MergeLifecycle<'a> {
         target_branch: &str,
         config: &CleanupConfig,
     ) -> CleanupOutcome {
+        // Held through every check below, so a cleanup that waited on another
+        // process's sees the result of that cleanup.
+        let _lock = cleanup_guard::lock_stage_cleanup(self.work_dir, self.stage_id);
         if !needs_cleanup(self.stage_id, self.repo_root) {
             // No worktree or branch is left, so any old warning is stale; a
             // stage that never had a worktree (a knowledge stage) still owns
@@ -367,32 +373,12 @@ pub fn finish_verified_merge(
     lifecycle.cleanup(target_branch, config)
 }
 
-/// Whether worktree cleanup for `stage_id` must be deferred rather than run now.
-///
-/// Removing `repo_root/.worktrees/<stage_id>` while `cwd` is inside it deletes
-/// the current process's (and its parent Claude session's) live working
-/// directory, which breaks any hooks the session fires afterward — they spawn a
-/// shell with a cwd that no longer exists. When that's the case, the caller must
-/// skip immediate cleanup and leave it for the orchestrator (which cleans up
-/// after killing the session).
-pub fn should_defer_cleanup(cwd: &Path, repo_root: &Path, stage_id: &str) -> bool {
-    let expected = repo_root.join(".worktrees").join(stage_id);
-    let expected = match expected.canonicalize() {
-        Ok(p) => p,
-        // Worktree doesn't exist on disk - cleanup would be a no-op anyway.
-        Err(_) => return false,
-    };
-    match cwd.canonicalize() {
-        Ok(cwd) => cwd.starts_with(&expected),
-        // Can't verify cwd is safe - assume the worst and defer.
-        Err(_) => true,
-    }
-}
-
 #[cfg(test)]
 pub(crate) mod test_support;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_cleanup_race;
 #[cfg(test)]
 mod tests_cleanup_warning;
 #[cfg(test)]

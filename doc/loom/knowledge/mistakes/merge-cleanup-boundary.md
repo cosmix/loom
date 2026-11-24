@@ -235,3 +235,10 @@ committable `.loom/config.toml`.
 **Prevention:** a diff-based gate over source lines must compare modulo formatting, or it fights the repository's own formatter check. Compare whole hunks, so a reflow that also changes a token still counts.
 
 **Fix:** a hunk whose removed and added text are equal after `normalize` (whitespace dropped outside string literals; a comma before `)`/`]`/`}` dropped except for Python, where `(1,)` is a tuple) contributes nothing. Tests in `loom/src/verify/integrity/tests.rs` cover Rust and TypeScript reflows and reflows hiding a value or string change.
+
+## Operator force-complete and the leftover sweep raced on one worktree (2026-11-24)
+
+**What happened:** `loom stage human-review <id> --force-complete` merged the stage and printed "Post-merge cleanup failed": once with every file listed as deleted, once with "'.git' does not exist". The worktree and branch were gone moments later. Nothing was lost; the error was false.
+**Why:** the command marks the stage merged, then runs `MergeLifecycle::cleanup`. The daemon's leftover sweep sees the merged stage on its next tick and runs the same cleanup. Nothing serialized the two, so the command's `git worktree remove` ran against a tree the daemon was halfway through deleting.
+**Prevention:** any step that more than one process can take for the same stage needs a cross-process lock, and the check that decides whether to act must run inside it. The daemon sweep is always one of those processes once a stage is marked merged.
+**Fix:** `merge_lifecycle/cleanup_guard.rs` `lock_stage_cleanup` takes a per-stage flock held through `cleanup_with_cwd`; `tests_cleanup_race.rs` pins that the waiting cleanup returns `NothingToDo` without a warning.
