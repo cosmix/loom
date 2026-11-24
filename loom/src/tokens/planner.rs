@@ -7,8 +7,9 @@ use super::discover::{main_source, subagent_source, Source};
 use super::flow_build::build_flow;
 use super::model::{AgentFlow, BUCKET_SECS, STAGE_SERIES_LEN};
 use super::pass_memo::PassMemo;
+use super::source_read::read_sources;
 use super::tracker::{
-    ensure_dir, guarded, log_change, read_sources, sleep_unless_shutdown, LastLine, TRACKER,
+    ensure_dir, guarded, log_change, sleep_unless_shutdown, LastLine, TRACKER,
     TRACKER_INTERVAL_SECS,
 };
 use anyhow::Result;

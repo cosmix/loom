@@ -1,3 +1,5 @@
+#[cfg(test)]
+mod activity_sanitize_contract_tests;
 mod busy;
 mod codex_jobs;
 mod collector;

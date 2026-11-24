@@ -170,3 +170,24 @@ fn scope_and_clear_keys_dispatch_through_the_key_handler() {
         state.status()
     );
 }
+
+#[test]
+fn control_characters_do_not_reach_the_edit_buffer() {
+    let (_scratch, mut state) = state();
+    focus_by_name(&mut state, "context.ceiling_tokens");
+    press(&mut state, KeyCode::Enter);
+    assert!(state.is_editing());
+    let before = state.edit_buffer().expect("an open editor").to_owned();
+
+    for key in [
+        KeyEvent::new(KeyCode::Char('\u{85}'), KeyModifiers::NONE),
+        KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL),
+    ] {
+        assert!(!dispatch_key(&mut state, key));
+    }
+    assert_eq!(state.edit_buffer(), Some(before.as_str()));
+
+    let shifted = KeyEvent::new(KeyCode::Char('Z'), KeyModifiers::SHIFT);
+    assert!(!dispatch_key(&mut state, shifted));
+    assert_eq!(state.edit_buffer(), Some(format!("{before}Z").as_str()));
+}

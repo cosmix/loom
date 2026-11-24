@@ -60,6 +60,12 @@ pub(super) struct FileCursor {
     pub(super) inode: u64,
     /// Byte offset just past the last complete line read.
     pub(super) offset: u64,
+    /// Fingerprint of the file prefix ending at `offset` (see `anchor`); 0
+    /// while `offset` is 0. A different one means the file was rewritten.
+    pub(super) anchor: u64,
+    /// The message-id table was emptied to fit the checkpoint cap; the next
+    /// advance rebuilds the agent from offset 0.
+    pub(super) table_shed: bool,
     pub(super) messages: MessageTable,
     /// The last Codex `total_token_usage` read.
     pub(super) codex_total: Option<CodexTotals>,

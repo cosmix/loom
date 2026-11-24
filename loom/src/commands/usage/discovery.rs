@@ -55,7 +55,8 @@ pub fn discover(options: &DiscoveryOptions) -> anyhow::Result<Vec<DiscoveredFile
     }
     let mut files = collect_projects(&projects_root, options)?;
     if let Some(stages) = options.selected_stages.as_ref() {
-        files = filter_stages(files, stages);
+        let repo_slug = report_repo_slug(options)?;
+        files = filter_stages(files, stages, repo_slug.as_deref());
     }
     files.sort_by(|left, right| left.path.cmp(&right.path));
     Ok(files)
@@ -106,6 +107,17 @@ fn selected_slugs(root: &Path, options: &DiscoveryOptions) -> Result<Vec<String>
         return Ok(slugs);
     }
     Ok(repository_slugs(root, &repository_root()?))
+}
+
+fn report_repo_slug(options: &DiscoveryOptions) -> Result<Option<String>> {
+    if options.all {
+        return Ok(None);
+    }
+    let path = match options.project.as_deref() {
+        Some(project) => absolute(project)?,
+        None => repository_root()?,
+    };
+    Ok(Some(project_slug(&path)))
 }
 
 /// The repository slug, its live `.worktrees/*` slugs and the slugs of
@@ -282,13 +294,16 @@ pub(super) fn stage_from_project_slug<'a>(
     valid.then_some(stage)
 }
 
-fn filter_stages(files: Vec<DiscoveredFile>, stages: &HashSet<String>) -> Vec<DiscoveredFile> {
+fn filter_stages(
+    files: Vec<DiscoveredFile>,
+    stages: &HashSet<String>,
+    repo_slug: Option<&str>,
+) -> Vec<DiscoveredFile> {
     files
         .into_iter()
         .filter(|file| {
-            stages
-                .iter()
-                .any(|stage| file.project_slug.ends_with(&format!("-worktrees-{stage}")))
+            stage_from_project_slug(&file.project_slug, repo_slug)
+                .is_some_and(|stage| stages.contains(stage))
         })
         .collect()
 }

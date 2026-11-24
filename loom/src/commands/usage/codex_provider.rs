@@ -1,10 +1,9 @@
-use std::fs::File;
-use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
 use serde_json::Value;
 
+use super::bounded_lines;
 use super::codex_scope::CodexScope;
 use super::codex_tokens::token_vector;
 use super::provider_normalization::{classify_by_id, project_basename};
@@ -96,17 +95,14 @@ fn parse_file(
     range: &TimeRange,
     diagnostics: &mut ProviderDiagnostics,
 ) -> std::io::Result<ParsedFile> {
-    let reader = BufReader::new(File::open(path)?);
+    let file = bounded_lines::open_regular(path)?;
     let mut state = FileState::default();
     let mut rows = Vec::new();
-    for (ordinal, line) in reader.lines().enumerate() {
-        let value = match line.and_then(json_line) {
-            Ok(value) => value,
-            Err(_) => {
-                diagnostics.malformed_rows += 1;
-                state.chronology_uncertain = true;
-                continue;
-            }
+    bounded_lines::for_each_line(file, |ordinal, line| {
+        let Some(value) = line.and_then(|text| serde_json::from_str(text).ok()) else {
+            diagnostics.malformed_rows += 1;
+            state.chronology_uncertain = true;
+            return;
         };
         update_context(&value, &mut state);
         if let Some(row) = direct_row(&value, ordinal, range, &mut state, diagnostics) {
@@ -115,7 +111,7 @@ fn parse_file(
         if let Some(row) = fallback_row(&value, ordinal, range, &mut state, diagnostics) {
             rows.push(row);
         }
-    }
+    })?;
     apply_thread_identity(&mut rows, &state);
     classify_mixed_file(&mut rows, state.saw_direct, state.saw_fallback, diagnostics);
     Ok(ParsedFile {
@@ -134,10 +130,6 @@ fn apply_thread_identity(rows: &mut [NormalizedEvent], state: &FileState) {
             row.codex_thread_id.clone_from(&state.thread_id);
         }
     }
-}
-
-fn json_line(line: String) -> std::io::Result<Value> {
-    serde_json::from_str(&line).map_err(std::io::Error::other)
 }
 
 fn update_context(value: &Value, state: &mut FileState) {

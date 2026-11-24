@@ -31,7 +31,7 @@ fn test_complete_commands_no_match() {
 
 #[test]
 fn test_complete_subcommands_stage() {
-    let results = complete_subcommands("stage", "").unwrap();
+    let results = complete_subcommands(&["stage"], "").unwrap();
     assert!(results.contains(&"complete".to_string()));
     assert!(results.contains(&"block".to_string()));
     assert!(results.contains(&"reset".to_string()));
@@ -42,7 +42,7 @@ fn test_complete_subcommands_stage() {
 
 #[test]
 fn test_complete_subcommands_stage_prefix() {
-    let results = complete_subcommands("stage", "com").unwrap();
+    let results = complete_subcommands(&["stage"], "com").unwrap();
     assert_eq!(results.len(), 2);
     assert!(results.contains(&"complete".to_string()));
     assert!(results.contains(&"commit".to_string()));
@@ -50,7 +50,7 @@ fn test_complete_subcommands_stage_prefix() {
 
 #[test]
 fn test_complete_subcommands_knowledge() {
-    let results = complete_subcommands("knowledge", "").unwrap();
+    let results = complete_subcommands(&["knowledge"], "").unwrap();
     // `check` is the read-only diagnostics command (`commands/knowledge/check.rs`),
     // not the long-deleted subcommand that once bore the name — it belongs with
     // the live subcommands below, not on the `gone` list.
@@ -77,7 +77,7 @@ fn test_complete_subcommands_knowledge() {
 
 #[test]
 fn test_complete_subcommands_memory() {
-    let results = complete_subcommands("memory", "").unwrap();
+    let results = complete_subcommands(&["memory"], "").unwrap();
     assert!(results.contains(&"note".to_string()));
     assert!(results.contains(&"decision".to_string()));
     assert!(results.contains(&"list".to_string()));
@@ -86,21 +86,21 @@ fn test_complete_subcommands_memory() {
 
 #[test]
 fn test_complete_subcommands_sessions() {
-    let results = complete_subcommands("sessions", "").unwrap();
+    let results = complete_subcommands(&["sessions"], "").unwrap();
     assert!(results.contains(&"list".to_string()));
     assert!(results.contains(&"kill".to_string()));
 }
 
 #[test]
 fn test_complete_subcommands_worktree() {
-    let results = complete_subcommands("worktree", "").unwrap();
+    let results = complete_subcommands(&["worktree"], "").unwrap();
     assert!(results.contains(&"list".to_string()));
     assert!(results.contains(&"remove".to_string()));
 }
 
 #[test]
 fn test_complete_subcommands_output() {
-    let results = complete_subcommands("output", "").unwrap();
+    let results = complete_subcommands(&["stage", "output"], "").unwrap();
     assert!(results.contains(&"set".to_string()));
     assert!(results.contains(&"get".to_string()));
     assert!(results.contains(&"list".to_string()));
@@ -109,7 +109,7 @@ fn test_complete_subcommands_output() {
 
 #[test]
 fn test_complete_subcommands_unknown() {
-    let results = complete_subcommands("unknown", "").unwrap();
+    let results = complete_subcommands(&["unknown"], "").unwrap();
     assert!(results.is_empty());
 }
 
@@ -229,15 +229,15 @@ fn test_complete_trigger_types_all() {
 
 #[test]
 fn test_has_subcommands() {
-    assert!(has_subcommands("stage"));
-    assert!(has_subcommands("sessions"));
-    assert!(has_subcommands("worktree"));
-    assert!(has_subcommands("knowledge"));
-    assert!(has_subcommands("memory"));
-    assert!(has_subcommands("plan"));
-    assert!(!has_subcommands("init"));
-    assert!(!has_subcommands("run"));
-    assert!(!has_subcommands("status"));
+    assert!(has_subcommands(&["stage"]));
+    assert!(has_subcommands(&["sessions"]));
+    assert!(has_subcommands(&["worktree"]));
+    assert!(has_subcommands(&["knowledge"]));
+    assert!(has_subcommands(&["memory"]));
+    assert!(has_subcommands(&["plan"]));
+    assert!(!has_subcommands(&["init"]));
+    assert!(!has_subcommands(&["run"]));
+    assert!(!has_subcommands(&["status"]));
 }
 
 #[test]
@@ -248,7 +248,7 @@ fn test_complete_commands_includes_plan() {
 
 #[test]
 fn test_complete_subcommands_plan() {
-    let results = complete_subcommands("plan", "").unwrap();
+    let results = complete_subcommands(&["plan"], "").unwrap();
     assert_eq!(
         results,
         vec![
@@ -257,7 +257,7 @@ fn test_complete_subcommands_plan() {
             "verify".to_string()
         ]
     );
-    assert!(complete_subcommands("plan", "h").unwrap().is_empty());
+    assert!(complete_subcommands(&["plan"], "h").unwrap().is_empty());
 }
 
 #[test]
@@ -330,7 +330,7 @@ fn test_complete_commands_includes_attach() {
 
 #[test]
 fn test_pressure_has_no_subcommands() {
-    assert!(!has_subcommands("pressure"));
+    assert!(!has_subcommands(&["pressure"]));
 }
 
 #[test]
@@ -370,5 +370,19 @@ fn test_complete_knowledge_scopes_all() {
             "knowledge".to_string(),
             "source".to_string()
         ]
+    );
+}
+
+#[test]
+fn a_leaf_command_never_borrows_subcommands_from_another_command() {
+    assert!(complete_subcommands(&["review"], "").unwrap().is_empty());
+    assert!(!has_subcommands(&["review"]));
+    assert_eq!(
+        complete_subcommands(&["stage", "review"], "").unwrap(),
+        ["integrity", "status"]
+    );
+    assert_eq!(
+        complete_subcommands(&["stage", "contracts"], "").unwrap(),
+        ["freeze", "restore", "show"]
     );
 }

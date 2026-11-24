@@ -21,19 +21,16 @@ fn routing_workspace() -> TempDir {
     workspace
 }
 
-#[test]
-fn routed_candidate_domains() {
-    let workspace = routing_workspace();
-    let root = workspace.path();
-    type Case = (
-        &'static str,
-        &'static str,
-        &'static str,
-        &'static [&'static str],
-        &'static [&'static str],
-    );
-    #[rustfmt::skip]
-    let cases: &[Case] = &[
+type Case = (
+    &'static str,
+    &'static str,
+    &'static str,
+    &'static [&'static str],
+    &'static [&'static str],
+);
+
+#[rustfmt::skip]
+const CASES: &[Case] = &[
         ("init", "PLAN", "init", &["init"], &[]),
         ("check", "core", "check", &["check"], &["core-architecture"]),
         ("sessions kill", "session-00", "kill", &["sessions", "kill"], &["session-001", "session-002"]),
@@ -61,8 +58,22 @@ fn routed_candidate_domains() {
         ("top level", "init", "loom", &[], &["init"]),
         ("stage subcommand", "hold", "stage", &["stage"], &["hold"]),
         ("unknown", "", "status", &["status"], &[]),
-    ];
-    for (name, prefix, previous, path, expected) in cases {
+        ("stage contracts", "", "contracts", &["stage", "contracts"], &["freeze", "restore", "show"]),
+        ("stage review", "", "review", &["stage", "review"], &["integrity", "status"]),
+        ("contracts show", "core", "show", &["stage", "contracts", "show"], &["core-architecture"]),
+        ("review status", "math", "status", &["stage", "review", "status"], &["math-core"]),
+        ("stage amend", "ui", "amend", &["stage", "amend"], &["ui-framework"]),
+        ("stage dispute-findings", "core", "dispute-findings", &["stage", "dispute-findings"], &["core-architecture"]),
+        ("owner-stage flag", "core", "--owner-stage", &["stage", "dispute-criteria"], &["core-architecture"]),
+        ("short stage flag", "core", "-S", &["memory", "note"], &["core-architecture"]),
+        ("leaf review", "", "review", &["review"], &[]),
+];
+
+#[test]
+fn routed_candidate_domains() {
+    let workspace = routing_workspace();
+    let root = workspace.path();
+    for (name, prefix, previous, path, expected) in CASES {
         let cmdline = format!("loom {}", path.join(" "));
         let actual = route_completion(root, prefix, previous, path, &cmdline).unwrap();
         assert_eq!(

@@ -95,6 +95,9 @@ impl TuiApp {
             self.render()?;
         }
         self.cleanup_terminal();
+        if self.interrupted() {
+            std::process::exit(130);
+        }
         Ok(())
     }
 

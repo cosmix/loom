@@ -2,20 +2,16 @@
 //! lines every stage's transcripts gained, update the checkpoint, and publish
 //! `.loom/work/tokens/flow.json` for the status collector.
 
-use super::accumulate::AgentState;
-use super::checkpoint::Checkpoint;
-use super::discover::{discover, Source};
+use super::discover::discover;
 use super::flow_build::{build_flow, fit_flow};
 use super::model::{
     TokenFlow, BUCKET_SECS, FLOW_FILE, MAX_FLOW_BYTES, STAGE_SERIES_LEN, TOKENS_DIR,
 };
 use super::pass_memo::PassMemo;
-use super::tail::{self, Line};
-use crate::context::untrusted::inline_safe;
+use super::source_read::read_sources;
 use crate::fs::cache_io::{atomic_write, create_dir, reject_symlink};
 use anyhow::{bail, Context, Result};
 use std::cell::RefCell;
-use std::collections::HashSet;
 use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -77,12 +73,28 @@ pub fn scan_pass(
 /// also counts an unfinished last line that is a whole JSON value (a writer
 /// that never added the `\n`), and keeps every stage's agent totals in memory
 /// for [`super::plan_totals::plan_tokens`] with this `work_root`, also when the
-/// checkpoint is too big to write. Its warning is logged.
-pub fn final_scan(work_root: &Path, codex_sessions_root: Option<&Path>, now: i64) -> Result<()> {
+/// checkpoint is too big to write. Its warning is logged. A transcript that
+/// could not be read makes the scan [`FinalScan::Incomplete`].
+pub fn final_scan(
+    work_root: &Path,
+    codex_sessions_root: Option<&Path>,
+    now: i64,
+) -> Result<FinalScan> {
     let never = AtomicBool::new(false);
     let pass = scan_until(work_root, codex_sessions_root, now, &never, LastLine::Count)?;
     log_change(&mut None, pass.warning);
-    Ok(())
+    Ok(pass
+        .incomplete
+        .map_or(FinalScan::Complete, FinalScan::Incomplete))
+}
+
+/// How a final scan ended.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FinalScan {
+    /// Every transcript was read to its end.
+    Complete,
+    /// A transcript could not be read, so the totals miss it; the text names the first one.
+    Incomplete(String),
 }
 
 /// What a pass does with an unfinished last line of a file.
@@ -108,6 +120,8 @@ pub fn spawn_token_tracker(work_root: PathBuf, shutdown: Arc<AtomicBool>) -> Joi
 struct Pass {
     flow: TokenFlow,
     warning: Option<String>,
+    /// The first transcript that could not be read, if any.
+    incomplete: Option<String>,
 }
 
 /// [`scan_pass`] that stops reading files once `stop` is set; what was read
@@ -166,6 +180,7 @@ fn run_pass(
     let sources = discover(work_root, codex_sessions_root, &mut checkpoint.threads, now)?;
     let mut problems: Vec<String> = load_note.into_iter().collect();
     let (advanced, read_failure) = read_sources(&mut checkpoint, &sources, stop, last_line);
+    let incomplete = read_failure.clone();
     problems.extend(read_failure);
     if last_line == LastLine::Count {
         super::plan_totals::register(work_root, &checkpoint.stages);
@@ -177,96 +192,11 @@ fn run_pass(
     let written = memo.publish_flow(&dir, &mut flow, now);
     problems.extend(writes_outcome(saved, written)?);
     let warning = (!problems.is_empty()).then(|| problems.join("; "));
-    Ok(Pass { flow, warning })
-}
-
-/// Reads every source until `stop` is set. Returns the `(stage id, agent key)`
-/// of each agent whose file was read, and the first file that could not be.
-pub(super) fn read_sources<'a>(
-    checkpoint: &mut Checkpoint,
-    sources: &'a [Source],
-    stop: &AtomicBool,
-    last_line: LastLine,
-) -> (HashSet<(&'a str, &'a str)>, Option<String>) {
-    let mut advanced = HashSet::new();
-    let mut failure = None;
-    for source in sources {
-        if stop.load(Ordering::SeqCst) {
-            break;
-        }
-        match read_source(checkpoint, source, stop, last_line) {
-            Ok(false) => continue,
-            Ok(true) => {}
-            // A read that failed part way may still have moved the offset.
-            Err(error) => {
-                failure.get_or_insert_with(|| {
-                    format!("cannot read {}: {error}", inline_safe(&source.path))
-                });
-            }
-        }
-        advanced.insert((source.stage_id.as_str(), source.key.as_str()));
-    }
-    (advanced, failure)
-}
-
-/// Reads the lines `source`'s file gained since the checkpoint, and says
-/// whether there were any. A missing file is skipped and its agent keeps its
-/// totals; a new inode, a shrink below the saved offset, or a different path
-/// restarts the agent from offset 0. A line over [`tail::MAX_LINE_BYTES`] is
-/// skipped and counted as unreadable. An unfinished last line is handled as
-/// `last_line` says.
-fn read_source(
-    checkpoint: &mut Checkpoint,
-    source: &Source,
-    stop: &AtomicBool,
-    last_line: LastLine,
-) -> std::io::Result<bool> {
-    let path = Path::new(&source.path);
-    let Some(stat) = tail::stat(path) else {
-        return Ok(false);
-    };
-    let agent = checkpoint.agent(source);
-    if source.agent_type.is_some() {
-        agent.agent_type.clone_from(&source.agent_type);
-    }
-    if source.forwarder.is_some() {
-        agent.forwarder.clone_from(&source.forwarder);
-    }
-    if source.unit.is_some() {
-        agent.unit.clone_from(&source.unit);
-    }
-    let file = &agent.file;
-    if file.path != source.path || file.inode != stat.inode || stat.len < file.offset {
-        agent.restart(&source.path, stat.inode);
-    }
-    if stat.len == agent.file.offset {
-        return Ok(false);
-    }
-    let mut offset = agent.file.offset;
-    let read = tail::read_lines(path, &mut offset, stat.len, stop, |line| match line {
-        Line::Text(text) => agent.ingest(text),
-        Line::TooLong => agent.count_unreadable(),
-    });
-    agent.file.offset = offset;
-    read?;
-    if last_line == LastLine::Count && !stop.load(Ordering::SeqCst) {
-        count_last_line(agent, path, stat.len)?;
-    }
-    Ok(true)
-}
-
-/// Ingests the unfinished line between the agent's offset and `len` when it
-/// is a whole JSON value, and moves the offset past it. A fragment that does
-/// not parse is a line still being written: it is left for a later pass.
-fn count_last_line(agent: &mut AgentState, path: &Path, len: u64) -> std::io::Result<()> {
-    let Some(fragment) = tail::read_fragment(path, agent.file.offset, len)? else {
-        return Ok(());
-    };
-    if serde_json::from_str::<serde::de::IgnoredAny>(&fragment).is_ok() {
-        agent.ingest(&fragment);
-        agent.file.offset = len;
-    }
-    Ok(())
+    Ok(Pass {
+        flow,
+        warning,
+        incomplete,
+    })
 }
 
 /// The warnings of the two writes, or their errors: both when both failed, so

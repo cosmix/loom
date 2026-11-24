@@ -25,6 +25,8 @@ mod storage;
 mod tokens;
 
 #[cfg(test)]
+mod final_capture_contract_tests;
+#[cfg(test)]
 mod tests;
 
 pub(crate) use contracts::handle_freeze_contracts;

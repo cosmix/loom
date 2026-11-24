@@ -86,6 +86,39 @@ fn account_after(limits: u32) -> AccountState {
 }
 
 #[test]
+fn a_second_account_without_a_reading_clears_the_first_accounts_quota() {
+    let dir = tempdir().unwrap();
+    let mut state = ProviderState::new();
+    project_account(dir.path(), &mut state, &account_after(0), 1_000);
+    assert!(cache::read_provider(dir.path(), "claude").is_some());
+
+    let second = AccountState {
+        consecutive_rate_limits: 1,
+        ..AccountState::default()
+    };
+    project_account(dir.path(), &mut state, &second, 2_000);
+
+    assert!(cache::read_provider(dir.path(), "claude").is_none());
+}
+
+#[test]
+fn a_failed_cache_write_keeps_its_backoff() {
+    let dir = tempdir().unwrap();
+    let target = dir.path().join("target.json");
+    std::fs::write(&target, "unchanged").unwrap();
+    std::fs::create_dir_all(cache::quota_dir(dir.path())).unwrap();
+    std::os::unix::fs::symlink(&target, cache::provider_path(dir.path(), "claude")).unwrap();
+
+    let mut state = ProviderState::new();
+    let expected_backoff = next_interval(state.interval, true);
+    let before = Instant::now();
+    project_account(dir.path(), &mut state, &account_after(0), 1_000);
+
+    assert_eq!(state.interval, expected_backoff);
+    assert!(state.next_due >= before + expected_backoff);
+}
+
+#[test]
 fn an_unconfirmed_429_keeps_the_last_reading_without_an_error() {
     let dir = tempdir().unwrap();
     let mut state = ProviderState::new();

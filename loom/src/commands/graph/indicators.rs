@@ -1,6 +1,6 @@
 //! Status indicators for graph display
 //!
-//! Provides colored status indicators and priority ordering for stage statuses.
+//! Provides colored status indicators for stage statuses.
 
 use colored::{ColoredString, Colorize};
 
@@ -23,23 +23,4 @@ pub fn status_indicator(status: &StageStatus) -> ColoredString {
     }
 
     colored
-}
-
-/// Sort stages by status priority (executing first, then ready, then others)
-pub fn status_priority(status: &StageStatus) -> u8 {
-    match status {
-        StageStatus::Executing => 0,
-        StageStatus::Queued => 1,
-        StageStatus::WaitingForInput => 2,
-        StageStatus::NeedsHandoff => 3,
-        StageStatus::MergeConflict => 4, // Needs attention, similar to handoff
-        StageStatus::CompletedWithFailures => 5, // Needs retry
-        StageStatus::MergeBlocked => 6,  // Merge failed, needs attention
-        StageStatus::NeedsHumanReview => 7, // Needs human attention
-        StageStatus::NeedsAdjudication => 7, // Needs adjudicator attention
-        StageStatus::WaitingForDeps => 8,
-        StageStatus::Blocked => 9,
-        StageStatus::Completed => 10,
-        StageStatus::Skipped => 11,
-    }
 }

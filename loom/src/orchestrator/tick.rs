@@ -29,9 +29,6 @@ use super::busy::{Busy, BusyOp};
 /// File name inside `.loom/work/` holding the last loop tick.
 const TICK_FILE: &str = "orchestrator.tick";
 
-/// Longest stage id, in bytes, a busy line may carry.
-const MAX_STAGE_ID_BYTES: usize = 128;
-
 /// How far behind the tick may fall before the loop is considered stalled.
 ///
 /// The poll interval is 5s, so this is twelve missed iterations. The threshold
@@ -118,7 +115,7 @@ pub fn record(work_dir: &Path, phase: Phase) {
 /// `busy::while_busy` calls this; best-effort like [`record`].
 pub fn record_busy(work_dir: &Path, phase: Phase, busy: &Busy) {
     debug_assert!(
-        valid_stage_id(&busy.stage_id),
+        crate::validation::validate_id(&busy.stage_id).is_ok(),
         "a busy line with stage id {:?} would read back as not busy",
         busy.stage_id
     );
@@ -156,22 +153,14 @@ fn write_tick(work_dir: &Path, phase: Phase, busy: Option<&Busy>) {
     );
 }
 
-/// Whether `id` may appear in a busy line: non-empty, at most
-/// [`MAX_STAGE_ID_BYTES`], and only ASCII letters, digits, `-`, `_` and `.`.
-fn valid_stage_id(id: &str) -> bool {
-    !id.is_empty()
-        && id.len() <= MAX_STAGE_ID_BYTES
-        && id
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
-}
-
 /// Parse `busy <op> <started_at> <stage_id>`; any rule failure is `None`.
 fn parse_busy(line: &str) -> Option<Busy> {
     let mut parts = line.strip_prefix("busy ")?.splitn(3, ' ');
     let op = BusyOp::parse(parts.next()?)?;
     let started_at = DateTime::parse_from_rfc3339(parts.next()?).ok()?;
-    let stage_id = parts.next().filter(|id| valid_stage_id(id))?;
+    let stage_id = parts
+        .next()
+        .filter(|id| crate::validation::validate_id(id).is_ok())?;
     Some(Busy {
         op,
         stage_id: stage_id.to_string(),
@@ -327,7 +316,7 @@ mod tests {
     #[test]
     fn test_record_busy_roundtrips_the_busy_line() {
         let temp = TempDir::new().unwrap();
-        let busy = busy_for("stage-a.1_x");
+        let busy = busy_for("stage-a-1_x");
 
         record_busy(temp.path(), Phase::Events, &busy);
         let tick = read(temp.path()).unwrap().expect("tick should be written");
@@ -353,6 +342,9 @@ mod tests {
             format!("busy provisioning {now}"),
             format!("busy provisioning {now} "),
             format!("busy provisioning {now} a b"),
+            format!("busy provisioning {now} a.b"),
+            format!("busy provisioning {now} 01-foo"),
+            format!("busy provisioning {now} con"),
             format!("busy provisioning {now} {}", "a".repeat(129)),
             format!("busy nope {now} a"),
             "busy provisioning yesterday a".to_string(),

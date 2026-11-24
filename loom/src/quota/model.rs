@@ -58,6 +58,9 @@ impl WindowKind {
 /// should call it out rather than show it as current.
 pub const STALE_AFTER_SECS: i64 = 600;
 
+/// How far ahead of the reader a reading may be stamped and still count as current.
+pub const FUTURE_SKEW_SECS: i64 = 300;
+
 /// Bucket a usage percentage into the same green/yellow/red bands used for
 /// context-window health, reusing the existing thresholds (60% / 90%).
 pub fn quota_health(used_percent: f64) -> crate::orchestrator::monitor::ContextHealth {
@@ -89,10 +92,14 @@ pub fn reset_text(resets_at: Option<i64>, now: i64) -> Option<String> {
     }
 }
 
-/// Seconds since a snapshot was observed, clamped to zero so clock skew
-/// between the poller and the reader never reports a negative age.
+/// Seconds since a snapshot was observed, saturating at `i64::MAX`.
+/// Future readings count as age zero within [`FUTURE_SKEW_SECS`] and as
+/// [`STALE_AFTER_SECS`] beyond that limit.
 pub fn age_secs(observed_at: i64, now: i64) -> i64 {
-    (now - observed_at).max(0)
+    if observed_at > now.saturating_add(FUTURE_SKEW_SECS) {
+        return STALE_AFTER_SECS;
+    }
+    now.saturating_sub(observed_at).max(0)
 }
 
 /// Drop non-finite percentages and clamp the rest to the valid 0..=100 range.

@@ -12,6 +12,8 @@ mod sessions;
 mod stages;
 
 #[cfg(test)]
+mod routing_contract_tests;
+#[cfg(test)]
 mod tests;
 
 use anyhow::Result;
@@ -187,8 +189,10 @@ fn route_completion(
     match cmd_path {
         [] => complete_commands(prefix),
         [cmd] => complete_after_command(cwd, prefix, cmd),
+        [_, _, ..] if commands::has_subcommands(cmd_path) => complete_subcommands(cmd_path, prefix),
         [cmd, sub] => complete_after_subcommand(cwd, prefix, cmd, sub),
-        [_cmd, "output", sub] => complete_after_subcommand(cwd, prefix, "output", sub),
+        ["stage", "output", sub] => complete_after_subcommand(cwd, prefix, "output", sub),
+        ["stage", "contracts" | "review", _leaf] => complete_stage_ids(cwd, prefix),
         _ => Ok(Vec::new()),
     }
 }
@@ -206,7 +210,7 @@ fn complete_flag_value(
     }
     match prev_word {
         "--port" | "--host" if cmd_path == ["plan"] => Ok(Some(Vec::new())),
-        "--stage" => {
+        "--stage" | "--owner-stage" | "-S" => {
             let results = complete_stage_ids(cwd, prefix)?;
             Ok(Some(results))
         }
@@ -242,8 +246,8 @@ fn complete_flag_value(
 
 /// Complete after a single top-level command.
 fn complete_after_command(cwd: &Path, prefix: &str, cmd: &str) -> Result<Vec<String>> {
-    if commands::has_subcommands(cmd) {
-        return complete_subcommands(cmd, prefix);
+    if commands::has_subcommands(&[cmd]) {
+        return complete_subcommands(&[cmd], prefix);
     }
 
     match cmd {
@@ -264,7 +268,6 @@ fn complete_after_subcommand(
     sub: &str,
 ) -> Result<Vec<String>> {
     match (cmd, sub) {
-        // Stage subcommands that take stage IDs
         ("stage", "complete" | "commit") => complete_stage_ids_filtered(cwd, prefix, &EXECUTING),
         ("stage", "retry") => complete_stage_ids_filtered(
             cwd,
@@ -289,11 +292,12 @@ fn complete_after_subcommand(
                 "needs-handoff",
             ],
         ),
-        ("stage", "human-review" | "dispute-criteria") => complete_stage_ids(cwd, prefix),
-        ("stage", "block" | "hold" | "release" | "skip" | "waiting" | "resume") => {
-            complete_stage_ids(cwd, prefix)
-        }
-        ("stage", "output") => complete_subcommands("output", prefix),
+        (
+            "stage",
+            "human-review" | "dispute-criteria" | "admin-proof" | "amend" | "dispute-contract"
+            | "dispute-findings" | "dispute-integrity" | "block" | "hold" | "release" | "skip"
+            | "waiting" | "resume",
+        ) => complete_stage_ids(cwd, prefix),
 
         // Output subcommands take stage IDs
         ("output", "set" | "get" | "list" | "remove") => complete_stage_ids(cwd, prefix),

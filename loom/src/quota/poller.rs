@@ -54,14 +54,14 @@ pub fn spawn_quota_poller(work_root: PathBuf, shutdown: Arc<AtomicBool>) -> Join
 /// Per-provider scheduling and backoff state. Lives only in the poller
 /// thread's stack, so a daemon restart starts every provider's backoff over
 /// from `POLL_INTERVAL`.
-struct ProviderState {
+pub(super) struct ProviderState {
     next_due: Instant,
     interval: Duration,
     last_error: Option<String>,
 }
 
 impl ProviderState {
-    fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self {
             next_due: Instant::now(),
             interval: POLL_INTERVAL,
@@ -137,12 +137,14 @@ fn record_error(provider: &str, state: &mut ProviderState, message: String, back
 
 fn poll_claude(work_root: &Path, state: &mut ProviderState) {
     let Some(home) = dirs::home_dir() else {
+        let _ = cache::clear_provider(work_root, "claude");
         state.next_due = Instant::now() + state.interval;
         return;
     };
     // No claude.ai login is a common, expected state (e.g. codex-only use) -
     // skip silently rather than treat it as a poll failure worth logging.
     let Ok((token, plan)) = credentials::account(&home) else {
+        let _ = cache::clear_provider(work_root, "claude");
         state.next_due = Instant::now() + state.interval;
         return;
     };
@@ -185,17 +187,19 @@ fn poll_claude(work_root: &Path, state: &mut ProviderState) {
 /// local schedule with the account's `next_poll_at`. History gets a row only
 /// for a reading newer than the project cache held (the history store also
 /// drops a repeated `observed_at`, so a re-adopted reading never duplicates).
-fn project_account(work_root: &Path, state: &mut ProviderState, account: &AccountState, now: i64) {
+/// An account with no reading clears the project file, since any cached
+/// reading belongs to an account the user has replaced.
+pub(super) fn project_account(
+    work_root: &Path,
+    state: &mut ProviderState,
+    account: &AccountState,
+    now: i64,
+) {
     let error = shared::display_error(account);
-    let mut written = true;
-    match &account.quota {
-        Some(quota) => written = project_quota(work_root, quota, error.clone()),
-        None => {
-            if let Some(message) = &error {
-                let _ = cache::record_failure(work_root, "claude", message);
-            }
-        }
-    }
+    let written = match &account.quota {
+        Some(quota) => project_quota(work_root, quota, error.clone()),
+        None => cache::clear_provider(work_root, "claude").is_ok(),
+    };
 
     match error {
         _ if !written => record_error(
@@ -207,9 +211,11 @@ fn project_account(work_root: &Path, state: &mut ProviderState, account: &Accoun
         Some(message) => record_error("claude", state, message, POLL_INTERVAL),
         None => record_success("claude", state),
     }
-    state.interval = Duration::from_secs(account.interval_secs);
-    let wait = u64::try_from(account.next_poll_at.saturating_sub(now)).unwrap_or(0);
-    state.next_due = Instant::now() + Duration::from_secs(wait);
+    if written {
+        state.interval = Duration::from_secs(account.interval_secs);
+        let wait = u64::try_from(account.next_poll_at.saturating_sub(now)).unwrap_or(0);
+        state.next_due = Instant::now() + Duration::from_secs(wait);
+    }
 }
 
 /// Returns whether the provider cache write succeeded.

@@ -27,6 +27,8 @@ mod state;
 mod plan_overview_contract_tests;
 #[cfg(test)]
 mod plan_overview_tests;
+#[cfg(test)]
+mod subscriber_contract_tests;
 
 use std::path::Path;
 

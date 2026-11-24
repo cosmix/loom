@@ -252,7 +252,7 @@ fn append_suffixes(spans: &mut Vec<Span<'static>>, texts: Vec<String>, width: u1
     for text in texts {
         let available = room.saturating_sub(SUFFIX_GAP);
         let needed = text_width(&text);
-        if needed <= available {
+        if needed + SUFFIX_GAP <= room {
             room -= SUFFIX_GAP + needed;
             shown.push(text);
         } else if available >= SUFFIX_MIN_CELLS {

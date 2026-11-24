@@ -18,6 +18,10 @@ mod tests;
 
 use std::{
     io::{self, Stdout},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
     time::Duration,
 };
 
@@ -40,19 +44,18 @@ pub fn run() -> Result<()> {
     // as an ordinary `KeyEvent`, never as SIGINT. This handler is for
     // termination that does not go through the terminal at all - an
     // external `kill`, a multiplexer pane closing, or a session manager
-    // sending SIGTERM/SIGHUP - which skip unwinding entirely, so `Drop`
-    // never runs and the operator's shell is left in raw alternate-screen
-    // mode. `cleanup_terminal_crossterm` writes straight to stdout instead
-    // of through `self.terminal` because the signal can land mid-render,
-    // while `self.terminal`'s borrow is held elsewhere.
-    ctrlc::set_handler(|| {
-        crate::utils::cleanup_terminal_crossterm();
-        std::process::exit(0);
-    })
-    .context("Failed to set signal handler")?;
+    // sending SIGTERM/SIGHUP. It only clears `running`: `event_loop` sees
+    // that within one 100 ms poll, `cleanup_terminal` restores the terminal
+    // from the main thread, and the process then exits 130.
+    let running = app.running.clone();
+    ctrlc::set_handler(move || running.store(false, Ordering::SeqCst))
+        .context("Failed to set signal handler")?;
 
     let result = app.event_loop();
     app.cleanup_terminal();
+    if !app.running.load(Ordering::SeqCst) {
+        std::process::exit(130);
+    }
     result
 }
 
@@ -62,6 +65,8 @@ struct ConfigTui {
     terminal: Terminal<CrosstermBackend<Stdout>>,
     /// The terminal-independent registry rows and staged edits.
     state: ConfigState,
+    /// Cleared by the signal handler; `event_loop` leaves when it is false.
+    running: Arc<AtomicBool>,
     /// Prevent both explicit cleanup and `Drop` from restoring the terminal twice.
     cleaned_up: bool,
 }
@@ -96,13 +101,14 @@ impl ConfigTui {
         Ok(Self {
             terminal,
             state,
+            running: Arc::new(AtomicBool::new(true)),
             cleaned_up: false,
         })
     }
 
     /// Draw frames and process input until a top-level quit command arrives.
     fn event_loop(&mut self) -> Result<()> {
-        loop {
+        while self.running.load(Ordering::SeqCst) {
             self.draw()?;
             if event::poll(Duration::from_millis(100))? {
                 if let Event::Key(key) = event::read()? {
@@ -112,6 +118,7 @@ impl ConfigTui {
                 }
             }
         }
+        Ok(())
     }
 
     /// Translate terminal keys while preserving the state machine's headless boundary.
@@ -152,7 +159,7 @@ fn dispatch_key(state: &mut ConfigState, key: KeyEvent) -> bool {
         return true;
     }
     if state.is_editing() {
-        return dispatch_edit_key(state, key.code);
+        return dispatch_edit_key(state, key);
     }
 
     // Whether a quit may proceed is the state machine's decision, not this
@@ -192,10 +199,18 @@ fn dispatch_browse_key(state: &mut ConfigState, code: KeyCode) {
     }
 }
 
-/// Handle a key while a text editor owns the keyboard.
-fn dispatch_edit_key(state: &mut ConfigState, code: KeyCode) -> bool {
-    match code {
-        KeyCode::Char(character) => state.append_char(character),
+/// Handle a key while a text editor owns the keyboard. Control characters and
+/// `Ctrl`/`Alt` chords are not text and never reach the buffer.
+fn dispatch_edit_key(state: &mut ConfigState, key: KeyEvent) -> bool {
+    match key.code {
+        KeyCode::Char(character) => {
+            let chord = key
+                .modifiers
+                .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT);
+            if !character.is_control() && !chord {
+                state.append_char(character);
+            }
+        }
         KeyCode::Backspace => state.backspace(),
         KeyCode::Enter => state.commit_edit(),
         KeyCode::Esc => state.cancel_edit(),

@@ -4,13 +4,12 @@
 //!
 //! ## Module Organization
 //!
-//! - `display`: Graph building and visual formatting
-//! - `indicators`: Status indicators and priority ordering
+//! - `tree`: Graph building and visual formatting
+//! - `indicators`: Status indicators
 //! - `levels`: Topological level computation
 //! - `colors`: Stage color assignment for visual differentiation
 
 pub mod colors;
-mod display;
 pub mod indicators;
 mod levels;
 pub mod tree;
@@ -26,8 +25,7 @@ use crate::verify::transitions::list_all_stages;
 
 // Re-export the public API
 pub use colors::stage_color;
-pub use display::build_graph_display;
-pub use indicators::{status_indicator, status_priority};
+pub use indicators::status_indicator;
 pub use levels::compute_stage_levels;
 pub use tree::build_tree_display;
 

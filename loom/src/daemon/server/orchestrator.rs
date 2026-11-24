@@ -21,7 +21,7 @@ use crate::orchestrator::{
 use crate::plan::graph::ExecutionGraph;
 use crate::plan::schema::SandboxConfig;
 use crate::plan_stats::finish_plan;
-use crate::tokens::TokenTracker;
+use crate::tokens::{FinalScan, TokenTracker};
 
 /// Spawn the orchestrator thread to execute stages.
 ///
@@ -201,12 +201,24 @@ fn finish_orchestration(work_dir: &WorkDir, result: &OrchestratorResult) -> Term
 }
 
 /// Counts the run's last token usage with a final scan, then publishes the
-/// plan statistics over the same work root. Either failure is logged and
-/// leaves the outcome alone: the stages are done whatever the statistics say.
+/// plan statistics over the same work root. A scan that failed or could not
+/// read every transcript publishes nothing, so partial totals are never
+/// archived as the permanent record. Every failure is logged and leaves the
+/// outcome alone: the stages are done whatever the statistics say.
 fn publish_plan_stats(work_root: &Path) {
     let now = chrono::Utc::now().timestamp();
-    if let Err(error) = crate::tokens::final_scan(work_root, None, now) {
-        tracing::error!("final token scan failed: {error:#}");
+    match crate::tokens::final_scan(work_root, None, now) {
+        Ok(FinalScan::Complete) => {}
+        Ok(FinalScan::Incomplete(reason)) => {
+            tracing::error!(
+                "final token scan could not read every transcript ({reason}); plan statistics not published"
+            );
+            return;
+        }
+        Err(error) => {
+            tracing::error!("final token scan failed: {error:#}; plan statistics not published");
+            return;
+        }
     }
     if let Err(error) = finish_plan(work_root) {
         tracing::error!("publishing plan statistics failed: {error:#}");

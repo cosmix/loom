@@ -251,19 +251,21 @@ fn transcript_line(msg_id: &str, cache_write: u64) -> String {
     format!("{line}\n")
 }
 
-/// A line written after the tracker's last checkpoint reaches the published
-/// statistics only through the final scan `finish_orchestration` runs.
-#[test]
-fn published_plan_statistics_count_a_line_written_after_the_last_checkpoint() {
-    let temp = tempfile::tempdir().unwrap();
-    let (_home, _redirect) = redirect_home(temp.path());
-    let (work, _plan, result) = merged_run(temp.path());
-    let transcript = temp.path().join("transcript.jsonl");
-    fs::write(&transcript, transcript_line("m1", 100)).unwrap();
+/// Records a session of stage `test` that names `transcript`.
+fn save_transcript_session(work: &WorkDir, transcript: &Path) {
     let mut session = crate::models::session::Session::new();
     session.stage_id = Some("test".into());
     session.transcript_path = Some(transcript.to_string_lossy().into_owned());
     crate::fs::session_files::save_session(&session, work.root()).unwrap();
+}
+
+/// A merged run whose session names a transcript of one line, with the
+/// tracker's checkpoint already written.
+fn run_with_checkpointed_transcript(root: &Path) -> (WorkDir, OrchestratorResult, PathBuf) {
+    let (work, _plan, result) = merged_run(root);
+    let transcript = root.join("transcript.jsonl");
+    fs::write(&transcript, transcript_line("m1", 100)).unwrap();
+    save_transcript_session(&work, &transcript);
     let now = chrono::Utc::now().timestamp();
     crate::tokens::scan_pass(work.root(), None, now).unwrap();
     let checkpoint = work
@@ -274,11 +276,25 @@ fn published_plan_statistics_count_a_line_written_after_the_last_checkpoint() {
         checkpoint.is_file(),
         "the tracker pass wrote its checkpoint"
     );
+    (work, result, transcript)
+}
+
+fn append_line(transcript: &Path, msg_id: &str, cache_write: u64) {
     let mut file = fs::OpenOptions::new()
         .append(true)
-        .open(&transcript)
+        .open(transcript)
         .unwrap();
-    std::io::Write::write_all(&mut file, transcript_line("m2", 7).as_bytes()).unwrap();
+    std::io::Write::write_all(&mut file, transcript_line(msg_id, cache_write).as_bytes()).unwrap();
+}
+
+/// A line written after the tracker's last checkpoint reaches the published
+/// statistics only through the final scan `finish_orchestration` runs.
+#[test]
+fn published_plan_statistics_count_a_line_written_after_the_last_checkpoint() {
+    let temp = tempfile::tempdir().unwrap();
+    let (_home, _redirect) = redirect_home(temp.path());
+    let (work, result, transcript) = run_with_checkpointed_transcript(temp.path());
+    append_line(&transcript, "m2", 7);
 
     assert_eq!(
         finish_orchestration(&work, &result),
@@ -287,4 +303,64 @@ fn published_plan_statistics_count_a_line_written_after_the_last_checkpoint() {
     let current = fs::read_to_string(work.root().join("plan-stats.json")).unwrap();
     let record: serde_json::Value = serde_json::from_str(&current).unwrap();
     assert_eq!(record["totals"]["cache_write"], 107, "{record}");
+}
+
+/// A final scan that fails before it registers any totals must not let the
+/// stale checkpoint be archived; a later successful capture still publishes.
+#[test]
+fn a_failed_final_scan_publishes_no_plan_statistics() {
+    let temp = tempfile::tempdir().unwrap();
+    let (home, _redirect) = redirect_home(temp.path());
+    let (work, result, transcript) = run_with_checkpointed_transcript(temp.path());
+    // A file in the sessions directory's place makes session discovery fail.
+    let sessions = work.root().join("sessions");
+    fs::remove_dir_all(&sessions).unwrap();
+    fs::write(&sessions, "not a directory").unwrap();
+
+    assert_eq!(
+        finish_orchestration(&work, &result),
+        TerminalOutcome::Success
+    );
+    assert!(!work.root().join("plan-stats.json").exists());
+    assert_eq!(archived_stats(&home), 0);
+
+    fs::remove_file(&sessions).unwrap();
+    fs::create_dir(&sessions).unwrap();
+    save_transcript_session(&work, &transcript);
+    assert_eq!(
+        finish_orchestration(&work, &result),
+        TerminalOutcome::Success
+    );
+    assert!(work.root().join("plan-stats.json").exists());
+    assert_eq!(archived_stats(&home), 1);
+}
+
+/// A transcript that cannot be opened leaves the capture short of its last
+/// lines, so nothing is archived until it can be read.
+#[test]
+fn an_unreadable_transcript_withholds_the_archive_until_it_can_be_read() {
+    use std::os::unix::fs::PermissionsExt;
+    // SAFETY: geteuid has no arguments and only reads process credentials.
+    if unsafe { libc::geteuid() } == 0 {
+        return;
+    }
+    let temp = tempfile::tempdir().unwrap();
+    let (home, _redirect) = redirect_home(temp.path());
+    let (work, result, transcript) = run_with_checkpointed_transcript(temp.path());
+    append_line(&transcript, "m2", 7);
+    fs::set_permissions(&transcript, fs::Permissions::from_mode(0o000)).unwrap();
+
+    assert_eq!(
+        finish_orchestration(&work, &result),
+        TerminalOutcome::Success
+    );
+    assert!(!work.root().join("plan-stats.json").exists());
+    assert_eq!(archived_stats(&home), 0);
+
+    fs::set_permissions(&transcript, fs::Permissions::from_mode(0o644)).unwrap();
+    assert_eq!(
+        finish_orchestration(&work, &result),
+        TerminalOutcome::Success
+    );
+    assert_eq!(archived_stats(&home), 1);
 }

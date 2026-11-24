@@ -1,5 +1,6 @@
 use super::*;
 use crate::plan_stats::read_current;
+use crate::status::data::sanitize::sanitized_stage_event;
 
 fn collect_merge_summary(stages: &[Stage], work_dir: &WorkDir) -> Result<MergeSummary> {
     // Get merge point for merge report
@@ -54,7 +55,10 @@ pub fn collect_status_data(work_dir: &WorkDir) -> Result<StatusData> {
         activity: crate::fs::stage_events::read_recent(
             work_dir.root(),
             crate::fs::stage_events::RECENT_LIMIT,
-        ),
+        )
+        .into_iter()
+        .filter_map(sanitized_stage_event)
+        .collect(),
         plan_stats: read_current(work_dir.root()),
     })
 }
