@@ -1,13 +1,13 @@
 //! Tmux terminal backend
 //!
-//! Spawns sessions in a headless tmux server, one per session, so loom can
-//! run without a GUI terminal emulator. Each session gets its own tmux
+//! Spawns sessions in a headless tmux server, one per session, so loom runs
+//! without a GUI. Each session gets its own tmux
 //! socket (see [`socket_name`]) rather than sharing one server, so killing
 //! one session can never take down another.
 //!
 //! Session-launch preparation (prompt, model/effort policy, permission mode,
-//! wrapper script) is shared with the native lane via
-//! `super::native::prepare_session_launch` — this module only owns the
+//! wrapper script) lives in `super::launch::prepare_session_launch` — this
+//! module only owns the
 //! tmux-specific spawn/kill/liveness mechanics.
 //!
 //! Liveness is PID-based ONLY, never `tmux has-session` — see
@@ -43,7 +43,7 @@ use std::time::Duration;
 
 use crate::models::session::Session;
 
-use super::native;
+use super::launch;
 
 pub(crate) use capture::capture_pane_tail;
 pub(crate) use fullscreen::sample_fullscreen;
@@ -287,18 +287,17 @@ pub fn spawn_in_tmux(socket: &str, session_name: &str, cwd: &Path, command: &Pat
 }
 
 /// Wait for the wrapper script's `exec`'d process to become discoverable on
-/// `pid_key`, the same layered wait the native lane uses.
+/// `pid_key`.
 ///
-/// `fallback_pid` is deliberately `None`: unlike the native lane, there is no
-/// terminal PID to fall back to, so a session whose wrapper PID never
-/// appears must error rather than silently report a bogus PID.
+/// There is no PID to fall back to, so a session whose wrapper PID never
+/// appears errors rather than reporting a bogus PID.
 pub fn await_tmux_session_pid(
     work_dir: &Path,
     pid_key: &str,
     cwd: &Path,
     session_id: &str,
 ) -> Result<u32> {
-    native::await_session_pid(work_dir, pid_key, cwd, session_id, None)
+    launch::await_session_pid(work_dir, pid_key, cwd, session_id)
 }
 
 /// Tear down the tmux server owned by `socket` and unlink its socket file.
@@ -348,7 +347,7 @@ fn abort_tmux_spawn(work_dir: &Path, socket: &str, pid_key: &str) {
         return;
     }
     let _ = std::fs::remove_file(&socket_path);
-    native::cleanup_stage_files(work_dir, pid_key);
+    launch::cleanup_stage_files(work_dir, pid_key);
 }
 
 mod backend;

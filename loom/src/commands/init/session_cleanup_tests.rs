@@ -34,7 +34,7 @@ fn live_sockets(repo_root: &Path, socket_dir: &Path) -> (PathBuf, PathBuf) {
         session_to_markdown(&live_session),
     )
     .unwrap();
-    crate::orchestrator::terminal::native::write_test_pid_identity(
+    crate::orchestrator::terminal::launch::write_test_pid_identity(
         &repo_root.join(".loom").join("work"),
         &live_session,
         std::process::id(),

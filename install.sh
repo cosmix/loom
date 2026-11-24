@@ -104,6 +104,14 @@ check_runtime_tools() {
 		warn "search tools missing: ${missing_tools[*]} - the installed CLAUDE.md steers agents to rg/fd over grep/find"
 		info "install with: apt install ripgrep fd-find (then symlink fdfind to fd) / brew install ripgrep fd"
 	fi
+	# Advisory only: loom init and the install itself work without tmux.
+	if ! command -v tmux &>/dev/null; then
+		warn "tmux is not installed - Loom needs tmux to start sessions"
+		case "$(uname -s)" in
+			Darwin) info "install with: brew install tmux" ;;
+			*) info "install with: sudo apt install tmux" ;;
+		esac
+	fi
 }
 
 read_recorded_skills_mode() {

@@ -56,7 +56,7 @@ mod tests {
     use crate::user_config::{keys::spec, parse_document};
 
     #[test]
-    fn default_backend_is_native() {
+    fn codex_backend_defaults_to_native() {
         let config = UserConfig::default();
         assert_eq!(config.codex_backend(), "native");
         assert_eq!(config.codex_backend_set(), None);

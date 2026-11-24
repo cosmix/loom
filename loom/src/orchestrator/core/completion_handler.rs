@@ -124,7 +124,7 @@ mod knowledge_completion_tests;
 mod terminal_reason_tests {
     use super::*;
     use crate::fs::session_files::{load_session_exact, save_session};
-    use crate::models::session::{Session, SessionBackendKind, TerminalConfig};
+    use crate::models::session::Session;
     use crate::models::stage::{Stage, StageStatus, StageType};
     use crate::orchestrator::core::OrchestratorConfig;
     use crate::plan::ExecutionGraph;
@@ -135,13 +135,6 @@ mod terminal_reason_tests {
         let temp = tempfile::tempdir().unwrap();
         let work_dir = temp.path().join(".loom").join("work");
         std::fs::create_dir_all(work_dir.join("stages")).unwrap();
-        crate::fs::work_dir::write_terminal_config(
-            &work_dir,
-            &TerminalConfig {
-                backend: SessionBackendKind::Tmux,
-            },
-        )
-        .unwrap();
         let mut session = Session::new();
         session.assign_to_stage("notes".to_string());
         session.status = SessionStatus::Running;

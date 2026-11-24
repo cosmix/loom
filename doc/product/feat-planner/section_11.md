@@ -315,20 +315,7 @@ The dialog shows:
    - changes under `doc/`, which the app can commit (below);
    - modified or staged tracked files outside `doc/`, which block the run. The dialog lists them
      and says to commit or stash them; the app does not touch files outside `doc/`.
-4. **The backend.** `tmux` by default, passed as `loom init --backend tmux`; `native` is offered
-   unless the server runs headless (section 02, "Opening the browser"). `loom init` without a
-   terminal skips its backend prompt and falls back to the configured value
-   (`loom/src/commands/init/backend.rs:32`); the native backend opens windows on the server's
-   desktop, which the browser user may not be sitting at; and the dashboard's stage terminals work
-   only with tmux.
-
-   **A change to loom outside the app:** loom's own built-in default backend becomes tmux, so
-   `loom init` and `loom run` started from a terminal default to the same backend the app does.
-   Today the built-in default is native (`SessionBackendKind`'s `#[default]`,
-   `loom/src/models/session/types.rs:93-95`), which `terminal.backend` in `~/.loom/config.toml`
-   and the workspace `[terminal]` section override; the change moves `#[default]` to `Tmux`, and
-   `loom init`'s prompt shows tmux as the default.
-5. **A `--clean` notice**, when the workspace holds a finished plan: init stops the daemon if it
+4. **A `--clean` notice**, when the workspace holds a finished plan: init stops the daemon if it
    still runs, reaps the old run's sessions, archives its memory, and removes its worktrees and
    workspace (`loom/src/commands/init/execute.rs:185`).
 
@@ -343,8 +330,8 @@ starts nothing. `loom run` refuses uncommitted plans and modified files, and the
 no terminal beyond `loom plan`, so the app commits planning documents itself. The summary store
 under `doc/loom/summaries/` is project content (section 04) and is listed like any other path.
 
-**Start.** The button is enabled once nothing blocks. It runs, in order, `loom init <plan> --backend
-<backend>` (with `--clean` when required) and `loom run`, as child processes of the server: the
+**Start.** The button is enabled once nothing blocks. It runs, in order, `loom init <plan>`
+(with `--clean` when required) and `loom run`, as child processes of the server: the
 running `loom` binary, the project root as working directory, the server's own environment, stdin
 closed. Their output streams into the dialog. The first non-zero exit stops the sequence and
 leaves its output on screen; `loom init` cleans up after its own failure
@@ -358,8 +345,7 @@ plan runs; the running plan becomes read-only the moment its file is renamed.
 
 After `loom run` succeeds, and whenever the workspace holds a running or stopped plan, the app
 offers "Open dashboard". The first time, the server starts `loom status --web` as its own child
-process, in the project root, bound to the same host as `loom plan`, with `--terminals` when the
-run's backend is tmux. It reads the dashboard's URL from its first output line (`print_startup`,
+process, in the project root, bound to the same host as `loom plan`, with `--terminals`. It reads the dashboard's URL from its first output line (`print_startup`,
 `loom/src/commands/status/web/mod.rs:179`), whose format gains a test that pins it, and opens it
 in a new browser tab. The dashboard picks its own port from 7373 up, as it always does.
 

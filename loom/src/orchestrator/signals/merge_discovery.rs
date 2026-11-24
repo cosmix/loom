@@ -6,7 +6,7 @@ use std::path::Path;
 use crate::fs::session_files::{load_session_exact, mark_session_terminal_reason};
 use crate::models::session::{Session, SessionExitReason, SessionStatus, SessionType};
 use crate::orchestrator::session_registry::record_may_be_running;
-use crate::orchestrator::terminal::native::{session_process_status, SessionProcessStatus};
+use crate::orchestrator::terminal::launch::{session_process_status, SessionProcessStatus};
 
 use super::merge::read_merge_signal;
 

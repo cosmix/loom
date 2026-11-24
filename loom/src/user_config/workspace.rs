@@ -8,7 +8,7 @@
 //!
 //! # One shadowing rule: every workspace-backed key resolves per KEY
 //!
-//! `[terminal]`, `[context]`, `[pressure]`, `[models]`, `[codex]` and `[planning]` (the
+//! `[context]`, `[pressure]`, `[models]`, `[codex]` and `[planning]` (the
 //! registry's `plan` section; see [`workspace_table`]) all shadow
 //! `~/.loom/config.toml` a KEY at a time: a present section that omits a key
 //! falls through to the user tier for that key rather than shadowing it with
@@ -36,9 +36,8 @@
 //!
 //! The config API's own tests (`commands::status::web::config_api::tests`) pin
 //! all of this against the runtime readers —
-//! [`crate::fs::work_dir::read_terminal_config`] and
-//! [`crate::fs::work_dir::resolve_context_ceiling_tokens`] for the two keys
-//! above, [`crate::fs::work_dir::read_pressure_config`] and
+//! [`crate::fs::work_dir::resolve_context_ceiling_tokens`] for the context key,
+//! [`crate::fs::work_dir::read_pressure_config`] and
 //! [`crate::fs::work_dir::resolve_stage_model_effort`] for the `[pressure]`/`[models]`/`[planning]`
 //! ones — because a settings page that disagrees with
 //! the daemon about the value in force is worse than no settings page.
@@ -53,7 +52,6 @@ use crate::fs::work_dir::{
     insert_key, read_config, remove_key, update_config, ContextConfig, ModelsConfig, PlanConfig,
     PressureConfig, WorkDir,
 };
-use crate::models::session::TerminalConfig;
 use crate::user_config::keys::KeySpec;
 use crate::user_config::{ConfigValue, UserConfig};
 
@@ -187,10 +185,6 @@ fn workspace_table(section: &str) -> &str {
 /// validate their entire section through the same typed parser as runtime.
 fn resolve(spec: &KeySpec, section: Option<&toml::Value>) -> Option<Result<Option<ConfigValue>>> {
     match spec.name {
-        "terminal.backend" => Some(
-            TerminalConfig::backend_from_section(section.cloned())
-                .map(|backend| backend.map(|kind| ConfigValue::Text(kind.to_string()))),
-        ),
         "context.ceiling_tokens" => Some(
             ContextConfig::resolve_with_user_ceiling(section.cloned(), None).map(
                 |(config, supplied)| supplied.then_some(ConfigValue::Number(config.ceiling_tokens)),

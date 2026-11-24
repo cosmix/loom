@@ -14,7 +14,7 @@ use super::collect_status_data;
 use crate::commands::status::web::model::{collect_snapshot, SnapshotSource};
 use crate::fs::session_files::save_session;
 use crate::fs::work_dir::WorkDir;
-use crate::models::session::{Session, SessionBackendKind, SessionStatus};
+use crate::models::session::{Session, SessionStatus};
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::terminal::tmux::{history_relpath, write_history};
 
@@ -39,7 +39,6 @@ fn blocked_stage_dir() -> (tempfile::TempDir, WorkDir) {
 fn ended_session(work: &WorkDir, age_secs: i64, fullscreen: bool, capture: &[u8]) -> Session {
     let mut session = Session::new();
     session.assign_to_stage(STAGE_ID.to_string());
-    session.backend = SessionBackendKind::Tmux;
     session.status = SessionStatus::Completed;
     session.created_at = Utc::now() - Duration::seconds(age_secs);
     session.fullscreen_seen = fullscreen;

@@ -13,32 +13,21 @@ use tempfile::TempDir;
 use super::tests::{make_stage, write_dispute_request, write_stage};
 use super::MAX_EVIDENCE_ROUNDS;
 use crate::fs::session_files::{load_session_exact, save_session};
-use crate::fs::work_dir::write_terminal_config;
 use crate::handoff::generator::find_latest_handoff;
 use crate::handoff::schema::{HandoffOrigin, ParsedHandoff};
-use crate::models::session::{
-    Session, SessionBackendKind, SessionExitReason, SessionStatus, TerminalConfig,
-};
+use crate::models::session::{Session, SessionExitReason, SessionStatus};
 use crate::models::stage::{Stage, StageStatus};
-use crate::orchestrator::terminal::native::write_test_pid_identity;
+use crate::orchestrator::terminal::launch::write_test_pid_identity;
 use crate::orchestrator::{Orchestrator, OrchestratorConfig};
 use crate::plan::ExecutionGraph;
 use crate::test_stand_in::{orphan, require_orphan_signals, Orphan};
 use crate::verify::transitions::load_stage;
 
-/// A repository whose `.loom/work` configures the tmux lane, so
-/// `Orchestrator::new` never runs real terminal detection.
+/// A repository with a scratch `.loom/work`.
 fn work_dir() -> (TempDir, PathBuf) {
     let temp = TempDir::new().unwrap();
     let work = temp.path().join(".loom").join("work");
     std::fs::create_dir_all(work.join("stages")).unwrap();
-    write_terminal_config(
-        &work,
-        &TerminalConfig {
-            backend: SessionBackendKind::Tmux,
-        },
-    )
-    .unwrap();
     (temp, work)
 }
 
@@ -57,7 +46,6 @@ fn worker_session(work: &Path) -> Session {
     let mut worker = Session::new();
     worker.assign_to_stage("s1".to_string());
     worker.status = SessionStatus::Running;
-    worker.backend = SessionBackendKind::Tmux;
     save_session(&worker, work).unwrap();
     worker
 }

@@ -4,7 +4,7 @@
 use super::*;
 use crate::fs::session_files::save_session;
 use crate::models::session::Session;
-use crate::orchestrator::terminal::native::write_test_pid_identity;
+use crate::orchestrator::terminal::launch::write_test_pid_identity;
 use crate::relay::{new_request_id, Ticket};
 use crate::utils::sha256_hex;
 use serde_json::json;

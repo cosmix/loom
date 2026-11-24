@@ -9,7 +9,6 @@ use std::sync::{mpsc, Arc, Mutex, PoisonError};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::models::session::SessionBackendKind;
 use crate::plan_server::browser::EnvView;
 use crate::plan_server::context::PlanContext;
 use crate::plan_server::request::{ApiRequest, ApiResponse};
@@ -75,15 +74,7 @@ impl Dashboard {
         }
         // Dropping a dead child also kills any descendants left in its process group.
         state.child = None;
-        let config = crate::fs::work_dir::read_terminal_config(&ctx.root().join(".loom/work"))
-            .map_err(io::Error::other)?;
-        let child = start_dashboard(
-            ctx.root(),
-            loom_bin,
-            ctx.bind().local.ip(),
-            config.backend == SessionBackendKind::Tmux,
-            timeout,
-        )?;
+        let child = start_dashboard(ctx.root(), loom_bin, ctx.bind().local.ip(), timeout)?;
         let url = child.url.clone();
         state.child = Some(child);
         Ok(url)
@@ -181,16 +172,18 @@ fn start_dashboard(
     root: &Path,
     loom_bin: &Path,
     host: IpAddr,
-    terminals: bool,
     timeout: Duration,
 ) -> io::Result<DashboardChild> {
     let deadline = Instant::now() + timeout;
     let mut command = Command::new(loom_bin);
-    command.args(["status", "--web", "--host", &host.to_string()]);
-    if terminals {
-        command.arg("--terminals");
-    }
     command
+        .args([
+            "status",
+            "--web",
+            "--host",
+            &host.to_string(),
+            "--terminals",
+        ])
         .current_dir(root)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())

@@ -25,6 +25,8 @@ mod paths_tests;
 #[cfg(test)]
 mod review_tests;
 #[cfg(test)]
+mod run_contract_tests;
+#[cfg(test)]
 mod tests_background;
 #[cfg(test)]
 mod tests_chat;

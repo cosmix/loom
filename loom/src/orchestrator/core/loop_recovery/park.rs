@@ -8,7 +8,7 @@ use crate::models::session::{Session, SessionExitReason, SessionStatus};
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::monitor::events::CompletionEscalation;
 use crate::orchestrator::signals::remove_signal;
-use crate::orchestrator::terminal::native::{session_process_status, SessionProcessStatus};
+use crate::orchestrator::terminal::launch::{session_process_status, SessionProcessStatus};
 use crate::subagent_lifecycle::store::ChildDisposition;
 
 use crate::orchestrator::core::persistence::Persistence;

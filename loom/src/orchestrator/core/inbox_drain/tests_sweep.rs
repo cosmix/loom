@@ -7,7 +7,7 @@ use chrono::{Duration, Utc};
 use crate::fs::inbox::LedgerOutcome;
 use crate::models::session::{Session, SessionStatus, SessionType};
 use crate::models::stage::StageStatus;
-use crate::orchestrator::terminal::native::session_settings_path;
+use crate::orchestrator::terminal::launch::session_settings_path;
 use crate::relay::{new_request_id, RequestKind, Ticket};
 
 use super::sweep::sweep_sessions;

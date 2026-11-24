@@ -6,32 +6,21 @@
 //! being gone, plus the persisted status, counts.
 
 use crate::fs::session_files::{load_session_exact, save_session};
-use crate::fs::work_dir::write_terminal_config;
-use crate::models::session::{
-    Session, SessionBackendKind, SessionExitReason, SessionStatus, SessionType, TerminalConfig,
-};
+use crate::models::session::{Session, SessionExitReason, SessionStatus, SessionType};
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::core::{Orchestrator, OrchestratorConfig};
 use crate::orchestrator::monitor::heartbeat::judge_heartbeat_path;
-use crate::orchestrator::terminal::native::{session_settings_path, write_test_pid_identity};
+use crate::orchestrator::terminal::launch::{session_settings_path, write_test_pid_identity};
 use crate::plan::ExecutionGraph;
 use crate::test_stand_in::{orphan, orphan_running, require_orphan_signals, Orphan};
 use crate::verify::transitions::{create_stage, load_stage, update_stage};
 use tempfile::TempDir;
 
-/// A `.work` whose configured terminal lane is tmux, so `Orchestrator::new`
-/// never runs real terminal detection (which fails on a headless test runner).
+/// A scratch `.work` directory.
 fn work_root() -> TempDir {
     let temp = TempDir::new().unwrap();
     let work = temp.path().join(".work");
     std::fs::create_dir_all(&work).unwrap();
-    write_terminal_config(
-        &work,
-        &TerminalConfig {
-            backend: SessionBackendKind::Tmux,
-        },
-    )
-    .unwrap();
     temp
 }
 
@@ -83,7 +72,6 @@ fn live_session(work: &std::path::Path, kind: SessionType) -> (Session, Orphan) 
         }
     };
     session.status = SessionStatus::Running;
-    session.backend = SessionBackendKind::Tmux;
     save_session(&session, work).unwrap();
     let stand_in = orphan();
     let pid = stand_in.pid();
@@ -152,7 +140,6 @@ fn a_judge_that_survives_the_kill_is_not_marked_terminal() {
     stage_needing_adjudication(&work);
     let mut judge = Session::new_adjudication("test-stage");
     judge.status = SessionStatus::Running;
-    judge.backend = SessionBackendKind::Tmux;
     save_session(&judge, &work).unwrap();
     let judge_stand_in = spawn_term_resistant_process();
     let judge_pid = judge_stand_in.pid();

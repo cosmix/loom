@@ -12,7 +12,7 @@ use crate::fs::session_files::save_session;
 use crate::models::session::{Session, SessionStatus, SessionType};
 use crate::models::stage::Stage;
 use crate::orchestrator::signals::find_live_merge_session_for_stage;
-use crate::orchestrator::terminal::native::NativeBackend;
+use crate::orchestrator::terminal::launch::tracking_and_pid_key;
 use crate::test_stand_in::reaped_pid;
 
 /// A merge signal for `session_id` that names no stage, so it cannot be parsed.
@@ -36,7 +36,7 @@ fn save_record(work_dir: &Path, session_type: SessionType, stage_id: &str, pid: 
     session.pid = Some(pid);
     session.status = SessionStatus::Running;
     save_session(&session, work_dir).unwrap();
-    let (_, key) = NativeBackend::window_title_and_pid_key(&session).unwrap();
+    let (_, key) = tracking_and_pid_key(&session).unwrap();
     fs::create_dir_all(work_dir.join("pids")).unwrap();
     fs::write(
         work_dir.join("pids").join(format!("{key}.pid")),
@@ -202,7 +202,7 @@ fn a_reused_pid_does_not_keep_a_dead_resolver_signal() {
     resolver.status = SessionStatus::Running;
     resolver.pid = Some(std::process::id());
     save_session(&resolver, work_dir).unwrap();
-    let (_, key) = NativeBackend::window_title_and_pid_key(&resolver).unwrap();
+    let (_, key) = tracking_and_pid_key(&resolver).unwrap();
     fs::create_dir_all(work_dir.join("pids")).unwrap();
     let actual_start = crate::process::process_start_time(std::process::id()).unwrap();
     fs::write(

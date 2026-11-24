@@ -8,13 +8,12 @@ use chrono::{Duration, Utc};
 use tempfile::TempDir;
 
 use crate::fs::session_files::save_session;
-use crate::fs::work_dir::write_terminal_config;
 use crate::git::get_or_create_worktree;
-use crate::models::session::{Session, SessionBackendKind, SessionStatus, TerminalConfig};
+use crate::models::session::{Session, SessionStatus};
 use crate::models::stage::{Stage, StageStatus, StageType};
 use crate::orchestrator::core::{Orchestrator, OrchestratorConfig};
 use crate::orchestrator::scheduling_report::BlockReason;
-use crate::orchestrator::terminal::native::write_test_pid_identity;
+use crate::orchestrator::terminal::launch::write_test_pid_identity;
 use crate::plan::{schema::StageDefinition, ExecutionGraph};
 use crate::test_git::{commit_file, git, TestRepo};
 use crate::verify::transitions::{load_stage, save_stage};
@@ -44,13 +43,10 @@ fn graph(ids: &[&str]) -> ExecutionGraph {
     ExecutionGraph::build(definitions.collect()).unwrap()
 }
 
-/// An orchestrator over `root` on the tmux lane, so building it never probes
-/// the host for a terminal emulator.
+/// An orchestrator over `root`.
 fn orchestrator(root: &Path, ids: &[&str]) -> Orchestrator {
     let work_dir = root.join(".loom").join("work");
     std::fs::create_dir_all(&work_dir).unwrap();
-    let backend = SessionBackendKind::Tmux;
-    write_terminal_config(&work_dir, &TerminalConfig { backend }).unwrap();
     let config = OrchestratorConfig {
         work_dir,
         repo_root: root.to_path_buf(),

@@ -53,7 +53,7 @@ struct Fixture {
 
 /// A `<pid_key>.pid` file carrying the test process's own verified identity —
 /// the same evidence `caller_is_inside_session` requires
-/// (`daemon/server/peer_identity.rs`). `window_title_and_pid_key`'s pid-key
+/// (`daemon/server/peer_identity.rs`). `tracking_and_pid_key`'s pid-key
 /// formula (`tracking_key` non-empty) is re-derived here since that helper is
 /// `pub(crate)` and unreachable from an integration test.
 fn write_running_pid_entry(work_dir: &Path, tracking_key: &str, session_id: &str) {
@@ -342,12 +342,6 @@ fn relay_memory_note_flows_end_to_end() {
     {
         return;
     }
-
-    // Orchestrator::new eagerly constructs a NativeBackend even in manual mode.
-    // Pin LOOM_TERMINAL so headless CI runners without terminal emulators do not
-    // fail this relay regression for unrelated host-environment reasons.
-    let _terminal_env = helpers::EnvVarGuard::set("LOOM_TERMINAL", "xterm");
-
     let fx = build_fixture();
 
     // Step 3: the CLI ticket, with nothing applied yet.

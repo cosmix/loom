@@ -14,7 +14,7 @@
 //!
 //! - it is named like a launcher (above);
 //! - it has a live child of its own that is not `tee`. A tool call's shell
-//!   runs something; the session wrapper (`terminal::native::wrapper`) starts
+//!   runs something; the session wrapper (`terminal::launch::wrapper`) starts
 //!   its `tee` through a process substitution forked before `exec`, which can
 //!   leave an idle `bash` subshell whose only child is that `tee`;
 //! - it started later than the agent's process, by the kernel's start-time
@@ -33,7 +33,7 @@
 use std::path::Path;
 
 use crate::models::session::Session;
-use crate::orchestrator::terminal::native::{read_pid_entry, NativeBackend};
+use crate::orchestrator::terminal::launch::{read_pid_entry, tracking_and_pid_key};
 #[cfg(not(target_os = "linux"))]
 use crate::process::run_bounded_output;
 use crate::process::{process_start_time, verify_process_identity, IdentityStatus};
@@ -202,7 +202,7 @@ pub(super) fn running_command(work_dir: &Path, session: &Session) -> Option<Runn
 /// Every command `session`'s agent is still running, oldest first.
 ///
 /// The agent's process is the one its PID file names, through the same
-/// identity check the liveness probe uses (`terminal::native::pid_guard`):
+/// identity check the liveness probe uses (`terminal::launch::pid_guard`):
 /// the wrapper `exec`s claude, so that PID is claude's own. Empty whenever
 /// the evidence is missing — no PID file, a recycled PID, an unreadable
 /// process table — because the watchdog this serves must keep closing silent
@@ -222,7 +222,7 @@ pub(super) fn running_commands(work_dir: &Path, session: &Session) -> Vec<Runnin
 }
 
 fn verified_agent(work_dir: &Path, session: &Session) -> Option<u32> {
-    let (_, pid_key) = NativeBackend::window_title_and_pid_key(session)?;
+    let (_, pid_key) = tracking_and_pid_key(session)?;
     let identity = read_pid_entry(work_dir, &pid_key)?;
     (verify_process_identity(identity) == IdentityStatus::VerifiedAlive).then_some(identity.pid)
 }

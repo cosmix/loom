@@ -18,7 +18,7 @@ const fixture = snapshotSchema.parse(fixtureJson);
 function terminalStage(overrides: Partial<StageSummary> = {}): StageSummary {
   const source = fixture.status.stages.find((stage) => stage.id === "client");
   if (!source) throw new Error("fixture stage client is missing");
-  return { ...source, session_alive: true, session_backend: "tmux", ...overrides };
+  return { ...source, session_alive: true, ...overrides };
 }
 
 function snapshotFor(stage: StageSummary, terminals = true): Snapshot {
@@ -105,7 +105,6 @@ describe("terminal glyph", () => {
 
   it.each([
     [false, {}, "terminals are disabled"],
-    [true, { session_backend: "native" as const }, "the backend is native"],
     [true, { session_alive: false }, "the session is not alive"],
   ])("does not render when %s", (terminals, overrides, _description) => {
     const stage = terminalStage(overrides);
@@ -139,10 +138,10 @@ describe("terminal glyph", () => {
     expect(router.state.location.search).toBe(`?stage=${stage.id}&view=terminal`);
   });
 
-  it("names the native-backend requirement in the gate reason", () => {
-    expect(terminalGate(true, terminalStage({ session_backend: "native" }))).toContain(
-      "--backend tmux",
-    );
+  it("gates a terminal on the dashboard flag, then on a live session", () => {
+    expect(terminalGate(false, terminalStage())).toContain("--terminals");
+    expect(terminalGate(true, terminalStage({ session_alive: false }))).toBe("No live session");
+    expect(terminalGate(true, terminalStage())).toBeNull();
   });
 
   describe("terminalHistory", () => {
@@ -175,9 +174,8 @@ describe("terminal glyph", () => {
       expect(terminalHistory(false, ended())).toBeNull();
     });
 
-    it("is absent when the stage left no history or runs in a native window", () => {
+    it("is absent when the stage left no history", () => {
       expect(terminalHistory(true, ended({ terminal_history_session: undefined }))).toBeNull();
-      expect(terminalHistory(true, ended({ session_backend: "native" }))).toBeNull();
     });
   });
 });

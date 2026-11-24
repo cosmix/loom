@@ -261,10 +261,10 @@ fn identityless_blocks(session: &Session, alive: bool) -> bool {
 /// wrapper written just now can still become a process, so it keeps ownership.
 #[test]
 fn an_identityless_writer_keeps_ownership_inside_the_grace_of_its_wrapper_script() {
-    use crate::orchestrator::terminal::native::{wrapper_script_path, NativeBackend};
+    use crate::orchestrator::terminal::launch::{tracking_and_pid_key, wrapper_script_path};
     let session = stale_session(SessionType::Stage, ORPHAN_PROBE_GRACE_SECS + 300);
     let work = tempfile::tempdir().unwrap();
-    let (_, key) = NativeBackend::window_title_and_pid_key(&session).unwrap();
+    let (_, key) = tracking_and_pid_key(&session).unwrap();
     let wrapper = wrapper_script_path(work.path(), &key);
     std::fs::create_dir_all(wrapper.parent().unwrap()).unwrap();
     std::fs::write(&wrapper, "#!/bin/sh\n").unwrap();

@@ -6,8 +6,7 @@ use tempfile::TempDir;
 
 use super::*;
 use crate::fs::session_files::save_session;
-use crate::fs::work_dir::write_terminal_config;
-use crate::models::session::{Session, SessionBackendKind, SessionStatus, TerminalConfig};
+use crate::models::session::{Session, SessionStatus};
 use crate::models::stage::{Stage, StageStatus, StageType};
 use crate::orchestrator::core::OrchestratorConfig;
 use crate::plan::schema::StageDefinition;
@@ -31,15 +30,8 @@ fn manual() -> Manual {
     let temp = TempDir::new().unwrap();
     let work = temp.path().join(".loom").join("work");
     std::fs::create_dir_all(&work).unwrap();
-    // A tmux lane, so `Orchestrator::new` runs no terminal detection, which
-    // fails on a headless runner.
-    let terminal = TerminalConfig {
-        backend: SessionBackendKind::Tmux,
-    };
-    write_terminal_config(&work, &terminal).unwrap();
     let mut writer = Session::new_contract(STAGE);
     writer.status = SessionStatus::Running;
-    writer.backend = SessionBackendKind::Tmux;
     save_session(&writer, &work).unwrap();
     let stage = Stage {
         id: STAGE.to_string(),

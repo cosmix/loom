@@ -14,7 +14,7 @@
 use crate::fs::session_files::mark_session_terminal_reason;
 use crate::models::session::{Session, SessionExitReason, SessionStatus};
 use crate::orchestrator::monitor::heartbeat::cleanup_judge_heartbeat;
-use crate::orchestrator::terminal::native::cleanup_session_settings;
+use crate::orchestrator::terminal::launch::cleanup_session_settings;
 
 use super::Orchestrator;
 

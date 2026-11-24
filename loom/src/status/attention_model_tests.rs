@@ -1,6 +1,5 @@
 use super::*;
 use crate::models::failure::{FailureInfo, FailureType};
-use crate::models::session::SessionBackendKind;
 use crate::models::stage::StageStatus;
 use crate::status::data::{
     ActivityStatus, CompletionBlockerState, CompletionBlockerSummary, VerdictCompleting,

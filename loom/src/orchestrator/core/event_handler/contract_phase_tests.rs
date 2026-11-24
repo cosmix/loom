@@ -14,11 +14,10 @@ use super::super::tests::{create_test_graph, handoff_work_dir, orchestrator_for,
 use super::super::EventHandler;
 use super::*;
 use crate::fs::session_files::save_session;
-use crate::models::session::SessionBackendKind;
 use crate::models::stage::StageType;
 use crate::orchestrator::core::stage_executor::StageExecutor;
 use crate::orchestrator::core::OrchestratorConfig;
-use crate::orchestrator::terminal::native::write_test_pid_identity;
+use crate::orchestrator::terminal::launch::write_test_pid_identity;
 use crate::test_stand_in::{orphan, require_orphan_signals};
 use crate::verify::contracts::store::attempts_spent;
 use crate::verify::contracts::test_support::{contract, contract_worktree, write_test_freeze};
@@ -82,7 +81,6 @@ fn v2_stage(status: StageStatus, session: Option<&str>) -> Stage {
 fn contract_session(work_dir: &Path) -> Session {
     let mut session = Session::new_contract("test-stage");
     session.status = SessionStatus::Running;
-    session.backend = SessionBackendKind::Tmux;
     save_session(&session, work_dir).unwrap();
     session
 }

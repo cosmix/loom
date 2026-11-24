@@ -6,12 +6,11 @@ use anyhow::Result;
 
 use crate::commands::attach::{matches_for_stage, pick_newest};
 use crate::fs::work_dir::WorkDir;
-use crate::models::session::{Session, SessionBackendKind};
+use crate::models::session::Session;
 use crate::orchestrator::terminal::tmux::socket_name;
 use crate::orchestrator::terminal::tmux::viewer::{
     is_plain_identifier, live_tmux_sessions, tmux_session_name,
 };
-use crate::status::data::load_all_sessions;
 
 use super::tmux_program::endpoint_ready;
 use super::{Mode, CLOSE_NOT_YET, CLOSE_REFUSED, CLOSE_UNKNOWN_STAGE};
@@ -27,7 +26,6 @@ pub(super) struct Target {
 #[derive(Debug, PartialEq, Eq)]
 pub(super) enum Refusal {
     UnknownStage,
-    NativeBackend,
     Unrenderable,
     NoSession,
     NotReady,
@@ -37,7 +35,7 @@ impl Refusal {
     pub(super) fn close_code(&self) -> u16 {
         match self {
             Self::UnknownStage => CLOSE_UNKNOWN_STAGE,
-            Self::NativeBackend | Self::Unrenderable => CLOSE_REFUSED,
+            Self::Unrenderable => CLOSE_REFUSED,
             Self::NoSession | Self::NotReady => CLOSE_NOT_YET,
         }
     }
@@ -45,9 +43,6 @@ impl Refusal {
     pub(super) fn reason(&self) -> &'static str {
         match self {
             Self::UnknownStage => "no stage with that id",
-            Self::NativeBackend => {
-                "this stage's session runs in a native terminal window; terminals need loom run --backend tmux"
-            }
             Self::Unrenderable => "this session's identifier cannot name a tmux session",
             Self::NoSession => "no live session for this stage yet",
             Self::NotReady => "still spawning, or just ended",
@@ -55,11 +50,10 @@ impl Refusal {
     }
 }
 
-/// Resolve `stage_id` against the already-live tmux session population.
+/// Resolve `stage_id` against the live tmux session population.
 pub(super) fn resolve(
     stage_id: &str,
     known_stage: bool,
-    all_sessions: &[Session],
     live: &[Session],
     ready: impl Fn(&Session, &str) -> bool,
 ) -> std::result::Result<Target, Refusal> {
@@ -68,22 +62,9 @@ pub(super) fn resolve(
     }
     let matches = matches_for_stage(live, stage_id);
     let Some(session) = pick_newest(&matches) else {
-        return Err(refusal_without_live_session(all_sessions, stage_id));
+        return Err(Refusal::NoSession);
     };
     target_for(session, ready)
-}
-
-fn refusal_without_live_session(all_sessions: &[Session], stage_id: &str) -> Refusal {
-    let session = all_sessions
-        .iter()
-        .filter(|session| {
-            session.stage_id.as_deref() == Some(stage_id) && !session.status.is_terminal()
-        })
-        .max_by_key(|session| session.created_at);
-    match session {
-        Some(session) if session.backend != SessionBackendKind::Tmux => Refusal::NativeBackend,
-        _ => Refusal::NoSession,
-    }
 }
 
 fn target_for(
@@ -113,9 +94,8 @@ pub(super) fn resolve_target(
 ) -> Result<std::result::Result<Target, Refusal>> {
     let work_dir = WorkDir::new(base)?;
     let known = crate::verify::transitions::load_stage(stage_id, work_dir.root()).is_ok();
-    let all = load_all_sessions(&work_dir)?;
     let live = live_tmux_sessions(work_dir.root())?;
-    Ok(resolve(stage_id, known, &all, &live, endpoint_ready))
+    Ok(resolve(stage_id, known, &live, endpoint_ready))
 }
 
 /// Arguments for the tmux attach client, excluding the `tmux` executable.

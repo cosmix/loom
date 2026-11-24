@@ -3,7 +3,7 @@
 //! disagreeing with the daemon about the value actually in force.
 
 use crate::fs::work_dir::{
-    read_pressure_config, read_terminal_config, resolve_context_ceiling_tokens,
+    read_context_config, read_plan_config, read_pressure_config, resolve_context_ceiling_tokens,
     resolve_stage_model_effort,
 };
 use crate::models::stage::StageType;
@@ -21,12 +21,12 @@ fn assert_effective_agrees_with_resolution(scratch: &Scratch) {
     let payload = parse(&scratch.base);
     let work = scratch.work();
     assert_eq!(
-        entry(&payload, "terminal.backend").effective.value,
+        entry(&payload, "plan.summary_backend").effective.value,
         ConfigValue::Text(
-            read_terminal_config(&work)
-                .expect("resolve the terminal config")
-                .backend
-                .to_string(),
+            read_plan_config(&work)
+                .summary_backend()
+                .map(str::to_owned)
+                .unwrap_or_else(|| UserConfig::load().plan_summary_backend().to_owned()),
         )
     );
     assert_eq!(
@@ -52,14 +52,14 @@ fn effective_value_for_user_source_agrees_with_resolution() {
     )
     .expect("set the user ceiling");
     crate::user_config::set(
-        spec("terminal.backend").unwrap(),
-        ConfigValue::Text("tmux".to_owned()),
+        spec("plan.summary_backend").unwrap(),
+        ConfigValue::Text("codex".to_owned()),
     )
     .expect("set the user backend");
 
     let payload = parse(&scratch.base);
     assert_eq!(
-        entry(&payload, "terminal.backend").effective.source,
+        entry(&payload, "plan.summary_backend").effective.source,
         Source::User
     );
     assert_eq!(
@@ -79,8 +79,8 @@ fn effective_value_for_project_source_agrees_with_resolution() {
     )
     .expect("set the user ceiling");
     crate::user_config::set(
-        spec("terminal.backend").unwrap(),
-        ConfigValue::Text("tmux".to_owned()),
+        spec("plan.summary_backend").unwrap(),
+        ConfigValue::Text("codex".to_owned()),
     )
     .expect("set the user backend");
 
@@ -89,10 +89,14 @@ fn effective_value_for_project_source_agrees_with_resolution() {
         "ceiling_tokens",
         toml_edit::Value::from(900_000_i64),
     );
-    scratch.write_project("terminal", "backend", toml_edit::Value::from("native"));
+    scratch.write_project(
+        "planning",
+        "summary_backend",
+        toml_edit::Value::from("claude"),
+    );
 
     let payload = parse(&scratch.base);
-    for name in ["terminal.backend", "context.ceiling_tokens"] {
+    for name in ["plan.summary_backend", "context.ceiling_tokens"] {
         assert_eq!(
             entry(&payload, name).effective.source,
             Source::Project,
@@ -106,10 +110,10 @@ fn effective_value_for_project_source_agrees_with_resolution() {
     assert_effective_agrees_with_resolution(&scratch);
 }
 
-/// The reported bug: with neither `[terminal]` nor `[context]` present in the
+/// The reported bug: with neither `[planning]` nor `[context]` present in the
 /// project file, the project tier's OWN displayed value must be the user
-/// tier's value — the web dialog showed "native" here while `loom run`
-/// correctly used tmux.
+/// tier's value — the web dialog showed "claude" here while the summary
+/// builder correctly used codex.
 #[test]
 fn project_value_falls_through_to_the_user_tier_when_neither_section_is_present() {
     let scratch = scratch();
@@ -119,14 +123,17 @@ fn project_value_falls_through_to_the_user_tier_when_neither_section_is_present(
     )
     .expect("set the user ceiling");
     crate::user_config::set(
-        spec("terminal.backend").unwrap(),
-        ConfigValue::Text("tmux".to_owned()),
+        spec("plan.summary_backend").unwrap(),
+        ConfigValue::Text("codex".to_owned()),
     )
     .expect("set the user backend");
 
     let payload = parse(&scratch.base);
     for (name, expected) in [
-        ("terminal.backend", ConfigValue::Text("tmux".to_owned())),
+        (
+            "plan.summary_backend",
+            ConfigValue::Text("codex".to_owned()),
+        ),
         ("context.ceiling_tokens", ConfigValue::Number(640_000)),
     ] {
         let entry = entry(&payload, name);
@@ -295,18 +302,18 @@ fn models_falls_through_key_by_key_not_section_by_section() {
     assert_eq!(effort.effective.value, ConfigValue::Text(expected_effort));
 }
 
-/// A malformed project `[terminal]` section must fail resolution the same way
-/// `read_terminal_config` does — both go through
-/// `TerminalConfig::backend_from_section`, so the settings page cannot report
-/// a value for a backend the daemon would refuse to start.
+/// A malformed project `[context]` section must fail resolution the same way
+/// `read_context_config` does — both go through
+/// `ContextConfig::resolve_with_user_ceiling`, so the settings page cannot
+/// report a ceiling the daemon would refuse to read.
 #[test]
-fn a_malformed_project_terminal_backend_fails_to_resolve() {
+fn a_malformed_project_context_ceiling_fails_to_resolve() {
     let scratch = scratch();
-    scratch.write_project("terminal", "backend", toml_edit::Value::from("bogus"));
+    scratch.write_project("context", "ceiling_tokens", toml_edit::Value::from("bogus"));
 
     assert!(
         super::super::payload(&scratch.base).is_err(),
-        "a malformed [terminal] section must fail to resolve"
+        "a malformed [context] section must fail to resolve"
     );
-    assert!(read_terminal_config(&scratch.work()).is_err());
+    assert!(read_context_config(&scratch.work()).is_err());
 }

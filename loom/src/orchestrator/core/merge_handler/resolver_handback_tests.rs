@@ -8,10 +8,10 @@ use super::super::resolver_spawn::test_fixtures::{
 };
 use crate::fs::session_files::load_session_exact;
 use crate::fs::session_files::save_session;
-use crate::models::session::{Session, SessionBackendKind, SessionExitReason, SessionStatus};
+use crate::models::session::{Session, SessionExitReason, SessionStatus};
 use crate::models::stage::StageStatus;
 use crate::orchestrator::core::Orchestrator;
-use crate::orchestrator::terminal::native::write_test_pid_identity;
+use crate::orchestrator::terminal::launch::write_test_pid_identity;
 use crate::plan::schema::StageDefinition;
 use crate::plan::ExecutionGraph;
 use crate::verify::transitions::{load_stage, update_stage};
@@ -197,7 +197,6 @@ fn a_live_worker_session_holds_the_stage_for_the_operator() {
     let mut worker = Session::new();
     worker.assign_to_stage("busy".to_string());
     worker.status = SessionStatus::Running;
-    worker.backend = SessionBackendKind::Tmux;
     save_session(&worker, &work_dir).unwrap();
     write_test_pid_identity(&work_dir, &worker, std::process::id()).unwrap();
 

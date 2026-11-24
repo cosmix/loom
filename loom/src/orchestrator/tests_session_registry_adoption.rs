@@ -35,7 +35,6 @@ fn orphan_evidence_finds_the_recordless_agent_and_ignores_every_recorded_one() {
             tracking_key: orphan.tracking_key.clone(),
             session_type: SessionType::Stage,
             pid: std::process::id(),
-            backend: SessionBackendKind::Native,
         }
     );
 }
@@ -83,7 +82,6 @@ fn an_adopted_record_is_attachable_again() {
         tracking_key: "loom-v2-stage-alpha".to_string(),
         session_type: SessionType::Stage,
         pid: std::process::id(),
-        backend: SessionBackendKind::Tmux,
     };
 
     let mut spawned = Session::new();
@@ -97,7 +95,6 @@ fn an_adopted_record_is_attachable_again() {
     assert_eq!(adopted.tracking_key, "loom-v2-stage-alpha");
     assert_eq!(adopted.session_type, SessionType::Stage);
     assert_eq!(adopted.status, SessionStatus::Running);
-    assert_eq!(adopted.backend, SessionBackendKind::Tmux);
     assert_eq!(adopted.pid, Some(std::process::id()));
 
     let attachable = live_tmux_sessions(work).unwrap();
@@ -143,7 +140,6 @@ fn a_merge_agents_tracking_key_survives_adoption() {
         tracking_key: "loom-merge-alpha".to_string(),
         session_type: SessionType::Merge,
         pid: std::process::id(),
-        backend: SessionBackendKind::Native,
     };
 
     let adopted = adopt_orphan(work, &evidence).unwrap();

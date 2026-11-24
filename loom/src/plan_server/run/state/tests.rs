@@ -201,7 +201,6 @@ fn first_written_plan_is_preselected() {
         Some("doc/plans/feature/PLAN-z.md")
     );
     assert_eq!(view.branch, "main");
-    assert_eq!(view.default_backend, Backend::Tmux);
     assert!(!view.clean_notice);
 }
 
@@ -249,53 +248,6 @@ fn no_written_plans_means_no_preselection() {
     assert_eq!(state_view(&ctx).unwrap().preselected, None);
 }
 
-fn desktop() -> EnvView {
-    EnvView {
-        ssh_connection: false,
-        ssh_tty: false,
-        display: true,
-        wayland: false,
-        linux: true,
-    }
-}
-
-#[test]
-fn headless_backends_omit_native() {
-    let env = EnvView {
-        display: false,
-        ..desktop()
-    };
-
-    assert_eq!(backends(&env), vec![Backend::Tmux]);
-}
-
-#[test]
-fn ssh_backends_omit_native_even_with_a_display() {
-    for env in [
-        EnvView {
-            ssh_connection: true,
-            ..desktop()
-        },
-        EnvView {
-            ssh_tty: true,
-            ..desktop()
-        },
-    ] {
-        assert_eq!(backends(&env), vec![Backend::Tmux]);
-    }
-}
-
-#[test]
-fn desktop_backends_offer_tmux_then_native() {
-    assert_eq!(backends(&desktop()), vec![Backend::Tmux, Backend::Native]);
-    let wayland = EnvView {
-        display: false,
-        wayland: true,
-        ..desktop()
-    };
-    assert_eq!(backends(&wayland), vec![Backend::Tmux, Backend::Native]);
-}
-
 #[test]
 fn state_view_exposes_the_current_job() {
     let dir = repo();
@@ -331,7 +283,6 @@ fn state_view_partitions_changes_without_truncating_doc_paths() {
     assert_eq!(view.doc_changes.len(), 300);
     assert_eq!(view.blocking_changes.len(), 1);
     assert_eq!(view.blocking_changes[0].path, "tracked.rs");
-    assert_eq!(view.backends, backends(&EnvView::current()));
 }
 
 #[test]

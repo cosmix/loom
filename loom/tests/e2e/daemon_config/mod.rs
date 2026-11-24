@@ -48,7 +48,7 @@ impl Drop for EnvVarGuard {
     }
 }
 
-/// Keep `read_terminal_config`/`read_context_config`'s user-config fallback
+/// Keep `read_context_config`'s user-config fallback
 /// tier off the developer's real `~/.loom/config.toml`: the lib under
 /// `loom/tests/` is compiled WITHOUT `cfg(test)`, so its per-thread test
 /// redirect does not apply here. Points `LOOM_HOME` at a temp directory that

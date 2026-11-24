@@ -25,8 +25,8 @@ export function entry(
   };
 }
 
-/// A slice of the registry: ceiling has a project override, backend
-/// inherits, pressure.claude_model is user-only, the standard pair covers
+/// A slice of the registry: ceiling has a project override,
+/// summary_backend inherits, pressure.claude_model is user-only, the standard pair covers
 /// both shapes a key-level tier can take — set at project (standard_model)
 /// and set at user (standard_effort) — and the knowledge pair is fully
 /// inherited from the built-in at every tier.
@@ -49,13 +49,13 @@ const SNAPSHOT: ConfigSnapshot = {
       effective: { value: 24, source: "user" },
     }),
     entry({
-      name: "terminal.backend",
-      kind: { type: "enum", variants: ["native", "tmux"] },
+      name: "plan.summary_backend",
+      kind: { type: "enum", variants: ["claude", "codex"] },
       scopes: ["user", "project"],
-      default: "tmux",
-      user: { value: "tmux", set: false },
-      project: { value: "tmux", set: false },
-      effective: { value: "tmux", source: "default" },
+      default: "claude",
+      user: { value: "claude", set: false },
+      project: { value: "claude", set: false },
+      effective: { value: "claude", source: "default" },
     }),
     entry({
       name: "context.ceiling_tokens",

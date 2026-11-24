@@ -10,12 +10,10 @@ use serial_test::serial;
 use tempfile::TempDir;
 
 use crate::fs::permissions::scratch_home::ScratchHome;
-use crate::fs::work_dir::write_terminal_config;
 use crate::git::hooks::is_reference_transaction_hook_installed;
 use crate::git::merge::lock::MergeLock;
 use crate::git::target_guard::{accept, accepted_tip};
 use crate::git::{get_or_create_worktree, MergeBlock};
-use crate::models::session::{SessionBackendKind, TerminalConfig};
 use crate::models::stage::{Stage, StageStatus, StageType};
 use crate::orchestrator::core::recovery::Recovery;
 use crate::orchestrator::core::stage_executor::StageExecutor;
@@ -73,12 +71,9 @@ pub(super) fn graph(ids: &[&str]) -> ExecutionGraph {
     ExecutionGraph::build(definitions.collect()).unwrap()
 }
 
-/// An orchestrator over `root` on the tmux lane, so building it never probes
-/// the host for a terminal emulator.
+/// An orchestrator over `root`.
 pub(super) fn orchestrator(root: &Path, graph: ExecutionGraph) -> Orchestrator {
     let work_dir = root.join(".loom").join("work");
-    let backend = SessionBackendKind::Tmux;
-    write_terminal_config(&work_dir, &TerminalConfig { backend }).unwrap();
     let config = OrchestratorConfig {
         work_dir,
         repo_root: root.to_path_buf(),

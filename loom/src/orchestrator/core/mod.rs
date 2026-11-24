@@ -2,7 +2,7 @@
 //!
 //! The orchestrator is the heart of `loom run`. It:
 //! - Creates worktrees for ready stages
-//! - Spawns Claude sessions in terminal windows
+//! - Spawns Claude sessions in tmux sessions
 //! - Monitors stage completion and session health
 //! - Handles crashes and context exhaustion
 //! - Manages the execution graph
@@ -193,24 +193,12 @@ mod tests {
     /// resolved sandbox settings into the session directly.
     #[test]
     fn validate_knowledge_sandbox_writes_nothing_to_local_settings() {
-        use crate::fs::work_dir::write_terminal_config;
-        use crate::models::session::{SessionBackendKind, TerminalConfig};
         use crate::models::stage::Stage;
 
         let temp = tempfile::TempDir::new().unwrap();
         let repo_root = temp.path().join("repo");
         let work = repo_root.join(".loom").join("work");
         std::fs::create_dir_all(&work).unwrap();
-        // Pin the terminal backend to tmux so `Orchestrator::new` never runs
-        // real terminal detection, which fails on a headless test runner
-        // (same trick `stage_executor_tests.rs::work_dir` uses).
-        write_terminal_config(
-            &work,
-            &TerminalConfig {
-                backend: SessionBackendKind::Tmux,
-            },
-        )
-        .unwrap();
 
         let config = OrchestratorConfig {
             work_dir: work.clone(),
@@ -238,9 +226,7 @@ mod tests {
     /// would kill the daemon while the stage sits Executing with no session.
     #[test]
     fn validate_knowledge_sandbox_blocks_an_invalid_config() {
-        use crate::fs::work_dir::write_terminal_config;
         use crate::models::failure::FailureType;
-        use crate::models::session::{SessionBackendKind, TerminalConfig};
         use crate::models::stage::{Stage, StageStatus};
         use crate::verify::transitions::{load_stage, save_stage};
 
@@ -248,13 +234,6 @@ mod tests {
         let repo_root = temp.path().join("repo");
         let work = repo_root.join(".loom").join("work");
         std::fs::create_dir_all(&work).unwrap();
-        write_terminal_config(
-            &work,
-            &TerminalConfig {
-                backend: SessionBackendKind::Tmux,
-            },
-        )
-        .unwrap();
 
         let config = OrchestratorConfig {
             work_dir: work.clone(),
@@ -301,7 +280,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // Requires a terminal emulator - skipped in CI
     fn test_running_session_count() {
         let config = create_test_config();
         let graph = create_simple_graph();

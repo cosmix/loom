@@ -2,11 +2,11 @@
 use super::*;
 use crate::commands::status::data::ActivityStatus;
 use crate::models::failure::FailureInfo;
-use crate::models::session::{SessionBackendKind, SessionType};
+use crate::models::session::SessionType;
 use crate::models::stage::StageType;
 
 macro_rules! stage {
-    ($id:expr, $name:expr, $status:expr, $stage_type:expr, $dependencies:expr, $context_tokens:expr, $elapsed_secs:expr, $execution_secs:expr, $failure_info:expr, $activity_status:expr, $last_tool:expr, $last_activity:expr, $staleness_secs:expr, $context_ceiling_tokens:expr, $review_reason:expr, $merged:expr, $cleanup_warning:expr, $held:expr, $retry_count:expr, $max_retries:expr, $pid:expr, $session_alive:expr, $model:expr, $session_type:expr, $incoherence:expr, $execution_models:expr, $dispute_count:expr, $judge_heartbeat_secs:expr, $session_backend:expr) => {
+    ($id:expr, $name:expr, $status:expr, $stage_type:expr, $dependencies:expr, $context_tokens:expr, $elapsed_secs:expr, $execution_secs:expr, $failure_info:expr, $activity_status:expr, $last_tool:expr, $last_activity:expr, $staleness_secs:expr, $context_ceiling_tokens:expr, $review_reason:expr, $merged:expr, $cleanup_warning:expr, $held:expr, $retry_count:expr, $max_retries:expr, $pid:expr, $session_alive:expr, $model:expr, $session_type:expr, $incoherence:expr, $execution_models:expr, $dispute_count:expr, $judge_heartbeat_secs:expr) => {
         StageSummary {
             id: $id.to_owned(),
             name: $name.to_owned(),
@@ -51,7 +51,6 @@ macro_rules! stage {
                 .collect(),
             dispute_count: $dispute_count,
             judge_heartbeat_secs: $judge_heartbeat_secs,
-            session_backend: $session_backend,
             outgoing_session_exit_reason: None,
             completion_blocker: None,
             merge_resolver_session: None,
@@ -105,7 +104,6 @@ fn stage_knowledge_bootstrap() -> StageSummary {
         None,
         empty,
         0,
-        None,
         None
     )
 }
@@ -139,8 +137,7 @@ fn stage_server() -> StageSummary {
         None,
         &["sonnet/medium", "gpt-6.1-terra/xhigh (requested)"],
         0,
-        None,
-        Some(SessionBackendKind::Native)
+        None
     );
     stage.codex_jobs = codex::fixture_codex_jobs();
     stage
@@ -184,7 +181,6 @@ fn stage_client(detected_at: DateTime<Utc>) -> StageSummary {
         None,
         empty,
         0,
-        None,
         None
     )
 }
@@ -219,7 +215,6 @@ fn stage_design() -> StageSummary {
         None,
         empty,
         0,
-        None,
         None
     )
 }
@@ -256,8 +251,7 @@ fn stage_docs() -> StageSummary {
         None,
         empty,
         0,
-        None,
-        Some(SessionBackendKind::Tmux)
+        None
     );
     stage.merge_resolver_session = Some("session-3f9a2c1e-1788720000".to_owned());
     stage.merge_resolver_attempts = Some(1);
@@ -294,8 +288,7 @@ fn stage_integration_verify() -> StageSummary {
         None,
         empty,
         2,
-        Some(40),
-        None
+        Some(40)
     )
 }
 
@@ -329,7 +322,6 @@ fn stage_knowledge_distill() -> StageSummary {
         None,
         empty,
         0,
-        None,
         None
     )
 }
@@ -364,7 +356,6 @@ fn stage_merge_gate() -> StageSummary {
         None,
         empty,
         0,
-        None,
         None
     );
     stage.merge_block = Some(crate::git::MergeBlock::TargetMoved.to_string());

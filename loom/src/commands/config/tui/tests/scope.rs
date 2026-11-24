@@ -25,16 +25,16 @@ fn a_project_scope_save_writes_only_the_project_file() {
     let scratch = scratch();
     let mut state = scratch.state();
     state.set_scope(Scope::Project);
-    focus_by_name(&mut state, "terminal.backend");
+    focus_by_name(&mut state, "plan.summary_backend");
     state.cycle(1);
 
     state.save();
 
     assert_eq!(state.status(), "1 key written · 1 project.");
     let project = std::fs::read_to_string(scratch.project_config()).expect("project config");
-    assert!(project.contains("backend = \"native\""), "{project}");
+    assert!(project.contains("summary_backend = \"codex\""), "{project}");
     let user = std::fs::read_to_string(scratch.user_config()).unwrap_or_default();
-    assert!(!user.contains("backend"), "{user}");
+    assert!(!user.contains("summary_backend"), "{user}");
 }
 
 /// `update.check` has no project tier at all: the project tab can show it, but
@@ -81,7 +81,7 @@ fn a_user_only_key_stages_nothing_at_project_scope() {
 fn edits_on_both_scopes_survive_a_toggle_and_save_together() {
     let scratch = scratch();
     let mut state = scratch.state();
-    focus_by_name(&mut state, "terminal.backend");
+    focus_by_name(&mut state, "plan.summary_backend");
     state.cycle(1);
     assert!(state.is_modified());
 
@@ -104,10 +104,10 @@ fn edits_on_both_scopes_survive_a_toggle_and_save_together() {
     assert_eq!(state.status(), "2 keys written · 1 user · 1 project.");
     assert!(std::fs::read_to_string(scratch.user_config())
         .unwrap()
-        .contains("backend = \"native\""));
+        .contains("summary_backend = \"codex\""));
     assert!(std::fs::read_to_string(scratch.project_config())
         .unwrap()
-        .contains("backend = \"native\""));
+        .contains("summary_backend = \"codex\""));
 }
 
 /// With no `.loom/work` the project tab still opens — an operator who cannot
@@ -136,7 +136,7 @@ fn a_tree_without_a_workspace_shows_the_project_tier_as_missing() {
         assert!(row.displayed(Scope::Project).is_none());
     }
 
-    focus_by_name(&mut state, "terminal.backend");
+    focus_by_name(&mut state, "plan.summary_backend");
     state.cycle(1);
     assert!(!state.is_modified());
     state.stage_clear();
@@ -156,22 +156,22 @@ fn a_tree_without_a_workspace_shows_the_project_tier_as_missing() {
 fn the_other_column_reports_only_what_the_other_file_sets() {
     let scratch = scratch();
     let mut state = scratch.state();
-    focus_by_name(&mut state, "terminal.backend");
+    focus_by_name(&mut state, "plan.summary_backend");
     state.cycle(1);
     state.save();
 
-    let row = row_of(&state, "terminal.backend");
-    let native = ConfigValue::Text("native".to_owned());
+    let row = row_of(&state, "plan.summary_backend");
+    let codex = ConfigValue::Text("codex".to_owned());
     // Seen from the user tab, the other tier is the project file, which says
     // nothing about this key even though it resolves to a value.
     assert_eq!(row.set_value(Scope::Project), None);
     // Seen from the project tab, the other tier is the user file, which set it.
-    assert_eq!(row.set_value(Scope::User), Some(&native));
+    assert_eq!(row.set_value(Scope::User), Some(&codex));
 
     // The narrower question belongs to OTHER alone. The project tier still
     // RESOLVES to the inherited value, and the VALUE column, the inspector's
     // tier lines and `stage_clear` all depend on it continuing to.
-    assert_eq!(row.displayed(Scope::Project), Some(native));
+    assert_eq!(row.displayed(Scope::Project), Some(codex));
     assert_eq!(row.source(Scope::Project), Source::Inherited);
 }
 
@@ -183,27 +183,30 @@ fn the_project_tier_is_in_force_only_while_the_project_file_sets_the_key() {
     let scratch = scratch();
 
     let mut state = scratch.state();
-    focus_by_name(&mut state, "terminal.backend");
+    focus_by_name(&mut state, "plan.summary_backend");
     state.cycle(1);
     state.save();
-    assert_eq!(row_of(&state, "terminal.backend").in_force(), InForce::User);
+    assert_eq!(
+        row_of(&state, "plan.summary_backend").in_force(),
+        InForce::User
+    );
 
     let mut state = scratch.state();
     state.set_scope(Scope::Project);
-    focus_by_name(&mut state, "terminal.backend");
+    focus_by_name(&mut state, "plan.summary_backend");
     state.cycle(1);
     state.save();
-    let row = row_of(&state, "terminal.backend");
+    let row = row_of(&state, "plan.summary_backend");
     assert_eq!(row.in_force(), InForce::Project);
     assert_eq!(row.source(Scope::Project), Source::Set);
     assert_eq!(row.source(Scope::User), Source::Set);
 
     let mut state = scratch.state();
     state.set_scope(Scope::Project);
-    focus_by_name(&mut state, "terminal.backend");
+    focus_by_name(&mut state, "plan.summary_backend");
     state.stage_clear();
     state.save();
-    let row = row_of(&state, "terminal.backend");
+    let row = row_of(&state, "plan.summary_backend");
     assert_eq!(row.in_force(), InForce::User);
     assert_eq!(row.source(Scope::Project), Source::Inherited);
 }

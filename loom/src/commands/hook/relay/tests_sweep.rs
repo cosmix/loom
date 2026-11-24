@@ -5,7 +5,7 @@ use super::super::{relay_payload, RelayEnv};
 use super::*;
 use crate::fs::session_files::save_session;
 use crate::models::session::{Session, SessionStatus};
-use crate::orchestrator::terminal::native::write_test_pid_identity;
+use crate::orchestrator::terminal::launch::write_test_pid_identity;
 use crate::relay::{new_request_id, AgentRole, InboxEntry, Ticket, MAX_LINES_PER_CALL};
 use crate::utils::sha256_hex;
 use chrono::Utc;

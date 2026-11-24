@@ -218,7 +218,7 @@ pub fn doctor() -> Result<()> {
     println!(
         "{} {}",
         "→".cyan().bold(),
-        crate::orchestrator::terminal::native::sccache_status_line()
+        crate::orchestrator::terminal::launch::sccache_status_line()
     );
 
     if issues_found == 0 {

@@ -17,7 +17,7 @@ use std::time::{Duration, Instant};
 
 use loom::commands::status::web::{serve, ServeOptions};
 use loom::fs::work_dir::WorkDir;
-use loom::models::session::{Session, SessionBackendKind, SessionStatus, SessionType};
+use loom::models::session::{Session, SessionStatus, SessionType};
 use loom::models::stage::Stage;
 use loom::orchestrator::terminal::tmux::{socket_name, socket_path_for};
 use loom::verify::transitions::create_stage;
@@ -191,7 +191,6 @@ fn prepare_workspace() -> (tempfile::TempDir, PathBuf, String, TmuxServerGuard) 
     let mut session = Session::new();
     session.stage_id = Some(STAGE_ID.to_owned());
     session.tracking_key = Session::derive_tracking_key(STAGE_ID, SessionType::Stage);
-    session.backend = SessionBackendKind::Tmux;
     session.status = SessionStatus::Running;
     session.pid = Some(std::process::id());
     create_session_file(&base, &session).expect("create session record");

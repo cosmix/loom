@@ -7,9 +7,8 @@ use std::path::Path;
 use tempfile::TempDir;
 
 use crate::fs::session_files::save_session;
-use crate::fs::work_dir::write_terminal_config;
 use crate::git::get_or_create_worktree;
-use crate::models::session::{Session, SessionBackendKind, TerminalConfig};
+use crate::models::session::Session;
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::core::{Orchestrator, OrchestratorConfig};
 use crate::orchestrator::scheduling_report::BlockReason;
@@ -42,13 +41,10 @@ fn graph(ids: &[&str]) -> ExecutionGraph {
     ExecutionGraph::build(definitions.collect()).unwrap()
 }
 
-/// An orchestrator over `root` on the tmux lane, so building it never probes
-/// the host for a terminal emulator.
+/// An orchestrator over `root`.
 fn orchestrator(root: &Path, graph: ExecutionGraph) -> Orchestrator {
     let work_dir = root.join(".loom").join("work");
     std::fs::create_dir_all(&work_dir).unwrap();
-    let backend = SessionBackendKind::Tmux;
-    write_terminal_config(&work_dir, &TerminalConfig { backend }).unwrap();
     let config = OrchestratorConfig {
         work_dir,
         repo_root: root.to_path_buf(),

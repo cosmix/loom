@@ -62,7 +62,6 @@ export function toSummary(row: StageRow): StageSummary {
     execution_models: [],
     dispute_count: 0,
     judge_heartbeat_secs: null,
-    session_backend: null,
     history: [],
   };
 }

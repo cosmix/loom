@@ -2,7 +2,7 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use std::path::PathBuf;
 
-use super::types::{Session, SessionBackendKind, SessionExitReason, SessionStatus, SessionType};
+use super::types::{Session, SessionExitReason, SessionStatus, SessionType};
 
 impl Session {
     pub fn new() -> Self {
@@ -24,8 +24,6 @@ impl Session {
             merge_source_branch: None,
             merge_target_branch: None,
             tracking_key: String::new(),
-            native_window_title: None,
-            backend: SessionBackendKind::default(),
             fullscreen_seen: false,
         }
     }
@@ -81,8 +79,7 @@ impl Session {
 
     /// Derive the canonical tracking key for a session.
     ///
-    /// The tracking key names the stage in tmux and prefixes native windows
-    /// and PID-file keys. Native windows add project and session identity.
+    /// The tracking key names the stage in tmux and prefixes PID-file keys.
     ///
     /// The version and explicit kind distinguish every stage/type pair.
     pub fn derive_tracking_key(stage_id: &str, kind: SessionType) -> String {

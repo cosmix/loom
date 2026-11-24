@@ -49,7 +49,6 @@ const HINT = {
   usage: "Tokens against the ceiling: amber from 60%, red from 90%.",
   pid: "Process id of the stage's session.",
   alive: "Whether that process is still running.",
-  backend: "Where the session runs: a native terminal window or a tmux pane.",
   sessionType:
     "What the session was spawned to do: stage work, a merge, a base-conflict fix, knowledge, adjudication, or writing contract tests.",
   contractTesting:
@@ -141,7 +140,6 @@ function sessionRows(stage: StageSummary) {
   return present([
     row("pid", HINT.pid, stage.pid === null ? null : String(stage.pid), true),
     row("alive", HINT.alive, yesNo(stage.session_alive), true),
-    row("backend", HINT.backend, stage.session_backend, true),
     row("session type", HINT.sessionType, sessionTypeLabel(stage.session_type), true),
     row(
       "exit reason",

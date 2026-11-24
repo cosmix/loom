@@ -40,8 +40,8 @@ use super::capture::{PaneReads, PaneScreen};
 use super::fullscreen::sample_fullscreen_with;
 use super::history::{capture_mode, read_history, save_history_with, write_history, CaptureMode};
 use crate::fs::session_files::{load_session_exact, save_session};
-use crate::models::session::{Session, SessionBackendKind, SessionStatus};
-use crate::orchestrator::terminal::native::write_test_pid_identity;
+use crate::models::session::{Session, SessionStatus};
+use crate::orchestrator::terminal::launch::write_test_pid_identity;
 
 const MAIN_SCROLLBACK: &[u8] = b"MAIN-SCROLLBACK restored prompt\n";
 const ALT_SAVED: &[u8] = b"ALT-SAVED last fullscreen frame\n";
@@ -77,7 +77,6 @@ impl PaneReads for ScriptedPane {
 fn tracked_session(work: &Path, status: SessionStatus, fullscreen: bool) -> Session {
     let mut session = Session::new();
     session.assign_to_stage("fullscreen-stage".to_string());
-    session.backend = SessionBackendKind::Tmux;
     session.status = status;
     session.pid = Some(std::process::id());
     session.fullscreen_seen = fullscreen;

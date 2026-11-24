@@ -7,7 +7,7 @@
 
 use loom::models::constants::DEFAULT_CONTEXT_CEILING_TOKENS;
 use loom::models::session::{Session, SessionType};
-use loom::orchestrator::terminal::native::create_wrapper_script;
+use loom::orchestrator::terminal::launch::create_wrapper_script;
 use loom::orchestrator::terminal::tmux::{
     await_tmux_session_pid, socket_name, socket_path_for, spawn_in_tmux, TmuxBackend,
 };
@@ -152,7 +152,7 @@ fn tmux_spawn_lifecycle_reaches_a_live_pid_and_teardown_clears_it() {
     let work_dir_path = work_dir.path();
 
     let mut session = Session::new();
-    // Required so `window_title_and_pid_key` resolves to `Some` inside
+    // Required so `launch::tracking_and_pid_key` resolves to `Some` inside
     // `kill_session`: without a stage assignment, `tracking_key` stays
     // empty and `kill_session` falls straight back to `session.pid`,
     // skipping the guarded PID-file branch (`pid_matches_entry` /
@@ -161,7 +161,7 @@ fn tmux_spawn_lifecycle_reaches_a_live_pid_and_teardown_clears_it() {
     session.assign_to_stage("e2e-tmux-lifecycle-stage".to_string());
     let socket = socket_name(&session);
     // Mirrors production's per-session PID-file key (`tracking_key` +
-    // `session.id`, see `launch.rs:55`). `NativeBackend::window_title_and_pid_key`
+    // `session.id`, see `prepare.rs`). `launch::tracking_and_pid_key`
     // computes this but is `pub(crate)`, unreachable from this external e2e
     // binary, so the exact format is replicated here instead.
     let pid_key = format!("{}-{}", session.tracking_key, session.id);
@@ -296,13 +296,13 @@ fn tmux_liveness_ignores_running_server_when_pid_is_dead() {
     let work_dir_path = work_dir.path();
 
     let mut session = Session::new();
-    // Required so `window_title_and_pid_key` resolves to `Some`, exercising
+    // Required so `launch::tracking_and_pid_key` resolves to `Some`, exercising
     // the real PID-FILE layer of `is_session_alive` instead of only the
     // `session.pid` tail.
     session.assign_to_stage("e2e-liveness-stage".to_string());
     let socket = socket_name(&session);
     // Mirrors production's per-session PID-file key (`tracking_key` +
-    // `session.id`, see `launch.rs:55`). `NativeBackend::window_title_and_pid_key`
+    // `session.id`, see `prepare.rs`). `launch::tracking_and_pid_key`
     // computes this but is `pub(crate)`, unreachable from this external e2e
     // binary, so the exact format is replicated here instead.
     let pid_key = format!("{}-{}", session.tracking_key, session.id);

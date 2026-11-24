@@ -21,7 +21,7 @@ use crate::orchestrator::monitor::heartbeat::{
 };
 use crate::orchestrator::monitor::running_command::running_command;
 use crate::orchestrator::monitor::{MonitorConfig, MonitorEvent};
-use crate::orchestrator::terminal::native::write_test_pid_identity;
+use crate::orchestrator::terminal::launch::write_test_pid_identity;
 use crate::test_stand_in::StandIn;
 use crate::verify::criteria::DEFAULT_COMMAND_TIMEOUT;
 

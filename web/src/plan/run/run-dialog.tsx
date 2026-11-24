@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, type JSX } from "react";
 
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import type { ApiResult } from "@/plan/api/client";
-import { runJobSchema, type Backend, type RunJob, type RunStateView } from "@/plan/api/schema-run";
+import { runJobSchema, type RunJob, type RunStateView } from "@/plan/api/schema-run";
 import { Untrusted, visibleControls } from "@/plan/chat/visible-controls";
 import { runDialogAtom } from "@/plan/offers/actions-run";
 import { authorBlockReasonAtom, isHolderAtom } from "@/plan/state/atoms";
@@ -88,31 +88,24 @@ function useRunForm(state: RunStateView, initialPlan: string) {
   const store = useStore();
   const writeReason = useWriteReason();
   const [plan, setPlan] = useState(initialPlan);
-  const [choice, setBackend] = useState<Backend>(state.default_backend);
   const request = useRunRequest();
   const busy = state.busy ?? request.pending;
   const clean =
     state.clean_notice ||
     (state.workspace === "initialized" && state.active_plan !== null && plan !== state.active_plan);
-  const backend = state.backends.includes(choice) ? choice : state.backends[0];
   const busyReason = busy ? `Waiting for ${busy} to finish` : null;
   const commitReason = writeReason ?? busyReason;
   const startReason =
-    writeReason ??
-    changesReason(state) ??
-    busyReason ??
-    (!plan ? "Choose a plan first" : !backend ? "No backend is available" : null);
+    writeReason ?? changesReason(state) ?? busyReason ?? (!plan ? "Choose a plan first" : null);
   const commit = (paths: string[], message: string) => {
     void request.submit("commit", () => commitRun(store, { paths, message }));
   };
   const start = () => {
-    if (backend) void request.submit("start", () => startRun(store, { plan, backend, clean }));
+    void request.submit("start", () => startRun(store, { plan, clean }));
   };
   return {
     plan,
     setPlan,
-    backend,
-    setBackend,
     request,
     busy,
     clean,
@@ -145,7 +138,6 @@ function RunForm({ state, initialPlan }: { state: RunStateView; initialPlan: str
         onCommit={form.commit}
       />
       <BlockingChanges state={state} />
-      <BackendSelect backends={state.backends} backend={form.backend} onChange={form.setBackend} />
       {form.clean && (
         <p>
           Starting this plan uses --clean: stops the old daemon, reaps its sessions, archives its
@@ -314,34 +306,6 @@ function BlockingChanges({ state }: { state: RunStateView }) {
       </ul>
       <p>Commit or stash these first; the app does not touch files outside doc/.</p>
     </section>
-  );
-}
-
-function BackendSelect({
-  backends,
-  backend,
-  onChange,
-}: {
-  backends: Backend[];
-  backend: Backend | undefined;
-  onChange: (backend: Backend) => void;
-}) {
-  return (
-    <fieldset className="space-y-1">
-      <legend>Backend</legend>
-      {backends.map((choice) => (
-        <label key={choice} className="mr-4 inline-flex gap-2">
-          <input
-            type="radio"
-            name="run-backend"
-            value={choice}
-            checked={backend === choice}
-            onChange={() => onChange(choice)}
-          />
-          {choice === "native" ? "Native" : "tmux"}
-        </label>
-      ))}
-    </fieldset>
   );
 }
 

@@ -25,9 +25,8 @@ use colored::Colorize;
 use std::path::PathBuf;
 
 use crate::daemon::{DaemonConfig, DaemonServer};
-use crate::fs::work_dir::{read_terminal_config, write_terminal_config, WorkDir};
-use crate::models::session::{SessionBackendKind, TerminalConfig};
-use crate::orchestrator::terminal::backend::TMUX_MISSING_MESSAGE;
+use crate::fs::work_dir::WorkDir;
+use crate::orchestrator::terminal::{require_tmux, tmux_on_path};
 
 use checks::prepare_repo_for_run;
 
@@ -38,7 +37,7 @@ pub use foreground::execute;
 pub use crate::fs::plan_lifecycle::mark_plan_done_if_all_merged;
 
 /// Execute orchestrator in background (daemon mode)
-/// Usage: `loom run [--manual] [--max-parallel <n>] [--no-merge] [--backend <native|tmux>] [--accept-unix-socket-risk]`
+/// Usage: `loom run [--manual] [--max-parallel <n>] [--no-merge] [--accept-unix-socket-risk]`
 ///
 /// `daemon_child` is the hidden `--daemon-child <root>`: the daemon process
 /// that this command starts runs as `loom run --daemon-child <root>`. It runs
@@ -47,7 +46,6 @@ pub fn execute_background(
     manual: bool,
     max_parallel: Option<usize>,
     auto_merge: bool,
-    backend: Option<String>,
     accept_unix_socket_risk: bool,
     daemon_child: Option<PathBuf>,
 ) -> Result<()> {
@@ -55,7 +53,7 @@ pub fn execute_background(
         return daemon_child::execute(&root, daemon_config(manual, max_parallel, auto_merge));
     }
 
-    let work_dir = prepare_background_run(backend, accept_unix_socket_risk)?;
+    let work_dir = prepare_background_run(accept_unix_socket_risk)?;
 
     crate::utils::print_logo_header("Run");
 
@@ -93,10 +91,7 @@ fn daemon_config(manual: bool, max_parallel: Option<usize>, auto_merge: bool) ->
     }
 }
 
-fn prepare_background_run(
-    backend: Option<String>,
-    accept_unix_socket_risk: bool,
-) -> Result<WorkDir> {
+fn prepare_background_run(accept_unix_socket_risk: bool) -> Result<WorkDir> {
     // Ensure git worktree prerequisites are met before starting.
     let repo_root = std::env::current_dir()?;
     crate::git::worktree::require_main_identity(&repo_root)?;
@@ -112,7 +107,8 @@ fn prepare_background_run(
 
     plan_inputs::require_committed_plan(&work_dir)?;
 
-    resolve_backend_flag(&work_dir, backend, "loom run")?;
+    // Before `DaemonServer::start`: a daemon started without tmux fails every spawn.
+    require_tmux(tmux_on_path)?;
 
     run_startup_preflights(&work_dir, accept_unix_socket_risk)?;
     plan_inputs::mark_plan_in_progress(&work_dir)?;
@@ -168,220 +164,26 @@ fn print_stop_guidance() {
     println!("  {}  Stop daemon", "loom stop".cyan());
 }
 
-/// Resolve `--backend`, persisting an explicit selection, then run the tmux
-/// preflight. Shared by `loom run` (daemon mode, see [`execute_background`])
-/// and `loom run --foreground` (see [`foreground::execute`]) — this is the
-/// ONLY path that runs the preflight, so a fix here reaches both callers
-/// instead of risking a fix landing in one copy and not the other.
-///
-/// Guards against desync with an already-running daemon: its backend is
-/// fixed at construction, so a config flip alone cannot reach it. `loom run`
-/// never prompts — only `loom init` does.
-///
-/// `invocation` is the exact command text the caller was invoked as (e.g.
-/// `"loom run"` or `"loom run --foreground"`). The desync hint below tells
-/// the operator to re-run with `--backend <value>` appended to THIS text —
-/// each call site supplies its own so a foreground invocation is never told
-/// to drop `--foreground` and run a different command than the one it typed.
-///
-/// When `backend` is `None`, nothing is persisted; only the preflight check
-/// (against whatever backend is already persisted) still runs.
-fn resolve_backend_flag(
-    work_dir: &WorkDir,
-    backend: Option<String>,
-    invocation: &str,
-) -> Result<()> {
-    resolve_backend_flag_with_probe(work_dir, backend, invocation, || {
-        which::which("tmux").is_ok()
-    })
-}
-
-/// [`resolve_backend_flag`] with the tmux-availability probe injectable, so
-/// the hard-failure preflight below is unit testable without depending on
-/// whether the host actually has tmux on PATH.
-fn resolve_backend_flag_with_probe(
-    work_dir: &WorkDir,
-    backend: Option<String>,
-    invocation: &str,
-    tmux_available: impl Fn() -> bool,
-) -> Result<()> {
-    if let Some(value) = backend {
-        let requested = match value.as_str() {
-            "native" => SessionBackendKind::Native,
-            "tmux" => SessionBackendKind::Tmux,
-            other => bail!("Invalid terminal backend: {other}"),
-        };
-
-        let persisted = read_terminal_config(work_dir.root())?.backend;
-
-        if DaemonServer::is_running(work_dir.root()) && requested != persisted {
-            println!(
-                "{} {}",
-                "─".dimmed(),
-                backend_restart_hint(invocation, &value)
-            );
-        } else {
-            write_terminal_config(work_dir.root(), &TerminalConfig { backend: requested })?;
-        }
-    }
-
-    // Hard requirement — like `require_sandbox_prerequisites` above: a
-    // configured tmux backend with no tmux on PATH makes every spawn fail
-    // deterministically, so stop here instead of starting the daemon into a
-    // guaranteed failure.
-    if read_terminal_config(work_dir.root())?.backend == SessionBackendKind::Tmux
-        && !tmux_available()
-    {
-        bail!(TMUX_MISSING_MESSAGE);
-    }
-
-    Ok(())
-}
-
-/// Builds a restart hint preserving the operator's invocation, including
-/// `--foreground` when present.
-fn backend_restart_hint(invocation: &str, value: &str) -> String {
-    format!(
-        "backend change requires a daemon restart: run `loom stop`, then `{invocation} --backend {value}`"
-    )
-}
-
-/// Tests for shared `--backend` resolution, persistence and restart hints for
-/// both `loom run` and `loom run --foreground`.
-///
-/// Kept inline (rather than in `run/tests.rs`) since these exercise a
-/// module-private function; none of these need a live daemon, so the
-/// daemon-desync branch (`DaemonServer::is_running(..) && requested !=
-/// persisted`) is intentionally not covered here — it would require an
-/// actually-running daemon process, which is out of scope for a unit test.
 #[cfg(test)]
-mod backend_flag_tests {
-    use super::{resolve_backend_flag, resolve_backend_flag_with_probe};
-    use crate::fs::work_dir::{read_terminal_config, write_terminal_config, WorkDir};
-    use crate::models::session::{SessionBackendKind, TerminalConfig};
-    use std::fs;
-    use tempfile::TempDir;
+mod tmux_preflight_tests {
+    use crate::orchestrator::terminal::TMUX_MISSING_MESSAGE;
+    use crate::orchestrator::terminal::{require_tmux, tmux_on_path};
+    use serial_test::serial;
 
     #[test]
-    fn tmux_selection_persists_tmux_when_tmux_is_available() {
-        let temp_dir = TempDir::new().unwrap();
-        let work_dir = WorkDir::new(temp_dir.path()).unwrap();
-        fs::create_dir_all(work_dir.root()).unwrap();
+    #[serial]
+    fn an_empty_path_fails_the_preflight_with_the_missing_message() {
+        let empty = tempfile::tempdir().unwrap();
+        let original = std::env::var_os("PATH");
+        std::env::set_var("PATH", empty.path());
 
-        resolve_backend_flag_with_probe(&work_dir, Some("tmux".to_string()), "loom run", || true)
-            .unwrap();
+        let result = require_tmux(tmux_on_path);
 
-        assert_eq!(
-            read_terminal_config(work_dir.root()).unwrap().backend,
-            SessionBackendKind::Tmux
-        );
-    }
-
-    #[test]
-    fn native_selection_persists_native() {
-        let temp_dir = TempDir::new().unwrap();
-        let work_dir = WorkDir::new(temp_dir.path()).unwrap();
-        fs::create_dir_all(work_dir.root()).unwrap();
-
-        resolve_backend_flag(&work_dir, Some("native".to_string()), "loom run").unwrap();
-
-        assert_eq!(
-            read_terminal_config(work_dir.root()).unwrap().backend,
-            SessionBackendKind::Native
-        );
-    }
-
-    #[test]
-    fn invalid_backend_value_errors_without_touching_config() {
-        let temp_dir = TempDir::new().unwrap();
-        let work_dir = WorkDir::new(temp_dir.path()).unwrap();
-        fs::create_dir_all(work_dir.root()).unwrap();
-        write_terminal_config(
-            work_dir.root(),
-            &TerminalConfig {
-                backend: SessionBackendKind::Native,
-            },
-        )
-        .unwrap();
-
-        let result = resolve_backend_flag(&work_dir, Some("screen".to_string()), "loom run");
-
-        assert!(result.is_err());
-        assert_eq!(
-            read_terminal_config(work_dir.root()).unwrap().backend,
-            SessionBackendKind::Native,
-            "an invalid --backend value must never touch the persisted config"
-        );
-    }
-
-    #[test]
-    fn omitted_backend_flag_writes_nothing() {
-        let temp_dir = TempDir::new().unwrap();
-        let work_dir = WorkDir::new(temp_dir.path()).unwrap();
-        fs::create_dir_all(work_dir.root()).unwrap();
-        let config_path = work_dir.root().join("config.toml");
-        assert!(!config_path.exists());
-
-        resolve_backend_flag(&work_dir, None, "loom run").unwrap();
-
-        assert!(
-            !config_path.exists(),
-            "omitting --backend must not write config.toml"
-        );
-    }
-
-    #[test]
-    fn tmux_configured_and_unavailable_fails_the_preflight() {
-        let temp_dir = TempDir::new().unwrap();
-        let work_dir = WorkDir::new(temp_dir.path()).unwrap();
-        fs::create_dir_all(work_dir.root()).unwrap();
-        write_terminal_config(
-            work_dir.root(),
-            &TerminalConfig {
-                backend: SessionBackendKind::Tmux,
-            },
-        )
-        .unwrap();
-
-        let err = resolve_backend_flag_with_probe(&work_dir, None, "loom run", || false)
-            .expect_err("a configured tmux backend with no tmux on PATH must fail the preflight");
-
-        let rendered = err.to_string();
-        assert!(rendered.contains("tmux is not on PATH"), "{rendered}");
-        assert!(
-            rendered.contains("[terminal] backend = \"native\""),
-            "must name the fix, got: {rendered}"
-        );
-    }
-
-    #[test]
-    fn tmux_configured_and_available_passes_the_preflight() {
-        let temp_dir = TempDir::new().unwrap();
-        let work_dir = WorkDir::new(temp_dir.path()).unwrap();
-        fs::create_dir_all(work_dir.root()).unwrap();
-        write_terminal_config(
-            work_dir.root(),
-            &TerminalConfig {
-                backend: SessionBackendKind::Tmux,
-            },
-        )
-        .unwrap();
-
-        resolve_backend_flag_with_probe(&work_dir, None, "loom run", || true)
-            .expect("a configured tmux backend with tmux on PATH must pass the preflight");
-    }
-
-    #[test]
-    fn backend_restart_hint_uses_the_callers_invocation_text() {
-        // Preserve the foreground flag in the command suggested to the user.
-        assert_eq!(
-            super::backend_restart_hint("loom run", "tmux"),
-            "backend change requires a daemon restart: run `loom stop`, then `loom run --backend tmux`"
-        );
-        assert_eq!(
-            super::backend_restart_hint("loom run --foreground", "native"),
-            "backend change requires a daemon restart: run `loom stop`, then `loom run --foreground \
-             --backend native`"
-        );
+        match original {
+            Some(path) => std::env::set_var("PATH", path),
+            None => std::env::remove_var("PATH"),
+        }
+        let err = result.expect_err("no tmux on PATH must fail the preflight");
+        assert_eq!(err.to_string(), TMUX_MISSING_MESSAGE);
     }
 }

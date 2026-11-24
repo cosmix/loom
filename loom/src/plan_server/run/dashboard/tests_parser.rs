@@ -122,7 +122,6 @@ fn child_bound_to_one_remote_address_yields_its_bootstrap_url() {
         temp.path(),
         &bin,
         "192.168.1.5".parse().unwrap(),
-        true,
         STARTUP_TIMEOUT,
     )
     .unwrap();

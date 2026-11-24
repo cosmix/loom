@@ -9,8 +9,7 @@ use tempfile::TempDir;
 
 use super::*;
 use crate::fs::session_files::{load_session_exact, save_session};
-use crate::fs::work_dir::write_terminal_config;
-use crate::models::session::{SessionBackendKind, SessionStatus, TerminalConfig};
+use crate::models::session::SessionStatus;
 use crate::orchestrator::core::recovery::Recovery;
 use crate::orchestrator::core::{Orchestrator, OrchestratorConfig};
 use crate::orchestrator::liveness::LivenessService;
@@ -29,15 +28,8 @@ fn dead_contract_writer(status: StageStatus, spent: u32) -> (TempDir, PathBuf) {
     let temp = TempDir::new().unwrap();
     let work = temp.path().join(".loom").join("work");
     std::fs::create_dir_all(&work).unwrap();
-    // The tmux lane keeps `Orchestrator::new` off terminal detection, which
-    // fails on a headless runner.
-    let terminal = TerminalConfig {
-        backend: SessionBackendKind::Tmux,
-    };
-    write_terminal_config(&work, &terminal).unwrap();
     let mut writer = Session::new_contract(STAGE);
     writer.status = SessionStatus::Running;
-    writer.backend = SessionBackendKind::Tmux;
     writer.created_at = chrono::Utc::now() - chrono::Duration::minutes(5);
     save_session(&writer, &work).unwrap();
     let mut stage = contract_stage(STAGE, &writer.id);

@@ -2,10 +2,7 @@
 
 use super::{loop_recovery, LiveAgent};
 use crate::fs::session_files::{load_session_exact, save_session};
-use crate::fs::work_dir::write_terminal_config;
-use crate::models::session::{
-    Session, SessionBackendKind, SessionExitReason, SessionStatus, TerminalConfig,
-};
+use crate::models::session::{Session, SessionExitReason, SessionStatus};
 use crate::models::stage::{Stage, StageStatus};
 use crate::verify::transitions::{load_stage, save_stage, update_stage};
 use anyhow::Result;
@@ -77,15 +74,7 @@ impl loop_recovery::ResetRuntime for RacingAssignment {
 }
 
 fn work_dir() -> TempDir {
-    let temp = TempDir::new().unwrap();
-    write_terminal_config(
-        temp.path(),
-        &TerminalConfig {
-            backend: SessionBackendKind::Tmux,
-        },
-    )
-    .unwrap();
-    temp
+    TempDir::new().unwrap()
 }
 
 fn stage(work: &Path, status: StageStatus, session: Option<&Session>) {

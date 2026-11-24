@@ -3,7 +3,6 @@
 use super::stage_block::StageBlock;
 use super::{Orchestrator, OrchestratorConfig};
 use crate::models::failure::FailureType;
-use crate::models::session::{SessionBackendKind, TerminalConfig};
 use crate::models::stage::{Stage, StageStatus};
 use crate::plan::{schema::StageDefinition, ExecutionGraph};
 use crate::verify::transitions::{load_stage, save_stage};
@@ -11,13 +10,6 @@ use tempfile::TempDir;
 
 fn fixture(stage: &Stage) -> (TempDir, Orchestrator) {
     let temp = TempDir::new().unwrap();
-    crate::fs::work_dir::write_terminal_config(
-        temp.path(),
-        &TerminalConfig {
-            backend: SessionBackendKind::Tmux,
-        },
-    )
-    .unwrap();
     save_stage(stage, temp.path()).unwrap();
     let graph = ExecutionGraph::build(vec![StageDefinition {
         id: stage.id.clone(),

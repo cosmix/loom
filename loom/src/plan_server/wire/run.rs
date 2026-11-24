@@ -56,13 +56,6 @@ pub struct AbandonView {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum Backend {
-    Tmux,
-    Native,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
 pub enum RunJob {
     Commit,
     Start,
@@ -82,8 +75,6 @@ pub struct RunStateView {
     pub branch: String,
     pub doc_changes: Vec<ChangedPath>,
     pub blocking_changes: Vec<ChangedPath>,
-    pub backends: Vec<Backend>,
-    pub default_backend: Backend,
     pub clean_notice: bool,
     pub abandon: Option<AbandonView>,
     pub finish_abandon: Option<String>,
@@ -99,10 +90,9 @@ pub struct CommitRequest {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub struct RunStartRequest {
     pub plan: String,
-    pub backend: Backend,
     pub clean: bool,
 }
 

@@ -26,7 +26,7 @@ fn retry_refuses_a_verified_live_session_without_force() {
     session.assign_to_stage("s1".to_string());
     session.status = crate::models::session::SessionStatus::Running;
     crate::fs::session_files::save_session(&session, temp.path()).unwrap();
-    crate::orchestrator::terminal::native::write_test_pid_identity(
+    crate::orchestrator::terminal::launch::write_test_pid_identity(
         temp.path(),
         &session,
         std::process::id(),

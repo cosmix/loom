@@ -5,13 +5,11 @@
 //! `stage_executor_tests.rs` use.
 
 use super::*;
-use tempfile::TempDir;
-
-use crate::models::session::{SessionBackendKind, TerminalConfig};
 use crate::orchestrator::core::OrchestratorConfig;
-use crate::orchestrator::terminal::native::write_test_pid_identity;
+use crate::orchestrator::terminal::launch::write_test_pid_identity;
 use crate::plan::ExecutionGraph;
 use crate::verify::transitions::{load_stage, save_stage};
+use tempfile::TempDir;
 
 /// Set up a `.loom/work` directory with an Executing stage and a live agent —
 /// a PID file naming this process, but no session record: the daemon-death
@@ -20,17 +18,6 @@ fn orphan_test_fixture() -> (TempDir, std::path::PathBuf, Session) {
     let temp = TempDir::new().unwrap();
     let work_dir = temp.path().join(".loom").join("work");
     std::fs::create_dir_all(&work_dir).unwrap();
-    // Configure the tmux lane so `Orchestrator::new` does not run terminal
-    // detection, which fails on a headless runner. The adopted session is
-    // still native; liveness for it degrades to the PID identity check,
-    // which is the layer under test either way.
-    crate::fs::work_dir::write_terminal_config(
-        &work_dir,
-        &TerminalConfig {
-            backend: SessionBackendKind::Tmux,
-        },
-    )
-    .unwrap();
 
     let mut stage = Stage::new("alpha".to_string(), None);
     stage.id = "alpha".to_string();

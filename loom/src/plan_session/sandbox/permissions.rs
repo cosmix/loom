@@ -21,7 +21,7 @@ use super::{
     PRE_TOOL_USE_TIMEOUT_SECS,
 };
 use crate::fs::safe_read::EntryKind;
-use crate::orchestrator::terminal::native::session_settings::contents::{
+use crate::orchestrator::terminal::launch::session_settings::contents::{
     SESSION_TOOL_DENIES, WORKFLOW_TOOL,
 };
 use crate::plan_session::kind::SessionKind;

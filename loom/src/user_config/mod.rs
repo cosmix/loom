@@ -3,8 +3,7 @@
 //! Distinct from, and a fallback tier under, a project's workspace config at
 //! `<repo>/.loom/work/config.toml` (see [`crate::fs::work_dir::Config`], the
 //! `.loom/work/` type). This file holds settings that make sense per operator
-//! rather than per plan: whether loom checks for updates, which terminal
-//! backend `loom run` defaults to, the default context ceiling, the
+//! rather than per plan: whether loom checks for updates, the default context ceiling, the
 //! Claude/Codex models and reasoning efforts `loom pressure` spawns absent a
 //! CLI flag, and the model and reasoning effort each stage type's main-agent
 //! session launches with absent a plan field, and which Codex worker backend stage leads use. `loom config`
@@ -63,7 +62,6 @@ use anyhow::{Context, Result};
 use toml_edit::DocumentMut;
 
 use crate::models::constants::DEFAULT_CONTEXT_CEILING_TOKENS;
-use crate::models::session::SessionBackendKind;
 
 pub mod keys;
 pub mod value;
@@ -98,6 +96,9 @@ mod redirect;
 pub(crate) use redirect::{redirect_user_config, UserConfigRedirect};
 
 #[cfg(test)]
+mod contract_tests;
+
+#[cfg(test)]
 mod overview_default_contract_tests;
 
 #[cfg(test)]
@@ -109,9 +110,8 @@ mod tests;
 /// Where a resolved key's value came from.
 ///
 /// `loom config` reads only the user config, never a workspace config, so
-/// these two are the whole space — a workspace `[terminal]`/`[context]`/
+/// these two are the whole space — a workspace `[context]`/
 /// `[pressure]`/`[models]`/`[planning]` section is a separate resolution tier that
-/// [`crate::fs::work_dir::read_terminal_config`]/
 /// [`crate::fs::work_dir::read_context_config`] merge in themselves, above
 /// this module.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -136,8 +136,8 @@ impl std::fmt::Display for Origin {
 /// Every field is `Option` so "explicitly set in the file" stays
 /// distinguishable from "fell through to the built-in default": the resolved
 /// getters below collapse that distinction for an ordinary caller, while
-/// [`UserConfig::value_of`] and the `terminal_backend_set`/
-/// `context_ceiling_tokens_set` accessors keep it for `loom config --list` and
+/// [`UserConfig::value_of`] and the
+/// `context_ceiling_tokens_set` accessor keep it for `loom config --list` and
 /// for the workspace fallback tier in `crate::fs::work_dir`, both of which
 /// need to know whether the user config actually set a value.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -145,7 +145,6 @@ pub struct UserConfig {
     codex: codex::CodexSection,
     update_check: Option<bool>,
     update_check_interval_hours: Option<u32>,
-    terminal_backend: Option<SessionBackendKind>,
     context_ceiling_tokens: Option<u32>,
     plan: plan::PlanSection,
     pressure: pressure::PressureSection,
@@ -271,20 +270,6 @@ impl UserConfig {
         self.update_check_interval_hours.unwrap_or(24)
     }
 
-    /// Terminal backend `loom run` defaults to. Default: tmux.
-    pub fn terminal_backend(&self) -> SessionBackendKind {
-        self.terminal_backend.unwrap_or_default()
-    }
-
-    /// `terminal.backend`, only when the user config explicitly set it — the
-    /// accessor `crate::fs::work_dir::read_terminal_config`'s fallback tier
-    /// needs, since it must not treat "fell through to the built-in" as a
-    /// value worth applying over an absent workspace section any differently
-    /// than the built-in itself.
-    pub fn terminal_backend_set(&self) -> Option<SessionBackendKind> {
-        self.terminal_backend
-    }
-
     /// Default context ceiling, in resident tokens, for a stage's agent
     /// session. Default: [`DEFAULT_CONTEXT_CEILING_TOKENS`].
     pub fn context_ceiling_tokens(&self) -> u32 {
@@ -293,8 +278,8 @@ impl UserConfig {
     }
 
     /// `context.ceiling_tokens`, only when the user config explicitly set it
-    /// — see [`UserConfig::terminal_backend_set`] for why the workspace
-    /// fallback tier needs this rather than the resolved getter.
+    /// — the workspace fallback tier needs this rather than the
+    /// resolved getter, since it must tell "set" from "fell through to the built-in".
     pub fn context_ceiling_tokens_set(&self) -> Option<u32> {
         self.context_ceiling_tokens
     }
@@ -310,7 +295,6 @@ pub(crate) fn parse_document(text: &str) -> Result<UserConfig> {
         codex: codex::CodexSection::parse(&doc)?,
         update_check: parse::get_bool(&doc, "update", "check")?,
         update_check_interval_hours: parse::get_u32(&doc, "update", "check_interval_hours")?,
-        terminal_backend: parse::get_backend(&doc)?,
         context_ceiling_tokens: parse::get_u32(&doc, "context", "ceiling_tokens")?,
         plan: plan::PlanSection::parse(&doc)?,
         pressure: pressure::PressureSection::parse(&doc)?,

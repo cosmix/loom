@@ -60,23 +60,20 @@ fn skip(test_name: &str) -> bool {
 }
 
 /// The environment the daemon's child inherits: a scratch user directory
-/// with the update check off, and the terminal `Orchestrator::new` detects.
+/// with the update check off.
 struct DaemonEnv {
     _home: TempDir,
-    _guards: [helpers::EnvVarGuard; 2],
+    _guard: helpers::EnvVarGuard,
 }
 
 fn daemon_env() -> DaemonEnv {
     let home = TempDir::new().expect("create scratch LOOM_HOME");
     std::fs::write(home.path().join("config.toml"), "[update]\ncheck = false\n")
         .expect("write scratch user config");
-    let guards = [
-        helpers::EnvVarGuard::set("LOOM_HOME", home.path()),
-        helpers::EnvVarGuard::set("LOOM_TERMINAL", "xterm"),
-    ];
+    let guard = helpers::EnvVarGuard::set("LOOM_HOME", home.path());
     DaemonEnv {
         _home: home,
-        _guards: guards,
+        _guard: guard,
     }
 }
 

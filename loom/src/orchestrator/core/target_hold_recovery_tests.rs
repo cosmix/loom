@@ -10,10 +10,8 @@ use serial_test::serial;
 use tempfile::TempDir;
 
 use crate::fs::permissions::scratch_home::ScratchHome;
-use crate::fs::work_dir::write_terminal_config;
 use crate::git::target_guard::{Hold, HoldReason, RECORD_FILE};
 use crate::git::MergeBlock;
-use crate::models::session::{SessionBackendKind, TerminalConfig};
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::core::recovery::Recovery;
 use crate::orchestrator::core::{Orchestrator, OrchestratorConfig};
@@ -55,12 +53,10 @@ fn side_commit(root: &Path) -> String {
     work
 }
 
-/// An orchestrator over `root` on the tmux lane, so building it never probes
-/// the host for a terminal emulator.
+/// An orchestrator over `root`.
 fn orchestrator(root: &Path) -> Orchestrator {
     let work_dir = root.join(".loom").join("work");
-    let backend = SessionBackendKind::Tmux;
-    write_terminal_config(&work_dir, &TerminalConfig { backend }).unwrap();
+    std::fs::create_dir_all(&work_dir).unwrap();
     let config = OrchestratorConfig {
         work_dir,
         repo_root: root.to_path_buf(),

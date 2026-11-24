@@ -30,11 +30,13 @@ describe("settings dialog", () => {
     expect(screen.getByText(data.project.path)).toBeTruthy();
     expect(screen.queryAllByRole("radio")).toHaveLength(0);
 
-    const backend = row("backend");
+    const backend = row("summary_backend");
     expect(within(backend).getAllByRole("combobox")).toHaveLength(2);
-    expect(within(backend).getByRole("combobox", { name: "backend at user scope" })).toBeTruthy();
     expect(
-      within(backend).getByRole("combobox", { name: "backend at project scope" }),
+      within(backend).getByRole("combobox", { name: "summary_backend at user scope" }),
+    ).toBeTruthy();
+    expect(
+      within(backend).getByRole("combobox", { name: "summary_backend at project scope" }),
     ).toBeTruthy();
   });
 
@@ -116,16 +118,18 @@ describe("settings dialog", () => {
     renderAt("?settings=1", client);
     await screen.findByRole("switch", { name: "check at user scope" });
 
-    const projectSelect = within(row("backend")).getByRole("combobox", {
-      name: "backend at project scope",
+    const projectSelect = within(row("summary_backend")).getByRole("combobox", {
+      name: "summary_backend at project scope",
     });
-    fireEvent.change(projectSelect, { target: { value: "tmux" } });
+    fireEvent.change(projectSelect, { target: { value: "codex" } });
 
-    expect(writes).toEqual([{ scope: "project", name: "terminal.backend", value: "tmux" }]);
+    expect(writes).toEqual([{ scope: "project", name: "plan.summary_backend", value: "codex" }]);
     await waitFor(() =>
       expect(
-        within(row("backend")).getByRole("combobox", { name: "backend at project scope" }),
-      ).toHaveProperty("value", "tmux"),
+        within(row("summary_backend")).getByRole("combobox", {
+          name: "summary_backend at project scope",
+        }),
+      ).toHaveProperty("value", "codex"),
     );
   });
 
@@ -302,8 +306,8 @@ describe("settings dialog", () => {
     expect(document.activeElement).toBe(filter);
 
     filter.blur();
-    const combobox = within(row("backend")).getByRole("combobox", {
-      name: "backend at user scope",
+    const combobox = within(row("summary_backend")).getByRole("combobox", {
+      name: "summary_backend at user scope",
     });
     combobox.focus();
     fireEvent.keyDown(combobox, { key: "/" });

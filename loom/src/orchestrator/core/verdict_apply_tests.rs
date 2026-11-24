@@ -8,33 +8,24 @@
 
 use super::*;
 use crate::fs::session_files::save_session;
-use crate::fs::work_dir::write_terminal_config;
 use crate::models::dispute::{
     applied_marker, request_file, verdict_file, DisputeKind, DisputeRequest, DisputeVerdict,
     DisputeVerdictRecord,
 };
-use crate::models::session::{SessionBackendKind, SessionExitReason, TerminalConfig};
+use crate::models::session::SessionExitReason;
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::core::OrchestratorConfig;
-use crate::orchestrator::terminal::native::write_test_pid_identity;
+use crate::orchestrator::terminal::launch::write_test_pid_identity;
 use crate::plan::ExecutionGraph;
 use crate::test_stand_in::{orphan, require_orphan_signals, Orphan};
 use crate::verify::transitions::{create_stage, load_stage, update_stage};
 use tempfile::TempDir;
 
-/// A `.work` whose configured terminal lane is tmux, so `Orchestrator::new`
-/// never runs real terminal detection (which fails on a headless test runner).
+/// A scratch `.work` directory.
 fn handoff_work_dir() -> TempDir {
     let temp = TempDir::new().unwrap();
     let work = temp.path().join(".work");
     std::fs::create_dir_all(&work).unwrap();
-    write_terminal_config(
-        &work,
-        &TerminalConfig {
-            backend: SessionBackendKind::Tmux,
-        },
-    )
-    .unwrap();
     temp
 }
 
@@ -110,7 +101,6 @@ fn running_tmux_session(work: &std::path::Path) -> Session {
     let mut session = Session::new();
     session.assign_to_stage("test-stage".into());
     session.status = SessionStatus::Running;
-    session.backend = SessionBackendKind::Tmux;
     save_session(&session, work).unwrap();
     session
 }
@@ -119,7 +109,6 @@ fn running_tmux_session(work: &std::path::Path) -> Session {
 fn live_judge(work: &std::path::Path) -> (Session, Orphan) {
     let mut session = Session::new_adjudication("test-stage");
     session.status = SessionStatus::Running;
-    session.backend = SessionBackendKind::Tmux;
     save_session(&session, work).unwrap();
     let stand_in = orphan();
     let pid = stand_in.pid();

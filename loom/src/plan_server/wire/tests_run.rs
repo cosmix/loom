@@ -4,7 +4,7 @@ use serde::{de::DeserializeOwned, Serialize};
 use serde_json::Value;
 
 use super::run::{
-    Backend, OutputStream, RunJob, RunOffer, RunOutput, RunStateView, RunStrip, WorkspaceState,
+    OutputStream, RunJob, RunOffer, RunOutput, RunStateView, RunStrip, WorkspaceState,
 };
 
 const STATE: &str = include_str!("../../../../web/src/plan/api/fixtures/run-state.json");
@@ -100,10 +100,7 @@ fn workspace_and_offer_values_are_in_schema() {
 }
 
 #[test]
-fn backend_job_and_stream_values_are_in_schema() {
-    match Backend::Tmux {
-        Backend::Tmux | Backend::Native => {}
-    }
+fn job_and_stream_values_are_in_schema() {
     match RunJob::Commit {
         RunJob::Commit
         | RunJob::Start
@@ -114,7 +111,6 @@ fn backend_job_and_stream_values_are_in_schema() {
     match OutputStream::Stdout {
         OutputStream::Stdout | OutputStream::Stderr => {}
     }
-    assert_all_in_schema(&[Backend::Tmux, Backend::Native]);
     assert_all_in_schema(&[
         RunJob::Commit,
         RunJob::Start,

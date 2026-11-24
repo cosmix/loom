@@ -2,7 +2,7 @@
 //!
 //! After the collapse-backend-scaffolding refactor, `[project_execution]` is no
 //! longer read or written by loom. A config.toml that still carries this legacy
-//! section (e.g. from an old `loom init --backend native` run) must be ignored
+//! section (e.g. from an old `loom init` run) must be ignored
 //! silently — the orchestrator must start and behave identically to a config
 //! without the section.
 
@@ -12,7 +12,7 @@ use serial_test::serial;
 use std::time::Duration;
 use tempfile::TempDir;
 
-use super::{create_stage_def, isolate_user_config, EnvVarGuard};
+use super::{create_stage_def, isolate_user_config};
 
 /// Write a minimal `.loom/work/config.toml` that includes a stale `[project_execution]`
 /// table along with a valid `[plan]` section.
@@ -37,9 +37,6 @@ fn test_orchestrator_config_ignores_stale_project_execution() {
     // Prove that building an OrchestratorConfig with a work_dir whose
     // config.toml contains a stale [project_execution] section does NOT cause
     // a panic, parse failure, or any behavioural difference from a clean config.
-    //
-    // Pin terminal selection so a backend probe cannot depend on the host.
-    let _terminal_env = EnvVarGuard::set("LOOM_TERMINAL", "xterm");
 
     let temp_dir = TempDir::new().unwrap();
     let _home_env = isolate_user_config(&temp_dir);

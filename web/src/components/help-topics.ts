@@ -284,7 +284,7 @@ export const HELP_TOPICS: HelpTopic[] = [
       },
     ],
     tips: [
-      "No terminal? Start the dashboard with --terminals and use a tmux session.",
+      "Sessions run in tmux. loom attach [stage-id] opens them, and loom status --web --terminals enables browser terminals.",
       "Reloading the page always returns to view mode.",
     ],
   },

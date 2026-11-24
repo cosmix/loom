@@ -8,7 +8,7 @@
 //!
 //! The agent's OS-level evidence outlives the daemon, in two places the spawn
 //! path writes: `.loom/work/pids/<tracking_key>-<session_id>.pid`
-//! from the wrapper script (`read_pid_entry`), and, on the tmux lane, a
+//! from the wrapper script (`read_pid_entry`), and a
 //! socket named `loom-<session_id>` (`socket_path_for`).
 //!
 //! This module reads that evidence back. [`live_sessions_for_stage`] answers
@@ -22,12 +22,12 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-use crate::models::session::{Session, SessionBackendKind, SessionStatus, SessionType};
+use crate::models::session::{Session, SessionStatus, SessionType};
 use crate::models::stage::StageStatus;
 use crate::verify::transitions::parse_stage_from_markdown;
 
 use super::terminal::backend::SessionBackend;
-use super::terminal::native::{pid_only_is_alive, session_process_status, SessionProcessStatus};
+use super::terminal::launch::{session_process_status, SessionProcessStatus};
 
 #[path = "session_registry/identityless.rs"]
 mod identityless;
@@ -57,49 +57,23 @@ const SESSION_KINDS: [SessionType; 6] = [
 ];
 
 /// How a scan answers "is this session's process alive?": through the
-/// configured terminal backend, or through PID identity alone when no backend
-/// can be built.
+/// session backend, whose answer comes from the session's PID identity.
+/// Tests inject `Error` to drive the failed-probe paths.
 enum LivenessProbe {
     Backend(SessionBackend),
-    PidOnly,
     #[cfg(test)]
     Error,
 }
 
 impl LivenessProbe {
-    /// The configured backend, degrading to PID-only rather than failing.
-    ///
-    /// `SessionBackend::from_config` builds the native lane EAGERLY when the
-    /// config says `native` (`backend.rs:99-102`), and that runs terminal
-    /// detection, which bails on a headless host, in CI, or in a container.
-    /// Propagating that would break `loom stage reset` and stop the daemon
-    /// spawning ANY stage there, since both ask this module first. Degrading
-    /// is what `backend.rs:307-311` already does for a native session whose
-    /// lane will not build: "only the window-existence layer is unavailable,
-    /// and the PID layers are the authoritative ones anyway".
+    /// The session backend for `work_dir`. Building it cannot fail.
     fn resolve(work_dir: &Path) -> Self {
-        match SessionBackend::from_config(work_dir.to_path_buf()) {
-            Ok(backend) => Self::Backend(backend),
-            Err(error) => {
-                // Once per process, not once per session and not once per
-                // tick: on a terminal-less host this resolves on every scan,
-                // and the condition never changes while the daemon runs.
-                static DEGRADED: std::sync::Once = std::sync::Once::new();
-                DEGRADED.call_once(|| {
-                    tracing::debug!(
-                        %error,
-                        "No terminal backend available; answering session liveness from PID identity alone"
-                    );
-                });
-                Self::PidOnly
-            }
-        }
+        Self::Backend(SessionBackend::new(work_dir.to_path_buf()))
     }
 
     fn is_alive(&self, work_dir: &Path, session: &Session, admission: Admission) -> Result<bool> {
         let alive = match self {
             Self::Backend(backend) => backend.is_session_alive(session),
-            Self::PidOnly => Ok(pid_only_is_alive(work_dir, session)),
             #[cfg(test)]
             Self::Error => anyhow::bail!("injected liveness failure"),
         }?;
@@ -121,8 +95,7 @@ impl LivenessProbe {
 /// This is the question the executor must ask before spawning and recovery
 /// must ask before rewriting a stage: not "does a session file exist" but "is
 /// something actually running". An unreadable session file or failed liveness
-/// probe makes ownership uncertain and returns an error. An unbuildable
-/// terminal backend uses the PID-only probe instead.
+/// probe makes ownership uncertain and returns an error.
 pub fn live_sessions_for_stage(work_dir: &Path, stage_id: &str) -> Result<Vec<Session>> {
     let probe = LivenessProbe::resolve(work_dir);
     live_sessions_with_probe(&probe, work_dir, stage_id)
@@ -144,7 +117,7 @@ pub fn live_sessions_for_stage_of_type(
 }
 
 /// [`live_sessions_for_stage`] against an already-resolved probe, so a scan
-/// over many stages pays terminal detection at most once.
+/// over many stages builds the probe once.
 fn live_sessions_with_probe(
     probe: &LivenessProbe,
     work_dir: &Path,
@@ -161,11 +134,10 @@ pub struct OrphanEvidence {
     pub tracking_key: String,
     pub session_type: SessionType,
     pub pid: u32,
-    pub backend: SessionBackendKind,
 }
 
 /// The pid file this evidence was recovered from. Its stem is the key every
-/// liveness probe looks up (`NativeBackend::window_title_and_pid_key`).
+/// liveness probe looks up (`launch::tracking_and_pid_key`).
 fn pid_file_path(work_dir: &Path, evidence: &OrphanEvidence) -> PathBuf {
     work_dir.join("pids").join(format!(
         "{}-{}.pid",
@@ -184,9 +156,8 @@ fn pid_file_path(work_dir: &Path, evidence: &OrphanEvidence) -> PathBuf {
 /// Never returns `Err`: this feeds a best-effort recovery pass that must keep
 /// the daemon running whatever it finds. An unreadable stage or pid file is
 /// logged and contributes no evidence, which is the safe direction — nothing
-/// gets adopted. A missing terminal is not a failure at all here; liveness
-/// degrades to PID identity (see `LivenessProbe::resolve`), because a
-/// container is exactly where an unadoptable orphan hurts most.
+/// gets adopted. Liveness is answered by the tmux session backend (see
+/// `LivenessProbe::resolve`), which is built for every work dir.
 pub fn orphan_evidence(work_dir: &Path) -> Vec<OrphanEvidence> {
     let pid_files = list_pid_files(work_dir);
     if pid_files.is_empty() {
@@ -317,9 +288,8 @@ fn executing_stage_ids(work_dir: &Path) -> Vec<String> {
 /// lock and the caller's own re-validation, so it stays the caller's job.
 ///
 /// The record produced here must satisfy every filter in
-/// `viewer::load_live_tmux_session` (backend, `Running`, PID-verified
-/// liveness, and a non-empty `tracking_key` so `window_title_and_pid_key`
-/// resolves) or the adopted agent is still unattachable and the adoption bought
+/// `viewer::load_live_tmux_session` (`Running`, PID-verified liveness, and a
+/// non-empty `tracking_key` so `launch::tracking_and_pid_key` resolves) or the adopted agent is still unattachable and the adoption bought
 /// nothing.
 pub fn adopt_orphan(work_dir: &Path, evidence: &OrphanEvidence) -> Result<Session> {
     let mut session = Session::new();
@@ -335,7 +305,6 @@ pub fn adopt_orphan(work_dir: &Path, evidence: &OrphanEvidence) -> Result<Sessio
     session.tracking_key = evidence.tracking_key.clone();
 
     session.pid = Some(evidence.pid);
-    session.backend = evidence.backend;
     session.status = SessionStatus::Running;
 
     // The wrapper writes the pid file at spawn, so its mtime is real evidence

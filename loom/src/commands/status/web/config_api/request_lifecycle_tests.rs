@@ -14,7 +14,7 @@ use crate::web_server::limits::Limits;
 use crate::web_server::{self, ConnInfo, Router, ServeConfig, ShutdownPending};
 
 const WAIT: Duration = Duration::from_secs(8);
-const BODY: &str = r#"{"scope":"project","name":"terminal.backend","value":"tmux"}"#;
+const BODY: &str = r#"{"scope":"project","name":"plan.summary_backend","value":"codex"}"#;
 
 struct PausedConfig {
     base: PathBuf,
@@ -168,7 +168,7 @@ fn dropping_pending_error_does_not_release_an_admitted_writer() {
     assert_eq!(server.limits.connection_count(), 1);
     server.release.send(()).unwrap();
     successful_response(&mut client);
-    let expected = b"backend = \"tmux\"";
+    let expected = b"summary_backend = \"codex\"";
     assert!(server
         .bytes()
         .windows(expected.len())

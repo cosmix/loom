@@ -9,7 +9,6 @@ use anyhow::{bail, Result};
 use colored::Colorize;
 use std::path::{Path, PathBuf};
 
-use super::backend::resolve_backend_choice;
 use super::base_branch::checked_out_branch;
 use super::cleanup::{
     cleanup_orphaned_sessions, cleanup_work_directory, cleanup_worktrees_directory,
@@ -64,16 +63,8 @@ impl Drop for InitGuard {
 /// # Arguments
 /// * `plan_path` - Optional path to a plan file to initialize with
 /// * `clean` - If true, clean up stale resources before initialization
-/// * `backend` - Terminal backend for sessions (native|tmux); `None` defers
-///   to `~/.loom/config.toml` (a TTY prompt lets Enter inherit that value or
-///   pin a typed choice)
 /// * `no_repair` - Skip the automatic workspace repair pass
-pub fn execute(
-    plan_path: Option<PathBuf>,
-    clean: bool,
-    backend: Option<String>,
-    no_repair: bool,
-) -> Result<()> {
+pub fn execute(plan_path: Option<PathBuf>, clean: bool, no_repair: bool) -> Result<()> {
     let repo_root = crate::commands::common::main_repo_root("init")?;
     for state in [repo_root.join(".loom/work"), repo_root.join(".work")] {
         if holds_orchestration_state(&state) {
@@ -91,9 +82,7 @@ pub fn execute(
     configure_workspace(&repo_root)?;
 
     if let (Some(preflighted), Some(base_branch)) = (preflighted, base_branch) {
-        let backend = resolve_backend_choice(backend)?;
-        let stage_count =
-            initialize_with_plan(&work_dir, &preflighted, &repo_root, &base_branch, backend)?;
+        let stage_count = initialize_with_plan(&work_dir, &preflighted, &repo_root, &base_branch)?;
         print_summary(plan_path.as_deref(), stage_count);
     } else {
         print_summary(None, 0);
@@ -260,8 +249,7 @@ fn install_codex_hooks_advisory() {
 ///
 /// The ordering matters: `InitGuard` only ever removes the state directory, so
 /// a plan that fails any later leaves the git hooks and the
-/// `.claude/settings.local.json` edits behind, and makes the operator answer
-/// the backend prompt a second time.
+/// `.claude/settings.local.json` edits behind.
 fn preflight_plan_if_given(plan_path: Option<&Path>) -> Result<Option<PreflightedPlan>> {
     plan_path.map(preflight_plan).transpose()
 }

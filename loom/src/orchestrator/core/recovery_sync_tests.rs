@@ -5,18 +5,15 @@
 //! maintainability limit — the same trick `recovery_adoption_tests.rs` uses.
 
 use super::*;
-use crate::orchestrator::core::orphan_adoption::register_live_current_session;
-use tempfile::TempDir;
-
-use crate::fs::work_dir::write_terminal_config;
-use crate::models::session::{SessionBackendKind, TerminalConfig};
 use crate::orchestrator::core::event_handler::EventHandler;
+use crate::orchestrator::core::orphan_adoption::register_live_current_session;
 use crate::orchestrator::core::stage_executor::StageExecutor;
 use crate::orchestrator::core::OrchestratorConfig;
 use crate::orchestrator::monitor::MonitorEvent;
 use crate::plan::schema::StageDefinition;
 use crate::plan::ExecutionGraph;
 use crate::verify::transitions::{save_stage, update_stage};
+use tempfile::TempDir;
 
 fn minimal_stage_definition(id: &str) -> StageDefinition {
     StageDefinition {
@@ -35,13 +32,6 @@ fn minimal_stage_definition(id: &str) -> StageDefinition {
 fn sync_leaves_an_already_executing_node_executing_without_erroring() {
     let temp = TempDir::new().unwrap();
     let work_dir = temp.path().to_path_buf();
-    write_terminal_config(
-        &work_dir,
-        &TerminalConfig {
-            backend: SessionBackendKind::Tmux,
-        },
-    )
-    .unwrap();
 
     let mut stage = Stage::new("alpha".to_string(), None);
     stage.id = "alpha".to_string();
@@ -71,13 +61,6 @@ fn sync_leaves_an_already_executing_node_executing_without_erroring() {
 
 fn resume_orchestrator(temp: &TempDir, graph: ExecutionGraph) -> Orchestrator {
     let work_dir = temp.path().to_path_buf();
-    write_terminal_config(
-        &work_dir,
-        &TerminalConfig {
-            backend: SessionBackendKind::Tmux,
-        },
-    )
-    .unwrap();
     Orchestrator::new(
         OrchestratorConfig {
             work_dir,
@@ -366,13 +349,12 @@ fn recovery_completes_a_live_session_left_spawning() {
     );
     orchestrator.liveness = crate::orchestrator::liveness::LivenessService::fixed_for_tests(true);
     let work = orchestrator.config.work_dir.clone();
-    let mut session = restart_session("alpha");
-    session.backend = SessionBackendKind::Tmux;
+    let session = restart_session("alpha");
     assert_eq!(session.status, SessionStatus::Spawning);
     save_session(&session, &work).unwrap();
     save_stage(&restart_stage("alpha", &session.id), &work).unwrap();
     let pid = std::process::id();
-    crate::orchestrator::terminal::native::write_test_pid_identity(&work, &session, pid).unwrap();
+    crate::orchestrator::terminal::launch::write_test_pid_identity(&work, &session, pid).unwrap();
 
     orchestrator.recover_current_sessions().unwrap();
 

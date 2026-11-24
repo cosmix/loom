@@ -12,7 +12,6 @@ const IN_PROGRESS: &str = "doc/plans/IN_PROGRESS-PLAN-example.md";
 fn request() -> RunStartRequest {
     RunStartRequest {
         plan: PLAN.into(),
-        backend: Backend::Tmux,
         clean: false,
     }
 }
@@ -31,8 +30,6 @@ pub(super) fn state() -> RunStateView {
         branch: "main".into(),
         doc_changes: vec![],
         blocking_changes: vec![],
-        backends: vec![Backend::Tmux, Backend::Native],
-        default_backend: Backend::Tmux,
         clean_notice: false,
         abandon: None,
         finish_abandon: None,
@@ -50,7 +47,7 @@ fn fake_loom(script: &str) -> TempDir {
 }
 
 #[test]
-fn init_then_run_passes_plan_and_tmux_backend_without_clean() {
+fn init_then_run_passes_the_plan_without_clean() {
     let dir = fake_loom("printf '%s\\n' \"$@\" >> args\nprintf '%s\\n' \"$1 output\"");
     let mut lines = Vec::new();
 
@@ -66,7 +63,7 @@ fn init_then_run_passes_plan_and_tmux_backend_without_clean() {
     assert_eq!(code, 0);
     assert_eq!(
         fs::read_to_string(dir.path().join("args")).unwrap(),
-        "init\ndoc/plans/PLAN-example.md\n--backend\ntmux\nrun\n"
+        "init\ndoc/plans/PLAN-example.md\nrun\n"
     );
     assert_eq!(
         lines,
@@ -99,29 +96,7 @@ fn clean_is_passed_only_to_init_when_requested() {
     assert_eq!(code, 0);
     assert_eq!(
         fs::read_to_string(dir.path().join("args")).unwrap(),
-        "init\ndoc/plans/PLAN-example.md\n--backend\ntmux\n--clean\nrun\n"
-    );
-}
-
-#[test]
-fn native_backend_is_passed_to_init() {
-    let dir = fake_loom("printf '%s\\n' \"$@\" >> args");
-    let mut request = request();
-    request.backend = Backend::Native;
-
-    let code = run_start_sequence(
-        dir.path(),
-        &dir.path().join("loom"),
-        &request,
-        Steps::InitThenRun,
-        &mut |_, _, _| {},
-    )
-    .unwrap();
-
-    assert_eq!(code, 0);
-    assert_eq!(
-        fs::read_to_string(dir.path().join("args")).unwrap(),
-        "init\ndoc/plans/PLAN-example.md\n--backend\nnative\nrun\n"
+        "init\ndoc/plans/PLAN-example.md\n--clean\nrun\n"
     );
 }
 
@@ -160,7 +135,7 @@ fn failing_init_stops_before_run_and_keeps_both_streams() {
 }
 
 #[test]
-fn run_only_skips_init_and_ignores_backend_and_clean() {
+fn run_only_skips_init_and_ignores_clean() {
     let dir = fake_loom("printf '%s\\n' \"$@\" >> args\nprintf 'run output\\n'");
     let mut request = request();
     request.clean = true;

@@ -2,11 +2,10 @@
 
 use super::*;
 use crate::fs::session_files::save_session;
-use crate::fs::work_dir::write_terminal_config;
-use crate::models::session::{SessionBackendKind, SessionStatus, TerminalConfig};
+use crate::models::session::SessionStatus;
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::core::OrchestratorConfig;
-use crate::orchestrator::terminal::native::write_test_pid_identity;
+use crate::orchestrator::terminal::launch::write_test_pid_identity;
 use crate::plan::schema::StageDefinition;
 use crate::plan::ExecutionGraph;
 use crate::test_stand_in::{orphan, require_orphan_signals};
@@ -24,20 +23,11 @@ pub(super) fn create_test_graph() -> ExecutionGraph {
     ExecutionGraph::build(stages).unwrap()
 }
 
-/// A `.loom/work` whose configured terminal lane is tmux, so `Orchestrator::new`
-/// never runs real terminal detection (which fails on a headless test runner).
-/// Same trick `stage_executor_tests.rs` uses for the same reason.
+/// A scratch `.loom/work` directory.
 pub(super) fn handoff_work_dir() -> TempDir {
     let temp = TempDir::new().unwrap();
     let work = temp.path().join(".loom").join("work");
     std::fs::create_dir_all(&work).unwrap();
-    write_terminal_config(
-        &work,
-        &TerminalConfig {
-            backend: SessionBackendKind::Tmux,
-        },
-    )
-    .unwrap();
     temp
 }
 
@@ -70,7 +60,6 @@ pub(super) fn recorded_session(work_dir: &Path) -> crate::models::session::Sessi
     let mut session = crate::models::session::Session::new();
     session.assign_to_stage("test-stage".to_string());
     session.status = SessionStatus::Running;
-    session.backend = SessionBackendKind::Tmux;
     save_session(&session, work_dir).unwrap();
     session
 }
@@ -112,10 +101,9 @@ pub(super) fn executing_stage(work_dir: &Path) {
 /// agent it hands off, not merely mark the stage and re-queue.
 ///
 /// The kill is observed directly — a real process, signalled by the real
-/// backend — because every proxy for it is unreliable: the tmux lane returns
-/// `Ok` from `kill_session` unconditionally, and the native lane returns `Ok`
-/// when it refuses to signal an unverifiable identity. Only the process being
-/// gone proves the takedown happened.
+/// backend — because every proxy for it is unreliable: `kill_session` returns
+/// `Ok` unconditionally. Only the process being gone proves the takedown
+/// happened.
 #[test]
 fn budget_backstop_kills_the_agent_and_then_requeues() {
     require_orphan_signals!();

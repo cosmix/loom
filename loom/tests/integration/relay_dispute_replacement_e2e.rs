@@ -127,7 +127,6 @@ fn a_30_kib_replacement_is_recorded_byte_exact() {
     if skip_for_missing_tools("a_30_kib_replacement_is_recorded_byte_exact") {
         return;
     }
-    let _terminal_env = helpers::EnvVarGuard::set("LOOM_TERMINAL", "xterm");
     let fx = build_fixture();
     let line = "#[test]\r\nfn rejects_x() { assert!(rejects(\"x\")); }   \r\n";
     let text = line.repeat(30 * 1024 / line.len());
@@ -144,7 +143,6 @@ fn a_replacement_whose_ticket_is_within_1_kib_of_the_limit_is_admitted() {
     {
         return;
     }
-    let _terminal_env = helpers::EnvVarGuard::set("LOOM_TERMINAL", "xterm");
     let fx = build_fixture();
     let text = replacement_near_ticket_limit();
     let encoded = encoded_ticket_len(&text);
@@ -189,7 +187,6 @@ fn a_replacement_without_a_passing_trial_is_refused_at_admission() {
     if skip_for_missing_tools("a_replacement_without_a_passing_trial_is_refused_at_admission") {
         return;
     }
-    let _terminal_env = helpers::EnvVarGuard::set("LOOM_TERMINAL", "xterm");
     let fx = build_fixture();
     let replacement = fx.write_replacement("#[test]\nfn rejects_x() { assert!(true); }\n");
     let filed = fx.run_dispute(&replacement);

@@ -9,7 +9,7 @@ use colored::Colorize;
 use std::{fs, path::Path};
 
 use crate::models::stage::StageStatus;
-use crate::orchestrator::terminal::native::{cleanup_stage_files, NativeBackend};
+use crate::orchestrator::terminal::launch::{cleanup_stage_files, tracking_and_pid_key};
 use crate::orchestrator::terminal::tmux::reap_sockets;
 pub(super) use crate::orchestrator::terminal::tmux::SessionReapMode;
 
@@ -54,7 +54,7 @@ fn cleanup_terminal_tombstones(work_dir: &Path, mode: SessionReapMode) -> Result
             continue;
         }
 
-        if let Some((_, pid_key)) = NativeBackend::window_title_and_pid_key(&session) {
+        if let Some((_, pid_key)) = tracking_and_pid_key(&session) {
             cleanup_stage_files(work_dir, &pid_key);
         }
     }
@@ -189,7 +189,7 @@ mod tests {
             session_to_markdown(&live_session),
         )
         .unwrap();
-        crate::orchestrator::terminal::native::write_test_pid_identity(
+        crate::orchestrator::terminal::launch::write_test_pid_identity(
             work_dir,
             &live_session,
             std::process::id(),
@@ -256,8 +256,8 @@ mod tests {
             session_to_markdown(session),
         )
         .unwrap();
-        let (_, pid_key) = NativeBackend::window_title_and_pid_key(session).unwrap();
-        crate::orchestrator::terminal::native::create_wrapper_script(
+        let (_, pid_key) = tracking_and_pid_key(session).unwrap();
+        crate::orchestrator::terminal::launch::create_wrapper_script(
             work_dir,
             &pid_key,
             session.stage_id.as_deref().unwrap(),
@@ -276,7 +276,7 @@ mod tests {
     }
 
     fn tombstones_exist(work_dir: &Path, session: &Session) -> (bool, bool) {
-        let (_, pid_key) = NativeBackend::window_title_and_pid_key(session).unwrap();
+        let (_, pid_key) = tracking_and_pid_key(session).unwrap();
         (
             work_dir
                 .join("pids")

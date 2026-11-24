@@ -52,7 +52,7 @@ function terminalStage(): StageSummary {
   const parsed = snapshotSchema.parse(fixture);
   const source = parsed.status.stages.find((stage) => stage.id === "client");
   if (!source) throw new Error("fixture stage client is missing");
-  return { ...source, session_alive: true, session_backend: "tmux" };
+  return { ...source, session_alive: true };
 }
 
 function pendingFactory(): EmulatorFactory {

@@ -9,26 +9,6 @@ use crate::test_git::{git, git_unchecked, TestRepo};
 use serial_test::serial;
 use std::path::{Path, PathBuf};
 
-/// Pin `LOOM_TERMINAL` so `Orchestrator::new` (which eagerly constructs a
-/// `NativeBackend`) does not probe a headless test runner for an emulator.
-/// Mirrors `merge_handler_attempt_tests::pin_terminal_env`; callers must be
-/// `#[serial]`, since this mutates a process-global variable.
-fn pin_terminal_env() -> Option<std::ffi::OsString> {
-    let saved = std::env::var_os("LOOM_TERMINAL");
-    // SAFETY: the test is serialized and restores the original value below.
-    unsafe { std::env::set_var("LOOM_TERMINAL", "xterm") };
-    saved
-}
-
-fn restore_terminal_env(saved: Option<std::ffi::OsString>) {
-    match saved {
-        // SAFETY: the serialized test is restoring its saved value.
-        Some(value) => unsafe { std::env::set_var("LOOM_TERMINAL", value) },
-        // SAFETY: the serialized test is restoring the variable's absence.
-        None => unsafe { std::env::remove_var("LOOM_TERMINAL") },
-    }
-}
-
 fn orchestrator_for(root: &Path, work_dir: &Path) -> Orchestrator {
     let config = OrchestratorConfig {
         work_dir: work_dir.to_path_buf(),
@@ -38,9 +18,7 @@ fn orchestrator_for(root: &Path, work_dir: &Path) -> Orchestrator {
         kill_confirm_timeout: std::time::Duration::from_millis(300),
         ..Default::default()
     };
-    let saved_terminal = pin_terminal_env();
     let constructed = Orchestrator::new(config, ExecutionGraph::build(Vec::new()).unwrap());
-    restore_terminal_env(saved_terminal);
     constructed.unwrap()
 }
 

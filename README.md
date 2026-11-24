@@ -88,7 +88,7 @@ loom status --live
 loom stop
 ```
 
-`loom init` parses the plan, creates stage state, and installs the project hook wiring. `loom run` starts the daemon and orchestrator. (The Feature Planner's Run panel does both for you.) `loom status --live` follows the run in your terminal, and `loom status --web` puts it in a browser. Add `--terminals` (tmux backend only) to watch or take over the Claude Code sessions from the browser. `--host <addr>` binds the dashboard to an address other than `127.0.0.1`; read [Web Dashboard Remote Access](#web-dashboard-remote-access) first, since a non-loopback bind serves plain HTTP.
+`loom init` parses the plan, creates stage state, and installs the project hook wiring. `loom run` starts the daemon and orchestrator. (The Feature Planner's Run panel does both for you.) `loom status --live` follows the run in your terminal, and `loom status --web` puts it in a browser. Add `--terminals` to watch or take over the Claude Code sessions from the browser. `--host <addr>` binds the dashboard to an address other than `127.0.0.1`; read [Web Dashboard Remote Access](#web-dashboard-remote-access) first, since a non-loopback bind serves plain HTTP.
 
 `loom stop` stops the daemon, and the orchestrator with it.
 
@@ -164,7 +164,7 @@ What you hand over comes back checked. Loom verifies every stage's work before i
 
 Steering is also teaching. Agents record a human correction as a memory entry before they do anything else, so what you tell one session is distilled into the knowledge base and reaches every later one.
 
-Details: [Human-in-the-loop where it matters](#human-in-the-loop-where-it-matters), [Web Dashboard](#web-dashboard), [Terminal Backends](#terminal-backends).
+Details: [Human-in-the-loop where it matters](#human-in-the-loop-where-it-matters), [Web Dashboard](#web-dashboard), [Terminal Sessions](#terminal-sessions).
 
 ## It Learns From Every Plan
 
@@ -248,7 +248,7 @@ Everything loom does, one line each, grouped by what you are doing at the time. 
 
 - Schedule independent stages across a dependency DAG, each in its own git worktree. ([Parallel execution and progressive merge](#parallel-execution-and-progressive-merge))
 - Merge finished stages back progressively, spawning a dedicated session on a real conflict. ([Parallel execution and progressive merge](#parallel-execution-and-progressive-merge))
-- Spawn sessions in a native terminal window or a headless tmux backend for SSH and WSL. ([Terminal Backends](#terminal-backends))
+- Run every session in its own detached tmux server, usable over SSH and WSL. ([Terminal Sessions](#terminal-sessions))
 - Delegate implementation to Claude or Codex subagent lanes, chosen per stage. ([Model Allocation](#model-allocation))
 - Use subagents for concrete file-level tasks and an agent team for work that needs discussion across agents. ([Agent Teams (Experimental)](#agent-teams-experimental))
 - Write a context handoff before a session's token ceiling forces a restart. ([Other Commands](#other-commands))
@@ -327,7 +327,7 @@ Everything loom does, one line each, grouped by what you are doing at the time. 
 - [Knowledge System](#knowledge-system)
 - [Model Allocation](#model-allocation)
 - [Sandbox Configuration](#sandbox-configuration)
-- [Terminal Backends](#terminal-backends)
+- [Terminal Sessions](#terminal-sessions)
 - [Agent Teams (Experimental)](#agent-teams-experimental)
 - [State Layout](#state-layout)
 - [Shell Completions](#shell-completions)
@@ -433,7 +433,7 @@ Loom is under active development. Signed binaries are published for Linux x86_64
 | `jq`                       | every loom hook parses the Claude Code hook payload with it       | yes; `install.sh` and `loom run` refuse to proceed without it, `loom repair` reports it |
 | `minisign`                 | verifies downloaded release binaries before execution             | required for release downloads; install with `brew install minisign` or `sudo apt install minisign` |
 | `rg` (ripgrep) and `fd`    | the installed CLAUDE.md steers agents to these over `grep`/`find` | recommended; `install.sh` and `loom run` warn when missing                              |
-| `tmux`                     | the tmux terminal backend                                         | required unless `terminal.backend = "native"`                                           |
+| `tmux`                     | every orchestrated session runs in a detached tmux server         | yes; `loom run` refuses to start without it, `loom init <plan>` warns                   |
 | `sccache`                  | shared dependency compiles across stage worktrees                 | optional                                                                                |
 | `codex` CLI                | the codex implementer lane and `loom pressure`                    | optional                                                                                |
 
@@ -472,9 +472,9 @@ It then runs `install.sh`, which installs `loom-*` prefixed agents and skills (n
 - Linux x86_64: primary development and full CI test runs; signed release binary
 - macOS (Apple Silicon): supported for build/terminal integration; native Codex workers run under a Seatbelt boundary when the host passes their qualification probes (see [Native Codex workers](#native-codex-workers)); CI does build-only verification; signed release binary
 - macOS (Intel): builds from source; no release binary is published
-- Windows via WSL2: supported — WSL2 runs the Linux x86_64 binary unmodified. Use the tmux backend, since a stock WSL install has no GUI terminal emulator for the native backend to find — see [Running under WSL](#running-under-wsl). Native Windows, outside WSL, is unsupported.
+- Windows via WSL2: supported — WSL2 runs the Linux x86_64 binary unmodified. Install tmux inside WSL — see [Running under WSL](#running-under-wsl). Native Windows, outside WSL, is unsupported.
 - Linux ARM64: builds from source; no release binary is published yet
-- Headless (SSH, no terminal emulator): supported via the tmux backend — see [Terminal Backends](#terminal-backends)
+- Headless (SSH, no terminal emulator): supported, since every session runs in a detached tmux server — see [Terminal Sessions](#terminal-sessions)
 
 ### What Gets Installed
 
@@ -497,8 +497,8 @@ It then runs `install.sh`, which installs `loom-*` prefixed agents and skills (n
 ### Primary Commands
 
 ```bash
-loom init <plan-path> [--clean] [--backend native|tmux]
-loom run [--manual] [--max-parallel N] [--foreground] [--watch] [--no-merge] [--backend native|tmux]
+loom init <plan-path> [--clean]
+loom run [--manual] [--max-parallel N] [--foreground] [--watch] [--no-merge]
 loom status [--live] [--compact] [--verbose] [--web [PORT] [--host HOST] [--terminals]]
 loom stop
 loom resume <stage-id>
@@ -679,7 +679,7 @@ loom subagents status --worker codex:<unit> [--stage <stage>] [--json]       # N
 loom subagents result --worker codex:<unit> [--stage <stage>] [--full] [--json]
                                                                              # Native backend: the worker's final report once it has ended
 loom subagents release --stage <stage> --invocation <id>                     # Native backend, operator only: records that a worker's processes are gone after an unverified stop
-loom attach [stage-id]                                                       # tmux backend only; omit the id for a tiled overview
+loom attach [stage-id]                                                       # omit the id for a tiled overview
 loom sessions list
 loom sessions kill <session-id...> | --stage <stage-id>
 loom handoff [--stage <id>] [--session <id>] [--trigger <type>] [--message <text>]
@@ -738,7 +738,6 @@ The keys, with their built-in defaults:
 | ---------------------------------- | ------------- | ------------------------------------------------------------------------ | ------------- |
 | `update.check`                     | `true`        | `true`, `false`                                                          | no            |
 | `update.check_interval_hours`      | `24`          | integer                                                                  | no            |
-| `terminal.backend`                 | `tmux`        | `native`, `tmux`                                                         | whole section |
 | `context.ceiling_tokens`           | `800000`      | integer                                                                  | whole section |
 | `codex.backend`                    | `native`      | `legacy`, `native`                                                       | per key       |
 | `pressure.claude_model`            | `opus`        | `haiku`, `sonnet`, `opus`, `fable`                                       | per key       |
@@ -772,7 +771,7 @@ The keys, with their built-in defaults:
 | `models.contract_writer_model`     | `opus`        | `haiku`, `sonnet`, `opus`, `fable`                                       | per key       |
 | `models.contract_writer_effort`    | `high`        | `low`, `medium`, `high`, `xhigh`, `max`                                  | per key       |
 
-"Whole section" means a project `[terminal]` or `[context]` section replaces the user tier's section outright, so a key it omits takes the built-in. "Per key" means a project `[pressure]`, `[planning]`, `[models]`, or `[codex]` section overrides only the keys it names and the rest fall through to the user file. The `pressure.*` keys are explained under [Primary Commands](#primary-commands), the `models.*` keys under [Model Allocation](#model-allocation).
+"Whole section" means a project `[context]` section replaces the user tier's section outright, so a key it omits takes the built-in. "Per key" means a project `[pressure]`, `[planning]`, `[models]`, or `[codex]` section overrides only the keys it names and the rest fall through to the user file. The `pressure.*` keys are explained under [Primary Commands](#primary-commands), the `models.*` keys under [Model Allocation](#model-allocation).
 
 ### Read gate
 
@@ -815,7 +814,7 @@ Limits:
 
 ### Web Dashboard Settings
 
-The dashboard header has a settings button; opening it (or navigating to `?settings=1`) edits loom's configuration in place, so the browser's back button closes the dialog. Each row shows all three tiers — built-in, user, project — side by side as table columns, or as one card per row below 700px wide. It edits every key in the registry `loom config` does — thirty-six keys across `update`, `terminal`, `context`, `pressure`, `models`, `plan`, and `codex`: `update.check` / `update.check_interval_hours` (loom's self-update check), `terminal.backend` (see [Terminal Backends](#terminal-backends)), `context.ceiling_tokens` (see [Plan-Level Context Fields](#plan-level-context-fields)), the six `pressure.*` model and effort picks described under [Primary Commands](#primary-commands) plus `pressure.rounds`, the thirteen `models.*` model and effort picks described under [Model Allocation](#model-allocation), the eleven `plan.*` model, effort and summary-backend keys, and `codex.backend`, which selects the default [native Codex worker lane](#native-codex-workers) or the legacy forwarder. `loom config --list` prints every key with its current value and origin. Every control here writes immediately on change, one key at a time; there is no separate Save step, and validation errors from the server surface next to the control that triggered them.
+The dashboard header has a settings button; opening it (or navigating to `?settings=1`) edits loom's configuration in place, so the browser's back button closes the dialog. Each row shows all three tiers — built-in, user, project — side by side as table columns, or as one card per row below 700px wide. It edits every key in the registry `loom config` does — thirty-five keys across `update`, `context`, `pressure`, `models`, `plan`, and `codex`: `update.check` / `update.check_interval_hours` (loom's self-update check), `context.ceiling_tokens` (see [Plan-Level Context Fields](#plan-level-context-fields)), the six `pressure.*` model and effort picks described under [Primary Commands](#primary-commands) plus `pressure.rounds`, the thirteen `models.*` model and effort picks described under [Model Allocation](#model-allocation), the eleven `plan.*` model, effort and summary-backend keys, and `codex.backend`, which selects the default [native Codex worker lane](#native-codex-workers) or the legacy forwarder. `loom config --list` prints every key with its current value and origin. Every control here writes immediately on change, one key at a time; there is no separate Save step, and validation errors from the server surface next to the control that triggered them.
 
 Above that config table sits a **dashboard** section that never touches those files — two preferences kept entirely in the browser's `localStorage`: a theme picker (Ledger, Harbor, Aubergine, Graphite, Midnight, Obsidian, Indigo Night, each drawn as a miniature of the stage graph in that theme's own colors) and a desktop-notification switch that raises an OS notification when a stage needs a human, needs a handoff, or the whole run finishes. The section renders even when `/api/config` is unreachable, and stays visible under any filter that matches it. Desktop notifications need a secure context — `https`, `localhost`, or a loopback address — so the switch disables itself and explains why when the dashboard is served over plain HTTP to a non-loopback host.
 
@@ -826,15 +825,15 @@ Two scopes:
 | `user`    | `~/.loom/config.toml`           | Every workspace on this machine |
 | `project` | `<repo>/.loom/work/config.toml` | This workspace only             |
 
-Thirty-four of the thirty-six keys have a project tier: `terminal.backend`, `context.ceiling_tokens`, and every `pressure.*`, `models.*`, `plan.*` and `codex.backend` key; the dialog marks the remaining `update.*` keys as machine-wide rather than offering a project control that would do nothing. A key's effective value resolves **project → user → built-in default**, and each row shows which tier is currently in force plus what clearing an override would fall back to.
+Thirty-three of the thirty-five keys have a project tier: `context.ceiling_tokens`, and every `pressure.*`, `models.*`, `plan.*` and `codex.backend` key; the dialog marks the remaining `update.*` keys as machine-wide rather than offering a project control that would do nothing. A key's effective value resolves **project → user → built-in default**, and each row shows which tier is currently in force plus what clearing an override would fall back to.
 
-The fallback is not uniform across sections. For `[pressure]` and `[models]`, the project tier resolves **per key** — a project section that sets only one key still lets every other key in that section fall through to your user config. For `[terminal]` and `[context]`, a project override still replaces the whole `.loom/work/config.toml` section, not just one key: clearing the override removes the key and, if that empties the section, the section too — but if a sibling key is still in there (as with `[context]`, since `loom init` writes `ceiling_tokens` alongside `subagent_ceiling_tokens`), the section still wins as a whole and the value resolves to the built-in default rather than falling through to your user setting. The dialog reports each case accurately; for `[terminal]`/`[context]` that section-level fallback just may not be what you expected.
+The fallback is not uniform across sections. For `[pressure]` and `[models]`, the project tier resolves **per key** — a project section that sets only one key still lets every other key in that section fall through to your user config. For `[context]`, a project override still replaces the whole `.loom/work/config.toml` section, not just one key: clearing the override removes the key and, if that empties the section, the section too — but if a sibling key is still in there (as with `[context]`, since `loom init` writes `ceiling_tokens` alongside `subagent_ceiling_tokens`), the section still wins as a whole and the value resolves to the built-in default rather than falling through to your user setting. The dialog reports each case accurately; for `[context]` that section-level fallback just may not be what you expected.
 
 On the default loopback bind, the dashboard stays an unauthenticated tool for the person running it — the settings endpoint adds no login. On a remote (`--host`) bind, every route including settings requires the startup-token cookie in addition to the checks below. Writes are gated by the same `Host` check as the rest of the dashboard, plus a strict `Origin` check (loopback: must be present and loopback; remote: must equal the connection's own address exactly) and a per-process CSRF token issued on load.
 
 ### Web Dashboard Terminals
 
-`loom status --web --terminals` (tmux backend only) adds a "Take control" view to each stage's detail dialog: an xterm.js terminal opens right in the browser, attached to that stage's live tmux session. It starts in a read-only View mode; switching to Control sends every keystroke to the running agent. Enabling `--terminals` mints a one-time token and prints it in the startup URL — open that exact link once to set an auth cookie for the dashboard; a plain `--web` link never gets the "Take control" option. With a non-loopback `--host`, the same startup token already covers the dashboard cookie; the cookie alone still never grants "Take control" — that capability comes only from passing `--terminals`.
+`loom status --web --terminals` adds a "Take control" view to each stage's detail dialog: an xterm.js terminal opens right in the browser, attached to that stage's live tmux session. It starts in a read-only View mode; switching to Control sends every keystroke to the running agent. Enabling `--terminals` mints a one-time token and prints it in the startup URL — open that exact link once to set an auth cookie for the dashboard; a plain `--web` link never gets the "Take control" option. With a non-loopback `--host`, the same startup token already covers the dashboard cookie; the cookie alone still never grants "Take control" — that capability comes only from passing `--terminals`.
 
 **Scrolling and replay.** In View mode a full-screen program (tmux's alternate screen) scrolls by gesture: a wheel gesture needs a short lead (a quarter of the screen, at least three lines) for its first page, then a full screen per page, at most three pages per gesture, and a pause of 250 ms starts a new gesture; a touch swipe pages one screen at a time. A stopped session's terminal is saved when its tmux server ends and the stage dialog replays it read-only. A session that ran a full-screen program has no scrollback, so loom samples its visible screen on every monitor poll and saves the last frame instead, labelled as the last screen.
 
@@ -1341,61 +1340,37 @@ Toggling `mode` takes effect on the next session spawn — no daemon restart nee
 
 **Session naming** — every spawned session is named after its stage in the Remote Control UI: the stage name for stage sessions, and `Merge: <stage name>`, `Base conflict: <stage name>`, `Knowledge: <stage name>` for merge, base-conflict, and knowledge sessions respectively. Claude binaries whose `--remote-control` flag doesn't accept a name argument automatically fall back to the bare flag — detected via a one-time `claude --help` capability check, no configuration needed.
 
-## Terminal Backends
+## Terminal Sessions
 
-Loom spawns each stage's Claude Code session through a terminal backend. Two are available.
+Loom runs every orchestrated Claude Code session in its own detached tmux server, so it works the same
+locally, over SSH, on a headless Linux box and under WSL. **tmux must be installed and on `PATH`.**
+Without it `loom run` (background and `--foreground`) and any direct session spawn fail with
+`Loom needs tmux on PATH to start sessions. Install tmux and retry.`; `loom init <plan>` prints the same
+text as a warning and finishes. Plan verification, `loom config`, `loom status` and history keep working
+without tmux.
 
-| Backend  | Default | Sessions run in                    | Needs a GUI? |
-| -------- | ------- | ---------------------------------- | ------------ |
-| `native` | opt-in  | a host terminal emulator window    | yes          |
-| `tmux`   | ✅ yes  | a detached tmux server (no window) | no           |
+There is no terminal selector: `loom init` and `loom run` take no `--backend`, and `loom config` has no
+terminal key. A leftover `terminal` section in `~/.loom/config.toml` or `.loom/work/config.toml` is
+ignored and can be deleted.
 
-The `native` backend opens a real terminal window per session — you watch stages run in your own
-terminal emulator. It requires a detectable emulator, so it cannot run headless.
-
-The `tmux` backend spawns each session into a detached tmux server instead, which makes loom usable
-over SSH, on a headless Linux box, or anywhere no terminal emulator exists. **tmux must be installed
-and on `PATH`.**
-
-### Selecting a backend
-
-```toml
-# .loom/work/config.toml
-[terminal]
-backend = "tmux"   # default; or "native"
-```
-
-Or from the CLI:
-
-```bash
-loom init <plan> --backend tmux   # skips the interactive backend prompt
-loom run --backend tmux           # persists the choice to [terminal]
-```
-
-`loom init` prompts for a backend when run interactively; with no TTY it inherits `~/.loom/config.toml`, then the built-in default, `tmux`. The built-in default is tmux; set `terminal.backend = "native"` to keep native terminal windows.
-Changing the backend while the daemon is running is refused with a hint — `loom stop` first, then
-re-run with `--backend`. Selecting a backend takes effect on the next spawn.
-
-If tmux is selected but not installed, `loom init` prints an advisory warning; `loom run` (and
-`loom run --foreground`) refuses to start — the configured backend is never silently swapped for
-the other lane.
+Upgrading from a release that opened native terminal windows: let running native-terminal sessions
+finish, stop the old daemon, install tmux, then start the new binary with `loom run`.
 
 ### Running under WSL
 
 WSL2 runs the published `loom-linux-x86_64` binary unmodified — it is an ordinary glibc ELF, and git
 worktrees, the `.loom/work/` Unix socket and PID liveness checks all behave as they do on native Linux.
 
-What does not carry over is the `native` backend. It opens a real terminal-emulator window per
-session, and a stock WSL install ships no Linux GUI stack — without WSLg or an X server there is no
-emulator to detect. Select tmux explicitly:
+A stock WSL install ships no Linux GUI stack, which is fine: sessions run in detached tmux servers.
+Install tmux and start the run:
 
 ```bash
 sudo apt install tmux jq          # both required; ripgrep and fd are recommended
-loom init doc/plans/PLAN-<name>.md --backend tmux
-loom run --backend tmux
+loom init doc/plans/PLAN-<name>.md
+loom run
 ```
 
-Sessions then run in detached tmux servers, and you watch them from a Windows Terminal tab:
+You watch the sessions from a Windows Terminal tab:
 
 ```bash
 loom status --live       # live ledger dashboard
@@ -1404,9 +1379,7 @@ loom attach              # tiled overview of every live session
 loom attach <stage-id>   # attach to one stage
 ```
 
-On Windows 11 with WSLg, an emulator installed inside WSL is detectable and the native backend does
-work, but tmux remains the better fit: a run survives closing the window, and `loom attach`
-reconnects to one already in progress.
+A run survives closing the window, and `loom attach` reconnects to one already in progress.
 
 Two WSL-specific notes:
 
@@ -1434,18 +1407,17 @@ loom attach <stage-id>   # attach directly to one stage's session
 ```
 
 With no argument, `loom attach` builds a per-repo viewer window with one pane per live session, tiled.
-With a stage id it attaches straight to that stage. Both require a real terminal (a TTY), and both
-work only for sessions spawned by the tmux backend — with the native backend it tells you so.
+With a stage id it attaches straight to that stage. Both require a real terminal (a TTY). Detach with
+the tmux prefix then `d` (default `Ctrl-b d`); re-run `loom attach` to reattach. `loom status --web
+--terminals` enables the same view and control from the browser.
 
 Panes in the overview are **live, writable terminals**, not read-only views: keystrokes go to the
 agent, and `C-b x` closes that stage's pane. Detach the normal way with `C-b d`.
 
 ### Tmux unavailable
 
-The configured backend is authoritative: nothing on disk can swap it for the other lane. If tmux is
-configured but not on `PATH`, `loom run` refuses to start (see [Selecting a backend](#selecting-a-backend));
-if it becomes unavailable mid-run, a spawn fails with an error naming the fix instead of silently
-falling back to native.
+If tmux is not on `PATH`, `loom run` refuses to start; if it becomes unavailable mid-run, a spawn
+fails with the same error naming the fix.
 
 ## Agent Teams (Experimental)
 

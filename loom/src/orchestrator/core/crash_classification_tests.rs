@@ -29,10 +29,9 @@ fn session_with(work_dir: &Path, stderr: Option<&str>) -> Session {
 
 #[test]
 fn fast_fail_fallback_applies_to_every_backend_not_just_native() {
-    // THE regression: this was gated on `backend == Native`, so on the
-    // tmux lane a `--remote-control` claude rejects crashed at startup and
-    // the retry re-spawned with identical flags every time. Backend is not
-    // an input here precisely because it must not be one.
+    // THE regression: a `--remote-control` claude rejects crashed at startup
+    // and the retry re-spawned with identical flags every time. The backend
+    // is not an input here precisely because it must not be one.
     assert!(
         is_remote_control_fast_fail(1, true),
         "a fast crash with a verified pid must be read as a startup refusal on any backend"

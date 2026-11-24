@@ -13,7 +13,7 @@ use crate::daemon::server::tokens::USER_TOKEN_FILE;
 use crate::fs::session_files::save_session;
 use crate::models::session::{Session, SessionStatus};
 use crate::models::stage::{Stage, StageStatus};
-use crate::orchestrator::terminal::native::write_test_pid_identity;
+use crate::orchestrator::terminal::launch::write_test_pid_identity;
 use crate::plan::schema::AcceptanceCriterion;
 use crate::verify::transitions::{load_stage, save_stage};
 use std::path::PathBuf;

@@ -26,11 +26,6 @@ fn context() -> (TempDir, Arc<PlanContext>) {
     fs::create_dir_all(temp.path().join("doc/product")).unwrap();
     fs::write(temp.path().join("doc/product/index.md"), "# Demo\n").unwrap();
     fs::create_dir_all(temp.path().join(".loom/work")).unwrap();
-    fs::write(
-        temp.path().join(".loom/work/config.toml"),
-        "[terminal]\nbackend = \"tmux\"\n",
-    )
-    .unwrap();
     let ctx = PlanContext::new(
         temp.path().to_path_buf(),
         ReadOnly::from_problems(vec![]),
@@ -278,40 +273,23 @@ fn startup_stops_after_twenty_lines() {
 }
 
 #[test]
-fn child_arguments_follow_host_and_terminal_backend() {
-    let false = skip_without_group_signals("child_arguments_follow_host_and_terminal_backend")
+fn child_arguments_follow_host_and_always_request_terminals() {
+    let false =
+        skip_without_group_signals("child_arguments_follow_host_and_always_request_terminals")
     else {
         return;
     };
     let temp = TempDir::new().unwrap();
     let bin = live_fake(temp.path());
-    let child = start_dashboard(
-        temp.path(),
-        &bin,
-        "::1".parse().unwrap(),
-        true,
-        STARTUP_TIMEOUT,
-    )
-    .unwrap();
-    assert_eq!(
-        fs::read_to_string(temp.path().join("args")).unwrap(),
-        "status --web --host ::1 --terminals\n"
-    );
-    drop(child);
-
-    let child = start_dashboard(
-        temp.path(),
-        &bin,
-        "127.0.0.1".parse().unwrap(),
-        false,
-        STARTUP_TIMEOUT,
-    )
-    .unwrap();
-    assert_eq!(
-        fs::read_to_string(temp.path().join("args")).unwrap(),
-        "status --web --host 127.0.0.1\n"
-    );
-    drop(child);
+    for host in ["::1", "127.0.0.1"] {
+        let child =
+            start_dashboard(temp.path(), &bin, host.parse().unwrap(), STARTUP_TIMEOUT).unwrap();
+        assert_eq!(
+            fs::read_to_string(temp.path().join("args")).unwrap(),
+            format!("status --web --host {host} --terminals\n")
+        );
+        drop(child);
+    }
 }
 
 #[test]
@@ -330,27 +308,6 @@ fn ssh_hint_uses_dashboard_port_and_is_omitted_locally() {
         crate::plan_server::startup::tunnel_hint(7373, &crate::plan_server::hostname())
     );
     assert!(json(&local).get("tunnel").is_none());
-}
-
-#[test]
-fn native_backend_omits_terminals() {
-    let false = skip_without_group_signals("native_backend_omits_terminals") else {
-        return;
-    };
-    let (temp, ctx) = context();
-    fs::write(
-        temp.path().join(".loom/work/config.toml"),
-        "[terminal]\nbackend = \"native\"\n",
-    )
-    .unwrap();
-    let bin = live_fake(temp.path());
-
-    assert_eq!(call(&ctx, &bin).status, 200);
-
-    assert_eq!(
-        fs::read_to_string(temp.path().join("args")).unwrap(),
-        "status --web --host 127.0.0.1\n"
-    );
 }
 
 fn wait_until_child_exits(ctx: &PlanContext) {

@@ -366,7 +366,7 @@ pub fn assert_watch_rejected(output: &Output) {
 /// Execs of a just-written hook script transiently fail with `ETXTBSY` when a
 /// sibling test thread forks between the write and the spawn: the child holds
 /// a duplicate of the write fd until its own exec closes it. Retry until that
-/// window passes, as `orchestrator/terminal/native/wrapper/tests.rs` does.
+/// window passes, as `orchestrator/terminal/launch/wrapper/tests.rs` does.
 fn retry_past_etxtbsy<T>(mut attempt: impl FnMut() -> std::io::Result<T>) -> std::io::Result<T> {
     const ETXTBSY: i32 = 26; // "Text file busy"
     const MAX_ATTEMPTS: u32 = 50;

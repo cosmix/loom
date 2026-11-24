@@ -9,14 +9,10 @@ import { stateMeta } from "@/lib/format";
 import { snapshotAtom } from "@/state/atoms";
 
 /// Why a stage cannot open a terminal, or `null` when it can: the dashboard
-/// was started without `--terminals`, the session runs in a native terminal
-/// window, or there is no live session to attach to.
+/// was started without `--terminals`, or there is no live session to attach to.
 export function terminalGate(terminals: boolean, stage: StageSummary): string | null {
   if (!terminals) return "Start the dashboard with loom status --web --terminals";
-  if (stage.session_backend === "native") {
-    return "This stage's session runs in a native terminal window. Terminals need loom run --backend tmux.";
-  }
-  if (stage.session_backend !== "tmux" || !stage.session_alive) return "No live session";
+  if (!stage.session_alive) return "No live session";
   return null;
 }
 
@@ -29,7 +25,7 @@ export function terminalHistory(
   terminals: boolean,
   stage: StageSummary,
 ): { session: string; kind: HistoryKind } | null {
-  if (!terminals || stage.session_backend === "native") return null;
+  if (!terminals) return null;
   if (terminalGate(terminals, stage) === null) return null;
   if (stage.terminal_history_session === undefined) return null;
   return {

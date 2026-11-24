@@ -8,8 +8,7 @@ use tempfile::TempDir;
 use super::super::resolver_spawn::test_fixtures::{
     commit_on_stage_branch, repo_with_stage_branches,
 };
-use crate::fs::work_dir::write_terminal_config;
-use crate::models::session::{SessionBackendKind, SessionType, TerminalConfig};
+use crate::models::session::SessionType;
 use crate::models::stage::{Stage, StageStatus, StageType};
 use crate::orchestrator::core::{Orchestrator, OrchestratorConfig};
 use crate::orchestrator::merge_lifecycle::test_support::{finish_session, write_live_session};
@@ -68,8 +67,6 @@ fn merged_stage(stage_type: StageType, ahead: bool) -> (TempDir, Orchestrator) {
         ],
     );
     let work_dir = root.join(".loom").join("work");
-    let backend = SessionBackendKind::Tmux;
-    write_terminal_config(&work_dir, &TerminalConfig { backend }).unwrap();
     let stage = Stage {
         id: ID.to_string(),
         status: StageStatus::Completed,

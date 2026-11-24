@@ -7,8 +7,6 @@
   "branch": "main",
   "doc_changes": [{ "path": "doc/plans/PLAN-example.md", "status": " M" }],
   "blocking_changes": [],
-  "backends": ["tmux", "native"],
-  "default_backend": "tmux",
   "clean_notice": false,
   "abandon": {
     "plan": "doc/plans/PLAN-example.md",

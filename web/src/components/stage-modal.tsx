@@ -8,7 +8,6 @@ import type { Attention, StageSummary } from "@/api/schema";
 import { HazardHeader } from "@/aurora-ui/feedback/HazardPanel";
 import { isTyping } from "@/lib/is-typing";
 import { attentionDetail, attentionHazard } from "@/components/attention-status";
-import { CopyCommand } from "@/components/copy-command";
 import { StageSummaryText } from "@/components/stage-detail";
 import { StateLine } from "@/components/stage-heading";
 import { ThreadChips } from "@/components/stage-thread";
@@ -90,7 +89,6 @@ interface StageView {
   stage: StageSummary | undefined;
   gate: string | null;
   history: { session: string; kind: HistoryKind } | null;
-  nativeBackend: boolean;
 }
 
 /// The stage behind `?stage=<id>` and what the terminal may do for it.
@@ -102,7 +100,6 @@ function useStageView(id: string | null): StageView {
     stage,
     gate: stage === undefined ? null : terminalGate(enabled, stage),
     history: stage === undefined ? null : terminalHistory(enabled, stage),
-    nativeBackend: stage !== undefined && enabled && stage.session_backend === "native",
   };
 }
 
@@ -203,11 +200,11 @@ function Panes({
   toDetails: () => void;
   setFrame: (state: TerminalFrameState) => void;
 }) {
-  const { stage, gate, history, nativeBackend } = view;
+  const { stage, gate, history } = view;
   if (id !== null && stage === undefined) return <Missing id={id} />;
   if (!stage) return null;
   if (!terminal) {
-    return <Body stage={stage} gate={gate} history={history} nativeBackend={nativeBackend} />;
+    return <Body stage={stage} gate={gate} history={history} />;
   }
   if (history !== null) {
     return (
@@ -239,12 +236,10 @@ function Body({
   stage,
   gate,
   history,
-  nativeBackend,
 }: {
   stage: StageSummary;
   gate: string | null;
   history: StageView["history"];
-  nativeBackend: boolean;
 }) {
   const openTerminal = useOpenTerminal();
   const ordered = useAtomValue(orderedStagesAtom);
@@ -261,7 +256,6 @@ function Body({
           <TerminalButton
             reason={history === null ? gate : null}
             kind={history?.kind ?? null}
-            nativeBackend={nativeBackend}
             onOpen={() => openTerminal(stage.id)}
           />
         }
@@ -341,12 +335,10 @@ function BodyFoot({ id }: { id: string }) {
 function TerminalButton({
   reason,
   kind,
-  nativeBackend,
   onOpen,
 }: {
   reason: string | null;
   kind: HistoryKind | null;
-  nativeBackend: boolean;
   onOpen: () => void;
 }) {
   const labels = kind === null ? null : historyLabels(kind);
@@ -365,7 +357,6 @@ function TerminalButton({
         {labels ? labels.button : "Terminal"}
         <Kbd className="h-4 min-w-4 px-1 text-[10px]">t</Kbd>
       </Button>
-      {nativeBackend && <CopyCommand command="loom run --backend tmux" />}
     </div>
   );
 }

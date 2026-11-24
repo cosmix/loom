@@ -17,11 +17,11 @@ use std::path::Path;
 use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
-use crate::models::session::{Session, SessionBackendKind, SessionStatus};
+use crate::models::session::{Session, SessionStatus};
 
 use super::capture::{PaneReads, PaneScreen, TmuxPane};
 use super::history::save_last_screen;
-use super::native;
+use super::launch;
 
 /// The most one poll spends starting new samples. One probe on a stuck server
 /// takes up to `TMUX_PROBE_TIMEOUT`, so a poll lasts at most this plus one probe.
@@ -40,12 +40,10 @@ pub(crate) fn sample_fullscreen(work_dir: &Path, sessions: &[Session]) {
     *start = sample_fullscreen_budgeted(work_dir, sessions, &TmuxPane, SAMPLE_BUDGET, *start);
 }
 
-/// Whether the monitor samples `session`: a running tmux session whose agent
+/// Whether the monitor samples `session`: a running session whose agent
 /// process is alive. Liveness is process identity only, never tmux.
 fn is_sampled(work_dir: &Path, session: &Session) -> bool {
-    session.backend == SessionBackendKind::Tmux
-        && session.status == SessionStatus::Running
-        && native::pid_only_is_alive(work_dir, session)
+    session.status == SessionStatus::Running && launch::pid_only_is_alive(work_dir, session)
 }
 
 /// [`sample_fullscreen`] through `pane`, from the first session, within the
@@ -92,7 +90,7 @@ pub(super) fn sample_fullscreen_budgeted(
 mod tests {
     use super::*;
     use crate::fs::session_files::{load_session_exact, save_session};
-    use crate::orchestrator::terminal::native::write_test_pid_identity;
+    use crate::orchestrator::terminal::launch::write_test_pid_identity;
     use std::cell::RefCell;
     use tempfile::TempDir;
 
@@ -110,11 +108,10 @@ mod tests {
         }
     }
 
-    fn live_session(work: &Path, status: SessionStatus, backend: SessionBackendKind) -> Session {
+    fn live_session(work: &Path, status: SessionStatus) -> Session {
         let mut session = Session::new();
         session.assign_to_stage("sampled".to_string());
         session.status = status;
-        session.backend = backend;
         session.pid = Some(std::process::id());
         write_test_pid_identity(work, &session, std::process::id()).unwrap();
         save_session(&session, work).unwrap();
@@ -122,35 +119,14 @@ mod tests {
     }
 
     #[test]
-    fn only_running_tmux_sessions_are_sampled() {
+    fn only_running_sessions_are_sampled() {
         let work = TempDir::new().unwrap();
-        let running = live_session(
-            work.path(),
-            SessionStatus::Running,
-            SessionBackendKind::Tmux,
-        );
-        let ended = live_session(
-            work.path(),
-            SessionStatus::Completed,
-            SessionBackendKind::Tmux,
-        );
-        let native = live_session(
-            work.path(),
-            SessionStatus::Running,
-            SessionBackendKind::Native,
-        );
-        let spawning = live_session(
-            work.path(),
-            SessionStatus::Spawning,
-            SessionBackendKind::Tmux,
-        );
+        let running = live_session(work.path(), SessionStatus::Running);
+        let ended = live_session(work.path(), SessionStatus::Completed);
+        let spawning = live_session(work.path(), SessionStatus::Spawning);
         let pane = Recording(RefCell::new(Vec::new()));
 
-        sample_fullscreen_with(
-            work.path(),
-            &[ended, native, spawning, running.clone()],
-            &pane,
-        );
+        sample_fullscreen_with(work.path(), &[ended, spawning, running.clone()], &pane);
 
         assert_eq!(*pane.0.borrow(), [running.id.as_str()]);
         assert!(
@@ -185,7 +161,7 @@ mod tests {
     /// Three live sessions in id order, and a pane slow on the first.
     fn three_with_a_slow_first(work: &Path) -> (Vec<Session>, Slow) {
         let mut sessions: Vec<Session> = (0..3)
-            .map(|_| live_session(work, SessionStatus::Running, SessionBackendKind::Tmux))
+            .map(|_| live_session(work, SessionStatus::Running))
             .collect();
         sessions.sort_by(|a, b| a.id.cmp(&b.id));
         let pane = Slow {

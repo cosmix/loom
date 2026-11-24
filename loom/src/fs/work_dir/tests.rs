@@ -230,7 +230,7 @@ fn test_workdir_new_legacy_hint_naming_work_dir_resolves_to_itself() {
 
 // ----- Centralized config.toml API tests -----
 
-use crate::{models::session::TerminalConfig, plan::schema::SandboxConfig};
+use crate::plan::schema::SandboxConfig;
 
 pub(super) fn init_work(temp: &TempDir) -> PathBuf {
     let work = temp.path().join(".loom").join("work");
@@ -289,30 +289,6 @@ fn writes_preserve_unrelated_sections_and_comments() {
     assert!(after.contains("source_path = \"a\""));
     assert!(after.contains("# Header"));
     assert!(after.contains("[plan_sandbox]"));
-}
-
-#[test]
-fn write_then_read_terminal_config_round_trip() {
-    let temp = TempDir::new().unwrap();
-    let work = init_work(&temp);
-    let config = TerminalConfig {
-        backend: crate::models::session::SessionBackendKind::Tmux,
-    };
-    write_terminal_config(&work, &config).unwrap();
-    let back = read_terminal_config(&work).unwrap();
-    assert_eq!(back, config);
-}
-
-#[test]
-fn read_terminal_config_defaults_when_section_missing() {
-    let temp = TempDir::new().unwrap();
-    let work = init_work(&temp);
-    let config = read_terminal_config(&work).unwrap();
-    assert_eq!(config, TerminalConfig::default());
-    assert_eq!(
-        config.backend,
-        crate::models::session::SessionBackendKind::Tmux
-    );
 }
 
 #[test]
@@ -408,7 +384,7 @@ fn stale_project_execution_section_is_harmless() {
 }
 
 /// Regression: `[context]` has a second owner. `prompt_cache_split` is read
-/// straight from the document by `native::launch::prompt_cache_split_enabled`
+/// straight from the document by `launch::prepare::prompt_cache_split_enabled`
 /// and belongs to no struct, so a re-init writing the ceilings must not take
 /// it out — that would silently switch prompt cache splitting back off.
 #[test]
@@ -473,36 +449,6 @@ fn resolve_context_ceiling_walks_stage_then_config_then_default() {
     // Config tier wins over the default, stage tier over both.
     assert_eq!(resolve_context_ceiling_tokens(&work, None), 250_000);
     assert_eq!(resolve_context_ceiling_tokens(&work, Some(80_000)), 80_000);
-}
-
-#[test]
-fn global_config_tier_terminal_backend_falls_through_to_user_config() {
-    let temp = TempDir::new().unwrap();
-    let path = write_user_config(&temp, "[terminal]\nbackend = \"tmux\"\n");
-    let _redirect = crate::user_config::redirect_user_config(path);
-
-    let work = init_work(&temp);
-
-    // Workspace [terminal] absent: falls through to the user config.
-    let config = read_terminal_config(&work).unwrap();
-    assert_eq!(
-        config.backend,
-        crate::models::session::SessionBackendKind::Tmux
-    );
-
-    // A workspace [terminal] that sets backend wins over the user config.
-    write_terminal_config(
-        &work,
-        &TerminalConfig {
-            backend: crate::models::session::SessionBackendKind::Native,
-        },
-    )
-    .unwrap();
-    let config = read_terminal_config(&work).unwrap();
-    assert_eq!(
-        config.backend,
-        crate::models::session::SessionBackendKind::Native
-    );
 }
 
 #[test]
@@ -591,24 +537,6 @@ fn global_config_tier_a_partial_workspace_context_section_lets_ceiling_fall_thro
     let config = read_context_config(&work).unwrap();
     assert_eq!(config.ceiling_tokens, 123_456);
     assert_eq!(config.subagent_ceiling_tokens, 111_111);
-}
-
-/// Same regression guard for `[terminal]`: an EMPTY workspace section sets no
-/// key, so it must fall through to the user config's `terminal.backend`.
-#[test]
-fn global_config_tier_an_empty_workspace_terminal_section_falls_through_to_user_config() {
-    let temp = TempDir::new().unwrap();
-    let path = write_user_config(&temp, "[terminal]\nbackend = \"tmux\"\n");
-    let _redirect = crate::user_config::redirect_user_config(path);
-
-    let work = init_work(&temp);
-    fs::write(work.join("config.toml"), "[terminal]\n").unwrap();
-
-    let config = read_terminal_config(&work).unwrap();
-    assert_eq!(
-        config.backend,
-        crate::models::session::SessionBackendKind::Tmux
-    );
 }
 
 /// Resolution order, layout, and the hop count that follows from it.

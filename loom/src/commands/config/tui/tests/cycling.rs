@@ -17,22 +17,22 @@ fn press(state: &mut ConfigState, code: KeyCode) {
 #[test]
 fn cycles_an_enum_forward_and_wraps() {
     let (_scratch, mut state) = state();
-    focus_by_name(&mut state, "terminal.backend");
+    focus_by_name(&mut state, "plan.summary_backend");
 
     state.cycle(1);
-    assert_eq!(state.displayed_value(), "native");
+    assert_eq!(state.displayed_value(), "codex");
     state.cycle(1);
-    assert_eq!(state.displayed_value(), "tmux");
+    assert_eq!(state.displayed_value(), "claude");
 }
 
 #[test]
 fn cycles_an_enum_backward_and_wraps() {
     let (_scratch, mut state) = state();
-    focus_by_name(&mut state, "terminal.backend");
+    focus_by_name(&mut state, "plan.summary_backend");
 
     state.cycle(-1);
 
-    assert_eq!(state.displayed_value(), "native");
+    assert_eq!(state.displayed_value(), "codex");
 }
 
 #[test]
@@ -65,13 +65,13 @@ fn refuses_to_cycle_a_number_key() {
 #[test]
 fn saves_a_cycled_enum_to_disk() {
     let (scratch, mut state) = state();
-    focus_by_name(&mut state, "terminal.backend");
+    focus_by_name(&mut state, "plan.summary_backend");
     state.cycle(1);
 
     state.save();
 
     let saved = std::fs::read_to_string(scratch.user_config()).unwrap();
-    assert!(saved.contains("backend = \"native\""), "{saved}");
+    assert!(saved.contains("summary_backend = \"codex\""), "{saved}");
 }
 
 #[test]
@@ -97,9 +97,9 @@ fn enter_edits_only_the_free_form_kinds() {
     }
     {
         let (_scratch, mut state) = state();
-        focus_by_name(&mut state, "terminal.backend");
+        focus_by_name(&mut state, "plan.summary_backend");
         press(&mut state, KeyCode::Enter);
-        assert_eq!(state.displayed_value(), "native");
+        assert_eq!(state.displayed_value(), "codex");
         assert!(state.is_modified());
         assert!(!state.is_editing());
     }
@@ -123,15 +123,15 @@ fn enter_edits_only_the_free_form_kinds() {
 fn cycle_keys_dispatch_through_the_key_handler() {
     {
         let (_scratch, mut state) = state();
-        focus_by_name(&mut state, "terminal.backend");
+        focus_by_name(&mut state, "plan.summary_backend");
         press(&mut state, KeyCode::Left);
-        assert_eq!(state.displayed_value(), "native");
+        assert_eq!(state.displayed_value(), "codex");
         press(&mut state, KeyCode::Right);
-        assert_eq!(state.displayed_value(), "tmux");
+        assert_eq!(state.displayed_value(), "claude");
         press(&mut state, KeyCode::Char('h'));
-        assert_eq!(state.displayed_value(), "native");
+        assert_eq!(state.displayed_value(), "codex");
         press(&mut state, KeyCode::Char('l'));
-        assert_eq!(state.displayed_value(), "tmux");
+        assert_eq!(state.displayed_value(), "claude");
     }
     {
         let (_scratch, mut state) = state();

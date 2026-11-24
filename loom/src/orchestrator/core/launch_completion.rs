@@ -8,7 +8,7 @@ use anyhow::Result;
 use crate::fs::session_files::save_session;
 use crate::models::session::{Session, SessionStatus, SessionType};
 use crate::models::worktree::Worktree;
-use crate::orchestrator::terminal::native::{read_pid_entry, NativeBackend};
+use crate::orchestrator::terminal::launch::{read_pid_entry, tracking_and_pid_key};
 
 use super::Orchestrator;
 
@@ -20,8 +20,8 @@ pub(super) fn complete_lost_launch(
     session: &mut Session,
     worktree_path: Option<PathBuf>,
 ) -> Result<()> {
-    let identity = NativeBackend::window_title_and_pid_key(session)
-        .and_then(|(_, key)| read_pid_entry(work_dir, &key));
+    let identity =
+        tracking_and_pid_key(session).and_then(|(_, key)| read_pid_entry(work_dir, &key));
     if let Some(identity) = identity {
         session.set_pid(identity.pid);
     }

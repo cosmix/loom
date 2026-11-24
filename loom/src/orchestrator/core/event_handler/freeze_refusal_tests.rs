@@ -11,10 +11,10 @@ use tempfile::TempDir;
 use super::super::tests::{handoff_work_dir, orchestrator_for};
 use super::*;
 use crate::fs::session_files::save_session;
-use crate::models::session::{Session, SessionBackendKind, SessionStatus};
+use crate::models::session::{Session, SessionStatus};
 use crate::orchestrator::coherence::live_worker_sessions;
 use crate::orchestrator::monitor::heartbeat::{write_heartbeat, Heartbeat};
-use crate::orchestrator::terminal::native::write_test_pid_identity;
+use crate::orchestrator::terminal::launch::write_test_pid_identity;
 use crate::relay::ensure_dir_0700;
 use crate::subagent_lifecycle::model::{
     CodexEvidence, CodexEvidenceKind, CodexEvidenceOutcome, CodexExecution, LifecycleProducer,
@@ -46,7 +46,6 @@ pub(super) fn fixture() -> Fixture {
     let work = root.join(".loom").join("work");
     let mut writer = Session::new_contract(STAGE);
     writer.status = SessionStatus::Running;
-    writer.backend = SessionBackendKind::Tmux;
     save_session(&writer, &work).unwrap();
     let stage = Stage {
         id: STAGE.to_string(),

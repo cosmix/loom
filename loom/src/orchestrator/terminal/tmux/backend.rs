@@ -12,7 +12,7 @@ use crate::models::stage::Stage;
 use crate::models::worktree::Worktree;
 
 use super::history::save_history;
-use super::native;
+use super::launch;
 use super::{
     abort_tmux_spawn, await_tmux_session_pid, socket_name, spawn_in_tmux, teardown_socket,
 };
@@ -24,15 +24,14 @@ pub struct TmuxBackend {
 }
 
 impl TmuxBackend {
-    /// Create a new tmux backend. Unlike [`native::NativeBackend::new`], this
-    /// never fails: it does not probe for tmux or any terminal — that check
-    /// happens at spawn time (see `SessionBackend::dispatch_spawn`).
+    /// Create a new tmux backend. This never fails: it does not probe for
+    /// tmux — that check happens at spawn time (see
+    /// `SessionBackend::dispatch_spawn`).
     pub fn new(work_dir: PathBuf) -> Self {
         Self { work_dir }
     }
 
-    /// Unified spawn for every tmux session type, mirroring
-    /// `NativeBackend::spawn`.
+    /// Unified spawn for every tmux session type.
     ///
     /// # Every post-preparation failure MUST clean up
     ///
@@ -44,7 +43,7 @@ impl TmuxBackend {
     /// nothing worse than a `~/.tmux.conf` warning.
     ///
     /// Returning without teardown leaves a Claude process editing the
-    /// worktree after the configured tmux lane has reported failure. A stale
+    /// worktree after the tmux backend has reported failure. A stale
     /// PID file can then make later liveness checks mistake it for the active
     /// session.
     ///
@@ -60,7 +59,7 @@ impl TmuxBackend {
         set_worktree_path: bool,
     ) -> Result<Session> {
         let (mut session, title, pid_key, wrapper_path) =
-            native::prepare_session_launch(&self.work_dir, kind, stage, session, signal_path, cwd)?;
+            launch::prepare_session_launch(&self.work_dir, kind, stage, session, signal_path, cwd)?;
 
         let socket = socket_name(&session);
         let abort = || abort_tmux_spawn(&self.work_dir, &socket, &pid_key);
@@ -90,8 +89,8 @@ impl TmuxBackend {
         Ok(session)
     }
 
-    /// Spawn a session that runs in the stage worktree (stage or contract),
-    /// mirroring [`native::NativeBackend::spawn_session`].
+    /// Spawn a session that runs in the stage worktree (stage, contract or
+    /// merge resolver).
     pub fn spawn_session(
         &self,
         kind: SessionType,
@@ -104,8 +103,7 @@ impl TmuxBackend {
     }
 
     /// Spawn a session that runs in the MAIN REPOSITORY rather than in a
-    /// stage worktree — knowledge gathering and adjudication —
-    /// mirroring [`native::NativeBackend::spawn_main_repo_session`].
+    /// stage worktree — knowledge gathering and adjudication.
     pub fn spawn_main_repo_session(
         &self,
         kind: SessionType,
@@ -125,8 +123,8 @@ impl TmuxBackend {
 
         // Capture PID identity before either teardown path can remove its
         // evidence. `session.pid` is never a destructive fallback.
-        let process_was_verified_alive = native::session_process_status(&self.work_dir, session)
-            == native::SessionProcessStatus::VerifiedAlive;
+        let process_was_verified_alive = launch::session_process_status(&self.work_dir, session)
+            == launch::SessionProcessStatus::VerifiedAlive;
 
         // Ask the attributed tmux server to exit before signalling its pane.
         // Reversing these steps lets the last pane take the server down first,
@@ -136,7 +134,7 @@ impl TmuxBackend {
         // the socket and propagates, but need not leave a verified pane alive.
         let server_teardown = teardown_socket(&socket_name(session));
         if process_was_verified_alive {
-            let _ = native::pid_only_terminate(&self.work_dir, session);
+            let _ = launch::pid_only_terminate(&self.work_dir, session);
         }
         server_teardown
     }
@@ -150,9 +148,9 @@ impl TmuxBackend {
     /// never file the crash, and never retry — defeating the containment
     /// property this backend exists to deliver. PID-file evidence (with
     /// start-time verification against reuse) is the only source of truth,
-    /// which is precisely what `native::pid_only_is_alive` implements; this
+    /// which is precisely what `launch::pid_only_is_alive` implements; this
     /// lane simply adds NOTHING on top of it.
     pub fn is_session_alive(&self, session: &Session) -> Result<bool> {
-        Ok(native::pid_only_is_alive(&self.work_dir, session))
+        Ok(launch::pid_only_is_alive(&self.work_dir, session))
     }
 }

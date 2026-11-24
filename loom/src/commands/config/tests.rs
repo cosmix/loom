@@ -41,8 +41,8 @@ fn list_reflects_a_set_key_as_set_and_others_as_default() {
 
     let default_line = out
         .lines()
-        .find(|line| line.starts_with("terminal.backend"))
-        .unwrap_or_else(|| panic!("missing terminal.backend line in {out:?}"));
+        .find(|line| line.starts_with("plan.summary_backend"))
+        .unwrap_or_else(|| panic!("missing plan.summary_backend line in {out:?}"));
     assert!(default_line.contains("default"), "{default_line}");
 }
 
@@ -54,7 +54,7 @@ fn print_resolved_renders_every_key_with_a_set_value_applied() {
     let out = print_resolved().unwrap();
     assert!(out.contains("ceiling_tokens = 70000"), "{out}");
     assert!(out.contains("[context]"), "{out}");
-    assert!(out.contains("[terminal]"), "{out}");
+    assert!(!out.contains("[terminal]"), "{out}");
     assert!(out.contains("[update]"), "{out}");
 }
 

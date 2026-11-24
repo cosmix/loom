@@ -75,7 +75,7 @@ fn a_reload_failure_still_names_a_write_failure_staged_alongside_it() {
     // the focus from the first key has to be dropped before it can land on
     // the second one.
     state.move_to_first();
-    focus_by_name(&mut state, "terminal.backend");
+    focus_by_name(&mut state, "plan.summary_backend");
     state.cycle(1);
     state.toggle_scope();
 
@@ -89,6 +89,6 @@ fn a_reload_failure_still_names_a_write_failure_staged_alongside_it() {
 
     assert!(state.status_is_error());
     assert!(state.status().contains("1 key written"));
-    assert!(state.status().contains("terminal.backend"));
+    assert!(state.status().contains("plan.summary_backend"));
     assert!(state.status().contains("stale"));
 }

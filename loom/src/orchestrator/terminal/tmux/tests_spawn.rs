@@ -11,7 +11,7 @@ use std::path::PathBuf;
 /// Stands in for a wrapper script an attempted spawn already wrote, so the
 /// abort path has something to clean up.
 fn wrapper_left_by_an_attempted_spawn(work: &Path, pid_key: &str) {
-    native::create_wrapper_script(
+    launch::create_wrapper_script(
         work,
         pid_key,
         "abort-stage",
@@ -271,14 +271,14 @@ impl LoomBinGuard {
         let bin = dir.path().join("loom");
         std::fs::write(&bin, "#!/bin/sh\nexit 1\n").unwrap();
         std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
-        *native::TEST_LOOM_BIN.lock().unwrap() = Some(bin);
+        *launch::TEST_LOOM_BIN.lock().unwrap() = Some(bin);
         Self { _dir: dir }
     }
 }
 
 impl Drop for LoomBinGuard {
     fn drop(&mut self) {
-        if let Ok(mut bin) = native::TEST_LOOM_BIN.lock() {
+        if let Ok(mut bin) = launch::TEST_LOOM_BIN.lock() {
             *bin = None;
         }
     }
@@ -335,7 +335,7 @@ fn a_failed_spawn_aborts_and_leaves_no_pid_file() {
     // (`tracking_key` + `session.id`). `spawn` re-assigns the same stage with
     // the same `SessionType::Stage`, which is idempotent, so the key it
     // computes internally is the one derived here.
-    let (_, pid_key) = native::NativeBackend::window_title_and_pid_key(&session).unwrap();
+    let (_, pid_key) = launch::tracking_and_pid_key(&session).unwrap();
 
     // Stands in for a wrapper that already ran and recorded its PID before the
     // spawn failed. NOTHING but `abort_tmux_spawn` deletes this file — the

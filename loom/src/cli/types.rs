@@ -54,10 +54,6 @@ pub enum Commands {
         #[arg(long)]
         clean: bool,
 
-        /// Terminal backend for sessions (native|tmux); skips the interactive prompt
-        #[arg(long, value_parser = ["native", "tmux"])]
-        backend: Option<String>,
-
         /// Skip the automatic workspace repair pass
         #[arg(long)]
         no_repair: bool,
@@ -82,7 +78,7 @@ pub enum Commands {
         command: SessionsCommands,
     },
 
-    /// Attach to loom sessions (tmux backend only)
+    /// Attach to loom sessions
     Attach {
         /// Stage id to attach to directly; omit for a tiled overview
         #[arg(value_parser = clap_id_validator)]

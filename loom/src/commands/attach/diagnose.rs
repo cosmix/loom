@@ -13,7 +13,7 @@ use anyhow::Result;
 use std::fs;
 use std::path::Path;
 
-use crate::models::session::{Session, SessionBackendKind, SessionStatus};
+use crate::models::session::{Session, SessionStatus};
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::terminal::tmux::viewer::tmux_session_name;
 use crate::orchestrator::terminal::tmux::TmuxBackend;
@@ -55,9 +55,6 @@ fn attach_rejection_reason(
     session: &Session,
     is_alive: impl FnOnce(&Session) -> Result<bool>,
 ) -> String {
-    if session.backend != SessionBackendKind::Tmux {
-        return format!("backend is {}", session.backend);
-    }
     if !matches!(
         session.status,
         SessionStatus::Running | SessionStatus::Spawning

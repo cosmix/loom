@@ -24,8 +24,11 @@ fn each_key_parses_a_valid_value() {
         ConfigValue::Number(6)
     );
     assert_eq!(
-        spec("terminal.backend").unwrap().parse("tmux").unwrap(),
-        ConfigValue::Text("tmux".to_string())
+        spec("plan.summary_backend")
+            .unwrap()
+            .parse("codex")
+            .unwrap(),
+        ConfigValue::Text("codex".to_string())
     );
     assert_eq!(
         spec("context.ceiling_tokens")
@@ -41,7 +44,7 @@ fn each_key_rejects_a_type_mismatched_value() {
     for (key, bad) in [
         ("update.check", "maybe"),
         ("update.check_interval_hours", "not-a-number"),
-        ("terminal.backend", "ssh"),
+        ("plan.summary_backend", "ssh"),
         ("context.ceiling_tokens", "-5"),
     ] {
         let err = spec(key).unwrap().parse(bad).unwrap_err().to_string();
@@ -77,8 +80,8 @@ fn keys_are_typed_as_documented() {
         ValueKind::Number
     );
     assert_eq!(
-        spec("terminal.backend").unwrap().kind,
-        ValueKind::Enum(&["native", "tmux"])
+        spec("plan.summary_backend").unwrap().kind,
+        ValueKind::Enum(&["claude", "codex"])
     );
     assert_eq!(
         spec("context.ceiling_tokens").unwrap().kind,
@@ -91,12 +94,10 @@ fn defaults_when_the_file_is_absent() {
     let config = UserConfig::default();
     assert!(config.update_check());
     assert_eq!(config.update_check_interval_hours(), 24);
-    assert_eq!(config.terminal_backend(), SessionBackendKind::Tmux);
     assert_eq!(
         config.context_ceiling_tokens(),
         DEFAULT_CONTEXT_CEILING_TOKENS
     );
-    assert_eq!(config.terminal_backend_set(), None);
     assert_eq!(config.context_ceiling_tokens_set(), None);
     assert_eq!(config.pressure_claude_model(), "opus");
     assert_eq!(config.pressure_claude_effort(), "xhigh");
@@ -133,7 +134,6 @@ fn defaults_when_the_file_is_absent() {
 fn parses_every_key_out_of_a_document() {
     let config = parse_document(
         "[update]\ncheck = false\ncheck_interval_hours = 6\n\n\
-         [terminal]\nbackend = \"tmux\"\n\n\
          [context]\nceiling_tokens = 111111\n\n\
          [pressure]\nclaude_model = \"fable\"\nclaude_effort = \"low\"\n\
          codex_model = \"gpt-6.2-astra\"\ncodex_effort = \"medium\"\n\
@@ -146,7 +146,6 @@ fn parses_every_key_out_of_a_document() {
     .unwrap();
     assert!(!config.update_check());
     assert_eq!(config.update_check_interval_hours(), 6);
-    assert_eq!(config.terminal_backend(), SessionBackendKind::Tmux);
     assert_eq!(config.context_ceiling_tokens(), 111111);
     assert_eq!(config.pressure_claude_model(), "fable");
     assert_eq!(config.pressure_claude_effort(), "low");
@@ -175,16 +174,10 @@ fn parses_every_key_out_of_a_document() {
 }
 
 #[test]
-fn parses_terminal_backend_native_out_of_a_document() {
-    let config = parse_document("[terminal]\nbackend = \"native\"\n").unwrap();
-    assert_eq!(config.terminal_backend(), SessionBackendKind::Native);
-}
-
-#[test]
 fn a_type_mismatched_field_in_the_document_is_an_error() {
     assert!(parse_document("[update]\ncheck = \"nope\"\n").is_err());
     assert!(parse_document("[context]\nceiling_tokens = \"nope\"\n").is_err());
-    assert!(parse_document("[terminal]\nbackend = \"carrier-pigeon\"\n").is_err());
+    assert!(parse_document("[plan]\nsummary_backend = \"carrier-pigeon\"\n").is_err());
 }
 
 #[test]
@@ -237,8 +230,8 @@ fn origin_is_set_only_for_keys_the_document_wrote() {
     assert_eq!(origin, Origin::Set);
     assert_eq!(origin.to_string(), "set");
 
-    let (value, origin) = config.value_of(spec("terminal.backend").unwrap());
-    assert_eq!(value.to_string(), "tmux");
+    let (value, origin) = config.value_of(spec("plan.summary_backend").unwrap());
+    assert_eq!(value.to_string(), "claude");
     assert_eq!(origin, Origin::Default);
     assert_eq!(origin.to_string(), "default");
 }
@@ -293,19 +286,17 @@ fn to_toml_string_renders_every_key_resolved() {
     let config = parse_document("[context]\nceiling_tokens = 55555\n").unwrap();
     let rendered = config.to_toml_string();
 
-    // Section order: context, models, plan, pressure, terminal, update.
+    // Section order: context, models, plan, pressure, update.
     let context_at = rendered.find("[context]").unwrap();
     let models_at = rendered.find("[models]").unwrap();
     let plan_at = rendered.find("[plan]").unwrap();
     let pressure_at = rendered.find("[pressure]").unwrap();
-    let terminal_at = rendered.find("[terminal]").unwrap();
     let update_at = rendered.find("[update]").unwrap();
     assert!(
         context_at < models_at
             && models_at < plan_at
             && plan_at < pressure_at
-            && pressure_at < terminal_at
-            && terminal_at < update_at,
+            && pressure_at < update_at,
         "{rendered}"
     );
 
@@ -340,7 +331,6 @@ fn value_of_has_an_arm_for_every_registered_key() {
         match key.name {
             "update.check" => assert_eq!(value, "true"),
             "update.check_interval_hours" => assert_eq!(value, "24"),
-            "terminal.backend" => assert_eq!(value, "tmux"),
             "codex.backend" => assert_eq!(value, "native"),
             "context.ceiling_tokens" => {
                 assert_eq!(value, DEFAULT_CONTEXT_CEILING_TOKENS.to_string())

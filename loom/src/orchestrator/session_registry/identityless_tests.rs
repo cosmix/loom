@@ -5,28 +5,23 @@ use chrono::{Duration, Utc};
 use tempfile::TempDir;
 
 use crate::fs::session_files::save_session;
-use crate::fs::work_dir::write_terminal_config;
-use crate::models::session::{Session, SessionBackendKind, SessionStatus, TerminalConfig};
+use crate::models::session::{Session, SessionStatus};
 use crate::orchestrator::session_registry::{
     assigned_session_is_live, assigned_session_is_live_admitted, live_sessions_for_stage,
 };
-use crate::orchestrator::terminal::native::{
-    wrapper_script_path, write_test_pid_identity, NativeBackend,
+use crate::orchestrator::terminal::launch::{
+    tracking_and_pid_key, wrapper_script_path, write_test_pid_identity,
 };
 
 const STAGE: &str = "alpha";
 
 fn work_dir() -> TempDir {
-    let temp = TempDir::new().unwrap();
-    let backend = SessionBackendKind::Tmux;
-    write_terminal_config(temp.path(), &TerminalConfig { backend }).unwrap();
-    temp
+    TempDir::new().unwrap()
 }
 
 fn record(work: &std::path::Path, status: SessionStatus, age_secs: i64) -> Session {
     let mut session = Session::new();
     session.assign_to_stage(STAGE.to_string());
-    session.backend = SessionBackendKind::Tmux;
     session.status = status;
     session.created_at = Utc::now() - Duration::seconds(age_secs);
     save_session(&session, work).unwrap();
@@ -111,7 +106,7 @@ fn holding_admission_ends_only_a_record_no_launch_reached() {
 }
 
 fn write_wrapper(work: &std::path::Path, session: &Session) -> std::path::PathBuf {
-    let (_, key) = NativeBackend::window_title_and_pid_key(session).unwrap();
+    let (_, key) = tracking_and_pid_key(session).unwrap();
     let wrapper = wrapper_script_path(work, &key);
     std::fs::create_dir_all(wrapper.parent().unwrap()).unwrap();
     std::fs::write(&wrapper, "#!/bin/sh\n").unwrap();

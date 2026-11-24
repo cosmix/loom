@@ -23,7 +23,6 @@ if (HELP_SNAPSHOT.status.tokens) {
 }
 export const HELP_STAGE = {
   ...HELP_SNAPSHOT.status.stages.find((stage) => stage.status === "executing")!,
-  session_backend: "tmux" as const,
 };
 
 export function HelpExample({

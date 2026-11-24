@@ -25,7 +25,6 @@ function endedFullscreenStage(): StageSummary {
   return {
     ...source,
     session_alive: false,
-    session_backend: "tmux",
     terminal_history_session: SESSION,
     terminal_history_kind: "last_screen",
   } as StageSummary;

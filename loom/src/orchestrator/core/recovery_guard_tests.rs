@@ -5,15 +5,12 @@
 //! `recovery_sync_tests.rs` use.
 
 use super::*;
-use tempfile::TempDir;
-
-use crate::fs::work_dir::write_terminal_config;
-use crate::models::session::{SessionBackendKind, TerminalConfig};
 use crate::models::stage::StageType;
 use crate::orchestrator::core::OrchestratorConfig;
 use crate::plan::schema::StageDefinition;
 use crate::plan::ExecutionGraph;
 use crate::verify::transitions::save_stage;
+use tempfile::TempDir;
 
 fn stage_definition(id: &str, dependencies: Vec<String>) -> StageDefinition {
     StageDefinition {
@@ -95,7 +92,7 @@ fn a_session_created_five_minutes_ago_is_not_too_young() {
 /// Orphan recovery counts from the wrapper a slow launch wrote after its record.
 #[test]
 fn an_old_orphan_whose_wrapper_was_just_written_is_skipped() {
-    use crate::orchestrator::terminal::native::{wrapper_script_path, NativeBackend};
+    use crate::orchestrator::terminal::launch::{tracking_and_pid_key, wrapper_script_path};
     let work = TempDir::new().unwrap();
     let mut session = Session::new();
     session.assign_to_stage("alpha".to_string());
@@ -105,7 +102,7 @@ fn an_old_orphan_whose_wrapper_was_just_written_is_skipped() {
         &session
     ));
 
-    let (_, key) = NativeBackend::window_title_and_pid_key(&session).unwrap();
+    let (_, key) = tracking_and_pid_key(&session).unwrap();
     let wrapper = wrapper_script_path(work.path(), &key);
     std::fs::create_dir_all(wrapper.parent().unwrap()).unwrap();
     std::fs::write(&wrapper, "#!/bin/sh\n").unwrap();
@@ -175,13 +172,6 @@ fn queued_writeback_verdict_reports_dependencies_unmet_when_the_dependency_is_st
 fn stale_graph_promotes_beta_fixture() -> (TempDir, Orchestrator) {
     let temp = TempDir::new().unwrap();
     let work_dir = temp.path().to_path_buf();
-    write_terminal_config(
-        &work_dir,
-        &TerminalConfig {
-            backend: SessionBackendKind::Tmux,
-        },
-    )
-    .unwrap();
 
     // alpha's FILE stays WaitingForDeps — never completed/merged on disk.
     save_knowledge_dependency(&work_dir, StageStatus::WaitingForDeps, false);

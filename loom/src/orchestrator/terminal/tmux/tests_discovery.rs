@@ -1,4 +1,4 @@
-//! Discovery tests for `live_tmux_sessions` and its backend, status,
+//! Discovery tests for `live_tmux_sessions` and its status,
 //! liveness, and ordering filters.
 
 use super::*;
@@ -15,7 +15,6 @@ struct SessionFixture<'a> {
     stage_id: &'a str,
     pid: u32,
     status: SessionStatus,
-    backend: SessionBackendKind,
     created_at: DateTime<Utc>,
     tracking_key: &'a str,
 }
@@ -27,30 +26,6 @@ struct SessionFixture<'a> {
 fn write_test_session(work_dir: &Path, fixture: SessionFixture) {
     let filename = format!("{}.md", fixture.id);
     write_test_session_with_filename(work_dir, &filename, fixture);
-}
-
-#[test]
-fn live_tmux_sessions_skips_native_backend_sessions() {
-    let temp = TempDir::new().unwrap();
-    let work_dir = temp.path().join(".loom").join("work");
-    write_test_session(
-        &work_dir,
-        SessionFixture {
-            id: "session-native",
-            stage_id: "stage-a",
-            pid: std::process::id(),
-            status: SessionStatus::Running,
-            backend: SessionBackendKind::Native,
-            created_at: Utc::now(),
-            tracking_key: "loom-stage-a",
-        },
-    );
-
-    let sessions = live_tmux_sessions(&work_dir).unwrap();
-    assert!(
-        sessions.is_empty(),
-        "a native-backend session must never be treated as tmux-hosted, even with a live pid"
-    );
 }
 
 #[test]
@@ -70,7 +45,6 @@ fn live_tmux_sessions_skips_unparseable_session_files() {
             stage_id: "stage-b",
             pid: std::process::id(),
             status: SessionStatus::Running,
-            backend: SessionBackendKind::Tmux,
             created_at: Utc::now(),
             tracking_key: "loom-stage-b",
         },
@@ -101,7 +75,6 @@ fn live_tmux_sessions_skips_dead_sessions_but_keeps_live_ones() {
             stage_id: "stage-c",
             pid: 999_999,
             status: SessionStatus::Running,
-            backend: SessionBackendKind::Tmux,
             created_at: Utc::now(),
             tracking_key: "loom-stage-c",
         },
@@ -113,7 +86,6 @@ fn live_tmux_sessions_skips_dead_sessions_but_keeps_live_ones() {
             stage_id: "stage-d",
             pid: std::process::id(),
             status: SessionStatus::Running,
-            backend: SessionBackendKind::Tmux,
             created_at: Utc::now(),
             tracking_key: "loom-stage-d",
         },
@@ -151,7 +123,6 @@ fn live_tmux_sessions_filters_by_status_not_just_pid() {
             stage_id: "stage-done",
             pid: std::process::id(),
             status: SessionStatus::Completed,
-            backend: SessionBackendKind::Tmux,
             created_at: Utc::now(),
             tracking_key: "loom-stage-done",
         },
@@ -163,7 +134,6 @@ fn live_tmux_sessions_filters_by_status_not_just_pid() {
             stage_id: "stage-spawn",
             pid: std::process::id(),
             status: SessionStatus::Spawning,
-            backend: SessionBackendKind::Tmux,
             created_at: Utc::now(),
             tracking_key: "loom-stage-spawn",
         },
@@ -190,7 +160,6 @@ fn write_test_session_with_filename(work_dir: &Path, filename: &str, fixture: Se
     session.stage_id = Some(fixture.stage_id.to_string());
     session.pid = Some(fixture.pid);
     session.status = fixture.status;
-    session.backend = fixture.backend;
     session.created_at = fixture.created_at;
     session.tracking_key = fixture.tracking_key.to_string();
 
@@ -201,7 +170,7 @@ fn write_test_session_with_filename(work_dir: &Path, filename: &str, fixture: Se
         crate::fs::session_files::session_to_markdown(&session),
     )
     .unwrap();
-    crate::orchestrator::terminal::native::write_test_pid_identity(work_dir, &session, fixture.pid)
+    crate::orchestrator::terminal::launch::write_test_pid_identity(work_dir, &session, fixture.pid)
         .unwrap();
 }
 
@@ -239,7 +208,6 @@ fn live_tmux_sessions_orders_by_created_at_then_id() {
             stage_id: "stage-tied",
             pid: std::process::id(),
             status: SessionStatus::Running,
-            backend: SessionBackendKind::Tmux,
             created_at: tied_at,
             tracking_key: "loom-stage-tied-z",
         },
@@ -252,7 +220,6 @@ fn live_tmux_sessions_orders_by_created_at_then_id() {
             stage_id: "stage-tied",
             pid: std::process::id(),
             status: SessionStatus::Running,
-            backend: SessionBackendKind::Tmux,
             created_at: tied_at,
             tracking_key: "loom-stage-tied-a",
         },

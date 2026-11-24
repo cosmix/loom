@@ -5,31 +5,20 @@
 
 use super::*;
 use crate::fs::session_files::save_session;
-use crate::fs::work_dir::write_terminal_config;
 use crate::models::failure::FailureType;
-use crate::models::session::{Session, SessionBackendKind, SessionStatus, TerminalConfig};
+use crate::models::session::{Session, SessionStatus};
 use crate::orchestrator::core::OrchestratorConfig;
-use crate::orchestrator::terminal::native::write_test_pid_identity;
+use crate::orchestrator::terminal::launch::write_test_pid_identity;
 use crate::plan::ExecutionGraph;
 use crate::verify::transitions::{load_stage, save_stage, update_stage};
 use std::path::Path;
 use tempfile::TempDir;
 
-/// A `.loom/work` directory whose configured terminal lane is tmux, so
-/// `Orchestrator::new` never runs real terminal detection (which fails on a
-/// headless test runner). Same trick `tests_session_registry.rs` uses for the
-/// same reason.
+/// A scratch `.loom/work` directory.
 fn work_dir() -> TempDir {
     let temp = TempDir::new().unwrap();
     let work = temp.path().join(".loom").join("work");
     std::fs::create_dir_all(&work).unwrap();
-    write_terminal_config(
-        &work,
-        &TerminalConfig {
-            backend: SessionBackendKind::Tmux,
-        },
-    )
-    .unwrap();
     temp
 }
 
@@ -240,7 +229,7 @@ fn block_and_undo_session_leaves_no_session_record_and_no_stage_link() {
 
 /// Acceptance: a stage's sandbox validation at spawn writes nothing to
 /// either the main repo's or its worktree's `.claude/settings.local.json` —
-/// the capsule built at spawn (`native/session_settings.rs`) carries the
+/// the capsule built at spawn (`launch/session_settings.rs`) carries the
 /// resolved settings into the session directly. Both files are made
 /// read-only before validation runs; a write attempt would fail loudly
 /// (`std::fs::write` on a 0444 file returns `EACCES`), so a `true` result and

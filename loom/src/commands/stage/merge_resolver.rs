@@ -10,7 +10,7 @@ use crate::daemon::DaemonServer;
 use crate::fs::session_files::mark_session_terminal_reason;
 use crate::git::branch::branch_name_for_stage;
 use crate::git::merge::control_path_violation;
-use crate::models::session::{Session, SessionBackendKind, SessionExitReason, SessionStatus};
+use crate::models::session::{Session, SessionExitReason, SessionStatus};
 use crate::models::stage::{Stage, StageStatus};
 #[cfg(test)]
 use crate::orchestrator::signals::generate_merge_signal;
@@ -34,8 +34,8 @@ pub enum MergeResolverResult {
 
 /// Spawn a merge conflict resolver session from the CLI.
 ///
-/// When the daemon is not running, this spawns a session through the configured backend
-/// to resolve merge conflicts. If the daemon IS running, it returns early
+/// When the daemon is not running, this spawns a tmux session to resolve merge
+/// conflicts, failing before it publishes anything when tmux is missing. If the daemon IS running, it returns early
 /// since the daemon handles merge resolution automatically.
 ///
 /// # Arguments
@@ -55,7 +55,33 @@ pub fn spawn_merge_resolver(
     // the resolver lock, and re-read the stage after a possibly long wait.
     let _admission = crate::fs::stage_admission::lock(work_dir, &stage.id)?;
     let stage = crate::verify::transitions::load_stage(&stage.id, work_dir)?;
-    // Validate stage is in an appropriate status for merge resolution
+    ensure_resolvable(&stage)?;
+
+    // If daemon is running, it handles merge resolution automatically
+    if DaemonServer::is_running(work_dir) {
+        return Ok(MergeResolverResult::DaemonManaged);
+    }
+
+    with_merge_resolver_lock(work_dir, &stage.id, || {
+        if let Some(session_id) = find_live_merge_session_for_stage_unlocked(&stage.id, work_dir)? {
+            return Ok(MergeResolverResult::AlreadyRunning { session_id });
+        }
+        refuse_control_path_branch(&stage, merge_point, repo_root, work_dir)?;
+        let backend = SessionBackend::new(work_dir.to_path_buf());
+        spawn_resolver_session(
+            &backend,
+            &stage,
+            conflicting_files,
+            merge_point,
+            repo_root,
+            work_dir,
+        )
+    })
+}
+
+/// Refuse a stage no resolver can help: one outside a merge status, or blocked
+/// by a typed block.
+fn ensure_resolvable(stage: &Stage) -> Result<()> {
     if !matches!(
         stage.status,
         StageStatus::MergeConflict | StageStatus::MergeBlocked
@@ -75,19 +101,7 @@ pub fn spawn_merge_resolver(
             id = stage.id
         );
     }
-
-    // If daemon is running, it handles merge resolution automatically
-    if DaemonServer::is_running(work_dir) {
-        return Ok(MergeResolverResult::DaemonManaged);
-    }
-
-    with_merge_resolver_lock(work_dir, &stage.id, || {
-        if let Some(session_id) = find_live_merge_session_for_stage_unlocked(&stage.id, work_dir)? {
-            return Ok(MergeResolverResult::AlreadyRunning { session_id });
-        }
-        refuse_control_path_branch(&stage, merge_point, repo_root, work_dir)?;
-        spawn_resolver_session(&stage, conflicting_files, merge_point, repo_root, work_dir)
-    })
+    Ok(())
 }
 
 /// Refuse to hand a branch that touches a control path to a resolver session:
@@ -117,15 +131,19 @@ fn refuse_control_path_branch(
 }
 
 /// Write the merge signal and spawn the resolver in the stage worktree.
+///
+/// The tmux check comes first: the snapshot, signal and write-ahead session
+/// below are launch state, and a missing tmux must not leave them behind to
+/// read as a crashed resolver.
 fn spawn_resolver_session(
+    backend: &SessionBackend,
     stage: &Stage,
     conflicting_files: &[String],
     merge_point: &str,
     repo_root: &Path,
     work_dir: &Path,
 ) -> Result<MergeResolverResult> {
-    let backend = SessionBackend::from_config(work_dir.to_path_buf())
-        .context("Failed to construct session backend for merge resolver")?;
+    backend.ensure_tmux()?;
 
     // The resolver works in the stage worktree; without it the operator
     // recreates the worktree or resolves by hand. Checked before the signal
@@ -159,9 +177,9 @@ fn spawn_resolver_session(
     )
     .context("Failed to generate merge signal")?;
 
-    write_ahead_merge_session(&mut session, &stage.id, backend.resolve_lane(), work_dir)?;
+    write_ahead_merge_session(&mut session, &stage.id, work_dir)?;
     let spawned_session =
-        launch_resolver(&backend, stage, &worktree, session, &signal_path, work_dir)?;
+        launch_resolver(backend, stage, &worktree, session, &signal_path, work_dir)?;
     publish_merge_session(&spawned_session, work_dir)
         .context("Failed to publish merge resolver session")?;
     Ok(MergeResolverResult::Spawned(session_id))
@@ -187,17 +205,7 @@ fn launch_resolver(
         Ok(spawned) => Ok(spawned),
         Err(error) => {
             let killed = backend.kill_session(&session).is_ok();
-            let gone = match session.backend {
-                SessionBackendKind::Tmux => {
-                    killed && matches!(backend.is_session_alive(&session), Ok(false))
-                }
-                SessionBackendKind::Native => matches!(
-                    crate::orchestrator::terminal::native::session_process_status(
-                        work_dir, &session
-                    ),
-                    crate::orchestrator::terminal::native::SessionProcessStatus::Dead
-                ),
-            };
+            let gone = killed && matches!(backend.is_session_alive(&session), Ok(false));
             settle_failed_launch(work_dir, &session, gone)?;
             Err(error.context(if gone {
                 "Failed to spawn merge resolver session"
@@ -225,6 +233,7 @@ fn settle_failed_launch(work_dir: &Path, session: &Session, gone: bool) -> Resul
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::orchestrator::terminal::backend::TMUX_MISSING_MESSAGE;
     use std::sync::mpsc;
     use std::time::Duration;
 
@@ -267,7 +276,7 @@ mod tests {
         stage.id = "alpha".into();
         let mut session = Session::new_merge("loom/alpha".into(), "main".into());
         generate_merge_signal(&session, &stage, "loom/alpha", "main", &[], work).unwrap();
-        write_ahead_merge_session(&mut session, "alpha", SessionBackendKind::Tmux, work).unwrap();
+        write_ahead_merge_session(&mut session, "alpha", work).unwrap();
 
         settle_failed_launch(work, &session, false).unwrap();
         assert_eq!(
@@ -283,5 +292,55 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(stored.status, SessionStatus::Crashed);
+    }
+
+    fn tree(dir: &Path) -> std::collections::BTreeMap<std::path::PathBuf, Vec<u8>> {
+        let mut files = std::collections::BTreeMap::new();
+        let mut pending = vec![dir.to_path_buf()];
+        while let Some(current) = pending.pop() {
+            for entry in std::fs::read_dir(current).unwrap().flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    pending.push(path);
+                } else {
+                    files.insert(path.clone(), std::fs::read(&path).unwrap());
+                }
+            }
+        }
+        files
+    }
+
+    #[test]
+    fn missing_tmux_fails_before_any_launch_state_is_written() {
+        let temp = tempfile::tempdir().unwrap();
+        let work = temp.path();
+        let mut stage = Stage::new("alpha".into(), None);
+        stage.id = "alpha".into();
+        stage.status = StageStatus::MergeConflict;
+        crate::verify::transitions::save_stage(&stage, work).unwrap();
+        let backend = SessionBackend::with_tmux_probe(work.to_path_buf(), || false);
+        let before = tree(work);
+
+        for _ in 0..2 {
+            let error = spawn_resolver_session(&backend, &stage, &[], "main", work, work)
+                .err()
+                .expect("a missing tmux cannot launch a resolver");
+
+            assert!(
+                error
+                    .chain()
+                    .any(|cause| cause.to_string() == TMUX_MISSING_MESSAGE),
+                "{error:#}"
+            );
+            assert_eq!(tree(work), before);
+            assert_eq!(
+                crate::verify::transitions::load_stage("alpha", work)
+                    .unwrap()
+                    .session,
+                None
+            );
+            assert!(!work.join("signals").exists());
+            assert!(!work.join("merge-target-snapshots").exists());
+        }
     }
 }

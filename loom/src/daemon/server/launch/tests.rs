@@ -197,13 +197,7 @@ fn the_daemon_command_carries_flag_root_config_and_a_clean_environment() {
         ..DaemonConfig::default()
     };
 
-    let command = daemon_command(
-        Path::new("/usr/bin/loom"),
-        root,
-        &config,
-        &env,
-        Some("kitty"),
-    );
+    let command = daemon_command(Path::new("/usr/bin/loom"), root, &config, &env);
 
     let args: Vec<&OsStr> = command.get_args().collect();
     let expected = [
@@ -221,7 +215,6 @@ fn the_daemon_command_carries_flag_root_config_and_a_clean_environment() {
     for name in ["HOME", "RUST_LOG", "SCCACHE_DIR"] {
         assert!(envs.iter().any(|(key, _)| *key == name), "{name} is passed");
     }
-    assert!(envs.contains(&(OsStr::new("LOOM_TERMINAL"), Some(OsStr::new("kitty")))));
     assert!(!envs.iter().any(|(key, _)| *key == "LOOM_ADMIN_TOKEN"));
     let rendered = format!("{command:?}");
     assert!(rendered.starts_with("env -i"), "{rendered}");

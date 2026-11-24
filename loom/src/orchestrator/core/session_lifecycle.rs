@@ -58,7 +58,6 @@ impl Orchestrator {
         // the spawn is actually going to use. Both need to be right in the
         // record written below, before any spawn has happened.
         session.assign_to_stage(stage_id.to_string());
-        session.backend = self.backend.resolve_lane();
 
         if let Err(e) = self.save_session(&session) {
             let err_msg =
@@ -90,8 +89,7 @@ impl Orchestrator {
         &mut self,
         stage_id: &str,
     ) -> Result<Option<Session>> {
-        let mut session = Session::new_knowledge(stage_id);
-        session.backend = self.backend.resolve_lane();
+        let session = Session::new_knowledge(stage_id);
         let prior = self.load_stage(stage_id)?;
         crate::verify::completion::knowledge_baseline::capture(
             &self.config.work_dir,

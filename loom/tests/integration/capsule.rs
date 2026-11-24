@@ -3,7 +3,7 @@
 //! NOTE ON SCOPE: `SessionCapsule`, `session_capsule` and `build_claude_command`
 //! are `pub(crate)`, and this is an external test crate, so the capsule's argv
 //! construction is unit-tested in-crate at
-//! `loom/src/orchestrator/terminal/native/tests.rs` instead. What IS observable
+//! `loom/src/orchestrator/terminal/launch/tests.rs` instead. What IS observable
 //! from out here is the capsule's subject: the generated settings document the
 //! capsule pins with `--settings`. `write_settings` (the file-writing entry
 //! point) is gone — the capsule and these tests both build the document

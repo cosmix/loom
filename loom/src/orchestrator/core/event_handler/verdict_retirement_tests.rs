@@ -10,8 +10,8 @@ use super::tests::{executing_stage, handoff_work_dir, orchestrator_for, recorded
 use super::*;
 use crate::fs::session_files::{load_session_exact, save_session};
 use crate::models::failure::{FailureInfo, FailureType};
-use crate::models::session::{Session, SessionBackendKind, SessionExitReason, SessionStatus};
-use crate::orchestrator::terminal::native::write_test_pid_identity;
+use crate::models::session::{Session, SessionExitReason, SessionStatus};
+use crate::orchestrator::terminal::launch::write_test_pid_identity;
 use crate::test_stand_in::{orphan, require_orphan_signals, Orphan};
 use crate::verify::transitions::{load_stage, update_stage};
 
@@ -311,7 +311,6 @@ fn a_merge_resolver_is_not_retired_by_a_block() {
     let mut resolver = Session::new_merge("loom/test-stage".into(), "main".into());
     resolver.assign_to_stage("test-stage".to_string());
     resolver.status = SessionStatus::Running;
-    resolver.backend = SessionBackendKind::Tmux;
     save_session(&resolver, &work).unwrap();
     let resolver_stand_in = orphan();
     let resolver_pid = resolver_stand_in.pid();

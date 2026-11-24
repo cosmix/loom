@@ -2,11 +2,9 @@
 
 use super::loop_recovery::ResetRuntime;
 use super::{reset_and_cancel, LiveAgent};
-use crate::fs::work_dir::write_terminal_config;
 use crate::host_verify::store::{load_current, load_job_record, load_pending, save_current};
 use crate::host_verify::submit::{submit, Submission, SubmitRequest};
 use crate::host_verify::{JobKind, JobRecord, JobState};
-use crate::models::session::{SessionBackendKind, TerminalConfig};
 use crate::models::stage::{Stage, StageStatus};
 use crate::verify::transitions::{load_stage, save_stage};
 use anyhow::Result;
@@ -69,10 +67,6 @@ impl ResetRuntime for ReplacingJob {
 fn reset_cancels_the_stages_host_job() {
     let temp = TempDir::new().unwrap();
     let work = temp.path();
-    let tmux = TerminalConfig {
-        backend: SessionBackendKind::Tmux,
-    };
-    write_terminal_config(work, &tmux).unwrap();
     let mut stage = Stage::new("alpha".to_string(), None);
     stage.id = "alpha".to_string();
     stage.status = StageStatus::Executing;
@@ -107,13 +101,6 @@ fn reset_cancels_the_stages_host_job() {
 fn reset_does_not_cancel_a_job_replaced_after_its_scan() {
     let temp = TempDir::new().unwrap();
     let work = temp.path();
-    write_terminal_config(
-        work,
-        &TerminalConfig {
-            backend: SessionBackendKind::Tmux,
-        },
-    )
-    .unwrap();
     let mut stage = Stage::new("alpha".to_string(), None);
     stage.id = "alpha".to_string();
     stage.status = StageStatus::Executing;
@@ -167,13 +154,6 @@ impl ResetRuntime for PromotingJob {
 fn waiting_fixture() -> (TempDir, JobRecord, JobRecord) {
     let temp = TempDir::new().unwrap();
     let work = temp.path();
-    write_terminal_config(
-        work,
-        &TerminalConfig {
-            backend: SessionBackendKind::Tmux,
-        },
-    )
-    .unwrap();
     let mut stage = Stage::new("alpha".into(), None);
     stage.id = "alpha".into();
     stage.status = StageStatus::Executing;

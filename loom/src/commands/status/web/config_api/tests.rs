@@ -22,6 +22,7 @@ use super::wire::{ConfigKind, ConfigPayload, Source};
 use super::{entries, payload};
 
 mod pressure_matrix;
+mod removed_key;
 mod resolution;
 mod typed_values;
 mod updates;
@@ -121,9 +122,9 @@ fn enum_kinds_carry_their_variants_verbatim() {
     let scratch = scratch();
     let payload = parse(&scratch.base);
     assert_eq!(
-        entry(&payload, "terminal.backend").kind,
+        entry(&payload, "plan.summary_backend").kind,
         ConfigKind::Enum {
-            variants: vec!["native".to_owned(), "tmux".to_owned()],
+            variants: vec!["claude".to_owned(), "codex".to_owned()],
         }
     );
     let ConfigKind::Enum { variants } = &entry(&payload, "pressure.claude_model").kind else {
@@ -139,10 +140,7 @@ fn only_the_workspace_backed_keys_carry_a_project_scope() {
     for entry in &payload.entries {
         let key = KEYS.iter().find(|key| key.name == entry.name).unwrap();
         let project = matches!(key.section, "pressure" | "models" | "plan" | "codex")
-            || matches!(
-                entry.name.as_str(),
-                "terminal.backend" | "context.ceiling_tokens"
-            );
+            || entry.name == "context.ceiling_tokens";
         let expected = if project {
             vec!["user".to_owned(), "project".to_owned()]
         } else {
@@ -289,7 +287,7 @@ fn every_entry_reports_the_registrys_own_default() {
     }
 }
 
-/// The project scope covers `terminal.backend`, `context.ceiling_tokens`,
+/// The project scope covers `context.ceiling_tokens`,
 /// plus every `[pressure]`/`[models]`/`[plan]`/`[codex]` key — every key
 /// `workspace::backs` resolves. The key-level set is derived from [`KEYS`]
 /// rather than typed out eighteen times, so this test keeps testing the right
@@ -301,7 +299,7 @@ fn project_scoped_covers_the_workspace_backed_keys() {
         .filter(|key| matches!(key.section, "pressure" | "models" | "plan" | "codex"))
         .map(|key| key.name)
         .collect();
-    let expected: Vec<&str> = ["terminal.backend", "context.ceiling_tokens"]
+    let expected: Vec<&str> = ["context.ceiling_tokens"]
         .into_iter()
         .chain(key_level.iter().copied())
         .collect();

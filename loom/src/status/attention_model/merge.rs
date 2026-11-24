@@ -1,7 +1,6 @@
 //! Guidance for a stage whose merge needs attention: a conflict, an error, or
 //! a typed merge block.
 
-use crate::models::session::SessionBackendKind;
 use crate::orchestrator::core::MAX_MERGE_RESOLVER_ATTEMPTS;
 use crate::status::data::{ActivityStatus, StageSummary};
 
@@ -47,21 +46,14 @@ pub(super) fn merge_guidance(stage: &StageSummary) -> Guidance {
     ))
 }
 
-/// How to look at the resolver: `loom attach` reaches a tmux session, and the
-/// web terminal follows the same session; a native session runs in a terminal
-/// window titled with its tracking key.
+/// How to look at the resolver while its session is alive: `loom attach`
+/// reaches the tmux session, and the web terminal follows the same session.
 fn resolver_view(stage: &StageSummary) -> Option<String> {
-    Some(match stage.session_backend? {
-        SessionBackendKind::Tmux => format!(
+    stage.session_alive.then(|| {
+        format!(
             "run loom attach {} to watch it, or open the stage's terminal in the web UI",
             stage.id
-        ),
-        SessionBackendKind::Native => {
-            format!(
-                "look for terminal window loom-v2-merge-{} (or loom-merge-{} for an older session)",
-                stage.id, stage.id
-            )
-        }
+        )
     })
 }
 

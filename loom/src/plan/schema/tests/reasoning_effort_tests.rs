@@ -3,7 +3,7 @@
 //! See [`crate::plan::schema::types::deserialize_reasoning_effort`] — the
 //! validator rejects any value outside the canonical set so that a
 //! malicious plan cannot smuggle shell metacharacters into the
-//! `--effort <value>` argument that `native/mod.rs` appends to the Claude
+//! `--effort <value>` argument that `launch/mod.rs` appends to the Claude
 //! Code command line.
 
 use crate::plan::schema::types::{LoomMetadata, ALLOWED_REASONING_EFFORTS};

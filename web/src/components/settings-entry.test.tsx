@@ -37,7 +37,7 @@ describe("header entry point", () => {
     expect(router.state.location.search).toBe("?settings=1");
     expect(screen.getByRole("dialog", { name: "Settings" })).toBeTruthy();
     await screen.findByRole("switch", { name: "check at user scope" });
-    expect(screen.getByText("backend", { selector: ".settings-key-name" })).toBeTruthy();
+    expect(screen.getByText("summary_backend", { selector: ".settings-key-name" })).toBeTruthy();
     expect(fetchMock).toHaveBeenCalledWith("/api/config", { cache: "no-store" });
   });
 });

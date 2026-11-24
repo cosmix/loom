@@ -155,8 +155,8 @@ impl ConfigValue {
     /// against `Bool` is still rejected). For `Bool`, `Number`, and `Enum`
     /// this reproduces the exact message [`Self::parse`] would have produced
     /// for the same `kind` given that rendering as the raw text — so a
-    /// dashboard client sending `42` for `terminal.backend` gets "is not one
-    /// of the expected values: native, tmux" rather than a distinct second
+    /// dashboard client sending `42` for an enum key such as `plan.summary_backend` gets "is not
+    /// one of the expected values: claude, codex" rather than a distinct second
     /// wording. `String` has no `parse` failure to match, so the message is
     /// its own.
     ///

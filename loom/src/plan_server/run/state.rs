@@ -10,10 +10,9 @@ use crate::fs::plan_lifecycle::get_plan_source_path;
 use crate::fs::work_dir::WorkDir;
 use crate::fs::work_state::holds_orchestration_state;
 use crate::git::current_branch;
-use crate::plan_server::browser::{decide, EnvView, OpenDecision};
 use crate::plan_server::context::PlanContext;
 use crate::plan_server::request::{ApiRequest, ApiResponse};
-use crate::plan_server::wire::run::{Backend, PlanChoice, RunOffer, RunStateView, WorkspaceState};
+use crate::plan_server::wire::run::{PlanChoice, RunOffer, RunStateView, WorkspaceState};
 use crate::planning::project::Project;
 use crate::planning::slug::{PlanEntry, PlanState};
 
@@ -87,22 +86,12 @@ pub(crate) fn state_view(ctx: &PlanContext) -> anyhow::Result<RunStateView> {
         branch: current_branch(root)?,
         doc_changes,
         blocking_changes,
-        backends: backends(&EnvView::current()),
-        default_backend: Backend::Tmux,
         abandon,
         finish_abandon,
         dashboard_url: super::dashboard::current_url(ctx)
             .map(|url| super::dashboard_parse::strip_token(&url)),
         busy: super::child::jobs(ctx).current(),
     })
-}
-
-fn backends(env: &EnvView) -> Vec<Backend> {
-    let mut result = vec![Backend::Tmux];
-    if decide(env, false) == OpenDecision::Open {
-        result.push(Backend::Native);
-    }
-    result
 }
 
 /// Features by name, each in metaplan then filename order; standalone plans last.

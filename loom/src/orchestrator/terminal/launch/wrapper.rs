@@ -1,0 +1,388 @@
+//! Authoring of the per-session wrapper script that `exec`s claude.
+//!
+//! This module owns the exact environment a
+//! stage session is born with. That environment is a security boundary (the
+//! script rebuilds it from an allowlist rather than inheriting the host's) and
+//! a correctness boundary (`LOOM_STAGE_ID` and `LOOM_WORKTREE_PATH` are read by
+//! hooks, the CLI and the daemon), so it is worth reading on its own.
+
+use super::pid_tracking::{
+    create_pid_dir, create_wrappers_dir, pid_file_path, wrapper_script_path,
+};
+use super::session_log::{create_logs_dir, stderr_log_path};
+use crate::fs::permissions::state_root::RIPGREP_CONFIG_FILE;
+use crate::models::session::SessionType;
+use anyhow::{Context, Result};
+use script_text::{env_allowlist, pid_capture, EXEC_COMMENT};
+use shell_escape::escape;
+use std::fs;
+use std::path::{Path, PathBuf};
+
+pub(crate) use host_env::{accepted_loom_bin, operator_executable_dirs, WrapperHostEnv};
+
+/// Line continuation inside the generated `exec env -i …` invocation.
+const CONTINUATION: &str = "\\\n";
+
+/// Create a wrapper script that writes its PID before exec'ing claude.
+///
+/// The wrapper script:
+/// 1. Changes to the working directory (important for macOS where terminals
+///    can't reliably set cwd before spawning)
+/// 2. Writes its own PID (`$$`) — and, on Linux, its start-time — to the PID
+///    file, so liveness probes can detect PID reuse
+/// 3. `exec`s the claude command under a rebuilt, allowlisted environment,
+///    with claude's stderr teed into `logs/<session_id>.stderr.log` so a
+///    refusal to start outlives the terminal pane that showed it
+///
+/// # Arguments
+/// * `work_dir` - The .loom/work directory path
+/// * `pid_key` - The per-session tracking key naming the PID file / wrapper
+///   script (the session's stage-key + `session.id`). Distinct from `stage_id`
+///   so two consecutive sessions for the same stage never share a PID file.
+/// * `stage_id` - The value exported as `LOOM_STAGE_ID`. Always the plain plan
+///   stage id, for every session kind. The kind-prefixed form (`merge-…`,
+///   `knowledge-…`, `base-conflict-…`) names OS resources only — it must never
+///   reach the environment, because every consumer (`loom memory`,
+///   `loom handoff`, the heartbeat files, `session-end.sh`'s stage-file glob)
+///   looks the value up as a real stage id.
+/// * `session_id` - The session identifier (for LOOM_SESSION_ID env var)
+/// * `claude_cmd` - The claude command to execute (e.g., "claude 'prompt here'")
+/// * `working_dir` - The working directory to cd into before running claude
+/// * `kind` - The session kind. Exported directly as `LOOM_SESSION_TYPE`, and
+///   also drives the two conditional env vars that are NOT derivable from
+///   `stage_id`; see `kind_env`.
+/// * `context_ceiling_tokens` - The session's resolved context ceiling
+///   (tokens), used to size `CLAUDE_CODE_AUTO_COMPACT_WINDOW`; see
+///   `auto_compact_window_tokens`.
+///
+/// # Returns
+/// The path to the created wrapper script
+///
+/// Delegates to `create_session_wrapper_script` without build-cache or host exports.
+#[allow(clippy::too_many_arguments)]
+pub fn create_wrapper_script(
+    work_dir: &Path,
+    pid_key: &str,
+    stage_id: &str,
+    session_id: &str,
+    claude_cmd: &str,
+    working_dir: Option<&Path>,
+    kind: SessionType,
+    context_ceiling_tokens: u32,
+) -> Result<PathBuf> {
+    create_session_wrapper_script(
+        work_dir,
+        pid_key,
+        stage_id,
+        session_id,
+        claude_cmd,
+        working_dir,
+        kind,
+        context_ceiling_tokens,
+        false,
+        &WrapperHostEnv::default(),
+    )
+}
+
+/// Real body behind [`create_wrapper_script`]; same contract, plus `rustc_wrapper_allowed` —
+/// whether this session's merged sandbox config permits sccache; see `sccache_env` — and
+/// `host_env`, the `LOOM_SCRATCH_DIR` / `LOOM_BIN` / `LOOM_HOOK_PATH` exports the launch
+/// resolved for this session.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn create_session_wrapper_script(
+    work_dir: &Path,
+    pid_key: &str,
+    stage_id: &str,
+    session_id: &str,
+    claude_cmd: &str,
+    working_dir: Option<&Path>,
+    kind: SessionType,
+    context_ceiling_tokens: u32,
+    rustc_wrapper_allowed: bool,
+    host_env: &WrapperHostEnv,
+) -> Result<PathBuf> {
+    create_wrappers_dir(work_dir)?;
+    create_logs_dir(work_dir)?;
+    create_pid_dir(work_dir)?;
+
+    let wrapper_path = wrapper_script_path(work_dir, pid_key);
+    let host_pid_file = pid_file_path(work_dir, pid_key);
+    let script = build_wrapper_script(&WrapperInput {
+        work_dir,
+        host_pid_file: &host_pid_file,
+        stage_id,
+        session_id,
+        claude_cmd,
+        working_dir,
+        kind,
+        context_ceiling_tokens,
+        rustc_wrapper_allowed,
+        host_env,
+    });
+
+    fs::write(&wrapper_path, &script)
+        .with_context(|| format!("Failed to write wrapper script: {}", wrapper_path.display()))?;
+
+    // Make the script executable
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(&wrapper_path)?.permissions();
+        // Owner-only execute: wrapper scripts are run by the same user, no need for
+        // group/other execute permissions. This prevents other users from reading
+        // or executing the script, which contains session IDs and paths.
+        perms.set_mode(0o700);
+        fs::set_permissions(&wrapper_path, perms)?;
+    }
+
+    Ok(wrapper_path)
+}
+
+/// Absolute form of `path`, falling back to the input when it cannot be
+/// resolved. Paths are absolutized because the script may `cd` elsewhere.
+///
+/// Shared with `launch::session_settings` and `launch::prepare`: the
+/// `--settings` capsule path, the state root and the repository root they
+/// resolve must name the same directories the `cd` target built here does, or
+/// the wrapper's `cd` moves the process somewhere those paths were never made
+/// relative to.
+pub(super) fn absolute(path: &Path) -> PathBuf {
+    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+}
+
+/// Absolute form of a file that does not exist yet: resolve the parent and
+/// re-attach the file name.
+fn absolute_target(path: &Path) -> PathBuf {
+    if path.exists() {
+        return absolute(path);
+    }
+    match (path.parent(), path.file_name()) {
+        (Some(parent), Some(name)) => parent
+            .canonicalize()
+            .map(|p| p.join(name))
+            .unwrap_or_else(|_| path.to_path_buf()),
+        _ => path.to_path_buf(),
+    }
+}
+
+/// The `cd` preamble, empty when the session has no working directory.
+fn cd_section(working_dir: Option<&Path>) -> String {
+    let Some(dir) = working_dir else {
+        return String::new();
+    };
+    let dir_escaped = escape(absolute(dir).display().to_string().into());
+    format!(
+        r#"# Change to working directory
+cd {dir_escaped} || {{ echo "Failed to cd to working directory"; exit 1; }}
+
+"#,
+    )
+}
+
+/// The two env assignments that depend on the session KIND rather than on any
+/// id, returned as `(merge_session_env, worktree_path_env)`.
+///
+/// * `LOOM_MERGE_SESSION` — only `Merge`, which `commit-guard.sh` lets exit
+///   without a commit. Keyed on the kind, never on a `merge-` prefix in
+///   `stage_id`: that id is the plain plan stage id for every kind, and a plan
+///   is free to name a stage `merge-anything`.
+/// * `LOOM_WORKTREE_PATH` — only `Stage` and `Contract`, the stage agents.
+///   Merge sessions run in the stage worktree but are not stage agents, and
+///   knowledge and base-conflict sessions `cd` into the main repo; exporting
+///   the var for them makes presence-based gates (`loom-control-complete.sh`,
+///   `relay::emit::mode`) misread them as a sandboxed stage agent, which is
+///   what once made knowledge stages impossible to complete.
+fn kind_env(kind: SessionType, working_dir: Option<&Path>) -> (String, String) {
+    let merge = if kind == SessionType::Merge {
+        format!("    LOOM_MERGE_SESSION=1 {CONTINUATION}")
+    } else {
+        String::new()
+    };
+    let in_worktree = matches!(kind, SessionType::Stage | SessionType::Contract);
+    let worktree = match working_dir.filter(|_| in_worktree) {
+        Some(dir) => {
+            let assignment = format!("LOOM_WORKTREE_PATH={}", absolute(dir).display());
+            format!("    {} {CONTINUATION}", escape(assignment.into()))
+        }
+        None => String::new(),
+    };
+    (merge, worktree)
+}
+
+/// `LOOM_WORK_DIR`, plus `RIPGREP_CONFIG_PATH` when the daemon has published
+/// `<work_dir>/ripgreprc` (`daemon::server::storage::publish_search_exclusions`),
+/// rendered as shell-escaped `exec env` assignments. The config excludes
+/// `admin.token`/`user.token` from every `rg` in the session, `-uu` and
+/// `--no-ignore` included, so a sandboxed agent never trips the read-deny rule
+/// and stalls auto mode on an operator prompt. The export is gated on the
+/// file: `loom run --foreground` runs no daemon, publishes no tokens and no
+/// config, and an rg pointed at a missing config prints an error on every
+/// call. The host's own `RIPGREP_CONFIG_PATH` is deliberately absent from
+/// `ENV_ALLOWLIST`.
+fn work_dir_env(work_dir: &Path) -> String {
+    let work_dir = absolute(work_dir);
+    let mut block = format!(
+        "    {} {CONTINUATION}",
+        escape(format!("LOOM_WORK_DIR={}", work_dir.display()).into())
+    );
+    let ripgrep_config = work_dir.join(RIPGREP_CONFIG_FILE);
+    if ripgrep_config.is_file() {
+        block.push_str(&format!(
+            "    {} {CONTINUATION}",
+            escape(format!("RIPGREP_CONFIG_PATH={}", ripgrep_config.display()).into())
+        ));
+    }
+    block
+}
+
+/// Upper clamp applied to `CLAUDE_CODE_AUTO_COMPACT_WINDOW` before export.
+/// The installed binary re-clamps to `[1, 1_000_000]` and then again to the
+/// model's own context window, so only this upper bound needs applying here
+/// — no lower clamp is required.
+const AUTO_COMPACT_WINDOW_MAX_TOKENS: u32 = 1_000_000;
+
+/// `CLAUDE_CODE_AUTO_COMPACT_WINDOW` is 1.5x the session's resolved context
+/// ceiling, clamped to [`AUTO_COMPACT_WINDOW_MAX_TOKENS`].
+///
+/// Intended ordering for a session that never hands off on its own: the
+/// harness's own context-budget hook instruction fires at 1.0x the ceiling,
+/// the daemon's kill at 1.25x, and this Claude Code compaction trigger at
+/// 1.5x — effectively unreachable in practice, with `pre-compact.sh`'s
+/// block-then-allow hook as the true last resort.
+fn auto_compact_window_tokens(context_ceiling_tokens: u32) -> u32 {
+    let scaled = (u64::from(context_ceiling_tokens) * 3) / 2;
+    scaled.min(u64::from(AUTO_COMPACT_WINDOW_MAX_TOKENS)) as u32
+}
+
+/// The three shell-quoted `exec env` assignments that bound and observe a
+/// session's resource usage, rendered together as one block. Split out of
+/// `build_wrapper_script` purely to keep that function under the line-count
+/// cap, the way `kind_env` and `cd_section` already factor out other parts
+/// of that same script.
+///
+/// BASH_MAX_TIMEOUT_MS: lets a foregrounded `loom subagents watch --timeout
+/// 3600` run to completion inside a session without the harness's own
+/// Bash-call timeout cutting it off first.
+///
+/// BASH_MAX_OUTPUT_LENGTH: truncates a bare `git show`, an unpiped `rg`, or
+/// a `cat` of a large file at the PROCESS boundary rather than letting it
+/// enter the session's context whole. The installed Claude Code binary's
+/// resolver for this env var takes (name, env, default=30000, cap=150000)
+/// with NO LOWER CLAMP, so 12000 is honored as given — the default is
+/// 30000, never 150,000.
+///
+/// CLAUDE_CODE_AUTO_COMPACT_WINDOW: see `auto_compact_window_tokens`.
+fn resource_limit_env(context_ceiling_tokens: u32) -> String {
+    let auto_compact_window = auto_compact_window_tokens(context_ceiling_tokens);
+    format!(
+        r#"    "BASH_MAX_TIMEOUT_MS=3600000" \
+    "BASH_MAX_OUTPUT_LENGTH=12000" \
+    "CLAUDE_CODE_AUTO_COMPACT_WINDOW={auto_compact_window}" \
+"#
+    )
+}
+
+/// Shell-escaped absolute path to this session's stderr capture log, used in
+/// the `tee` redirect at the end of the exec line.
+fn stderr_log_escaped(work_dir: &Path, session_id: &str) -> String {
+    escape(
+        absolute_target(&stderr_log_path(work_dir, session_id))
+            .display()
+            .to_string()
+            .into(),
+    )
+    .into_owned()
+}
+
+/// `RUSTC_WRAPPER=<path>` to export, or empty when either `rustc_wrapper_allowed` (the caller's
+/// sandbox verdict; see `build_cache::sccache_usable_in`) is false, or nothing resolves. The
+/// candidate itself — resolved path vs. the operator's own `RUSTC_WRAPPER` — comes from
+/// `build_cache::rustc_wrapper_candidate`; never probed here, since this script itself runs
+/// unsandboxed.
+fn sccache_env(rustc_wrapper_allowed: bool) -> String {
+    if !rustc_wrapper_allowed {
+        return String::new();
+    }
+    let Some(candidate) = super::build_cache::rustc_wrapper_candidate() else {
+        return String::new();
+    };
+    let assignment = escape(format!("RUSTC_WRAPPER={candidate}").into());
+    format!("    {assignment} {CONTINUATION}")
+}
+
+struct WrapperInput<'a> {
+    work_dir: &'a Path,
+    host_pid_file: &'a Path,
+    stage_id: &'a str,
+    session_id: &'a str,
+    claude_cmd: &'a str,
+    working_dir: Option<&'a Path>,
+    kind: SessionType,
+    context_ceiling_tokens: u32,
+    rustc_wrapper_allowed: bool,
+    host_env: &'a WrapperHostEnv,
+}
+
+fn pid_owner(stage_id: &str, kind: SessionType) -> String {
+    format!(
+        "loom-owner:{}",
+        crate::models::session::Session::derive_tracking_key(stage_id, kind)
+    )
+}
+
+/// Render the wrapper script text without filesystem writes.
+fn build_wrapper_script(input: &WrapperInput<'_>) -> String {
+    let WrapperInput {
+        work_dir,
+        host_pid_file,
+        stage_id,
+        session_id,
+        claude_cmd,
+        working_dir,
+        kind,
+        context_ceiling_tokens,
+        rustc_wrapper_allowed,
+        host_env,
+    } = *input;
+    let cd_section = cd_section(working_dir);
+    let (merge_session_env, worktree_path_env) = kind_env(kind, working_dir);
+    let session_env = escape(format!("LOOM_SESSION_ID={session_id}").into());
+    let session_type_env = escape(format!("LOOM_SESSION_TYPE={kind}").into());
+    let stage_env = escape(format!("LOOM_STAGE_ID={stage_id}").into());
+    let work_dir_env = work_dir_env(work_dir);
+    let pid_file = escape(absolute_target(host_pid_file).display().to_string().into());
+    let owner = escape(pid_owner(stage_id, kind).into());
+    let pid_capture = pid_capture(&pid_file, &owner);
+    let stderr_log = stderr_log_escaped(work_dir, session_id);
+    let resource_limit_env = resource_limit_env(context_ceiling_tokens);
+    let sccache_env = sccache_env(rustc_wrapper_allowed);
+    let host_env = host_env.render();
+    let env_allowlist = env_allowlist();
+    format!(
+        r#"#!/bin/bash
+# Loom stage wrapper
+# Writes PID to file before exec'ing claude
+
+{cd_section}{pid_capture}
+{env_allowlist}
+{EXEC_COMMENT}
+exec env -i "${{_loom_env[@]}}" \
+    {session_env} \
+    {session_type_env} \
+    {stage_env} \
+{work_dir_env}    "LOOM_MAIN_AGENT_PID=$$" \
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1" \
+    "CLAUDE_CODE_DISABLE_AUTO_MEMORY=1" \
+    "CLAUDE_REMOTE_CONTROL_SESSION_NAME_PREFIX=loom" \
+{resource_limit_env}{sccache_env}{host_env}{merge_session_env}{worktree_path_env}    {claude_cmd} 2> >(env -i "${{_loom_env[@]}}" tee -a {stderr_log})
+"#
+    )
+}
+
+mod host_env;
+mod script_text;
+
+#[cfg(test)]
+mod tests;
+#[cfg(test)]
+mod tests_exec_env;

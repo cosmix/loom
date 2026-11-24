@@ -2,9 +2,9 @@
 
 use crate::fs::stage_files::stage_file_path;
 use crate::fs::work_dir::{self, WorkDir};
-use crate::models::session::{SessionBackendKind, TerminalConfig};
 use crate::models::stage::{PlanIdentity, Stage};
 use crate::orchestrator::provision::persist_plan_snapshots;
+use crate::orchestrator::terminal::{require_tmux, tmux_on_path, TMUX_MISSING_MESSAGE};
 use crate::plan::graph::levels::compute_all_levels;
 use crate::plan::parser::{parse_plan, ParsedPlan};
 use crate::plan::schema::{
@@ -35,8 +35,7 @@ pub struct PreflightedPlan {
 /// Parse a plan and run preflight checks without printing or writing anything.
 /// `execute()` calls this before it bootstraps the repo or
 /// creates the state directory, so a rejected plan never leaves behind a
-/// half-initialized state directory, an installed pre-commit hook, or an
-/// operator-answered backend prompt that then has to be answered again.
+/// half-initialized state directory or an installed pre-commit hook.
 ///
 /// A plan whose sandbox is disabled or allows an unsandboxed escape is
 /// refused outright, the same way `loom run` refuses one — see
@@ -104,6 +103,15 @@ fn refuse_unconfined_sandbox(plan_sandbox: &SandboxConfig, stages: &[Stage]) -> 
         .context("loom init refuses to create a plan whose sessions would not be confined")
 }
 
+/// The warning `loom init` prints when tmux is not on PATH, or `None` when the
+/// probe finds it. `loom run` and every direct spawn enforce the requirement;
+/// init only reports it.
+pub(crate) fn tmux_advisory(tmux_available: impl Fn() -> bool) -> Option<String> {
+    require_tmux(tmux_available)
+        .is_err()
+        .then(|| format!("warning: {TMUX_MISSING_MESSAGE}"))
+}
+
 /// Initialize the state directory from an already-preflighted plan (see
 /// `preflight_plan`). Everything here PRINTS or WRITES, so it stays in the
 /// same place in `execute()`'s flow as before the preflight split.
@@ -116,7 +124,6 @@ pub fn initialize_with_plan(
     plan: &PreflightedPlan,
     repo_root: &Path,
     base_branch: &str,
-    terminal_backend: Option<SessionBackendKind>,
 ) -> Result<usize> {
     let canonical_path = &plan.canonical_path;
     let parsed_plan = &plan.parsed_plan;
@@ -126,6 +133,11 @@ pub fn initialize_with_plan(
         "✓".green().bold(),
         parsed_plan.name.bold()
     );
+
+    // Non-fatal: init still succeeds, `loom run` refuses until tmux is installed.
+    if let Some(advisory) = tmux_advisory(tmux_on_path) {
+        eprintln!("{}", advisory.yellow());
+    }
 
     // Check for knowledge-related recommendations (non-fatal warnings)
     let warnings = check_knowledge_recommendations(&parsed_plan.stages, Some(repo_root));
@@ -210,16 +222,6 @@ pub fn initialize_with_plan(
         &crate::remote_control::RemoteControlConfig::default(),
     )
     .context("Failed to persist remote control config")?;
-
-    // Persist [terminal] only when an explicit choice was made (an
-    // operator-supplied --backend flag or an interactive prompt answer) — an
-    // absent section is what lets `~/.loom/config.toml`'s terminal.backend,
-    // then the built-in default, decide at read time (see
-    // `fs::work_dir::read_terminal_config`).
-    if let Some(backend) = terminal_backend {
-        work_dir::write_terminal_config(work_dir.root(), &TerminalConfig { backend })
-            .context("Failed to persist terminal config")?;
-    }
 
     // Persist [context] only for the ceiling keys the plan itself set — one
     // insert_key per key, so a plan setting only one of the pair does not

@@ -331,12 +331,7 @@ impl Orchestrator {
             &snapshot,
         )
         .context("Failed to generate merge signal")?;
-        write_ahead_merge_session(
-            &mut session,
-            &stage.id,
-            self.backend.resolve_lane(),
-            &work_dir,
-        )?;
+        write_ahead_merge_session(&mut session, &stage.id, &work_dir)?;
         let spawned = self.launch_resolver(stage, session, &signal_path, attempt)?;
         self.publish_spawned_resolver(&spawned);
         Ok(Some(spawned))

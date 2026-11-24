@@ -17,7 +17,7 @@ use anyhow::Result;
 impl Orchestrator {
     /// Merge, validate and expand this stage's sandbox config at spawn time.
     /// Writes nothing:
-    /// the capsule (`native/session_settings.rs`) carries the resolved
+    /// the capsule (`launch/session_settings.rs`) carries the resolved
     /// settings into the session, not `T/.claude/settings.local.json`.
     ///
     /// Returns `false` if the stage was blocked instead (invalid config).
@@ -72,8 +72,7 @@ impl Orchestrator {
     /// Returns `None` if the write-ahead failed; the stage has already been
     /// marked Blocked and the caller should return without spawning.
     pub(super) fn write_ahead_contract_session(&mut self, stage_id: &str) -> Option<Session> {
-        let mut session = Session::new_contract(stage_id);
-        session.backend = self.backend.resolve_lane();
+        let session = Session::new_contract(stage_id);
         if let Err(e) = self.save_session(&session) {
             let err_msg = format!(
                 "Failed to write contract session record ahead of spawn for {stage_id}: {e:#}"

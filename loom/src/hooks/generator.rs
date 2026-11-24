@@ -1,7 +1,7 @@
 //! Loom hooks directory discovery.
 //!
 //! Session settings (including hooks) are built into each session's capsule
-//! (`orchestrator/terminal/native/session_settings.rs`); this module only
+//! (`orchestrator/terminal/launch/session_settings.rs`); this module only
 //! locates the installed hook scripts on the host.
 
 use std::path::PathBuf;

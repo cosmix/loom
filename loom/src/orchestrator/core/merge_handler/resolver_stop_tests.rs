@@ -1,8 +1,6 @@
 //! Settling a resolver spawn's outcome, and stopping the resolver of a branch
 //! the merge gate holds. No backend spawn runs here: the harness has no stub
-//! backend, so the backend's answer is handed to `settle_resolver_spawn`, and
-//! a lane the harness cannot build is settled from the evidence its teardown
-//! would observe.
+//! backend, so the backend's answer is handed to `settle_resolver_spawn`.
 
 use super::super::resolver_attempts::{attempts_file, merge_resolver_attempts, ReservedAttempt};
 use super::super::resolver_spawn::test_fixtures::{
@@ -11,12 +9,10 @@ use super::super::resolver_spawn::test_fixtures::{
 };
 use super::{teardown_proves_gone, UnstoppedResolver};
 use crate::fs::session_files::{load_session_exact, save_session};
-use crate::models::session::{Session, SessionBackendKind, SessionExitReason, SessionStatus};
+use crate::models::session::{Session, SessionExitReason, SessionStatus};
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::signals::generate_merge_signal;
-use crate::orchestrator::terminal::native::{
-    pid_only_is_alive, pid_only_terminate, write_test_pid_identity,
-};
+use crate::orchestrator::terminal::launch::write_test_pid_identity;
 use crate::verify::transitions::load_stage;
 
 #[test]
@@ -73,52 +69,11 @@ fn a_failed_spawn_that_may_have_left_a_resolver_keeps_its_attempt() {
 }
 
 #[test]
-fn a_failed_spawn_on_a_native_lane_with_no_terminal_is_retried_with_its_attempt_back() {
-    let repo = repo_with_stage_branches(&["headless"]);
-    let mut orchestrator = orchestrator_with_conflict(repo.path(), "headless");
-    let work_dir = orchestrator.config.work_dir.clone();
-    let attempt = ReservedAttempt::record(&work_dir, "headless", 0).unwrap();
-    let mut session = resolver_for("headless");
-    session.backend = SessionBackendKind::Native;
-    let signal = write_signal(&orchestrator, &session.id);
-    // With no terminal, `SessionBackend` kills and probes a native session
-    // through the PID layers alone, and its spawn launched nothing.
-    let killed = pid_only_terminate(&work_dir, &session).is_ok();
-    assert!(!killed, "the kill refuses for want of a PID identity");
-    let probe = || !pid_only_is_alive(&work_dir, &session);
-    let gone = teardown_proves_gone(SessionBackendKind::Native, killed, probe);
-    let failed = anyhow::anyhow!("No terminal emulator found");
-    let error = orchestrator
-        .settle_failed_spawn(session, failed, attempt, gone)
-        .unwrap_err();
-    assert!(
-        error.downcast_ref::<UnstoppedResolver>().is_none(),
-        "{error:#}"
-    );
-    assert!(!attempts_file(&work_dir, "headless").exists());
-    assert!(!signal.exists());
-    orchestrator.report_merge_spawn_failure("headless", error);
-    let stage = load_stage("headless", &work_dir).unwrap();
-    assert_eq!(stage.status, StageStatus::MergeConflict);
-    assert_eq!(stage.review_reason, None);
-}
-
-#[test]
-fn a_native_teardown_is_judged_by_the_probe_alone() {
-    let native = SessionBackendKind::Native;
-    for killed in [true, false] {
-        assert!(teardown_proves_gone(native, killed, || true));
-        assert!(!teardown_proves_gone(native, killed, || false));
-    }
-}
-
-#[test]
-fn a_tmux_teardown_needs_a_successful_kill_and_the_probe() {
-    let tmux = SessionBackendKind::Tmux;
+fn a_teardown_needs_a_successful_kill_and_the_probe() {
     let unasked = || -> bool { panic!("a failed tmux kill decides without the probe") };
-    assert!(!teardown_proves_gone(tmux, false, unasked));
-    assert!(teardown_proves_gone(tmux, true, || true));
-    assert!(!teardown_proves_gone(tmux, true, || false));
+    assert!(!teardown_proves_gone(false, unasked));
+    assert!(teardown_proves_gone(true, || true));
+    assert!(!teardown_proves_gone(true, || false));
 }
 
 #[test]
@@ -127,7 +82,6 @@ fn a_spawned_resolver_with_no_session_record_holds_its_stage_while_tracked() {
     let mut orchestrator = orchestrator_with_conflict(repo.path(), "unrecorded");
     let work_dir = orchestrator.config.work_dir.clone();
     let mut resolver = resolver_for("unrecorded");
-    resolver.backend = SessionBackendKind::Tmux;
     resolver.status = SessionStatus::Running;
     // The spawn recorded a verified PID identity; its session record was
     // never saved, so its signal reads as stale.

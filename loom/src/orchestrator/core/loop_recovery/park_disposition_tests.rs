@@ -2,7 +2,7 @@ use super::park_tests::{assert_ownership_unknown, block, fixture};
 use crate::fs::session_files::load_session_exact;
 use crate::models::session::SessionStatus;
 use crate::models::stage::StageStatus;
-use crate::orchestrator::terminal::native::write_test_pid_identity;
+use crate::orchestrator::terminal::launch::write_test_pid_identity;
 use crate::subagent_lifecycle::model::{
     CodexEvidence, CodexEvidenceKind, CodexEvidenceOutcome, CodexExecution, LifecycleProducer,
     LifecycleRecord, LifecycleState, WorkerIdentity, LIFECYCLE_VERSION,

@@ -4,13 +4,11 @@
 //! stage admission lock that `loom stage reset` holds.
 
 use super::*;
-use crate::fs::work_dir::write_terminal_config;
 use crate::host_verify::apply::{apply_finished, Applied};
 use crate::host_verify::store::load_current;
 use crate::host_verify::submit::{cancel, submit, Submission, SubmitRequest};
 use crate::host_verify::verdict_complete::{STAGE_BOUND_SESSION, VERDICT_REQUEST_ID};
 use crate::host_verify::{JobKind, JobRecord, JobState};
-use crate::models::session::{SessionBackendKind, TerminalConfig};
 use crate::models::stage::{StageStatus, StageType};
 use crate::orchestrator::adjudication::feedback::read_feedback;
 use crate::orchestrator::core::OrchestratorConfig;
@@ -22,13 +20,6 @@ fn a_submission_error_hands_the_stage_back_with_the_error_as_its_failure() {
     let temp = tempfile::TempDir::new().unwrap();
     let work = temp.path().join(".work");
     std::fs::create_dir_all(&work).unwrap();
-    write_terminal_config(
-        &work,
-        &TerminalConfig {
-            backend: SessionBackendKind::Tmux,
-        },
-    )
-    .unwrap();
     let stage = Stage {
         id: "test-stage".to_string(),
         name: "Test Stage".to_string(),
@@ -74,10 +65,6 @@ fn verdict_held(operator_hold: bool) -> (tempfile::TempDir, std::path::PathBuf, 
     let temp = tempfile::TempDir::new().unwrap();
     let work = temp.path().join(".work");
     std::fs::create_dir_all(&work).unwrap();
-    let tmux = TerminalConfig {
-        backend: SessionBackendKind::Tmux,
-    };
-    write_terminal_config(&work, &tmux).unwrap();
     let stage = Stage {
         id: STAGE_ID.to_string(),
         name: "Test Stage".to_string(),

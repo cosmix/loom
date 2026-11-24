@@ -1,10 +1,11 @@
 //! Tests for loom init command.
 
 use super::cleanup::{cleanup_work_directory, prune_stale_worktrees};
-use super::plan_setup::{create_stage_from_definition, initialize_with_plan, preflight_plan};
+use super::plan_setup::{
+    create_stage_from_definition, initialize_with_plan, preflight_plan, tmux_advisory,
+};
 use crate::fs::work_dir::WorkDir;
 use crate::git::target_guard::test_support::repo;
-use crate::models::session::SessionBackendKind;
 use crate::models::stage::{Implementer, Implementers, PlanIdentity, Stage, StageStatus};
 use crate::plan::schema::{AcceptanceCriterion, LoomConfig, LoomMetadata, StageDefinition};
 use crate::verify::serialize_stage_to_markdown;
@@ -53,9 +54,21 @@ fn init_from_stages(stages: Vec<StageDefinition>) -> (TempDir, WorkDir) {
     work_dir.initialize().unwrap();
     let plan_path = create_test_plan(temp_dir.path(), stages);
     let preflighted = preflight_plan(&plan_path).unwrap();
-    let backend = Some(SessionBackendKind::Native);
-    initialize_with_plan(&work_dir, &preflighted, &repo().root, "main", backend).unwrap();
+    initialize_with_plan(&work_dir, &preflighted, &repo().root, "main").unwrap();
     (temp_dir, work_dir)
+}
+
+#[test]
+fn tmux_advisory_warns_only_when_tmux_is_missing() {
+    let warning = tmux_advisory(|| false).expect("a missing tmux warns");
+    assert_eq!(
+        warning,
+        format!(
+            "warning: {}",
+            crate::orchestrator::terminal::TMUX_MISSING_MESSAGE
+        )
+    );
+    assert_eq!(tmux_advisory(|| true), None);
 }
 
 /// Identity of a v1 plan with no ratchet files
