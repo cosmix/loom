@@ -6,3 +6,8 @@ updates:
       interval: "weekly"
     commit-message:
       prefix: "chore(ci)"
+    ignore:
+      # v5 and later load a caching component under Gradle's proprietary
+      # terms of use; stay on v4 (MIT).
+      - dependency-name: "gradle/actions/setup-gradle"
+        versions: [">= 5"]
