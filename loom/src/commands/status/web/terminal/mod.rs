@@ -20,6 +20,7 @@ mod tests_route;
 mod tests_scroll;
 #[cfg(test)]
 pub(in crate::commands::status::web) mod tests_upgrade;
+mod tmux_program;
 mod upgrade;
 pub(in crate::commands::status::web) use history::{
     serve as serve_history, ROUTE_PREFIX as HISTORY_PREFIX,

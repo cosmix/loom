@@ -9,10 +9,11 @@ use crate::fs::work_dir::WorkDir;
 use crate::models::session::{Session, SessionBackendKind};
 use crate::orchestrator::terminal::tmux::socket_name;
 use crate::orchestrator::terminal::tmux::viewer::{
-    endpoint_ready, is_plain_identifier, live_tmux_sessions, tmux_session_name,
+    is_plain_identifier, live_tmux_sessions, tmux_session_name,
 };
 use crate::status::data::load_all_sessions;
 
+use super::tmux_program::endpoint_ready;
 use super::{Mode, CLOSE_NOT_YET, CLOSE_REFUSED, CLOSE_UNKNOWN_STAGE};
 
 /// A validated tmux target for one browser terminal.

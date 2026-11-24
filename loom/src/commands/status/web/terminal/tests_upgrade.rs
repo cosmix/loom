@@ -10,6 +10,7 @@ mod admission;
 mod attach;
 mod bootstrap;
 mod shutdown;
+mod spawn_failure;
 
 pub(in crate::commands::status::web) fn terminal_options() -> ServeOptions {
     ServeOptions {
