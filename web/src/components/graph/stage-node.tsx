@@ -79,22 +79,40 @@ export function StageNode({ data }: NodeProps<StageNodeType>) {
         className="stage-handle"
       />
       <div key={state} className="stage-card">
-        <header className="flex items-center gap-1.5">
-          <StateBadge status={state} className="text-xs" title={completionActivity(stage)?.text} />
-          {TYPE_TAG[stage.stage_type] && (
-            <span className="stage-tag">{TYPE_TAG[stage.stage_type]}</span>
-          )}
-          {stage.held && <span className={cn("stage-tag", toneClass("warning"))}>held</span>}
-          {stage.incoherence !== null && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className={cn("stage-tag cursor-help", toneClass("blocked"))}>
-                  incoherent
-                </span>
-              </TooltipTrigger>
-              <TooltipContent className="font-mono text-[11px]">{stage.incoherence}</TooltipContent>
-            </Tooltip>
-          )}
+        {/* The badge and the buttons keep their size; the tags share what is left.
+            A tag shows whole or not at all (stage-node.css `.stage-tags`), most
+            urgent first, so the type tag gives way before a warning does. The
+            footer's activity line still says held and incoherent. */}
+        <header className="flex min-w-0 items-center gap-1.5">
+          <StateBadge
+            status={state}
+            className="shrink-0 text-xs"
+            title={completionActivity(stage)?.text}
+          />
+          <span className="stage-tags">
+            {stage.incoherence !== null && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className={cn("stage-tag cursor-help", toneClass("blocked"))}>
+                    incoherent
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent className="font-mono text-[11px]">
+                  {stage.incoherence}
+                </TooltipContent>
+              </Tooltip>
+            )}
+            {stage.held && (
+              <span className={cn("stage-tag", toneClass("warning"))} title="held">
+                held
+              </span>
+            )}
+            {TYPE_TAG[stage.stage_type] && (
+              <span className="stage-tag" title={TYPE_TAG[stage.stage_type]}>
+                {TYPE_TAG[stage.stage_type]}
+              </span>
+            )}
+          </span>
           <button
             type="button"
             className="stage-open nodrag"
