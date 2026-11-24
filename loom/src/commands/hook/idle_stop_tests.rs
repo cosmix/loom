@@ -258,3 +258,23 @@ fn unknown_native_children_map_to_none_and_let_the_session_stop() {
     fs::remove_file(native_stage).unwrap();
     assert!(fixture.block().is_some());
 }
+
+#[test]
+fn each_block_records_the_incremented_count_until_the_limit() {
+    let fixture = StopFixture::new(SessionType::Stage);
+    let work = fixture.work.path();
+    let mut heartbeat = read_heartbeat(&heartbeat_path(work, STAGE_ID)).unwrap();
+    let scratch = safe_open_dirfd(&fixture.scratch).unwrap();
+
+    for expected in 1..=MAX_IDLE_STOP_BLOCKS {
+        assert!(fixture.block().is_some(), "block {expected}");
+        assert_eq!(read_marker(&scratch).unwrap().unwrap().count, expected);
+        heartbeat.timestamp += chrono::Duration::milliseconds(1);
+        write_heartbeat(work, &heartbeat).unwrap();
+    }
+    assert_eq!(fixture.block(), None);
+    assert_eq!(
+        read_marker(&scratch).unwrap().unwrap().count,
+        MAX_IDLE_STOP_BLOCKS
+    );
+}
