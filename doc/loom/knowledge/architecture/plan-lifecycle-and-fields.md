@@ -241,7 +241,7 @@ catalogued names such as `loom-rust` as unknown.
 **Criterion hazards.** Error-level (`Hazard::is_error`): `MaskedExit`, `HomeFromExpansion` (HOME assigned
 from a variable or substitution, including `export HOME=$x`), `BareMktempDir`. Warning-level: `Network`,
 `PlanPath` (reads `doc/plans/`, which the lifecycle renames), `VitestNameFilter`, `PipeStatus`,
-`RgReplace` (`rg -r` is `--replace`), `TestRunnerInWiring`, `HardcodedTmp`. Commands are lexed
+`RgReplace` (`rg -r` is `--replace`), `TestRunnerInWiring`, `HardcodedTmp`, `NegatedSearch` (a negated search over another command's output, `! cargo test | rg -q FAILED`, passes whenever the command dies another way; [stage-exit-recording](stage-exit-recording.md#guards-added-with-the-exits)). Commands are lexed
 (`shell_lex.rs`), so text inside a quoted `rg` pattern is data and never read as a hazard.
 
 **The masked-exit rule inspects the final top-level statement only** (`criterion_hazards/masked_exit.rs`):

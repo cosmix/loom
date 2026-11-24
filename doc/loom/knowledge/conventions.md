@@ -165,10 +165,6 @@ See [Code Style and Structure](conventions/code-style-and-structure.md).
 
 See [Git and Build Workflow](conventions/git-and-build-workflow.md).
 
-## The Maintainability Ledger Is Shared State, and Only One Concurrent Stage May Own It
-
-See [Git and Build Workflow](conventions/git-and-build-workflow.md).
-
 ## `cargo test` Is Not This Repo's Test Gate — `--all-targets --no-fail-fast` Is
 
 Run Rust gates from `loom/`: `cargo test --all-targets --no-fail-fast -- --test-threads=4`, plus the separate doctest, fmt, clippy and rustdoc commands.
@@ -228,3 +224,7 @@ In an orchestrated Loom stage, a subagent compiles its own files freely (`cargo 
 ## Defect Triage
 
 A defect that blocks a stage or opens a security hole is fixed in the session that finds it, never deferred. See [defect-triage](conventions/defect-triage.md).
+
+## The Maintainability Ledger: The Commit Hook Lowers Rows, Nothing Raises Them
+
+The pre-commit hook runs `LOOM_LEDGER_TIGHTEN=1 cargo test --test maintainability`, which removes stale rows and lowers shrunk ones; growth still fails. No stage owns the ledger, and a plan criterion is the plain `cargo test --test maintainability`. See [Git and Build Workflow](conventions/git-and-build-workflow.md#the-maintainability-ledger-the-commit-hook-lowers-rows-nothing-raises-them).

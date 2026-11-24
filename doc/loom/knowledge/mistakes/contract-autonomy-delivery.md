@@ -107,3 +107,13 @@
 **Why:** the lexical extractor runs an assertion statement across later tests when a bracket stays open, so inserting text inside it changes the statement.
 
 **Prevention:** add new tests in a new child test file declared at the top of the existing test module (`#[path] mod ...`), or at a point no extracted statement spans, and run `loom stage review integrity <stage-id>` after every test edit. Here the file was restored and the tests moved to `reviewer_brief_budget_tests.rs`.
+
+## Dispute Round Slips: Lost Notices, Superseded Reasons, Self-Cancelling Trials, Stale Reviews
+
+**What happened:** in one run, two disputes judged back to back left one notice, so the next session could not explain a modified frozen file; the first of two accepted disputes was archived as superseded; seven reruns of `loom check --contracts --replacement` each cancelled the previous trial; and an accepted contract replacement made the latest review round stale, costing a third review round and a full gate run.
+
+**Why:** each notice writer truncated the stage's feedback file; the review reason was replaced instead of joined; the trial's own overlay of the frozen file changed the worktree digest that `state_matches` compared, so the rerun could not join the request it followed; and the change fingerprint hashed frozen files, which the daemon's own write changes.
+
+**Prevention:** state shared between the filings of one round accumulates and is cleared by the first filing of the next round, never by each writer. A wait key must not include a value the waited-for job itself changes. A gate that hashes a file the daemon writes needs a rule for that write. Behaviour: [stage-exit-recording](../architecture/stage-exit-recording.md#verdict-delivery-to-the-next-session).
+
+**Fix:** per-round accumulation with a clear on the first filing, joined review reasons, a trial rerun that skips the digest comparison, and a frozen-file cover in the review gate.

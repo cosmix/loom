@@ -74,34 +74,6 @@ Before interpreting failures from a stage environment, inspect ambient
 can depend on these identities. Do not weaken identity or confinement assertions
 to make a host run pass.
 
-## The Maintainability Ledger Is Shared State, and Only One Concurrent Stage May Own It
-
-`loom/maintainability-baseline.txt` is an EXACT-match ledger: it fails when the code
-SHRINKS as well as when it grows, and a plain `cargo test` runs it. It is also one
-file at one path, shared by every worktree in a plan.
-
-Three consequences a plan author has to design around:
-
-1. **Exactly one CONCURRENT stage may own the ledger.** Two parallel stages that both
-   grow or delete ledgered code will conflict on merge, and each will have reconciled
-   against a baseline the other invalidated.
-2. **A plan that grows or deletes ledgered code without owning the ledger cannot pass
-   its own acceptance.** Deleting a ledgered function fails exactly like adding an
-   over-long one, so a stage that removes ~4000 lines of orphaned surface MUST also
-   hold the ledger.
-3. **When a refactor drops an entry under the limit, DELETE the entry rather than
-   lowering it.** Lowering keeps a permanent claim on a function that no longer needs
-   one. This applies to FILE-path entries too, not just function entries: splitting a
-   file's tests into a new file (e.g. `fs/locking.rs` -> `fs/locking/tests.rs`) leaves
-   the original's baseline line stale once it shrinks below its limit, and
-   `tests/maintainability.rs` fails with "stale entry ... no longer violates its
-   limit; remove it" until that line is deleted in the same change.
-
-4. **A stage that shrinks ledgered code edits the ledger in its own commit, whoever the plan names as owner.** `loom stage commit` runs the pre-commit maintainability gate, which refuses a shrunk or stale row, so a stage that deleted a function, split a file or extracted a helper lowers or removes the row before committing even when its signal says integration-verify owns the ledger. Rows only shrink in such an edit (four stages of one plan did it). A plan that expects shrinkage names the ledger in the stage's files or says so in its brief; `loom plan verify` does not check this.
-
-Before adding lines to any function: `rg '<fn name>' loom/maintainability-baseline.txt`.
-If it is listed, refactor rather than extend. After any file split: `rg '<path>' loom/maintainability-baseline.txt`.
-
 ## Working Directory
 
 The Bash tool keeps its working directory ACROSS calls in this harness, so one `cd` silently
@@ -237,3 +209,14 @@ The operator pushes with plain `git push`, never a wrapper script, so the pre-pu
 ## Servers Announce Before They Load
 
 A server command prints its URL and opens the browser as soon as it has bound its port. Loading, indexing and checks run in the background, and routes that depend on them report an in-progress state until they finish.
+
+## The Maintainability Ledger: The Commit Hook Lowers Rows, Nothing Raises Them
+
+`loom/maintainability-baseline.txt` is an exact-match ledger, one file at one path shared by every worktree of a plan. `cargo test --test maintainability` fails when code grows past a row and also when a row is stale (`stale entry ... no longer violates its limit; remove it`) or higher than the measured size.
+
+1. **The pre-commit hook lowers the ledger.** `loom/.githooks/pre-commit` runs `LOOM_LEDGER_TIGHTEN=1 cargo test --quiet --test maintainability`. In that mode the test (`tests/maintainability.rs::tighten_baseline`, `tests/maintainability/tighten.rs::tighten`) removes stale rows and lowers shrunk ones to the measured size; it never adds a row or raises a value. Growth and new violations still fail the hook. The hook stages the lowered ledger only when no other tracked file under `loom/` has unstaged changes (rows measured from unstaged edits can be too low for the index); with unstaged ledger edits and lowered rows it refuses, and otherwise it leaves the ledger unstaged and says it must be committed with the change that shrank the code. The pre-push hook and CI stay strict and read-only.
+2. **No stage owns the ledger.** A stage that shrinks ledgered code (deleted function, split file, extracted helper) gets its rows lowered by `loom stage commit`, whatever its plan names as owner, and does not edit the ledger by hand. To see a plain `cargo test --test maintainability` criterion pass before the commit, run the tighten mode from `loom/` first. A stage that grows ledgered code refactors instead: extract into a new module, never add or raise a row.
+3. **Plan acceptance is the plain test.** The criterion is `cargo test --test maintainability` with its own exit status. A growth-only form that negates a search over the output (`! cargo test ... | rg -q "grew from|..."`) passes when the build fails, and `loom plan verify --strict` flags it as `NegatedSearch`.
+4. **`ratchet_files` and the ledger.** Lowering or removing a row of a ledger whose lines end in an unsigned integer raises no test-integrity event; any change to a ratchet file in another format (a knowledge check baseline, `coverage 80%`) does. A loosening is reverted or resolved through an accepted integrity dispute.
+
+Before adding lines to any function: `rg '<fn name>' loom/maintainability-baseline.txt`. If it is listed, refactor rather than extend. After any file split: `rg '<path>' loom/maintainability-baseline.txt`. The incident that produced this design: [a plan forbade the ledger edit its commit hook demanded](../mistakes/plan-authoring.md#a-plan-forbade-the-edit-its-commit-hook-demanded).
