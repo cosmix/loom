@@ -192,6 +192,11 @@ pub fn install_hook() -> (TempDir, PathBuf) {
         loom::fs::permissions::constants::HOOK_BOUNDED_INPUT,
     )
     .expect("write bounded Python input helper");
+    fs::write(
+        dir.path().join("_skill_tokens.py"),
+        loom::fs::permissions::constants::HOOK_SKILL_TOKENS,
+    )
+    .expect("write skill tokenizer helper");
     write_exec(
         &dir.path().join("_bounded.sh"),
         loom::fs::permissions::constants::HOOK_BOUNDED,

@@ -171,6 +171,9 @@ pub const HOOK_CODEX_FORWARD: &str = include_str!("../../../../loom-hooks/codex-
 pub const HOOK_CODEX_DIRECT_EVENTS: &str =
     include_str!("../../../../loom-hooks/_codex_direct_events.py");
 pub const HOOK_BOUNDED_INPUT: &str = include_str!("../../../../loom-hooks/_bounded_input.py");
+
+/// Prompt tokenizer imported by skill-trigger.sh; installed beside it.
+pub const HOOK_SKILL_TOKENS: &str = include_str!("../../../../loom-hooks/_skill_tokens.py");
 pub const HOOK_CODEX_DIRECT: &str = include_str!("../../../../loom-hooks/_codex-direct.py");
 
 /// StageTerminalGuard hook - blocks Write/Edit/Task/Agent once a stage's own
@@ -268,6 +271,7 @@ pub const LOOM_HOOKS: &[(&str, &str)] = &[
     ("_codex-direct.py", HOOK_CODEX_DIRECT),
     ("_codex_direct_events.py", HOOK_CODEX_DIRECT_EVENTS),
     ("_bounded_input.py", HOOK_BOUNDED_INPUT),
+    ("_skill_tokens.py", HOOK_SKILL_TOKENS),
     ("stage-terminal-guard.sh", HOOK_STAGE_TERMINAL_GUARD),
     ("spawn-guard.sh", HOOK_SPAWN_GUARD),
     ("read-guard.sh", HOOK_READ_GUARD),

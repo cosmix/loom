@@ -5,6 +5,7 @@ TMP=$(mktemp -d "${TMPDIR:-/tmp}/loom-hooktest.XXXXXX")
 trap 'rm -rf "$TMP"' EXIT
 cp "$HOOK" "$TMP/skill-trigger.sh"
 cp "$(dirname "$HOOK")/_bounded_input.py" "$TMP/_bounded_input.py"
+cp "$(dirname "$HOOK")/_skill_tokens.py" "$TMP/_skill_tokens.py"
 HOOK="$TMP/skill-trigger.sh"
 unset LOOM_CODEX_FORWARD LOOM_WORK_DIR LOOM_STAGE_ID LOOM_SESSION_ID
 export HOME="$TMP/home" CODEX_HOME="$TMP/home/.codex"

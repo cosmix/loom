@@ -16,6 +16,7 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 from _bounded_input import read_input
+from _skill_tokens import tokenize
 
 CODEX = "--codex" in sys.argv[1:]
 if CODEX and os.environ.get("LOOM_CODEX_FORWARD"):
@@ -168,27 +169,7 @@ def _load_index():
 
 
 def _tokens(prompt, index):
-    words = re.findall(r"[a-z0-9]+(?:[/._-][a-z0-9]+)*", prompt.lower())
-    tokens = {w for w in words if len(w) > 1 and (w not in STOPWORDS or w in index)}
-    for size in (2, 3):
-        tokens.update(" ".join(words[i:i + size]) for i in range(len(words) - size + 1))
-    stemmed = set()
-    for token in tokens:
-        if token in index:
-            continue
-        parts = token.split(" ")
-        last = parts[-1]
-        stems = []
-        if last.endswith("s") and len(last) > 3:
-            stems.append(last[:-1])
-        if last.endswith("es") and len(last) > 4:
-            stems.append(last[:-2])
-        for stem in stems:
-            candidate = " ".join(parts[:-1] + [stem])
-            if candidate in index:
-                stemmed.add(candidate)
-                break
-    return tokens | stemmed
+    return tokenize(prompt, index, STOPWORDS)
 
 
 def _score_keywords(tokens, index):

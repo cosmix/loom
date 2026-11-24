@@ -195,3 +195,6 @@ mod codex;
 
 #[path = "hooks_skill_trigger_evidence.rs"]
 mod evidence;
+
+#[path = "hooks_skill_trigger_reach.rs"]
+mod reach;
