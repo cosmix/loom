@@ -192,3 +192,13 @@
 **Prevention:** when CI reports bundle drift that a local build does not reproduce, build from a clean copy (`git archive HEAD web` into a scratch directory, fresh install, build) and compare file sizes against the CI build log. Before committing a rebuilt bundle after dependency changes, reinstall from scratch (`rm -rf web/node_modules && bun install --frozen-lockfile`).
 
 **Fix:** reinstalled `web/node_modules` from scratch and rebuilt; the result matched the clean copy byte for byte.
+
+## A Mock Pane App Misjudged Terminal Paging
+
+**What happened:** to test trackpad scrolling in the dashboard terminal, a hand-written alternate-screen mock that paged a full screen per PageUp was run in a fake stage's tmux pane. Its flicks overshot, so tuned code in `web/src/components/terminal/viewer-wheel.ts` was inverted and re-tuned against the mock, undoing a fix verified the day before on real Claude Code. The fake session record also named kind `stage` for a knowledge stage, so the dashboard showed the stage as incoherent (`orchestrator/coherence.rs::executing_stage_incoherence`), which was correct for that record.
+
+**Why:** view-mode paging only sends PageUp/PageDown (`protocol.rs::scroll_input`); how far a page moves is whatever the program in the pane does. A mock's page size says nothing about Claude Code's.
+
+**Prevention:** judge view-mode scroll direction or distance only against a real Claude Code session in the pane, and check `git log` on the pager before changing it. A fake stage works with: a standard stage's record set to status `executing` and `session: <session_id>`; a session `.md` with `stage_id`, backend `tmux`, status `running`, and the session kind the stage's type needs (`worker_session_type`: `knowledge` for a knowledge stage, else `stage`); tracking key `loom-v2-<kind>-<stage_id>`; a PID file `pids/<tracking_key>-<session_id>.pid` holding the pane PID; and `tmux -L loom-<session_id> new-session -s <tracking_key>` running `claude`, served by `loom status --web --terminals`.
+
+**Fix:** reverted the edits; tested with a real Claude Code session in the pane.
