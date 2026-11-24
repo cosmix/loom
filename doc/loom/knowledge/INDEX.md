@@ -12,7 +12,7 @@
 | [entry-points.md](entry-points.md) | Key files agents should read first | 86 |
 | [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 200 |
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 230 |
-| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 250 |
+| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 256 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 116 |
 | [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 250 |
 
@@ -67,7 +67,7 @@
 | [usage-evidence](architecture/usage-evidence.md) |  | 256 |
 | [verification-v2-gates](architecture/verification-v2-gates.md) | Gates | 267 |
 | [web-dashboard](architecture/web-dashboard.md) | Web | 137 |
-| [web-terminal](architecture/web-terminal.md) |  | 188 |
+| [web-terminal](architecture/web-terminal.md) |  | 194 |
 
 ### entry-points
 
@@ -121,6 +121,7 @@
 | [ambient-filesystem-trust](mistakes/ambient-filesystem-trust.md) |  | 186 |
 | [briefs-and-bug-reports](mistakes/briefs-and-bug-reports.md) |  | 396 |
 | [cargo-under-confinement](mistakes/cargo-under-confinement.md) | Cargo in sandboxes and confined runs: audit fetches, cold builds, Seatbelt | 100 |
+| [checkout-identity](mistakes/checkout-identity.md) | Persisted checkout identity: pin path and inode, never st_dev | 13 |
 | [ci-gate-rollout](mistakes/ci-gate-rollout.md) | CI gate rollout slips: untested strict gates, shared index, known-red runs | 84 |
 | [ci-toolchain-and-cargo](mistakes/ci-toolchain-and-cargo.md) |  | 399 |
 | [codex-lane-rogue-wrapper](mistakes/codex-lane-rogue-wrapper.md) |  | 207 |

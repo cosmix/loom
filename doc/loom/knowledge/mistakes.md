@@ -248,3 +248,9 @@ Whole-crate lint run by a subagent, a pinned struct field whose construction sit
 ## Shared main checkout
 
 A bare `git stash` on the main checkout captures other writers' edits, and a scratch-setup `rm -rf` chained with `;` after a failed `cd` deleted its knowledge directory ([stage-practice mistakes](mistakes/review-remediation-stage-practice.md): subdirectory cwd, formatter reach, gate timing, briefs). → [Shared main checkout](mistakes/merge-in-operator-checkout.md#a-whole-tree-git-stash-on-main-swept-up-another-writers-edits)
+
+## Checkout Identity
+
+The persisted main-checkout identity pinned the volume's device number, which changes across a reboot on macOS, so every command reading it failed with `checkout identity directory changed`.
+
+→ [Checkout Identity](mistakes/checkout-identity.md)
