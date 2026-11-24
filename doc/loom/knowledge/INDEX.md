@@ -12,7 +12,7 @@
 | [entry-points.md](entry-points.md) | Key files agents should read first | 86 |
 | [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 200 |
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 230 |
-| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 256 |
+| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 239 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 116 |
 | [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 250 |
 
@@ -147,6 +147,7 @@
 | [knowledge-write-channel](mistakes/knowledge-write-channel.md) | Writes | 156 |
 | [ledger-tui-rendering](mistakes/ledger-tui-rendering.md) |  | 84 |
 | [live-state-pollution](mistakes/live-state-pollution.md) |  | 143 |
+| [macos-socket-and-pty-tests](mistakes/macos-socket-and-pty-tests.md) | macOS setsockopt EINVAL after peer close; PTY 1 KiB reads in pacing tests | 17 |
 | [maintainability-baseline](mistakes/maintainability-baseline.md) |  | 134 |
 | [merge-cleanup-boundary](mistakes/merge-cleanup-boundary.md) |  | 244 |
 | [merge-in-operator-checkout](mistakes/merge-in-operator-checkout.md) |  | 77 |

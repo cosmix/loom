@@ -112,15 +112,11 @@ Settled disputes of the partial-staging guard: rename detection, why `commit -a`
 
 ## Lint and Test-Discipline Summary
 
-Lint and test-discipline lessons spanning `--all-targets`, `--no-fail-fast`, ambient git config in tests, the maintainability ledger, `TODO` in string literals and platform-specific Bash/Rust traps. Racy tests (inherited descriptors, ETXTBSY, serial env, stdin hangs, real-home writes) and CI toolchain drift (clippy on rustup `stable`, `install.sh`) and Cargo under confinement (offline `cargo audit`, dependency rebuilds from a Cargo home path that differs from the session's, Seatbelt `stat`) have their own topics. → [Testing & Lint](mistakes/testing-and-lint.md), [Test Concurrency & Fixtures](mistakes/test-concurrency-and-fixtures.md), [CI Toolchain & Cargo](mistakes/ci-toolchain-and-cargo.md), [Cargo Under Confinement](mistakes/cargo-under-confinement.md), [Test Sweep & Fixture Discipline](mistakes/test-sweep-and-fixture-discipline.md)
+Lint and test-discipline lessons spanning `--all-targets`, `--no-fail-fast`, ambient git config in tests, the maintainability ledger, `TODO` in string literals and platform-specific Bash/Rust traps. Racy tests (inherited descriptors, ETXTBSY, serial env, stdin hangs, real-home writes) and CI toolchain drift (clippy on rustup `stable`, `install.sh`) and Cargo under confinement (offline `cargo audit`, dependency rebuilds from a Cargo home path that differs from the session's, Seatbelt `stat`) have their own topics. A test asserting an `flock` is free right after `drop` must poll to a deadline, because a child forked by another test thread holds the descriptor until exec. A failing test binary stops cargo before it runs the rest, which can hide a `tests/maintainability.rs` baseline failure ([maintainability-baseline](mistakes/maintainability-baseline.md)). → [Testing & Lint](mistakes/testing-and-lint.md), [Test Concurrency & Fixtures](mistakes/test-concurrency-and-fixtures.md), [CI Toolchain & Cargo](mistakes/ci-toolchain-and-cargo.md), [Cargo Under Confinement](mistakes/cargo-under-confinement.md), [Test Sweep & Fixture Discipline](mistakes/test-sweep-and-fixture-discipline.md)
 
 ## Verification v2 Delivery Mistakes
 
 Twelve prevention rules from the verification-v2 plan: wave-brief ownership gaps, truncated caller searches, worker sizing and `loom subagents watch` traps, rustfmt-before-measure, the pre-commit rustdoc gate, the silent markdown lint, unregistered hook tests, commit mechanics, gates on the wrong record, unverified reviews, fixtures that cannot fail, frozen contract files, ledger lines, stage gotchas. → [verification-v2-delivery](mistakes/verification-v2-delivery.md). Token-flow stages added `reachable` call shapes, a required TypeScript field, a source edit after the dist build and a filtered commit ticket.
-
-## An flock Outlives `drop` Under a Forking Test Binary
-
-A test asserting an `flock` is free right after `drop` must poll to a deadline. A child forked by another test thread holds the descriptor until exec. → [Test Concurrency & Fixtures](mistakes/test-concurrency-and-fixtures.md)
 
 ## Source Graph Delivery
 
@@ -128,14 +124,9 @@ Resolver fixtures, candidate narrowing across files, cache mutation outside Grap
 
 ## Gate and Review Rounds
 
-Review rounds recorded twice or counted per message, a re-review after every small fix, gate runs that repeat the criteria completion runs, and a verifier round started before the cheap checks. → [Gate and Review Rounds](mistakes/subagent-orchestration.md)
+Review rounds recorded twice or counted per message, a re-review after every small fix, gate runs that repeat the criteria completion runs, and a verifier round started before the cheap checks. Full suites belong at the gate; targeted runs have no count cap. Keep completed review findings separate from active assignments; coordinate shared build resources and verify integrated fixtures before claiming a green gate.
 
-Keep completed review findings separate from active assignments, and replenish independent work to the requested concurrency. → [Review Tracker](mistakes/review-tracker.md)
-
-Coordinate shared build resources and verify integrated fixtures before claiming a green gate.
-→ [Review Integration Verification](mistakes/review-integration-verification.md)
-
-Full suites belong at the gate; targeted runs have no count cap. [Details](mistakes/test-sweep-and-fixture-discipline.md#duplicate-test-runs-were-framed-as-a-run-count-problem).
+→ [Gate and Review Rounds](mistakes/subagent-orchestration.md), [Review Tracker](mistakes/review-tracker.md), [Review Integration Verification](mistakes/review-integration-verification.md), [Run-count framing](mistakes/test-sweep-and-fixture-discipline.md#duplicate-test-runs-were-framed-as-a-run-count-problem)
 
 ## Runtime and Daemon Incidents
 
@@ -145,13 +136,9 @@ Ten incidents: merge cleanup that destroyed the evidence it needed, a tracked `<
 
 ## Design and Boundary Lessons
 
-Eight lessons: a store shipped without its consumer, a strict schema attribute breaking a second reader, writer and reader disagreeing on one address, a doctrine channel that was not privileged, computed values with hidden couplings, visibility capped by path reachability, auditing untrusted-value boundaries, and a raw string ended early by its own body.
+Eight lessons: a store shipped without its consumer, a strict schema attribute breaking a second reader, writer and reader disagreeing on one address, a doctrine channel that was not privileged, computed values with hidden couplings, visibility capped by path reachability, auditing untrusted-value boundaries, and a raw string ended early by its own body. A frontmatter split must keep the YAML start and post-delimiter body start as separate offsets; tests assert both slices across line-ending variants.
 
-→ [Design and Boundary Lessons](mistakes/untrusted-value-boundaries.md)
-
-A frontmatter split must keep the YAML start and post-delimiter body start as
-separate offsets; tests should assert both slices across line-ending variants.
-→ [Frontmatter boundary offsets](mistakes/consolidation-drift.md#a-frontmatter-split-shadowed-the-yaml-start-offset)
+→ [Design and Boundary Lessons](mistakes/untrusted-value-boundaries.md), [Frontmatter boundary offsets](mistakes/consolidation-drift.md#a-frontmatter-split-shadowed-the-yaml-start-offset)
 
 ## Agent and Process Lessons
 
@@ -166,10 +153,6 @@ A chain check that read attributes by position and refused by deny-list (a `cfg`
 ## Web Dashboard Layout
 
 Codex lanes were grouped all together instead of per forwarder/job pair, and a nested cluster frame narrowed its heat strips out of line with the plain lanes. Group on AgentFlow.forwarder, cancel a nested frame's border and padding, and measure strip x ranges in a real browser. → [Web Dashboard](mistakes/web-dashboard.md)
-
-## Cargo test stops at the first failing target
-
-A failing test binary stops cargo before it runs the rest, which can hide a `tests/maintainability.rs` baseline failure. See [maintainability-baseline](mistakes/maintainability-baseline.md).
 
 ## Planning Sandbox Delivery
 
@@ -237,7 +220,7 @@ Strict CI gates pushed in bulk and untested, a commit that took another session'
 
 Whole-crate lint run by a subagent, a pinned struct field whose construction sites no worker owned, and concurrent workers sharing one `$TMPDIR`; the cfg and merge slips are in [Review Integration Verification](mistakes/review-integration-verification.md).
 
-→ [macOS Boundary Delivery](mistakes/native-macos-delivery.md), [Cargo Test Harness Layout](mistakes/native-macos-delivery.md#a-harness-relative-binary-lookup-missed-the-cargo-1100-test-layout) (kernel tests that always skipped), [Tunnel Half-Close](mistakes/native-macos-delivery.md#the-tunnel-copier-dropped-replies-after-a-client-half-close) (replies dropped once they ran)
+→ [macOS Boundary Delivery](mistakes/native-macos-delivery.md), [Cargo Test Harness Layout](mistakes/native-macos-delivery.md#a-harness-relative-binary-lookup-missed-the-cargo-1100-test-layout) (kernel tests that always skipped), [Tunnel Half-Close](mistakes/native-macos-delivery.md#the-tunnel-copier-dropped-replies-after-a-client-half-close) (replies dropped once they ran), [macOS Socket and PTY Tests](mistakes/macos-socket-and-pty-tests.md) (setsockopt EINVAL after peer close; slow readers paced in messages)
 
 ## Plan Input, Convention and Amendment Slips
 
