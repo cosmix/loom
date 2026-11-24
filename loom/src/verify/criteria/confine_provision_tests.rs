@@ -11,7 +11,10 @@ fn a_regex_prefix_escapes_metacharacters_and_refuses_a_quote() {
     assert!(regex_prefix(Path::new("/a\"b")).is_err());
 }
 
+/// Serial: the rules and the assertion each read `HOME` (the scratch base),
+/// and serial tests repoint it (`test_cache_env.rs`, `scratch_home.rs`).
 #[test]
+#[serial_test::serial]
 fn provisioning_denies_the_stage_roots_and_the_scratch_base() {
     let root = Path::new("/cache/loom/stage-cache/0123");
     let grants = Grants {
