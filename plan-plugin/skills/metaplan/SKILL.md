@@ -32,14 +32,49 @@ of that work. For follow-ups, also read the feature's `findings.md` ledger
 (`doc/plans/<feature>/findings.md`) and its `REVIEW-*.md` run reviews: the ledger's open
 findings are the default candidates.
 
+Read every `## Deferred to planning` list in the vision and the sections, and the vision's
+`## Planning notes`, before the discussion. Settle each deferred point in the metaplan, or
+carry it to the plan that owns it by naming it in that plan's entry. A section's
+`## Deferred to planning` is spec content to the trace, so the entry that settles its points
+names `section_<nn>#deferred-to-planning` in `Covers:`.
+
 ## Settle the cut into plans
 
-Load `loom-plan:brainstorming` and give it the target metaplan path. Discuss
-what each plan delivers, which product sections it implements by number, the
+Load `loom-plan:brainstorming` and give it the target metaplan path, at technical level.
+Discuss what each plan delivers, which product sections it implements by number, the
 execution order, and what each plan needs from another. Ask one plain-text
 question per message, never through a question tool. Offer choices when the
 answer space is small and two or three approaches with trade-offs and a
 recommendation before settling the direction.
+
+Make the technical choices yourself and mark each `(My call.)` with its reason. Ask the user
+only about trade-offs with business consequences (cost, vendor lock-in, licensing, operating
+burden), unless `## Planning notes` say the user wants to decide technical matters. In a
+repository that already has code, the existing stack and patterns are the default.
+
+## Apply the organisation's policies
+
+Look for existing policies and standards as the session brief describes. Engineering policies
+bind the plans:
+
+- The definition of done: each item becomes acceptance criteria or a quality gate of the plans
+  it binds.
+- Security policies: stage requirements and review focus.
+- Application blueprints, templates and reference architectures: the starting structure.
+- A mandated or existing stack: use it. A deviation needs the user's approval, and its
+  reason is recorded.
+- Coding and testing standards.
+
+When none is found, ask the user once whether such policies exist and where, and record the
+answer. A policy that conflicts with a settled decision or a user instruction is raised with
+the user; never pick silently.
+
+Record what applies under an unnumbered `## Policies and standards` heading before the first
+entry: one list item per policy with its path, what it requires, and which plans it binds,
+named by entry number and title. Write `none found` when the user confirmed there are none,
+so later sessions do not ask again. Name the plans without their backticked file names: a
+backticked plan file that does not exist yet is reported by `loom plan check` as a broken
+reference. Plans cite the policy paths in their briefs.
 
 Write each settled decision into the metaplan as it settles, with its reason
 when that is not obvious. Make the document understandable without the chat.

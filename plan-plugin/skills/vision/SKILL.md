@@ -24,10 +24,19 @@ sections needed to understand the direction and the section list. Keep settled d
 revising them.
 
 Load `loom-plan:brainstorming` to run the discussion, with
-`doc/product/<feature>/index.md` as its target. Ask about the problem, users and
-goals one question at a time. Offer choices when
-the answer space is small. Before settling a direction, propose two or three approaches
-with their trade-offs and your recommendation. Play your understanding back to the user.
+`doc/product/<feature>/index.md` as its target, at product level: follow the session brief's
+rule for product documents. Ask about the problem, users and goals one question at a time.
+Offer choices when the answer space is small. Before settling a direction, propose two or
+three product approaches (different ways the product could serve its users) with their
+trade-offs and your recommendation. Play your understanding back to the user.
+
+Raise no technical question (stack, architecture, storage, libraries). When the user
+raises a technical point, record it under `## Deferred to planning` as their constraint, in
+their words. When the user says how they want the planning conducted, record it under
+`## Planning notes` in the same turn.
+
+Apply the organisation's policies that set product requirements, as the session brief
+describes: look for them before asking, link them, and state the requirement each imposes.
 
 Write each part as the discussion settles it; never wait until the discussion ends.
 Record decisions in words a reader without the chat can understand, including the reason
@@ -45,8 +54,18 @@ or drop sections:
 - Goals
 - Non-goals
 - Anti-goals
+- Quality requirements
 - Specification sections
 - Decisions
+- Deferred to planning
+- Planning notes
+
+Under `## Quality requirements`, list the non-functional targets with numbers (availability,
+recovery, latency, security, retention, accessibility), in the users' terms. Mark each target
+the user did not state as your call. Under `## Deferred to planning`, list the user's technical
+constraints in their words, and add nothing of your own except constraints planning must
+respect; the list holds no questions. Under `## Planning notes`, list how the user wants the
+planning conducted. Both headings are optional: add one when it has content.
 
 Under `## Specification sections`, put a Markdown table with the zero-padded two-digit
 section number in the first column, then the section name and what it covers:

@@ -42,6 +42,13 @@ Treat plans prefixed `IN_PROGRESS-`, `DONE-`, or `RETIRED-`, their brief bundles
 read-only. If asked to change one, explain the limit and offer a new metaplan entry
 or a spec refinement.
 
+The step skill that loaded you names the level of detail. At product level (vision and
+product sections) follow the session brief's rule for product documents: details,
+questions and approaches concern what the product's users meet, and a technical point the
+user raises goes under `## Deferred to planning`. At technical level (metaplan and plan)
+discuss and settle design, stack and structure. Read the vision's `## Planning notes`, if
+any, and follow them.
+
 Find out what the user wants and why before settling how it should work.
 Record each decision in the document it binds (usually the target; the step
 skill that loaded you names where other decisions go) as soon as it settles, in
@@ -57,7 +64,7 @@ you changed. If something material is missing, begin the discussion.
 
 Look before you ask. Read the supplied request, spec, plan, references, and
 relevant existing work until you can explain how it works today and what the
-proposal would touch. Never ask for something that context already answers.
+proposal would change. Never ask for something that context already answers.
 
 If the user supplied a detailed request, play it back in your first message:
 what they want, who it serves, and why. Add relevant findings, constraints,
@@ -90,24 +97,29 @@ Cover the territory that matters, without treating it as a script:
 - Prior art they liked or disliked, what exists, and what they have tried.
 - Constraints, resources, and details they care about.
 
-Find out early which choices about platform, tools, medium, or resources the
-user wants to make and which they leave to you. Build on existing work.
-State sensible defaults plainly and record your choices as your proposals,
-with reasons; never present them as decisions the user made.
+Build on existing work. At product level, ask which constraints the product must
+respect (supported platforms, integrations, quality targets, rules from the user's
+organisation) and leave technical choices to planning. At technical level, find out
+which technical choices the user wants to make and which they leave to you. State
+sensible defaults plainly and record your choices as your proposals, with reasons;
+never present them as decisions the user made.
 
-When further investigation would help, offer to look into relevant code,
-files, data, or external references and say what you would seek. Let the user
-decide. If a quick exploration would clarify uncertainty, agree its question
-and record a throwaway example or alternative in the target document. Keep
-exploration within the document-only write limits and bring the finding back
-to the discussion; it does not authorize building the product.
+When further investigation would help, offer to look into relevant files, data,
+or external references and say what you would seek; at product level, code is read
+only to learn how the product behaves today. Let the user decide. If a quick
+exploration would clarify uncertainty, agree its question and record a throwaway
+example or alternative in the target document. Keep exploration within the
+document-only write limits and bring the finding back to the discussion; it does
+not authorize building the product.
 
 ## Lay out approaches before settling a direction
 
 Once you understand the intent, compare ways to achieve it in a message of
-their own. Consider real alternatives and discard weak ones, including those
-that conflict with the user's reasons or existing work. Present two or three
-viable approaches, each grounded in the project, with its trade-offs.
+their own. At product level the approaches are different ways the product could
+serve its users; at technical level they are ways to build it. Consider real
+alternatives and discard weak ones, including those that conflict with the user's
+reasons or existing work. Present two or three viable approaches, each grounded in
+the project, with its trade-offs.
 Recommend one, explain why, and ask which direction the user wants.
 If only one approach makes sense, explain why the others do not fit.
 Record the chosen approach and its reason as soon as it settles.
@@ -127,7 +139,7 @@ marking your calls. Correct the document when the user corrects your understandi
 
 After the approach settles, describe the size of the work plainly and let the
 user correct it. Keep a small change short; give a project enough detail for
-a capable builder to work from without returning to the chat. If the scope
+a later session to work from without returning to the chat. If the scope
 grows, say so and agree the larger scope. If it contains independent projects,
 agree their order and discuss them one at a time.
 
@@ -135,10 +147,10 @@ Build the target document incrementally in the loading step's shape. Cover:
 
 - Intent and reasons; goals, non-goals, and anti-goals.
 - Constraints and the alternatives considered, their trade-offs, and the chosen approach.
-- The parts of the design the user decided and what remains for the builder.
+- The parts the user decided and what remains for later sessions to settle.
 
 For a small change, a line or two per point may suffice. For a project, read
-the document as a builder and identify gaps. Fill answers already present in
+the document as a reader who must build the right thing, and identify gaps. Fill answers already present in
 the conversation or project. Settle minor details as your calls and mark them.
 Bring consequential questions only the user can answer back to the discussion,
 one per message, then record the answers. Present the document with a short

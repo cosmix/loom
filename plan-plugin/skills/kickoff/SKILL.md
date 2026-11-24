@@ -29,6 +29,14 @@ at a time in plain text. Offer choices when the answer space is small, and
 compare viable approaches with their trade-offs before settling a direction.
 Play your understanding back and keep proposals distinct from settled decisions.
 
+Match the discussion to the size. A feature kickoff stays at product level and follows the
+session brief's rule for product documents: its approaches are different ways the product
+could serve its users, and it raises no technical question. A technical point the user raises
+is kept as their constraint to write under `## Deferred to planning`, and steering about how
+to plan is kept for `## Planning notes`. A standalone-plan kickoff has no vision or product
+spec: it may discuss technical design, and it applies the engineering policies the metaplan
+and plan skills list, after looking for them as the session brief describes.
+
 Keep the problem, settled decisions and open questions in the conversation.
 For a feature, propose sections with clear ownership of each topic. Mark each
 section as settled, being worded or open as the discussion develops.
@@ -95,7 +103,8 @@ state, rather than only the fields that changed; do not put prose after it.
   otherwise omit it or set it to `false`.
 - `problem`: a string describing the problem.
 - `decisions`: an array of strings containing settled decisions.
-- `questions`: an array of strings containing open questions.
+- `questions`: an array of strings containing open questions (for a feature, product
+  questions only).
 - `sections`: features only; an array of objects with only `title` (a string)
   and `state` (`"settled"`, `"wording"` or `"open"`). Omit it for a plan.
 

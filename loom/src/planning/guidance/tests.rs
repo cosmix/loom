@@ -225,6 +225,60 @@ fn common_brief_carries_all_write_limits_and_the_writing_plans_prohibition() {
     assert!(text.contains("superpowers:writing-plans"));
 }
 
+/// Product documents stay at product level, steering reaches every session, and policies are
+/// discovered; the sessions that write product documents all receive the brief.
+#[test]
+fn common_brief_keeps_product_documents_at_product_level_and_applies_policies() {
+    let text = common_brief();
+    for phrase in [
+        "## Product documents: what they cover",
+        "would someone who uses the product notice if it\nchanged?",
+        "`## Deferred to planning`",
+        "keep technical points out of `## Open questions`",
+        "## Planning notes",
+        "## Organisation policies and standards",
+        "Discover before asking.",
+        "When a policy conflicts with a settled decision or a user instruction, say so and ask.",
+    ] {
+        assert!(text.contains(phrase), "common brief is missing {phrase:?}");
+    }
+}
+
+#[test]
+fn product_level_skills_leave_technical_choices_to_planning() {
+    let vision = asset(PLAN_PLUGIN, "skills/vision/SKILL.md");
+    for heading in [
+        "Quality requirements",
+        "Deferred to planning",
+        "Planning notes",
+    ] {
+        assert!(
+            vision.contains(&format!("- {heading}\n")),
+            "vision lacks {heading}"
+        );
+    }
+    for skill in ["brainstorming", "section", "kickoff"] {
+        let text = asset(PLAN_PLUGIN, &format!("skills/{skill}/SKILL.md"));
+        assert!(text.contains("product level"), "{skill} names no level");
+        assert!(
+            !text.contains("Cite current code"),
+            "{skill} asks for code citations"
+        );
+    }
+    for skill in ["metaplan", "plan"] {
+        let text = asset(PLAN_PLUGIN, &format!("skills/{skill}/SKILL.md"));
+        for phrase in [
+            "## Deferred to planning",
+            "`(My call.)`",
+            "## Planning notes",
+        ] {
+            assert!(text.contains(phrase), "{skill} is missing {phrase:?}");
+        }
+    }
+    let metaplan = asset(PLAN_PLUGIN, "skills/metaplan/SKILL.md");
+    assert!(metaplan.contains("## Policies and standards"));
+}
+
 #[test]
 fn summary_brief_rebuilds_only_summaries_without_questions() {
     let text = brief::summary_brief();

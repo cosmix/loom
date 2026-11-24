@@ -24,7 +24,10 @@ has `Implements: none`, and has no metaplan.
    Offer a new metaplan entry or a spec refinement for the correction instead.
 3. Make the change the user asks for. Resolve material ambiguity with the user in
    plain text, one question at a time. Record each settled decision immediately in
-   the document it affects, with its reason when the reason is not obvious.
+   the document it affects, with its reason when the reason is not obvious. A document
+   under `doc/product/` follows the session brief's rule for product documents: technical
+   points go under its `## Deferred to planning`, never under `## Open questions`, and the
+   vision's `## Planning notes` bind how you work.
 4. Carry the change into every document that states the same thing in the same turn.
    For a product section, that includes the feature's vision (`index.md` and its
    `## Decisions`): correct any statement the change makes untrue.

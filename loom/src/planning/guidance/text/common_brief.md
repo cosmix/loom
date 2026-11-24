@@ -62,6 +62,67 @@ Section 09 gives the sessions their skills; these are the conventions the skills
 - Stable headings: a session rewording a heading that summaries cite does so on purpose, since
   it costs a rebuild.
 
+## Product documents: what they cover
+
+This applies to every document under `doc/product/`: the vision and the product sections.
+They describe the product as its users meet it: who they are, what they can do and see, the
+rules the product follows, and the qualities it must have. How it is built belongs to the
+metaplan and the plans.
+
+Test every detail and every question: would someone who uses the product notice if it
+changed? Users include end users, admins, operators, and developers who call the product's
+API or CLI. Name the audiences you assume in your first playback.
+
+- Write and ask about what passes the test: behaviour, business rules, surfaces users touch
+  (screens, API shapes for API users, CLI flags, file formats they exchange), deployment
+  model and supported platforms, integrations by name, and quality targets with numbers
+  (availability, recovery, latency, security, retention, accessibility).
+- Leave the rest to planning: stack, architecture, storage, data model, libraries, internal
+  interfaces and code locations. Do not raise them.
+- Read code, mocks and documents to learn how the product behaves today, and write what you
+  learn as behaviour. State a feasibility risk as its consequence for the product.
+- Ask quality questions in the user's terms ("how long can users wait after an outage?").
+  Record a target the user did not state as your call.
+- When the user raises a technical point, record it under `## Deferred to planning` as their
+  constraint, in their words, and continue. Settle it now only if they ask to. Add nothing to
+  that list yourself except constraints planning must respect. An item there is never an open
+  question: keep technical points out of `## Open questions`, which holds product questions.
+- Mocks show the intended experience. Take flows, content and layout from them as proposals
+  to confirm; ignore their markup.
+
+## Planning notes
+
+The vision may carry `## Planning notes`: how the user wants the planning conducted ("don't
+ask about implementation", "the author is non-technical", "keep sections short"). Read it
+before your first reply; every session on the feature follows it. When the user gives such
+steering, record it there in the same turn. A team's write scope excludes the vision: there
+the lead adds the steering to the shared brief and lists it in the hand-over for recording,
+and teammates report steering they hear to the lead. A decision about the product goes in
+the document it binds.
+
+## Organisation policies and standards
+
+Discover before asking. Look for existing policies and standards: project instruction files
+(`CLAUDE.md`, `AGENTS.md`, `CONTRIBUTING*`, `README`), `SECURITY.md`, documents on standards,
+policies, ADRs, templates, blueprints or reference architectures under `doc/` or `docs/`, loom
+knowledge (`doc/loom/knowledge/INDEX.md`, then conventions, stack and patterns), CI
+configuration and package manifests for the stack in use, and issue and pull-request templates.
+Documents the user attached or pasted count too.
+
+- Product sessions (vision, sections) apply policies that set product requirements: security
+  and compliance classes, data handling and retention, the accessibility standard, brand and
+  design system, legal terms. Link to the policy and state the requirement it imposes with
+  that link; do not restate the policy. If the organisation has a spec or PRD template, follow
+  its content headings and keep what the app parses and the conventions above: the level-1
+  title, the vision's `Specification sections` table, the back-link line, `Open questions` and
+  `Out of scope for this section`.
+- Metaplan and plan sessions apply engineering policies; their skills list them.
+- When nothing is found, the metaplan session asks the user once whether such policies exist
+  and where, and records the answer. The vision session asks only when the feature's domain
+  suggests regulated or policy-bound product requirements.
+- When a policy conflicts with a settled decision or a user instruction, say so and ask. Never
+  pick silently.
+
 ## What this session may write
 
 - **Documents only.** Write only under `doc/`. Leave code, configuration and the

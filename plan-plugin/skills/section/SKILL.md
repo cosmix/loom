@@ -23,17 +23,26 @@ section already written in the feature, including the target when revising it.
 Treat the vision and written sections
 as binding constraints; identify the decisions and section boundaries that apply.
 
-Read `doc/loom/knowledge/INDEX.md`, then pull only the knowledge topics this section
-touches. Read the source code each rule about current behavior rests on. Ground those
-rules in the tree, and keep their `path:line` references for the document.
+Read the vision's `## Planning notes` and `## Deferred to planning` and follow them. When
+the section describes an existing product, you may read its code and knowledge
+(`doc/loom/knowledge/INDEX.md`, then the topics the section touches) to learn what users
+see and do today, and write that as behaviour. A `path:line` reference is allowed only as a
+pointer to current behaviour, never as the substance of a rule.
+
+Apply the organisation's policies that set product requirements, as the session brief
+describes: look for them before asking, link them, and state the requirement each imposes.
 
 ## Settle decisions as you write
 
 Load `loom-plan:brainstorming` to discuss the section's open decisions with the user,
-using `doc/product/<feature>/section_<nn>.md` as its target. Discuss one decision
-at a time; offer
-choices where the answer space is small and two or three approaches with trade-offs
-and a recommendation before settling a direction. Play your understanding back.
+using `doc/product/<feature>/section_<nn>.md` as its target, at product level: follow the
+session brief's rule for product documents. Discuss one decision at a time; offer
+choices where the answer space is small and two or three product approaches with
+trade-offs and a recommendation before settling a direction. Play your understanding back.
+Raise no technical question. When the user raises a technical point, record it under the
+section's `## Deferred to planning` as their constraint, in their words. When the user says
+how they want the planning conducted, record it under the vision's `## Planning notes` in
+the same turn; in team mode follow the team mode rules below.
 
 Write each decision into the section as it settles, in words a reader without the chat
 can understand. Include the reason when it is not obvious. Keep points still open
@@ -52,7 +61,7 @@ Part of the [<vision title>](index.md).
 
 Follow with a short paragraph stating what the section covers and which other sections
 it leans on. Put decisions under headings that name their topic and state the rules
-plainly. Cite current code as `path:line` wherever a rule rests on it.
+plainly, as behaviour users can notice.
 
 Append `(My call.)` to any decision you make that the user, the vision or an earlier
 section did not make. Keep that marker beside the decision so a reviewer can find
@@ -60,7 +69,9 @@ choices nobody asked for.
 
 Include `## Open questions`. For each unresolved point, write a list item containing
 the question, its options and your recommendation. Do not treat an open question as
-a settled requirement; leave the heading without question items when none remain.
+a settled requirement; leave the heading without question items when none remain. Open
+questions are product questions; technical points go under `## Deferred to planning`,
+included only when the section has any.
 
 Include `## Out of scope for this section`. Name the section that owns each excluded
 topic, keeping the boundaries consistent with the vision and the sections you read.
@@ -74,14 +85,21 @@ fewer when fewer documents are missing.
 
 The lead reads the vision and settled decisions, then writes a short shared
 brief in the runtime drafts directory the session may write. Include terms,
-decisions, which document owns each topic and the cross-references to expect.
+decisions, which document owns each topic and the cross-references to expect. The
+brief also carries the session brief's rule for product documents, the vision's
+`## Planning notes` and `## Deferred to planning`, and the policies that apply, because
+teammates read the shared brief and the vision only.
 Create one team with the stated teammate count and assign each teammate its
 documents and the shared brief. Give each file exactly one owner.
 
 Teammates follow the section-writing guidance above within their assignments.
 While drafting, they message each other with `SendMessage` to agree on a term,
-settle an overlap or ask which document owns a topic. Keep unresolved choices
-under `## Open questions`; keep proposed decisions marked as the writer's calls.
+settle an overlap or ask which document owns a topic. Keep unresolved product
+choices under `## Open questions`; record technical points under the document's own
+`## Deferred to planning`. Keep proposed decisions marked as the writer's calls. A
+teammate that hears steering about how the planning should be conducted reports it to
+the lead. The vision is outside the run's write scope, so the lead adds the steering to the
+shared brief and lists it in the hand-over as text for the vision's `## Planning notes`.
 
 A teammate writes only its own documents. The run's listed documents are the
 complete write scope under `doc/`; the planning hook refuses a write to any

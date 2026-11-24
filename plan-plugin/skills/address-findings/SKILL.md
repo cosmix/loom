@@ -45,7 +45,9 @@ Edit only your own documents, and only as far as your findings require: the pass
 quotes, the stub or `Covers:` line that must stay true with it, and the cross-references the
 change breaks. Keep settled decisions and the document's established terms. A choice the finding
 leaves open goes under the document's `## Open questions` as a list item with the options and
-your recommendation; it does not get decided by the edit. Never write or edit a `Settled:` line.
+your recommendation; it does not get decided by the edit. A document under `doc/product/`
+follows the session brief's rule for product documents: a technical point goes under its
+`## Deferred to planning`, never under `## Open questions`. Never write or edit a `Settled:` line.
 Never edit the ledger: report to the lead instead.
 
 ## Limits
