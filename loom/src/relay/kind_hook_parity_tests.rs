@@ -3,9 +3,12 @@
 
 use super::RequestKind;
 use crate::fs::permissions::constants::HOOK_RELAY_KINDS;
+use serial_test::serial;
 use std::process::Command;
 
+// Serial: it spawns `bash` through PATH, which other serial tests replace for their duration.
 #[test]
+#[serial]
 fn relay_kind_is_control_agrees_with_is_control_for_every_wire_name() {
     let dir = tempfile::tempdir().unwrap();
     let library = dir.path().join("_relay_kinds.sh");

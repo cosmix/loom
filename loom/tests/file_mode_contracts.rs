@@ -56,6 +56,7 @@ fn symlink(repo: &TempDir, link: &str, target: &str) {
 }
 
 fn serve(repo: &TempDir) -> RunningServer {
+    test_support::isolated_loom_home();
     start(ServerOptions {
         root: repo.path().to_path_buf(),
         host: IpAddr::V4(Ipv4Addr::LOCALHOST),
@@ -213,7 +214,8 @@ fn stale_opened_hash_returns_current_text() {
             assert_eq!(current_hash, normalized_hash(current));
         }
         Ok(SaveOutcome::Saved { .. }) => panic!("a stale opened hash overwrote the file"),
-        _ => panic!("a stale opened hash must answer Conflict"),
+        Ok(_) => panic!("a stale opened hash must answer Conflict"),
+        Err(refusal) => panic!("a stale opened hash must answer Conflict, got {refusal:?}"),
     }
     assert_eq!(read(&repo, "doc/product/section_01.md"), current);
     let _ = server.stop();

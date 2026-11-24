@@ -91,3 +91,10 @@ it from the directory that holds `Cargo.lock`: the command has no `--manifest-pa
 **Prevention:** when the gate shows `include_bytes!` errors under a scratchpad path, delete that one stale `loom/target/debug/build/loom/<hash>` output directory and rerun; touch nothing else in `target/`. A `build.rs` that embeds files by absolute path should key its rerun on those paths existing.
 
 **Fix:** removing the one stale output directory fixed the build both times.
+
+## The Full Suite Has No Temp Directory That Satisfies Every Test Inside a Claude Code Sandbox (2026-11-24)
+
+**What happened:** a full `cargo test --all-targets` inside a Claude Code Bash sandbox failed 17 `hooks_subagent_verify_guard` tests, because they refuse a temp root whose path contains "claude" and the sandbox's `TMPDIR` is `/tmp/claude-<uid>/...`. Rerunning with `TMPDIR` under `loom/target/` put every temp directory inside the loom repository: 114 lib tests that need a directory outside any repository failed, and `codex_evidence` failed with "workspace mismatch". Two `file_mode_contracts` tests also fail there, because `fs::locking::lock_plan` locks under the fixed `/tmp/loom-plan-locks-<uid>` and the sandbox mounts `/tmp` read-only.
+**Why:** the sandbox's only writable temp locations either contain "claude" or sit inside the repository, and each class of test rules one of them out.
+**Prevention:** run the suite with the sandbox's default `TMPDIR`, never one inside the repository. Treat the `hooks_subagent_verify_guard` and the two plan-lock failures as environmental, and confirm them with the user's own run (`! cd loom && cargo test --test integration hooks_subagent_verify_guard --test file_mode_contracts`). On this host, use `CARGO_BUILD_JOBS=16` and `--test-threads=16`; an unthrottled run alongside a second build ran the machine out of memory.
+**Fix:** none in the code. `codex_evidence` now stubs both sandbox probes, so a sandboxed Linux host no longer sends it down the direct lane.

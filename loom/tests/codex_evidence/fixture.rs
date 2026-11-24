@@ -10,7 +10,7 @@ use std::process::Output;
 use tempfile::{Builder, TempDir};
 
 use crate::fixture_support::{
-    apply_status, install_fake_companion, install_hooks, install_seatbelt_probe, output_text,
+    apply_status, install_fake_companion, install_hooks, install_sandbox_probes, output_text,
     updated_command, workspace_state_dir, write_session, write_stage, ProcessEnvironment,
 };
 
@@ -64,7 +64,7 @@ impl Fixture {
         fs::create_dir(project.join(".git"))?;
         install_hooks(&hooks)?;
         install_fake_companion(&home)?;
-        install_seatbelt_probe(&bin)?;
+        install_sandbox_probes(&bin)?;
         fs::create_dir_all(home.join(".codex/plugin-data/state"))?;
         write_stage(&work, &project)?;
         write_session(&work, &project)?;
@@ -150,7 +150,8 @@ impl Fixture {
         let job_path = self.job_path(job_id);
         ensure!(
             job_path.is_file(),
-            "fake companion did not write exact job file"
+            "fake companion did not write exact job file; wrapper said: {}",
+            output_text(&wrapper)
         );
         Ok(Launch {
             authorization,
