@@ -129,7 +129,9 @@ a.concept-key-doc:hover .concept-key-title {
   color: var(--tone-executing);
 }
 
-.concept-key-more-item {
+/* Outranks `.concept-key-list > li`, whose subgrid would squeeze the button into the 22px mark
+   track. */
+.concept-key-list > .concept-key-more-item {
   display: block;
   grid-column: 1 / -1;
   padding-block: 0;

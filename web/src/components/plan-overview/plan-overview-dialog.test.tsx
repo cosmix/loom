@@ -140,10 +140,11 @@ describe("PlanOverviewDialog", () => {
     expect(open().textContent).toContain(`~/.loom/stats/plans/${sampleRecord.plan_id}.json`);
   });
 
-  it("names the saved file under the loom home, which LOOM_HOME may move", () => {
-    const text = open().textContent ?? "";
-    expect(text).toContain(`<loom home>/stats/plans/${sampleRecord.plan_id}.json`);
-    expect(text).toContain("LOOM_HOME");
+  it("names the path once and leaves LOOM_HOME to a tooltip", () => {
+    const root = open();
+    expect(root.textContent).not.toContain("<loom home>");
+    expect(root.textContent).not.toContain("LOOM_HOME");
+    expect(root.querySelector("code[title*='LOOM_HOME']")).not.toBeNull();
   });
 
   it("copies the summary and says so", async () => {
