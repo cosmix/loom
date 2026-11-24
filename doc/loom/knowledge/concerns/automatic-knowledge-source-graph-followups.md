@@ -4,13 +4,12 @@
 
 ## Open Items From the Automatic-Knowledge Plan
 
-**Four production-dead `KnowledgeDir` methods.** `append`, `read_index`, `read_target` and the
-`KnowledgeFile`-keyed `replace_section` (`fs/knowledge/dir.rs`) have no non-test callers.
+**One production-dead `KnowledgeDir` method.** `read_target` (`fs/knowledge/dir.rs`) has no non-test
+caller (`append`, `read_index` and the `KnowledgeFile`-keyed `replace_section` are deleted).
 `read` is live (`commands/knowledge/bootstrap/mod.rs`), and so is
-`replace_section_target` (`commands/knowledge/mod.rs`). All are `pub` on a `pub` type, so clippy
-cannot flag them, and `tests_dir.rs` and `tests_dir_bugfixes.rs` exercise the dead four against
-each other. Settle them in one change: delete the methods and their tests together, or wire them
-to a real consumer. A dead-accessor list holds for one revision only; re-check it before acting.
+`replace_section_target` (`commands/knowledge/mod.rs`). It is `pub` on a `pub` type, so clippy
+cannot flag it. Delete it with its tests or wire it to a real consumer. A dead-accessor list holds for
+one revision only; re-check it before acting.
 
 **Plan-key normalisation on the writer side.** `delivery::plan_key_from` files a blank or absent
 `plan_id` under `"default"`. `MergeLifecycle::plan_id` (`orchestrator/merge_lifecycle.rs`) reads

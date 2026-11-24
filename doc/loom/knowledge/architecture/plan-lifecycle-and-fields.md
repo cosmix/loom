@@ -285,7 +285,7 @@ An extended acceptance criterion that sets no `timeout_secs` runs for `DEFAULT_E
 
 ## Finished-Plan Statistics and the Plan Overview
 
-When the scheduler finishes every stage, `daemon/server/orchestrator.rs::publish_plan_stats` runs `tokens::final_scan` over the work root, then `plan_stats::finish_plan`. Either failure is logged and leaves the outcome alone: the stages are done whatever the statistics say.
+When the scheduler finishes every stage, `daemon/server/orchestrator.rs::publish_plan_stats` runs `tokens::final_scan` over the work root, then `plan_stats::finish_plan`. A final scan that fails (`Err`) or reports `FinalScan::Incomplete` (it could not read every transcript) publishes nothing: partial totals are never archived as the permanent record, and a later complete capture can still publish one. Any failure is logged and leaves the outcome alone: the stages are done whatever the statistics say.
 
 **Record** (`plan_stats/record.rs`, wire contract `web/src/api/schema.ts::planStatsSchema`): `PlanStatsRecord` holds `schema_version` (1), `plan_id`, `plan_name`, `started_at`, `ended_at`, `wall_secs`, `execution_secs` (the sum of the stages' counters, above wall time when stages ran in parallel), `totals`, one `StageStats` per stage (id, name, `stage_type` and `status` as serde names, times, model, effort, `phases`, tokens) and one `ModelStats` per (model, effort, lane). `deny_unknown_fields`; nullable values serialize as explicit `null`; `MAX_RECORD_BYTES` is 1 MiB, so a record always fits the 2 MiB status frame on its own.
 

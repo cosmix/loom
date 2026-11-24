@@ -21,7 +21,7 @@ Loom never runs a three-way merge in the operator's main checkout; the only merg
 
 ## Formatting and Test Invocation in a Shared Worktree
 
-Only the main agent runs Cargo, formatters, and exhaustive verification in a shared checkout. Retire and reap a superseded command tree before starting its replacement; keep complete logs and exit codes.
+Only the main agent runs Cargo, formatters, and exhaustive verification in a shared checkout. A subagent formats only the leaf files it owns with `rustfmt --edition <edition in loom/Cargo.toml>` (currently 2021): `cargo fmt --all` is refused as project-wide verification by `subagent-verify-guard`, and `rustfmt` on a file that declares child modules (`mod.rs`) recurses into every sibling module, including other workers' and frozen files. Run `rustfmt --check` first when unsure. See [formatting mistakes](../mistakes/review-remediation-stage-practice.md). Retire and reap a superseded command tree before starting its replacement; keep complete logs and exit codes.
 
 The root `.cargo/config.toml` defaults to four Cargo build jobs and `RUST_TEST_THREADS=4`. These limit build-job and libtest concurrency separately; individual tests and compilers can create more threads. Job limits control concurrency and the watchdog controls command lifetime; both apply.
 
@@ -97,6 +97,8 @@ Three consequences a plan author has to design around:
    `tests/maintainability.rs` fails with "stale entry ... no longer violates its
    limit; remove it" until that line is deleted in the same change.
 
+4. **A stage that shrinks ledgered code edits the ledger in its own commit, whoever the plan names as owner.** `loom stage commit` runs the pre-commit maintainability gate, which refuses a shrunk or stale row, so a stage that deleted a function, split a file or extracted a helper lowers or removes the row before committing even when its signal says integration-verify owns the ledger. Rows only shrink in such an edit (four stages of one plan did it). A plan that expects shrinkage names the ledger in the stage's files or says so in its brief; `loom plan verify` does not check this.
+
 Before adding lines to any function: `rg '<fn name>' loom/maintainability-baseline.txt`.
 If it is listed, refactor rather than extend. After any file split: `rg '<path>' loom/maintainability-baseline.txt`.
 
@@ -140,7 +142,7 @@ Installing a freshly built `loom` (`dev-install.sh`) once the plan being execute
 
 `.github/workflows/ci.yml` triggers on every push to main and every pull request; its `changes` job (`dorny/paths-filter`) decides which jobs run. `rust` gates lint, test (a lib and an integration job), flake-check, their macOS counterparts lint-macos and flake-check-macos, audit and deny; `web` gates the dashboard job; `shell` gates hook-syntax and hooks-macos. The workflow has no `paths:` trigger, so the filter list is the only place CI names paths. A new gate whose result can depend on the target OS gets a `macos-latest` job beside its Linux one. `.github/workflows/nightly.yml` (schedule, `workflow_dispatch`, pull requests, no path filter) runs the slow gates: the macOS lib, integration and host-job-lane suites, and the strict Linux toolchain probes with their seeded caches; [CI macOS Test Build Time](../concerns/worktree-build-cold-start.md) says why.
 
-The crate compiles in files outside `loom/`: the asset roots in `loom/build/assets.rs` (`agents/`, `commands/`, `skills/`, `codex/skills/`, `web/dist/`, both `*.md.template` files), `loom-hooks/`, `install.sh` and `dev-install.sh` through `include_str!`, and `web/src/api/` fixtures through tests. A new asset root, or a new `include_str!` or `CARGO_MANIFEST_DIR`-relative read of a repo-root path, needs an entry in the `rust` filter. Without it, a change to that path alone skips every Rust job. To audit, list `rg -o 'include_(str|bytes)!\("(\.\./)+[A-Za-z0-9._-]+' loom/src loom/tests` against the filter.
+The crate compiles in files outside `loom/`: the asset roots in `loom/build/assets.rs` (`agents/`, `commands/`, `skills/`, `codex/skills/`, `web/dist/`, both `*.md.template` files), `loom-hooks/`, `install.sh` and `dev-install.sh` through `include_str!`, and `web/src/api/` fixtures through tests. A new asset root, or a new `include_str!` or `CARGO_MANIFEST_DIR`-relative read of a repo-root path, needs an entry in the `rust` filter. Without it, a change to that path alone skips every Rust job. `scripts/tests/test_workflows.py` pins the workflows: every `uses:` is a 40-hex commit with a tag comment, the CI and release workflows default to `contents: read`, release `run:` bodies carry no `${{ }}` expressions, and the minisign download is verified before extraction; `test_rust_filter_covers_embedded_assets` checks the `rust` filter against the `build/assets.rs` roots. To audit, list `rg -o 'include_(str|bytes)!\("(\.\./)+[A-Za-z0-9._-]+' loom/src loom/tests` against the filter.
 
 ## Signed Commits: What the Operator's Setup Must Provide
 

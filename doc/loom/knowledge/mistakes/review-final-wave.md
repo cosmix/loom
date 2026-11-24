@@ -140,7 +140,7 @@
 
 **Prevention:** Read a helper's argument handling before reusing it for another object type.
 
-**Fix:** `checkout_stash.rs` calls `run_git_checked` with `rev-parse --verify` for the tree.
+**Fix:** the stash-snapshot module (since deleted) called `run_git_checked` with `rev-parse --verify` for the tree.
 
 ## `pkill -f <path>` killed the worker's own shell
 

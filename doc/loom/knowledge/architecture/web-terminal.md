@@ -37,15 +37,15 @@ surface:
    socket-identity gate in remote posture; shared with the rest of the dashboard.
 2. Lane present (`--terminals` was passed) — else 404, indistinguishable from an unknown
    route.
-3. `origin_matches_host` (`terminal/upgrade.rs::origin_matches_host`) — `Origin` must be `http`/`https`
-   with an authority byte-equal to `Host`; WebSockets ignore same-origin policy so this is
-   the browser-side half of the gate.
+3. `origin_matches_host` (`terminal/upgrade.rs::origin_matches_host`, which calls the shared `web_server/access.rs::same_origin`) — `Origin` must be `http`/`https`
+   with an authority equal to `Host` (ASCII case-insensitive, no path or userinfo); WebSockets ignore same-origin policy so this is
+   the browser-side half of the gate. On a loopback bind `Host` may carry any port, so a forwarded tunnel port passes; the lane does not call `AccessPolicy::origin_allowed` itself ([open point](../concerns/review-remediation-followups.md#dashboard-and-runtime)).
 4. `lane.cookie_matches(head.cookie)` — the cookie half; constant-time token compare
    (`token::matches`).
 5. `terminal_path` (`terminal/upgrade.rs::terminal_path`) parses `/ws/terminal/<stage-id>/<view|control>`
    and rejects a `stage_id` that is not `is_plain_identifier`.
-6. `acquire_terminal_slot` against `MAX_TERMINALS = 8` (`web_server/limits.rs::MAX_TERMINALS`).
-7. `running` (server not mid-shutdown).
+6. `acquire_terminal_slot` against `MAX_TERMINALS = 8` (`web_server/limits.rs::MAX_TERMINALS`); when every slot is taken the handshake still completes and the socket closes with `CLOSE_BUSY` (4011), so the browser can tell it from a bad cookie.
+7. `running` (server not mid-shutdown): the handshake completes and the socket closes with 1001, before a slot is taken.
 
 Only after all seven does `handle_upgrade` (`terminal/upgrade.rs::handle_upgrade`) call
 `tungstenite::accept_with_config` (capped at `MAX_INBOUND_BYTES = 64 KiB`, `status/web/mod.rs::MAX_INBOUND_BYTES`,
@@ -56,7 +56,7 @@ the one value also given to `Limits::new` for `web_server/ws.rs` and read by `br
 
 `web/src/api/terminal.ts::handleKnownClose`, via
 `tests_route.rs::close_codes_match_the_literal_wire_values_the_browser_depends_on`. Three
-classes of refusal close code, `4004/4008/4009`, plus the two ordinary WebSocket codes:
+classes of refusal close code, `4004/4008/4009`, the attach and capacity codes `4010/4011`, plus the ordinary WebSocket codes:
 
 | Code | Name                    | Meaning                                                                   | Page reaction                                                                                 |
 | ---- | ----------------------- | ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
@@ -66,6 +66,10 @@ classes of refusal close code, `4004/4008/4009`, plus the two ordinary WebSocket
 | 4004 | `CLOSE_UNKNOWN_STAGE`   | no stage with that id                                                     | `refused`, permanent, page never retries                                                      |
 | 4008 | `CLOSE_REFUSED`         | `NativeBackend`, `Unrenderable`, or `Stop::Stalled` (gate never reopened) | `refused`, permanent                                                                          |
 | 4009 | `CLOSE_NOT_YET`         | `NoSession`/`NotReady` — stage exists, may become attachable              | `waiting`, page retries after `RETRY_WAITING_MS = 2000`                                       |
+| 4010 | `CLOSE_ATTACH_FAILED`   | the stage session could not be resolved, or its tmux attach client could not start | matched literally by `terminal.ts`                                                  |
+| 4011 | `CLOSE_BUSY`            | every terminal slot is taken (sent after the handshake completes)         | matched literally by `terminal.ts`, told apart from a bad cookie                              |
+
+**Ready frame.** Once the tmux client is attached, the bridge sends one text frame, `READY_FRAME` = `{"ready":true}` (`upgrade.rs::run_attached`), before it reads the PTY, so no binary terminal output can precede it; if that send fails the child is shut down. `terminal.ts` matches it literally.
 
 ## Resolver: from stage id to a tmux target (`resolve.rs`)
 
@@ -117,6 +121,7 @@ MiB` on the WebSocket's own outbound buffer.
   times the queue sitting at its cap; past `GATE_STALL_TIMEOUT = 30s` the loop gives up
   (`Stop::Stalled` → close code 4008). This is the only mechanism that also covers a peer
   that is alive but has wedged the PTY, where no readiness flag or FIN is ever sent.
+- **Keepalive and silence** (`bridge/liveness.rs`, `bridge.rs::keepalive`). The loop pings the peer every 15 s (`Timing::DEFAULT.keepalive`), never queued behind a stalled frame, and drops a peer that has sent nothing, a pong included, for 60 s (`silence`, `Stop::Peer`). The silence deadline is paused while the input gate is shut: the socket is not read then, so a live peer's pongs sit unread. A client that stopped reading is not a dead one: a `WRITE_TIMEOUT` expiry leaves the frame in tungstenite's out-buffer for the next flush, and `MAX_WRITE_BUFFER` terminates a stall that never clears.
 - **Shutdown drain.** `finish` closes the WebSocket (4008 with reason for
   `Stop::Stalled`, matching what `terminal.ts` already labels "refused") then calls
   `PtyChild::shutdown` (`pty.rs::shutdown`): drop the master (which hangs up the slave), poll

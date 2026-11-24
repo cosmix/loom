@@ -146,7 +146,7 @@ The chat panel is the conversation with a planning session. Loom starts the sess
 
 ### Planning sessions
 
-Each planning session runs in its own tmux server named `loom-plan-<id>`, and `tmux -L <socket> attach -r` watches it read-only. Ctrl-C stops new sessions and waits for running ones to finish writing; a second Ctrl-C exits at once.
+Each planning session runs in its own tmux server named `loom-plan-<id>`, and `tmux -L <socket> attach -r` watches it read-only. Ctrl-C stops new sessions and waits for running ones to finish writing; a second Ctrl-C exits at once. If the server dies or restarts, messages a session had accepted but not yet confirmed are not replayed into it: they come back as one batch into the composer of the browser that held authoring, so you can read them and decide what to send again (attachments are not carried).
 
 ## Human Expertise Where It Matters
 
@@ -200,7 +200,7 @@ A plan is a markdown file holding a list of stages, each with its dependencies a
 2. **Schedule.** `loom run` starts a daemon and an orchestrator. Every stage whose dependencies are met gets its own worktree (`.worktrees/<stage-id>`, branch `loom/<stage-id>`) and its own Claude Code session, briefed by a signal file: the assignment, the relevant knowledge, and the memory of earlier sessions.
 3. **Work.** The session's main agent decomposes the stage, delegates implementation to cheaper subagents, and records what it learns with `loom memory`.
 4. **Verify.** In a session, `loom stage complete` asks the daemon to run the stage's acceptance criteria and the goal-backward checks in a host job; the operator's shell runs them locally. A failure leaves the stage `Executing`, and the agent has to fix the work and try again.
-5. **Merge.** A verified stage merges back to the target branch, which frees the stages that depend on it. A real conflict gets a dedicated resolution session that works in the stage's own worktree; loom lands the merge without touching your checkout's uncommitted work unless it overlaps.
+5. **Merge.** A verified stage merges back to the target branch, which frees the stages that depend on it. A real conflict gets a dedicated resolution session that works in the stage's own worktree; loom lands the merge without stashing or resetting your checkout's uncommitted work. A tracked change that overlaps the incoming change holds the merge until you commit or revert it. An untracked file in the way whose bytes equal the incoming file is moved into a quarantine directory (`<git dir>/loom-displaced/<stage>-<timestamp>/`) and deleted once the merge lands; a different file blocks the merge and is never deleted.
 6. **Integrate.** Once the implementation stages have merged, an `integration-verify` stage reviews the combined work and runs the full suite against it.
 7. **Distill.** The plan's final `knowledge-distill` stage curates every stage's memory into `doc/loom/knowledge/`, which the next plan's sessions read first.
 
@@ -220,7 +220,7 @@ Everything else is an explicit, inspectable outcome rather than a hang:
 | `NeedsHandoff`          | Context ceiling reached; a handoff was written                                                                                                                                   |
 | `WaitingForInput`       | The agent asked a question (raised automatically by the AskUser hooks)                                                                                                           |
 | `MergeConflict`         | Auto-merge hit a real conflict; a resolution session works on it in the stage's worktree                                                                                         |
-| `MergeBlocked`          | Merge held by an operation in progress in your checkout, the target checked out elsewhere, or overlapping local changes (retried automatically); other failures get a resolver   |
+| `MergeBlocked`          | Merge held by an operation in progress in your checkout, the target checked out elsewhere, or overlapping local changes (retried automatically); a quarantine directory left by a merge that could not put files back holds the stage until you move them back and delete it; other failures get a resolver   |
 | `CompletedWithFailures` | Work finished but acceptance did not pass                                                                                                                                        |
 | `NeedsHumanReview`      | Escalated to a person                                                                                                                                                            |
 | `NeedsAdjudication`     | A dispute is awaiting a verdict, or a verdict changed nothing and the daemon's completion job is running                                                                         |
@@ -694,7 +694,7 @@ loom hook blocks [--since-hours N] [--by-rule]                               # S
 loom request status <id> [--session <id>] [--wait <secs>]                    # Plumbing: has the daemon applied a request relayed through the sandbox? <id> is printed after the originating command
 loom skill-index                                                             # Plumbing: rebuild the skill keyword index the skill-trigger hook reads
 loom repair [--fix]
-loom clean [--all|--worktrees|--sessions|--state]                            # --state and --all refuse while the target branch is held (see loom target)
+loom clean [--all|--worktrees|--sessions|--state]                            # runs from any subdirectory of the main checkout, refuses inside a stage worktree; --state and --all refuse while the target branch is held (see loom target)
 loom target status                                                           # Accepted tip, current tip, attestation state, hold reasons and the review and restore commands
 loom target accept --to <commit>                                             # Accept the target's current tip after review; refuses inside a loom session
 loom update
@@ -808,7 +808,7 @@ Any bind that is not loopback — a concrete address or a wildcard (`0.0.0.0`/`:
 
 Limits:
 
-- Plain HTTP, no TLS — anyone who observes the token or cookie on the network gets dashboard and settings access, and terminal control if `--terminals` is also set. Use it only on trusted networks, or tunnel a loopback bind instead: `ssh -L 7373:127.0.0.1:7373 host`.
+- Plain HTTP, no TLS — anyone who observes the token or cookie on the network gets dashboard and settings access, and terminal control if `--terminals` is also set. Use it only on trusted networks, or tunnel a loopback bind instead: `ssh -L 7373:127.0.0.1:7373 host`. A tunnel may map any local port (`ssh -L 8080:127.0.0.1:7373 host`): on a loopback bind the `Host` header must be a loopback name with any port, and a supplied `Origin` must be `http://` or `https://` plus that same `Host`, so a page served from another local port is still refused.
 - No reverse-proxy support: a proxy that rewrites `Host` to a DNS name is refused.
 - No DNS hostnames for `--host`, and no config key for the bind host — it is a CLI flag only.
 - The token is per process; restarting the dashboard invalidates every existing cookie.

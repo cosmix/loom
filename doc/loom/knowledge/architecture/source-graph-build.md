@@ -24,11 +24,20 @@ drives the same builder.
   - `SourceGraphScope::Base { revision }` lists **committed** content
     (`git ls-tree -r -z HEAD`), and `build_layer` reads a dirty path's bytes with
     `git show HEAD:<path>` rather than from disk. A base therefore always describes
-    committed `HEAD` and can be published from a dirty checkout.
+    committed `HEAD` and can be published from a dirty checkout. Its attributes are read at
+    `HEAD` (`git check-attr --source=HEAD`), because a base is keyed by `HEAD` and shared
+    across checkouts and must not depend on one checkout's uncommitted `.gitattributes`.
   - `SourceGraphScope::Overlay { plan, stage }` lists the index
     (`git ls-files -s -z`) plus **untracked** files
     (`git ls-files --others --exclude-standard -z`, existing and not excluded), and
-    records index paths missing from disk as deleted.
+    records index paths missing from disk as deleted. An overlay reads attributes from the
+    working tree.
+  - Both scopes drop paths git marks `linguist-generated` or `linguist-vendored`
+    (`enumerate.rs`, through `census::attributes` / `attributes_at_head`): generated and
+    vendored files never enter the graph. A `git check-attr` failure propagates, so it degrades
+    the reconcile (a degraded outcome, below) instead of enumerating unfiltered. An overlay tombstones every base
+    entry it no longer carries (`layer.rs::deleted_paths`): a file removed from the index but kept
+    on disk and ignored, one that became a symlink or gitlink, and one an attribute now filters out.
 - **Tombstones.** In an overlay, every deleted path — an index path missing from
   disk, or a dirty path absent from disk — becomes `FileEntry::tombstone()`: no
   nodes, empty hash, `FileCoverage::Deleted`. `persist_layer` keeps a tombstone only
@@ -53,6 +62,7 @@ drives the same builder.
   `enumerate_ms` / `hash_ms` / `parse_ms` / `persist_ms`.
   `SnapshotOutcome::describe` prints the parsed, reused and deleted counts on its
   advisory line.
+- **Oversized dirty files** (`context/source_graph/read.rs::source_identity`). A file within the extraction cap is identified by its content hash; a larger dirty file by stat identity (size, mtime, ctime, inode, device), opened by descriptor without following links and never read, which bounds memory. Two writes of equal size inside one timestamp tick can share an identity; the graph keeps only a size-and-hash `Oversized` entry for such a file.
 - `EXCLUDED_ROOTS` = `.loom`, `.work`, `.worktrees`, `target`, `node_modules`, `.git`
   (`refresh/source_graph.rs`), matched against the FIRST path segment only, applied to
   enumerated, untracked and dirty paths alike. `.loom` and `.work` are two separate
@@ -103,9 +113,11 @@ and `spawn_if_needed` calls nothing else:
 A never-built graph is built only by explicit commands: `loom init`, `loom run`, `loom map` and
 `loom knowledge sync`.
 
-**The lease** is one line, `"<epoch> <pid> <failures> <pending> <claim>"`, in `reconcile.lock` under
-the context cache. Legacy four-field records remain readable; new runs use a unique claim to bind
-startup and completion to the holder. Every write is a
+**The lease** is one line, `"<epoch> <pid> <failures> <pending> <claim>"`, in a lease file per
+checkout, `reconcile-map-<sha256 of the canonical project root>.lock`
+(`reconcile_graph/lock.rs::reconcile_lock_path`) under the context cache, so checkouts sharing a
+context cache have independent holders, pending bits and backoff. A line without the claim field
+parses with claim zero; each run uses a unique claim to bind startup and completion to the holder. Every write is a
 read-modify-write under ONE directory flock (`fs::locking::locked_dir_update` plus
 `atomic_write_locked`, `lock.rs::update_lock`), never a remove / `create_new` / write sequence:
 between those steps a reader sees no file, `decide` returns `Spawn`, and a second reconcile runs

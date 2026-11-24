@@ -343,8 +343,11 @@ do not establish production dependencies.
 
 `loom knowledge eval` (dispatched from
 `cli/dispatch.rs::dispatch_knowledge`, implemented in `commands/knowledge/eval.rs`)
-scores a checked-in case file (default `loom/eval/retrieval-cases.yaml`) through
-`retrieve_for_stage` against the LIVE on-disk index and reports per-case
+scores a checked-in case file (default `loom/eval/retrieval-cases.yaml`) against the LIVE on-disk
+index. `run_cases` captures the corpus once (`context/retrieve/capture.rs::capture`: catalog refresh and graph
+load) and scores every case with `retrieve_with` against that one capture, since case queries differ only in
+text, required ids and budget; all cases therefore read the same structural and semantic revision, which the
+report prints. It reports per-case
 hit@5/MRR plus aggregate precision@5, exiting non-zero when the aggregate hit
 rate falls below the file's `pass_floor`, aggregate precision@5 falls below its
 `precision_floor` (0.40, set to 0.9 x the 0.45 measured on 2026-10-01), or any

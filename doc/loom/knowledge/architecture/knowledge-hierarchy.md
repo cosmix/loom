@@ -33,6 +33,8 @@ verified: fffbcda55b1c83af0e06059063cab7bf93c6de67
 | `scaffold.rs`                            | tier-2 stub-header detection/healing helpers used when a new topic file is created                                                              |
 | `templates.rs`                           | tier-1 and tier-2 file scaffolds, and `scaffold_blurb` (what `GenericBlurb` compares against)                                                   |
 
+`read.rs` is the one reader: it reads a knowledge file anchored at the trusted root through `safe_read::read_bounded` with `MAX_KNOWLEDGE_FILE_BYTES` (1 MiB). A file over the cap fails the read instead of being skipped: a skip needs a new `CatalogIssue` variant and edits to every exhaustive match (`catalog/order.rs`, `check_lines.rs`), 1 MiB is 100 times the tier-2 limit so the file is already broken, and retrieval callers degrade on the refresh error. Revisit if a legitimate oversized knowledge file appears.
+
 The alias table lives in `types.rs`, not the CLI layer:
 `commands/knowledge/mod.rs::update`/`replace_section` resolve their `file` argument
 through `KnowledgeTarget::parse`, which matches the no-slash case against
@@ -88,7 +90,7 @@ slug and an empty string.
 Regeneration is idempotent and does a full atomic overwrite, so hand edits to
 `INDEX.md` are silently destroyed. Every knowledge write refreshes the index — but
 **only once the directory is already hierarchical**. The generated index is capped
-at `MAX_INDEX_BYTES = 16_384` bytes (`catalog/size.rs`, roughly 4k tokens for the
+at `MAX_INDEX_BYTES = 24_576` bytes (`catalog/size.rs`, roughly 6k tokens for the
 first read of every session); exceeding it surfaces as an `OversizedIndex` issue
 from `loom knowledge check` rather than being repaired automatically.
 
@@ -103,7 +105,7 @@ repaired (`catalog/size.rs`, the mechanical form of CLAUDE.md Rule 12):
 | `MAX_TIER_ONE_FILE_LINES`    | 250    | `OversizedFile` — a tier-1 file over 250 lines                                                                                                        |
 | `MAX_TIER_TWO_SECTION_LINES` | 80     | `OversizedSection` — a tier-2 `##` section over 80 lines: a section past this is several topics                                                       |
 | `MAX_TIER_TWO_FILE_LINES`    | 400    | `OversizedFile` — a tier-2 topic file over 400 lines                                                                                                  |
-| `MAX_INDEX_BYTES`            | 16 384 | `OversizedIndex` — a generated `INDEX.md` over 16 384 bytes                                                                                           |
+| `MAX_INDEX_BYTES`            | 24 576 | `OversizedIndex` — a generated `INDEX.md` over 24 576 bytes                                                                                           |
 
 Tier-1 is decided by path depth alone (`is_tier_one`: one path component under the
 knowledge root); every file in a category directory is tier-2 and takes the tier-2

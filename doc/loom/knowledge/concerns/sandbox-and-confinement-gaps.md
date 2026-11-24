@@ -308,7 +308,7 @@ denyWrite and credential denies in force. The history of this failure is in
 ## Host-Side Git Needs a Pin, Not Hardening
 
 - **Hardening does not stop a planted filter.** `NO_HOOKS_ARGS` (`git/runner.rs`: `core.hooksPath=/dev/null`, `core.fsmonitor=false`) does not stop a planted gitdir's `filter.<x>.clean` from running under `git status` or `git diff`. Only a pinned `WorktreeGit` (`git/worktree/pinned.rs`) does. Any git that the host child or the daemon runs in a stage worktree must be pinned.
-- **The main checkout has a pin, and the merge's index writers skip it.** `WorktreeGit::pinned_main` pins the operator checkout and `deny_git_controls` denies `.git/hooks` and `.git/config` to every session, knowledge sessions included. `merge --ff-only`, `reset --hard` and the stash plumbing stay on the unpinned runner; the reason and the residual are under [Races Left Around Pinned Git](#races-left-around-pinned-git). The unpinned commands stay out of gitlinks: the runner's `--ignore-submodules=dirty` covers `status` and `diff`, and `git/merge/checkout_stash.rs` builds the stash commit from plumbing, because `git stash create` and `git stash push` recurse with no option to stop them.
+- **The main checkout has a pin, and the merge's index writers skip it.** `WorktreeGit::pinned_main` pins the operator checkout and `deny_git_controls` denies `.git/hooks` and `.git/config` to every session, knowledge sessions included. `merge --ff-only` stays on the unpinned runner; the reason and the residual are under [Races Left Around Pinned Git](#races-left-around-pinned-git). The unpinned commands stay out of gitlinks: the runner's `--ignore-submodules=dirty` covers `status` and `diff`, and the merge never runs `git stash`, which recurses into gitlinks with no option to stop it.
 
 ## Bubblewrap Hides a Secret Only If It Exists at Command Start
 
@@ -343,7 +343,7 @@ The `config.worktree` read has no window: pinned git reads a validated private c
 
 - **`packed-refs`.** Its deny is one file, so it drops once the host rewrites the file. Loom's commands run no automatic maintenance, so what rewrites it is a deletion of a packed ref or the operator's own git. The runner then looks for a link ahead of each command; a writer flipping one between that look and git's open is not stopped.
 - **`refs/heads/<dir>` links.** `refs/` stays writable, so a directory link there has the daemon's ref update write an object id to `<link target>/<ref name>`. `refuse_ref_path_links` looks ahead of each ref update, with the same race.
-- **Merges in the main checkout.** `merge --ff-only` and `reset --hard` run unpinned (`try_fast_forward` in `git/merge/fast_forward.rs`, `reset_checkout` in `git/merge/checkout_stash.rs`): a private git directory would hide the operator's `index.lock` until the target had moved and lose settings from an `includeIf "gitdir:"`. A session can plant absent names in `<common>` (`MERGE_MSG`, `COMMIT_EDITMSG`), so a link planted between the runner's look (`refuse_links_in_discovered_git_dir`) and git's open is written through. Revisit if pinned git can hold the real index's lock for the whole command and carry those settings.
+- **Merges in the main checkout.** `merge --ff-only` runs unpinned (`try_fast_forward` in `git/merge/fast_forward.rs`): a private git directory would hide the operator's `index.lock` until the target had moved and lose settings from an `includeIf "gitdir:"`. A session can plant absent names in `<common>` (`MERGE_MSG`, `COMMIT_EDITMSG`), so a link planted between the runner's look (`refuse_links_in_discovered_git_dir`) and git's open is written through. Revisit if pinned git can hold the real index's lock for the whole command and carry those settings.
 - **Git outside the runner.** The operator's shell and `plan_server/run/commit.rs::user_git` follow every link with no check.
 - **`LINKED_DIRS` are looked at once.** A directory swapped for a link after that look is followed. No pinned command writes beneath one, and a command that creates a state directory is reported as an error.
 - **Single-file binds detach.** The denies on `<common>/config`, `config.worktree`, `gitdir` and `commondir` drop when the host replaces the file by rename ([A File Deny Stops Protecting a Live Session](#a-file-deny-stops-protecting-a-live-session-once-the-host-replaces-the-file)). An operator's `git config` during a session therefore drops the `<common>/config` deny, and the session could then write a filter the host runs. Only `packed-refs` has been measured this way.
@@ -359,16 +359,6 @@ Every stage's session, workers and host jobs use the stage cache instead ([Stage
 A confined command cannot read or write xcrun's cache database (`xcrun_db` under `$(getconf DARWIN_USER_TEMP_DIR)`, which `TMPDIR` does not move), and that stays denied: a writable database would let a confined command plant tool paths the operator's own builds follow. `stage_cache/developer.rs::DeveloperTools` avoids the shims instead, by putting the real developer binaries first on `PATH` ([how](../architecture/stage-build-cache.md#macos-developer-tools-bypass-the-xcrun-shims)).
 
 Residual: a tool reached only through xcrun with a non-default SDK (`xcrun --sdk iphoneos ...`) or a command that spells `/usr/bin/git` still goes through the uncached shim and pays the `xcodebuild` lookup. The detection runs once per process, so a developer-directory switch (`xcode-select -s`) needs a daemon restart. The xcrun denial also still prints `output of xcrun while finding MacOSX.sdk` warnings from tools that call it directly; those are the cost of the denial, not a defect in the code under test ([the Seatbelt denial classification](../mistakes/sandbox-tooling-and-network.md#seatbelt-denials-read-as-build-warnings-and-test-failures-that-are-environment-not-code-2026-10-15)).
-
-## A Read-Only Bind Inside a Writable Tree Escapes Through a Renamed Parent
-
-Measured with bwrap 0.11.1 on Linux 7.2. The test reproduced the bind layout of a knowledge stage's criteria, whose tree is the main checkout (`verify/criteria/confine_protected.rs:1-13`): the tree is bound read-write, and a nested path is `--ro-bind`'d on top of it.
-
-- Writes into the read-only path fail.
-- `mv .loom .loomx`, or `mv` of any directory between the tree and the read-only path, succeeds and lands on the host. The read-only bind moves with the renamed directory, and a recreated path at the old name is writable.
-- `Protected` ro-binds the state root `<tree>/.loom/work` this way (`confine_protected.rs:44-60`), so a knowledge stage's criterion can rename the main checkout's `.loom` on the host and plant a fresh `.loom/work`.
-- The kernel refuses to rename a mount point (`EBUSY`). Self-binding every directory strictly between the tree and the read-only path (`--bind p p`, after the tree bind and before the `--ro-bind`) makes those renames fail with `Device or resource busy`. Writes elsewhere in those directories keep working.
-- The vm-test-devices plan's `command-boundary` stage adds that pinning to `Protected`. Seatbelt on macOS is unmeasured.
 
 ## Host-Job Test Gaps
 
@@ -394,3 +384,11 @@ A criterion in a macOS host job cannot find other processes through the process 
 ## The One-Line Status Does Not Show Adjudication
 
 `loom status --compact` (`commands/status/render/compact.rs`) counts a stage whose dispute is with the adjudicator under `●`, the executing count, and prints `⏸` only once the stage needs human review. A watcher that reads only that line sees a stage that filed three disputes as executing. Read `.loom/work/stage-events.jsonl` or `loom status --verbose` when supervising.
+
+## A Read-Only Bind Inside a Writable Tree: Parent Renames Are Pinned on Linux Only
+
+A confined command's tree is bound read-write with a nested path `--ro-bind`'d on top, as for a knowledge stage's criteria, whose tree is the main checkout. A read-only bind moves with a renamed parent directory, so a `mv .loom .loomx` would land on the host and a recreated path at the old name would be writable.
+
+On Linux `Protected` closes it (`verify/criteria/confine_protected.rs`, `pinned`): every directory strictly between the tree and a read-only path is bound onto itself, outermost first, after the tree bind and before the `--ro-bind`. The kernel refuses to rename a mount point (`EBUSY`), so those renames fail with `Device or resource busy`, and writes elsewhere in those directories keep working.
+
+Open: Seatbelt on macOS denies by path, and whether its deny on the literal parent holds against a rename of an ancestor is unmeasured.
