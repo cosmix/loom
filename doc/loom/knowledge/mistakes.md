@@ -237,3 +237,7 @@ A bare `git stash` on the main checkout captures other writers' edits, and a scr
 The persisted main-checkout identity pinned the volume's device number, which changes across a reboot on macOS, so every command reading it failed with `checkout identity directory changed`.
 
 → [Checkout Identity](mistakes/checkout-identity.md)
+
+## Fixture-Replay Wait Summary
+
+A replay test that waits on a state the session already holds (`Idle`) passes before the bridge consumes the replayed spool line; wait on `Replay::consumed` first. → [Fixture-Replay Waits](mistakes/fixture-replay-waits.md)

@@ -321,3 +321,11 @@ Two mistakes recurred across plans, so they get a mechanical guard proposal inst
 - **Two masked-exit shapes are still misjudged** (`plan/schema/validation/criterion_hazards/masked_exit.rs`): `cargo build && (cargo test ||
 true)` is flagged although a failing build still fails it, and `cmd || true 2>/dev/null` is not flagged. Both are rare;
   they are recorded in [plan-lifecycle-and-fields](../architecture/plan-lifecycle-and-fields.md).
+
+## Non-Serial Tests Race Process-Wide State Their Serial Siblings Rewrite
+
+`serial_test` orders a `#[serial]` test only against other `#[serial]` tests. `verify::criteria::confine::host::seatbelt::provision_tests::provisioning_denies_the_stage_roots_and_the_scratch_base` failed once under the full suite because `provision_network_rules` reads `HOME` (`confine_seatbelt.rs`) and the test reads it again (`confine_provision_tests.rs`) while serial tests repoint it (`test_cache_env.rs`, `scratch_home.rs`); marking the reader `#[serial_test::serial]` fixed it. This is the third instance of the pattern in [test-concurrency-and-fixtures](../mistakes/test-concurrency-and-fixtures.md#a-non-serial-test-read-an-env-var-a-serial-sibling-mutates-2026-09-03). Proposal: a `loom plan verify` or lint check that lists every test reading `HOME`, `PATH` or `LOOM_HOME` outside `#[serial]` in a binary where a `#[serial]` test sets it, so the fix is not found one flaky run at a time.
+
+## Fixture-Replay Test Helper Leftovers
+
+Reviewer suggestions on `plan_session/bridge/fixture_replay.rs` and its tests, left open because none is a defect: `consumed()` at `tests_background.rs:34` is redundant after the `wait_until` on both tasks (harmless, kept for symmetry); `consumed()` proves spool application only, so a test asserting transcript-derived state right after it (for example the agent steps at `tests_background.rs:57`) can race; the per-`received_at` count match over-counts for two same-millisecond lines that differ only outside the payload. Revisit when a test asserts on transcript state straight after `consumed()`.

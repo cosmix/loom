@@ -12,7 +12,7 @@
 | [entry-points.md](entry-points.md) | Key files agents should read first | 86 |
 | [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 200 |
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 230 |
-| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 239 |
+| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 243 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 116 |
 | [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 250 |
 
@@ -139,6 +139,7 @@
 | [dev-install](mistakes/dev-install.md) | Daemon | 68 |
 | [dispute-guards-delivery](mistakes/dispute-guards-delivery.md) | host-job hangs, parallel worker collisions, scaffold wording, hook quirks | 131 |
 | [doctrine-and-acceptance](mistakes/doctrine-and-acceptance.md) |  | 392 |
+| [fixture-replay-waits](mistakes/fixture-replay-waits.md) | Waiting on a state a replayed session already holds races the bridge | 11 |
 | [hooks-macos-and-bash32](mistakes/hooks-macos-and-bash32.md) | macOS Bash 3.2 and BSD tool faults that Linux hook runs hid | 96 |
 | [hooks-shell-portability](mistakes/hooks-shell-portability.md) |  | 319 |
 | [host-verify-group-containment](mistakes/host-verify-group-containment.md) |  | 47 |
@@ -207,7 +208,7 @@
 | --- | --- | --- |
 | [agent-rule-bending-hardening](concerns/agent-rule-bending-hardening.md) |  | 351 |
 | [automatic-knowledge-source-graph-followups](concerns/automatic-knowledge-source-graph-followups.md) | Gap | 68 |
-| [code-quality-and-hook-debt](concerns/code-quality-and-hook-debt.md) | Debt | 323 |
+| [code-quality-and-hook-debt](concerns/code-quality-and-hook-debt.md) | Debt | 331 |
 | [consolidation-followups](concerns/consolidation-followups.md) |  | 147 |
 | [contract-autonomy-followups](concerns/contract-autonomy-followups.md) |  | 122 |
 | [knowledge-cli-gaps](concerns/knowledge-cli-gaps.md) |  | 82 |
@@ -225,7 +226,7 @@
 | [source-graph-known-gaps](concerns/source-graph-known-gaps.md) | Limits | 94 |
 | [source-graph-review-backlog](concerns/source-graph-review-backlog.md) | Todo | 295 |
 | [stage-exits-and-guards-followups](concerns/stage-exits-and-guards-followups.md) | Out-of-scope rows, open reviewer suggestions, proposed checks after exits plan | 63 |
-| [state-confinement-gaps](concerns/state-confinement-gaps.md) | Open confinement gaps: caches, task outputs, macOS networking, stage cache | 63 |
+| [state-confinement-gaps](concerns/state-confinement-gaps.md) | Open confinement gaps: caches, task outputs, macOS networking, stage cache | 77 |
 | [token-accounting-and-proof-defects](concerns/token-accounting-and-proof-defects.md) |  | 323 |
 | [verification-v2-followups](concerns/verification-v2-followups.md) |  | 248 |
 | [web-dashboard-latent-issues](concerns/web-dashboard-latent-issues.md) | UI | 100 |

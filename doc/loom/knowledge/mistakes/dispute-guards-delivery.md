@@ -22,11 +22,11 @@
 
 ## The Contract Signal Said "No Scaffold Edits" for Writer-Chosen Contracts
 
-**What happened:** four contract writers (`confined-test-guards`, `contract-check-and-trial`, `contract-dispute-filing`, `criterion-narrowing-evidence`) read "No scaffold edits: every contract file is already collected" although no contract file had a `mod` declaration, and each had to add the `#[cfg(test)] mod` lines itself.
+**What happened:** five contract writers (`confined-test-guards`, `contract-check-and-trial`, `contract-dispute-filing`, `criterion-narrowing-evidence`, `bind-refusal-hint`) read "No scaffold edits: every contract file is already collected" although no contract file had a `mod` declaration, and each had to add the `#[cfg(test)] mod` lines itself.
 
 **Why:** `verify/contracts/collection/mod.rs::StageTree::scaffold` derives edits only for contracts whose `test` is set, and every contract in these plans read `(you choose)`. The freeze derives the scaffold over the merged `--test` choices, so the signal's text was wrong at the time it was printed.
 
-**Prevention:** recurrence across four stages: the signal should say the scaffold is derived at freeze when tests are writer-chosen. A writer declares each new contract file in its parent `mod.rs` itself. Tracked in [concerns](../concerns/contract-autonomy-followups.md#contract-signal-and-prompt-text).
+**Prevention:** recurrence across five stages: the signal should say the scaffold is derived at freeze when tests are writer-chosen. A writer declares each new contract file in its parent `mod.rs` itself. Tracked in [concerns](../concerns/contract-autonomy-followups.md#contract-signal-and-prompt-text).
 
 ## A Bash Call Quoting the Completion Command Was Blocked by the Control Hook
 
