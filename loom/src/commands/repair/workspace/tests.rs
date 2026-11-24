@@ -314,3 +314,19 @@ fn fix_invalid_work_removes_a_socket() {
 
     assert!(fs::symlink_metadata(&socket).is_err());
 }
+
+#[test]
+fn fix_invalid_work_refuses_a_directory_swapped_in_after_the_check() {
+    let root = tempfile::tempdir().unwrap();
+    let work = root.path().join(".loom").join("work");
+    fs::create_dir_all(work.join("stages")).unwrap();
+    fs::write(work.join("stages/stage-1.md"), "stage state").unwrap();
+
+    let error = fix_invalid_work(root.path()).unwrap_err().to_string();
+
+    assert!(error.contains("is a directory now"), "{error}");
+    assert_eq!(
+        fs::read_to_string(work.join("stages/stage-1.md")).unwrap(),
+        "stage state"
+    );
+}

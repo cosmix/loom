@@ -10,6 +10,8 @@ mod scheduling;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_cycle;
 
 use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};

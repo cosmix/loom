@@ -5,24 +5,19 @@ use std::collections::{HashMap, HashSet};
 
 use super::nodes::StageNode;
 
-/// Detect circular dependencies in the graph using DFS
+/// Detect circular dependencies in the graph using a depth-first search.
+///
+/// The search keeps its own stack, so a long dependency chain cannot overflow
+/// the thread stack the way recursion would.
 pub fn detect_cycles(nodes: &HashMap<String, StageNode>) -> Result<()> {
-    let mut visited = HashSet::new();
-    let mut rec_stack = HashSet::new();
-    let mut cycle_path = Vec::new();
+    let mut visited: HashSet<&str> = HashSet::new();
 
     // Sorted so the reported cycle is the same on every run.
     let mut ids: Vec<&String> = nodes.keys().collect();
     ids.sort();
     for node_id in ids {
-        if !visited.contains(node_id) {
-            if let Some(cycle) = dfs_detect_cycle(
-                nodes,
-                node_id,
-                &mut visited,
-                &mut rec_stack,
-                &mut cycle_path,
-            ) {
+        if !visited.contains(node_id.as_str()) {
+            if let Some(cycle) = find_cycle_from(nodes, node_id, &mut visited) {
                 bail!("Circular dependency detected: {}", cycle.join(" -> "));
             }
         }
@@ -31,41 +26,49 @@ pub fn detect_cycles(nodes: &HashMap<String, StageNode>) -> Result<()> {
     Ok(())
 }
 
-/// DFS helper for cycle detection
-fn dfs_detect_cycle(
-    nodes: &HashMap<String, StageNode>,
-    node_id: &str,
-    visited: &mut HashSet<String>,
-    rec_stack: &mut HashSet<String>,
-    path: &mut Vec<String>,
-) -> Option<Vec<String>> {
-    visited.insert(node_id.to_string());
-    rec_stack.insert(node_id.to_string());
-    path.push(node_id.to_string());
+/// One node on the search path and the index of its next dependency to try.
+struct Frame<'a> {
+    id: &'a str,
+    next_dep: usize,
+}
 
-    // Get dependencies for this node
-    if let Some(node) = nodes.get(node_id) {
-        for dep in &node.dependencies {
-            if !visited.contains(dep) {
-                if let Some(cycle) = dfs_detect_cycle(nodes, dep, visited, rec_stack, path) {
-                    return Some(cycle);
-                }
-            } else if rec_stack.contains(dep) {
-                // Found cycle - build the cycle path
-                let mut cycle = vec![dep.clone()];
-                for p in path.iter().rev() {
-                    cycle.push(p.clone());
-                    if p == dep {
-                        break;
-                    }
-                }
-                cycle.reverse();
-                return Some(cycle);
-            }
+/// Depth-first search from `start`. The frames on `path` are the nodes of the
+/// current path; a dependency that is already visited and still on the path
+/// closes a cycle, reported from its first occurrence on the path to the
+/// dependency again. `on_path` maps each path node to its index in `path`, so
+/// the check per edge stays constant-time.
+fn find_cycle_from<'a>(
+    nodes: &'a HashMap<String, StageNode>,
+    start: &'a str,
+    visited: &mut HashSet<&'a str>,
+) -> Option<Vec<String>> {
+    let mut path = vec![Frame {
+        id: start,
+        next_dep: 0,
+    }];
+    let mut on_path: HashMap<&str, usize> = HashMap::from([(start, 0)]);
+    visited.insert(start);
+
+    while let Some(frame) = path.last_mut() {
+        let dependencies = nodes.get(frame.id).map(|node| node.dependencies.as_slice());
+        let Some(dep) = dependencies.and_then(|deps| deps.get(frame.next_dep)) else {
+            on_path.remove(frame.id);
+            path.pop();
+            continue;
+        };
+        frame.next_dep += 1;
+        if visited.insert(dep.as_str()) {
+            on_path.insert(dep, path.len());
+            path.push(Frame {
+                id: dep,
+                next_dep: 0,
+            });
+        } else if let Some(&position) = on_path.get(dep.as_str()) {
+            let mut cycle: Vec<String> =
+                path[position..].iter().map(|f| f.id.to_string()).collect();
+            cycle.push(dep.clone());
+            return Some(cycle);
         }
     }
-
-    path.pop();
-    rec_stack.remove(node_id);
     None
 }

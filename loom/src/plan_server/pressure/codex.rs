@@ -2,8 +2,6 @@
 //! identity recorded in the session record (again after each fallback), its exit classified as
 //! the terminal driver classifies it, and the configuration it may have changed.
 
-use std::fs::File;
-use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -375,13 +373,9 @@ fn status(
     }
 }
 
-/// The last [`TAIL_BYTES`] of the log, lossily decoded; `None` when it cannot be read.
+/// The last [`TAIL_BYTES`] of the log, lossily decoded; `None` when it cannot
+/// be read. The shared tail opens without following a symlink.
 fn log_tail(path: &Path) -> Option<String> {
-    let mut file = File::open(path).ok()?;
-    let length = file.metadata().ok()?.len();
-    file.seek(SeekFrom::Start(length.saturating_sub(TAIL_BYTES)))
-        .ok()?;
-    let mut bytes = Vec::new();
-    file.take(TAIL_BYTES).read_to_end(&mut bytes).ok()?;
-    Some(String::from_utf8_lossy(&bytes).into_owned())
+    crate::pressure::codex_run::log_tail(path, TAIL_BYTES)
+        .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
 }

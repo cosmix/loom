@@ -1,5 +1,5 @@
 /// Count the backticks on a closing fence line, without its newline.
-fn closing_run(line: &str) -> Option<usize> {
+pub(crate) fn closing_run(line: &str) -> Option<usize> {
     let after_indent = line.trim_start_matches(' ');
     if line.len() - after_indent.len() > 3 {
         return None;

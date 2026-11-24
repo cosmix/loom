@@ -13,7 +13,7 @@ mod validation;
 pub use extraction::{
     extract_plan_name, extract_yaml_metadata, extract_yaml_metadata_with_ranges, ExtractedMetadata,
 };
-pub(crate) use fence::fence_len_for;
+pub(crate) use fence::{closing_run, fence_len_for};
 pub use validation::{parse_and_validate, parse_error_text, parse_metadata};
 
 /// Result of parsing a plan document

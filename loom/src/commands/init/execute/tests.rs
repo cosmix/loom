@@ -107,6 +107,7 @@ fn init_clean_from_a_subdirectory_refuses_like_the_root_does() {
 }
 
 #[test]
+#[serial]
 fn prepare_workspace_bootstraps_a_repository_with_no_commits() {
     let repo = crate::test_git::TestRepo::builder()
         .branch("main")

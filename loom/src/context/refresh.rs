@@ -302,13 +302,7 @@ fn rebuild_and_persist(
     // `evaluate` compares; `catalog.revision` stays the catalog's own identity.
     let (catalog, fingerprints) = catalog::build_with_fingerprints(knowledge_root)?;
     let current_revision = tree_revision(&fingerprints);
-    let report = IngestReport {
-        knowledge_root: knowledge_root.to_path_buf(),
-        files: fingerprints.len(),
-        chunks: catalog.chunks.len(),
-        revision: catalog.revision.clone(),
-        issues: catalog.issues.clone(),
-    };
+    let report = IngestReport::for_build(knowledge_root, &catalog, fingerprints.len());
 
     let mut structural = Freshness {
         revision: current_revision,
