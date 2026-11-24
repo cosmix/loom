@@ -58,13 +58,14 @@
 | [source-graph-build](architecture/source-graph-build.md) |  | 142 |
 | [source-graph-resolution](architecture/source-graph-resolution.md) |  | 269 |
 | [stage-build-cache](architecture/stage-build-cache.md) | Per-stage cache root: env, seeds, sockets, read roots, xcrun bypass | 60 |
+| [stage-exit-recording](architecture/stage-exit-recording.md) | Stage exits: refused-commit route, idle-stop block, verdict delivery, new guards | 33 |
 | [status-data-model](architecture/status-data-model.md) | Fields | 271 |
 | [summary-store](architecture/summary-store.md) |  | 352 |
 | [target-guard](architecture/target-guard.md) | Tip | 180 |
 | [terminal-backends](architecture/terminal-backends.md) |  | 282 |
 | [token-accounting-and-receipts](architecture/token-accounting-and-receipts.md) | Ledger | 355 |
 | [usage-evidence](architecture/usage-evidence.md) |  | 256 |
-| [verification-v2-gates](architecture/verification-v2-gates.md) | Gates | 265 |
+| [verification-v2-gates](architecture/verification-v2-gates.md) | Gates | 267 |
 | [web-dashboard](architecture/web-dashboard.md) | Web | 137 |
 | [web-terminal](architecture/web-terminal.md) |  | 188 |
 
@@ -104,7 +105,7 @@
 | [config-plan-and-gate-rules](conventions/config-plan-and-gate-rules.md) |  | 39 |
 | [defect-triage](conventions/defect-triage.md) | Blocking and security defects are fixed when found, not deferred | 9 |
 | [dispute-and-adjudication](conventions/dispute-and-adjudication.md) |  | 155 |
-| [git-and-build-workflow](conventions/git-and-build-workflow.md) |  | 239 |
+| [git-and-build-workflow](conventions/git-and-build-workflow.md) |  | 222 |
 | [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) |  | 134 |
 | [host-job-test-guards](conventions/host-job-test-guards.md) | macOS host-job denials, sandbox_probe guards, strict-CI skips | 67 |
 | [model-and-effort-config](conventions/model-and-effort-config.md) |  | 147 |
@@ -131,7 +132,7 @@
 | [computed-values-and-hidden-couplings](mistakes/computed-values-and-hidden-couplings.md) | Values | 284 |
 | [concurrency-and-locking](mistakes/concurrency-and-locking.md) |  | 207 |
 | [consolidation-drift](mistakes/consolidation-drift.md) |  | 139 |
-| [contract-autonomy-delivery](mistakes/contract-autonomy-delivery.md) | Bypass | 109 |
+| [contract-autonomy-delivery](mistakes/contract-autonomy-delivery.md) | Bypass | 119 |
 | [daemon-singleton](mistakes/daemon-singleton.md) |  | 176 |
 | [detached-spawn-in-tests](mistakes/detached-spawn-in-tests.md) |  | 95 |
 | [dev-install](mistakes/dev-install.md) | Daemon | 68 |
@@ -152,7 +153,7 @@
 | [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Shared | 361 |
 | [phantom-merges](mistakes/phantom-merges.md) | Merges | 347 |
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Pins | 332 |
-| [plan-authoring](mistakes/plan-authoring.md) |  | 347 |
+| [plan-authoring](mistakes/plan-authoring.md) |  | 357 |
 | [plan-server-delivery](mistakes/plan-server-delivery.md) | Slips | 376 |
 | [planner-design-brainstorm](mistakes/planner-design-brainstorm.md) | Stubs | 141 |
 | [planner-follow-ups-delivery](mistakes/planner-follow-ups-delivery.md) | Slips | 196 |
@@ -202,7 +203,7 @@
 
 | Topic | Blurb | Lines |
 | --- | --- | --- |
-| [agent-rule-bending-hardening](concerns/agent-rule-bending-hardening.md) |  | 375 |
+| [agent-rule-bending-hardening](concerns/agent-rule-bending-hardening.md) |  | 374 |
 | [automatic-knowledge-source-graph-followups](concerns/automatic-knowledge-source-graph-followups.md) | Gap | 68 |
 | [code-quality-and-hook-debt](concerns/code-quality-and-hook-debt.md) | Debt | 323 |
 | [consolidation-followups](concerns/consolidation-followups.md) |  | 147 |
@@ -221,6 +222,7 @@
 | [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) |  | 394 |
 | [source-graph-known-gaps](concerns/source-graph-known-gaps.md) | Limits | 94 |
 | [source-graph-review-backlog](concerns/source-graph-review-backlog.md) | Todo | 295 |
+| [stage-exits-and-guards-followups](concerns/stage-exits-and-guards-followups.md) | Out-of-scope rows, open reviewer suggestions, proposed checks after exits plan | 63 |
 | [state-confinement-gaps](concerns/state-confinement-gaps.md) | Open confinement gaps: caches, task outputs, macOS networking, stage cache | 63 |
 | [token-accounting-and-proof-defects](concerns/token-accounting-and-proof-defects.md) |  | 323 |
 | [verification-v2-followups](concerns/verification-v2-followups.md) |  | 248 |

@@ -18,7 +18,7 @@ Paths below are relative to `.loom/work/`, the run state directory:
 | `disputes/<stage>/<n>/applied.marker` | daemon | Terminal marker that keeps the applied verdict out of pending scans |
 | `disputes/<stage>/<n>/closed.marker` | daemon | Marks an abandoned dispute settled |
 | `disputes/<stage>/<n>/attempts` | daemon | Adjudication-session respawn budget spent when work is handed out |
-| `disputes/<stage>/feedback.md` | daemon | Adjudication message eligible for a later stage signal |
+| `disputes/<stage>/feedback.md` | daemon | The verdict notices of the stage's current dispute round, one section per notice in application order, plus completion failures; the first filing of the next round removes it (see [stage-exit-recording](stage-exit-recording.md#verdict-delivery-to-the-next-session)) |
 
 `loom stage adjudicate` validates the draft and records the immutable verdict. The daemon scans verdicts without terminal markers and applies them under the stage dispute lock. The stage transaction records a dispute-specific receipt together with the verdict result; replay uses that receipt to finish closure and marker publication without repeating the stage charge. A legacy `.applying` file is removed on successful marker publication and is not an ownership claim.
 
@@ -71,7 +71,7 @@ Criterion adjudicators first run `loom check <stage> --no-cache` and inspect the
 2. `orchestrator/adjudication/session.rs::persist_verdict` writes `disputes/<stage>/<n>/verdict.md`.
 3. `orchestrator/core/verdict_apply.rs::apply_pending_verdicts` retires the old agent, then delegates application.
 4. `orchestrator/adjudication/apply.rs::persist_verdict_result` writes the materialized stage state and `applied.marker`.
-5. `orchestrator/adjudication/feedback.rs` owns the transient successor-facing feedback file.
+5. `orchestrator/adjudication/feedback.rs` (with `feedback/section.rs`) owns the successor-facing feedback file: notices of a round accumulate and the first filing of the next round clears it (`stage_service/dispute.rs::clear_previous_round_feedback`).
 6. `orchestrator/core/stage_executor.rs::start_stage` selects the handoff and calls `orchestrator/signals/generate.rs::generate_signal_with_skills`, which appends feedback last.
 
 ## Dispute Kinds: Criterion, Findings, Contract, Integrity, Impact Tests

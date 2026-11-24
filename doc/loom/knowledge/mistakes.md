@@ -242,8 +242,8 @@ Whole-crate lint run by a subagent, a pinned struct field whose construction sit
 ## Plan Input, Convention and Amendment Slips
 
 - [Brief-path extractor fed markdown into the run glob](mistakes/plan-authoring.md#brief-path-extractor-fed-markdown-into-the-run-glob): a plan that `loom plan verify --strict` accepted failed `loom run`'s input discovery. Rule: a check that accepts a plan runs the same discovery every later consumer runs.
-- [Treating this repository's conventions as loom's product behaviour](mistakes/plan-authoring.md#treating-this-repositorys-conventions-as-looms-product-behaviour): this repository's `.gitignore` and plan habits are not loom's behaviour in a target project. Rule: find the code that does it before stating what loom does.
-- [Plan Amendment Strips completed_commit From a Merged Stage](mistakes/plan-authoring.md#plan-amendment-strips-completed_commit-from-a-merged-stage): an amendment cleared `completed_commit` on a merged stage and left its dependent queued. Rule: never clear it on a stage with `merged` or `merge_assumed`.
+- [Treating this repository's conventions as loom's product behaviour](mistakes/plan-authoring.md#treating-this-repositorys-conventions-as-looms-product-behaviour): this repository's `.gitignore` and plan habits are not loom's behaviour in a target project. Rule: find the code that does it before stating what loom does.; [Plan Amendment Strips completed_commit From a Merged Stage](mistakes/plan-authoring.md#plan-amendment-strips-completed_commit-from-a-merged-stage): an amendment cleared `completed_commit` on a merged stage and left its dependent queued. Rule: never clear it on a stage with `merged` or `merge_assumed`.
+- [A Plan Forbade the Edit Its Commit Hook Demanded](mistakes/plan-authoring.md#a-plan-forbade-the-edit-its-commit-hook-demanded): four stages met a ledger refusal the plan's prose forbade them to fix; two waited for a person. Rule: read the repository's commit hooks before writing a stage and put each hook check into acceptance; the hook outranks plan prose.
 
 ## Shared main checkout
 
