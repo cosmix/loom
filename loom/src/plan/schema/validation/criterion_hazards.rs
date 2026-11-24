@@ -75,9 +75,12 @@ impl Hazard {
                 "masks its exit status (a final `|| true`, `|| :`, `|| exit 0`, `; true` or \
                  `; :`), so it passes whatever happens"
             }
-            Self::NegatedSearch => "negates a search over a command's output (`! <command> | rg ...`), \
-                so it passes whenever that command dies without printing a matching line; assert on \
-                the command's own exit status, or have it write a file and search the file",
+            Self::NegatedSearch => {
+                "negates a search over a command's output (`! <command> | rg ...`), \
+                so it passes whenever that command dies without printing a matching line; run the \
+                command for its own exit status, and when only some failures count, have the tool \
+                expose a mode for that and test the mode's exit status"
+            }
             Self::HomeFromExpansion => {
                 "assigns HOME from a variable or command substitution, so tools that keep \
                  toolchains, caches or config under HOME start empty"

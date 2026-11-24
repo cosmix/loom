@@ -131,7 +131,7 @@ if [ "$LEDGER_HASH_BEFORE" != "$LEDGER_HASH_AFTER" ]; then
                 echo "Left $LEDGER unstaged. It must be committed together with the change that shrank the code." >&2
                 ;;
             *)
-                echo "ERROR: failed to compare staged files under loom/ with the working tree." >&2
+                echo "ERROR: failed to compare tracked files under loom/ with the working tree." >&2
                 LEDGER_STAGE_STATUS=1
                 ;;
         esac

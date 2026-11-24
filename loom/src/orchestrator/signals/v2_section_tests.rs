@@ -152,6 +152,16 @@ fn review_section_names_loosening_only() {
 }
 
 #[test]
+fn review_section_limits_the_ratchet_allowance_to_key_integer_ledgers() {
+    let temp = tempfile::tempdir().unwrap();
+    let content = render(&v2_stage(), temp.path());
+    let (_, review) = content.split_once("## Review Gate\n").unwrap();
+
+    assert!(review.contains("raises nothing in a `<key> <integer>` ledger"));
+    assert!(review.contains("any change to a ratchet file in another format raises an event"));
+}
+
+#[test]
 fn v1_stage_renders_no_v2_block() {
     let temp = tempfile::tempdir().unwrap();
     write_test_freeze(temp.path(), "s1", "session-1");

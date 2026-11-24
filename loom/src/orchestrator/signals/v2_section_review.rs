@@ -78,7 +78,8 @@ fn append_dispute_commands(content: &mut String, stage: &Stage) {
          and complete the stage if it passes; any other verdict starts a fresh session.\n\
          - `loom stage complete` also fails on a test-integrity event (tests or assertions \
          removed, an assertion changed, a ratchet file loosened; lowering or removing a ratchet \
-         entry raises nothing); `loom stage review integrity {stage_id}` lists them. Revert the \
+         entry raises nothing in a `<key> <integer>` ledger, while any change to a ratchet file \
+         in another format raises an event); `loom stage review integrity {stage_id}` lists them. Revert the \
          change behind each one, or dispute them with \
          `loom stage dispute-integrity {stage_id} --event <id> ... --reason ...`.\n"
     ));

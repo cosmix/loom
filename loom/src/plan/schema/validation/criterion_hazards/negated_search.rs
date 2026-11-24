@@ -9,18 +9,48 @@ pub(super) fn negates_search(tokens: &[Token]) -> bool {
         .into_iter()
         .rev()
         .filter(|s| !s.is_empty());
-    let Some(last) = statements.next().map(judged_part) else {
+    let Some(statement) = statements.next() else {
         return false;
     };
-    if let [Token::Word(negation), pipeline @ ..] = last {
-        if !negation.quoted && !negation.expands && negation.value == "!" {
-            return pipes_to_matcher(pipeline);
+    let last = judged_part(statement);
+    is_negated_search(last)
+        || and_operand_negates_search(statement)
+        || (checks_search_failure(last)
+            && statements
+                .next()
+                .is_some_and(|previous| pipes_to_matcher(judged_part(previous))))
+}
+
+/// `! <command> | <matcher>`: the negation turns the matcher's failure into success.
+fn is_negated_search(part: &[Token]) -> bool {
+    match part {
+        [Token::Word(negation), pipeline @ ..] => {
+            !negation.quoted
+                && !negation.expands
+                && negation.value == "!"
+                && pipes_to_matcher(pipeline)
         }
+        _ => false,
     }
-    checks_search_failure(last)
-        && statements
-            .next()
-            .is_some_and(|previous| pipes_to_matcher(judged_part(previous)))
+}
+
+/// In `a && b` a failing `a` decides the exit status, so a negated search that is not the last
+/// operand of an all-`&&` chain is as fail-open as one in the last position.
+fn and_operand_negates_search(statement: &[Token]) -> bool {
+    let joins: Vec<(usize, &str)> = top_level_controls(statement)
+        .filter(|(_, op)| matches!(*op, "&&" | "||"))
+        .collect();
+    if joins.iter().any(|(_, op)| *op == "||") {
+        return false;
+    }
+    let mut start = 0;
+    for (index, _) in joins {
+        if is_negated_search(&statement[start..index]) {
+            return true;
+        }
+        start = index + 1;
+    }
+    false
 }
 
 fn judged_part(mut statement: &[Token]) -> &[Token] {
