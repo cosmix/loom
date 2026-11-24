@@ -7,6 +7,7 @@ use std::path::Path;
 
 use super::{run_acceptance_with_config, CriteriaConfig};
 use crate::models::stage::{AcceptanceCriterion, Stage};
+use crate::verify::environment::refused_bind_note;
 
 /// What one command printed and how it ended.
 pub(in crate::verify) struct ProbeRun {
@@ -20,6 +21,41 @@ pub(in crate::verify) struct ProbeRun {
     /// Set when the run is a certified cache hit: `stdout` and `stderr` are
     /// then tails of the original run, too short to re-parse.
     pub(in crate::verify) cached: Option<CachedRun>,
+    /// The command was confined on macOS with no loopback networking.
+    pub(in crate::verify) loopback_refused: bool,
+}
+
+impl ProbeRun {
+    /// The note naming the loopback opt-in when this failed run printed a
+    /// refused bind (`environment::refused_bind_note`), read from the whole
+    /// output.
+    pub(in crate::verify) fn bind_note(&self) -> Option<String> {
+        refused_bind_note(
+            self.loopback_refused,
+            self.timed_out,
+            self.exit_code,
+            &self.stdout,
+            &self.stderr,
+        )
+    }
+
+    /// A completed, uncached run with its loopback available.
+    #[cfg(test)]
+    pub(in crate::verify) fn finished(
+        stdout: impl Into<String>,
+        stderr: impl Into<String>,
+        exit_code: Option<i32>,
+    ) -> Self {
+        Self {
+            stdout: stdout.into(),
+            stderr: stderr.into(),
+            exit_code,
+            timed_out: false,
+            output_complete: true,
+            cached: None,
+            loopback_refused: false,
+        }
+    }
 }
 
 /// What a certified cache hit kept of the original run's test counts.
@@ -60,6 +96,7 @@ impl ProbeRunner for CriteriaProbe<'_> {
             cached: run.cached.then_some(CachedRun {
                 tests_executed: run.cached_tests_executed,
             }),
+            loopback_refused: run.loopback_refused,
         })
     }
 }
@@ -67,6 +104,73 @@ impl ProbeRunner for CriteriaProbe<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::stage::{CommandConfinement, NetworkConfig};
+
+    /// Prints a refused bind on stderr and fails, as a server that cannot listen.
+    const REFUSED: &str = "printf 'code: \"EADDRINUSE\"\\n' >&2; exit 1";
+
+    /// `REFUSED` through the real criteria runner under `stage` and `config`;
+    /// `None` when no confinement launcher runs on this host.
+    fn refused_run(stage: &Stage, config: CriteriaConfig) -> Option<ProbeRun> {
+        let temp = tempfile::TempDir::new().unwrap();
+        let probe = CriteriaProbe { stage, config };
+        probe.run(REFUSED, temp.path()).ok()
+    }
+
+    #[test]
+    fn bind_refusal_denied_run_is_flagged_on_macos_only() {
+        let Some(run) = refused_run(&Stage::default(), CriteriaConfig::default()) else {
+            return;
+        };
+        assert_eq!(run.loopback_refused, cfg!(target_os = "macos"));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn bind_refusal_macos_kernel_confined_run_carries_the_note() {
+        let name = "bind_refusal_macos_kernel_confined_run_carries_the_note";
+        if crate::process::sandbox_probe::skip_unless(
+            crate::process::sandbox_probe::confined_commands_runnable(),
+            name,
+            "confined commands cannot start",
+        ) {
+            return;
+        }
+        let run = refused_run(&Stage::default(), CriteriaConfig::default())
+            .expect("a confined command starts when the launcher is runnable");
+        assert_eq!(run.exit_code, Some(1));
+        assert!(run.loopback_refused);
+        let note = run.bind_note();
+        assert!(
+            note.as_deref()
+                .is_some_and(|note| note.contains("allow_local_binding")),
+            "{note:?}"
+        );
+    }
+
+    #[test]
+    fn bind_refusal_is_absent_when_opted_in_or_inherited() {
+        let mut opted_in = Stage::default();
+        opted_in.sandbox.network = Some(NetworkConfig {
+            allow_local_binding: true,
+            ..NetworkConfig::default()
+        });
+        let mut inherited = Stage::default();
+        inherited.sandbox.command_confinement = Some(CommandConfinement::Inherit);
+        let plan_opt_in = CriteriaConfig::default().with_plan_local_binding(true);
+        let cases = [
+            (opted_in, CriteriaConfig::default()),
+            (Stage::default(), plan_opt_in),
+            (inherited, CriteriaConfig::default()),
+        ];
+        for (stage, config) in cases {
+            let Some(run) = refused_run(&stage, config) else {
+                continue;
+            };
+            assert!(!run.loopback_refused);
+            assert_eq!(run.bind_note(), None);
+        }
+    }
 
     #[test]
     fn probe_preserves_executor_capture_incompleteness() {

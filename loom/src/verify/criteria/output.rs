@@ -2,7 +2,7 @@
 
 use crate::testrun::RunningTests;
 use crate::verify::criteria::CriterionResult;
-use crate::verify::environment::run_denial;
+use crate::verify::environment::{refused_bind_note, run_denial};
 
 /// Number of trailing lines of stdout/stderr shown for a failed or timed-out
 /// criterion.
@@ -45,6 +45,7 @@ pub(crate) fn format_criterion_result(
 
     lines.push(exit_code_line(result.exit_code));
     lines.extend(environment_note(index, result));
+    lines.extend(bind_note_line(result));
 
     if !setup.is_empty() {
         lines.push(format!(
@@ -77,6 +78,19 @@ fn exit_code_line(exit_code: Option<i32>) -> String {
         Some(code) => format!("    exit code: {code}"),
         None => "    exit code: none (the process was killed or timed out)".to_string(),
     }
+}
+
+/// The line a failed run gets when macOS confinement gave it no loopback and
+/// its output names a refused bind (`environment::refused_bind_note`).
+fn bind_note_line(result: &CriterionResult) -> Option<String> {
+    refused_bind_note(
+        result.loopback_refused,
+        result.timed_out,
+        result.exit_code,
+        &result.stdout,
+        &result.stderr,
+    )
+    .map(|note| format!("    {note}"))
 }
 
 /// The two lines a failed run gets when its output shows the sandbox refused

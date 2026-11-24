@@ -11,7 +11,7 @@ use super::accepted::{AcceptedImpact, Standing};
 use super::base::{compare, BaseProbe};
 use super::failure::ImpactFailure;
 use super::observed::MAX_OBSERVED_FAILURES;
-use super::runs::Selection;
+use super::runs::{Failed, Selection};
 use super::{ImpactOutcome, FULL_SUITE};
 use crate::testrun::command::shell_word;
 
@@ -20,6 +20,29 @@ pub(super) struct Report {
     pub(super) outcome: ImpactOutcome,
     /// The failures the stage fixes or disputes.
     pub(super) failures: Vec<ImpactFailure>,
+    /// A loopback opt-in note for a failure, as (failure id, note): shown
+    /// beside the failure's line, not in its output excerpt.
+    pub(super) hints: Vec<(String, String)>,
+}
+
+/// The (id, note) of each of `failed` whose run printed a refused bind.
+fn bind_notes(failed: &[Failed]) -> Vec<(String, String)> {
+    failed
+        .iter()
+        .filter_map(|f| Some((f.id.clone(), f.failure.note.clone()?)))
+        .collect()
+}
+
+/// `noted` cut to the failures `failures` kept, the first note per id.
+fn kept_hints(noted: Vec<(String, String)>, failures: &[ImpactFailure]) -> Vec<(String, String)> {
+    let mut kept: Vec<(String, String)> = Vec::new();
+    for (id, note) in noted {
+        let standing = failures.iter().any(|failure| failure.id == id);
+        if standing && !kept.iter().any(|(seen, _)| *seen == id) {
+            kept.push((id, note));
+        }
+    }
+    kept
 }
 
 impl Report {
@@ -48,13 +71,16 @@ impl Report {
                 Standing::Unaccepted => unsettled.push(failed),
             }
         }
+        let noted = bind_notes(&unsettled);
         let failures = compare(base, unsettled, &mut notes);
+        let hints = kept_hints(noted, &failures);
         Self {
             outcome: ImpactOutcome {
                 ran,
                 notes: notes.into_iter().collect(),
             },
             failures,
+            hints,
         }
     }
 
@@ -65,7 +91,7 @@ impl Report {
             return Ok(self.outcome);
         }
         Err(ImpactTestsFailed {
-            message: failure_message(stage_id, &self.failures),
+            message: failure_message(stage_id, &self.failures, &self.hints),
             failures: self.failures,
         }
         .into())
@@ -94,14 +120,27 @@ impl ImpactTestsFailed {
     /// The error `into_outcome` builds, for a test of a caller that downcasts it.
     pub(crate) fn for_test(stage_id: &str, failures: Vec<ImpactFailure>) -> Self {
         Self {
-            message: failure_message(stage_id, &failures),
+            message: failure_message(stage_id, &failures, &[]),
             failures,
         }
     }
 }
 
-fn failure_message(stage_id: &str, failures: &[ImpactFailure]) -> String {
-    let lines: Vec<String> = failures.iter().map(ImpactFailure::line).collect();
+/// The gate's message: each failure's line, then its hint in `hints`, if any.
+fn failure_message(
+    stage_id: &str,
+    failures: &[ImpactFailure],
+    hints: &[(String, String)],
+) -> String {
+    let lines: Vec<String> = failures
+        .iter()
+        .map(
+            |failure| match hints.iter().find(|(id, _)| *id == failure.id) {
+                Some((_, note)) => format!("{}\n    {note}", failure.line()),
+                None => failure.line(),
+            },
+        )
+        .collect();
     let (kept, beyond) = failures.split_at(failures.len().min(MAX_OBSERVED_FAILURES));
     let tests: Vec<String> = kept
         .iter()

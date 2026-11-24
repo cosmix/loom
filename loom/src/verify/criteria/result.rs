@@ -27,6 +27,9 @@ pub struct CriterionResult {
     /// left running (`crate::testrun::registry::unfinished_tests`); `None`
     /// for a command that is no test run, and on every other result.
     pub running_at_timeout: Option<crate::testrun::RunningTests>,
+    /// Set by the acceptance runner when the command was confined on macOS
+    /// with no loopback networking.
+    pub loopback_refused: bool,
 }
 
 impl CriterionResult {
@@ -52,6 +55,7 @@ impl CriterionResult {
             cached: false,
             cached_tests_executed: None,
             running_at_timeout: None,
+            loopback_refused: false,
         }
     }
 
@@ -75,6 +79,7 @@ impl CriterionResult {
             cached: true,
             cached_tests_executed: tests_executed,
             running_at_timeout: None,
+            loopback_refused: false,
         }
     }
 

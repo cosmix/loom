@@ -197,7 +197,10 @@ fn run_contract(
     let Some(failure) = judge(contract, adapter, &resolved.command, &run) else {
         return Ok((failures, None));
     };
-    failures.push(failure);
+    failures.push(match run.bind_note() {
+        Some(note) => format!("{failure}; {note}"),
+        None => failure,
+    });
     Ok((failures, environment_marker(&run.stdout, &run.stderr)))
 }
 
@@ -359,3 +362,7 @@ mod adapter_tests;
 #[cfg(test)]
 #[path = "completion_share_tests.rs"]
 mod share_tests;
+
+#[cfg(test)]
+#[path = "completion_bind_refusal_tests.rs"]
+mod bind_refusal_tests;

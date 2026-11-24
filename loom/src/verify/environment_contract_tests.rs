@@ -46,14 +46,7 @@ struct Captured {
 
 impl ProbeRunner for Captured {
     fn run(&self, _command: &str, _package_dir: &Path) -> Result<ProbeRun> {
-        Ok(ProbeRun {
-            stdout: self.stdout.to_string(),
-            stderr: self.stderr.to_string(),
-            exit_code: self.exit_code,
-            timed_out: false,
-            output_complete: true,
-            cached: None,
-        })
+        Ok(ProbeRun::finished(self.stdout, self.stderr, self.exit_code))
     }
 }
 

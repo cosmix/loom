@@ -30,6 +30,8 @@ mod accepted_contract_tests;
 pub(crate) mod base;
 #[cfg(test)]
 mod base_contract_tests;
+#[cfg(test)]
+mod bind_refusal_contract_tests;
 mod failure;
 mod libtest;
 mod observed;

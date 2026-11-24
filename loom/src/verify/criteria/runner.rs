@@ -121,6 +121,17 @@ fn prepare_criterion<'a>(
     }
 }
 
+/// Whether a command run at this level gets no loopback networking: macOS
+/// Seatbelt confinement with the network denied. Linux denies the network
+/// inside a namespace that keeps its own loopback.
+pub(crate) fn refuses_loopback(
+    confinement: CommandConfinement,
+    network: NetworkAccess,
+    macos: bool,
+) -> bool {
+    macos && confinement == CommandConfinement::Confined && network == NetworkAccess::Denied
+}
+
 fn run_criterion(
     prepared: PreparedCriterion<'_>,
     working_dir: Option<&Path>,
@@ -128,6 +139,7 @@ fn run_criterion(
     config: &CriteriaConfig,
 ) -> Result<EvaluatedCriterion> {
     let mut outcome = run_with_cache(&prepared, working_dir, level, config)?;
+    outcome.result.loopback_refused = refuses_loopback(level.0, level.1, cfg!(target_os = "macos"));
     outcome.result.command = prepared.original_command.to_string();
     if outcome.result.cached {
         return Ok(EvaluatedCriterion {

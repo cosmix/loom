@@ -30,16 +30,12 @@ struct OneFails;
 
 impl ProbeRunner for OneFails {
     fn run(&self, _command: &str, _package_dir: &Path) -> Result<ProbeRun> {
-        Ok(ProbeRun {
-            stdout: "running 721 tests\n\ntest result: FAILED. 720 passed; 1 failed; 0 ignored; \
-                     0 measured; 0 filtered out; finished in 0.01s\n"
-                .to_string(),
-            stderr: String::new(),
-            exit_code: Some(101),
-            timed_out: false,
-            output_complete: true,
-            cached: None,
-        })
+        Ok(ProbeRun::finished(
+            "running 721 tests\n\ntest result: FAILED. 720 passed; 1 failed; 0 ignored; \
+             0 measured; 0 filtered out; finished in 0.01s\n",
+            "",
+            Some(101),
+        ))
     }
 }
 
