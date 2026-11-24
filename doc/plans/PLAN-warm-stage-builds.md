@@ -71,7 +71,7 @@ The one implementation stage. Its three workers write disjoint files and start t
 | Worker | Role | Tier | Files owned | Shared context | Brief path |
 | --- | --- | --- | --- | --- | --- |
 | clone-and-seed | clone primitive, seed tables, path safety | loom-senior-software-engineer | loom/src/fs/clone_tree.rs, loom/src/fs/clone_tree_tests.rs, loom/src/fs/mod.rs, loom/src/stage_cache/seed.rs, loom/src/stage_cache/seed_tables.rs, loom/src/stage_cache/seed_tests.rs, loom/src/stage_cache/mod.rs, loom/src/stage_cache/roots.rs | brief | doc/plans/briefs/warm-stage-builds/seed-stage-builds/clone-and-seed.md |
-| wiring-and-status | orchestrator call, host variables, status lines | loom-software-engineer | loom/src/orchestrator/core/build_seed.rs, loom/src/orchestrator/core/build_seed_tests.rs, loom/src/orchestrator/core/stage_executor.rs, loom/src/orchestrator/core/mod.rs, loom/src/stage_cache/environment.rs, loom/src/daemon/server/environment.rs, loom/src/orchestrator/terminal/native/build_cache.rs, loom/src/orchestrator/terminal/native/mod.rs, loom/src/commands/run/checks.rs, loom/src/commands/status.rs | brief | doc/plans/briefs/warm-stage-builds/seed-stage-builds/wiring-and-status.md |
+| wiring-and-status | orchestrator call, host variables, status lines | loom-software-engineer | loom/src/orchestrator/core/build_seed.rs, loom/src/orchestrator/core/build_seed_tests.rs, loom/src/orchestrator/core/stage_executor.rs, loom/src/orchestrator/core/mod.rs, loom/src/stage_cache/environment.rs, loom/src/daemon/server/environment.rs, loom/src/orchestrator/terminal/launch/build_cache.rs, loom/src/orchestrator/terminal/launch/mod.rs, loom/src/commands/run/checks.rs, loom/src/commands/status.rs | brief | doc/plans/briefs/warm-stage-builds/seed-stage-builds/wiring-and-status.md |
 | probes-and-ci | per-ecosystem second-stage probes, CI seeds | loom-software-engineer | loom/src/stage_cache/toolchain_tests/mod.rs, loom/src/stage_cache/toolchain_tests/rust.rs, loom/src/stage_cache/toolchain_tests/js.rs, loom/src/stage_cache/toolchain_tests/python.rs, loom/src/stage_cache/toolchain_tests/go.rs, .github/workflows/ci.yml | brief | doc/plans/briefs/warm-stage-builds/seed-stage-builds/probes-and-ci.md |
 
 Risk checklist:
@@ -215,7 +215,7 @@ loom:
         three have returned.
 
         INTEGRITY: wiring-and-status rewords the sccache status line in
-        loom/src/orchestrator/terminal/native/build_cache.rs, whose test asserts on
+        loom/src/orchestrator/terminal/launch/build_cache.rs, whose test asserts on
         the line; an assertion changed there raises TI-edit and is expected, because
         the old line claimed that installing sccache shares dependency builds between
         stage worktrees, which the tree does not do.
@@ -232,8 +232,8 @@ loom:
         - "loom/src/fs/**"
         - "loom/src/stage_cache/**"
         - "loom/src/orchestrator/core/**"
-        - "loom/src/orchestrator/terminal/native/build_cache.rs"
-        - "loom/src/orchestrator/terminal/native/mod.rs"
+        - "loom/src/orchestrator/terminal/launch/build_cache.rs"
+        - "loom/src/orchestrator/terminal/launch/mod.rs"
         - "loom/src/commands/run/checks.rs"
         - "loom/src/commands/status.rs"
         - "loom/src/daemon/server/environment.rs"
@@ -249,7 +249,7 @@ loom:
           timeout_secs: 1800
         - command: "cargo test --manifest-path loom/Cargo.toml --lib orchestrator::core::build_seed"
           timeout_secs: 900
-        - command: "cargo test --manifest-path loom/Cargo.toml --lib orchestrator::terminal::native::build_cache"
+        - command: "cargo test --manifest-path loom/Cargo.toml --lib orchestrator::terminal::launch::build_cache"
           timeout_secs: 900
         - command: "cargo clippy --manifest-path loom/Cargo.toml --all-targets -- -D warnings"
           timeout_secs: 900

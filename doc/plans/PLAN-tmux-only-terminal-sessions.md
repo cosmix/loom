@@ -69,18 +69,13 @@ and its briefs (stage worktrees are built from committed history).
 
 | Sibling | Shared surface | If the sibling merged first | If this plan merges first |
 | --- | --- | --- | --- |
-| `PLAN-warm-stage-builds` (stage `seed-stage-builds`) | `terminal/native/build_cache.rs`, `terminal/native/mod.rs`, `daemon/server/environment.rs`, `orchestrator/core/mod.rs` | Nothing to do: the rename carries its edits, and config-cli keeps its new host-environment names (briefed) | Before running it, change its `files:`, its `wiring-and-status` brief and its criterion `cargo test --lib orchestrator::terminal::native::build_cache` to `terminal/launch` and `terminal::launch`; unchanged, that criterion selects no test |
+| `PLAN-warm-stage-builds` (stage `seed-stage-builds`) | `terminal/native/build_cache.rs`, `terminal/native/mod.rs`, `daemon/server/environment.rs`, `orchestrator/core/mod.rs` | Nothing to do: the rename carries its edits, and config-cli keeps its new host-environment names (briefed) | Nothing to do: its `files:`, its `wiring-and-status` brief and its criterion `cargo test --lib orchestrator::terminal::launch::build_cache` already name `terminal/launch` and `terminal::launch` |
 | `PLAN-loom-state-confinement` (phase I4, a design without loom YAML) | `terminal/native/{session_settings,capsule,launch,wrapper}.rs`, `commands/run/**`, `cli/**` | Nothing to do | Its phase I4 file list uses `terminal/launch/` and `launch/prepare.rs` when it becomes a loom plan |
 | `PLAN-contract-disputes-and-run-parity` (a design; stage `contract-dispute-many`) | `plan/amendment.rs` (`AmendmentRequest.patch` becomes `patches`), `orchestrator/adjudication/{plan_patch,apply}.rs`, `cli/types_stage_disputes.rs` | Stage 2's contract `artifacts-amend-takes-a-verbatim-glob` builds the request with the field that tree has (`patches: vec![...]`) | That plan lists `plan/amendment/artifacts_contract_tests.rs` as a planned edit of a frozen test |
 
-**BLOCKING — required order: `PLAN-warm-stage-builds` completes first, then this plan.** Its stage
-`seed-stage-builds` edits `terminal/native/build_cache.rs` and filters a criterion on
-`terminal::native::build_cache`; after this plan's rename that filter matches zero tests and passes
-vacuously. tmux-only's `before_stage` refuses to start while `doc/plans/PLAN-warm-stage-builds.md`
-still exists unprefixed (pending). To run this plan first instead, the operator first amends that
-sibling as the table's last column says (its `files:`, its `wiring-and-status` brief, which names the
-paths in five places, and its criterion filter, to `terminal/launch` / `terminal::launch`), renames it
-out of the way, and removes this gate from both this prose and the YAML. The moved
+**Order: this plan runs before `PLAN-warm-stage-builds`.** That sibling's `files:`, its
+`wiring-and-status` brief and its criterion filter already name `terminal/launch` /
+`terminal::launch`, the paths this plan's rename produces. The moved
 `launch/build_cache.rs` is an `artifacts:` entry of tmux-only, so its tests run under the
 `orchestrator::` filter.
 
@@ -451,8 +446,6 @@ loom:
       before_stage:
         - command: "test -d loom/src/orchestrator/terminal/native"
           description: "the native lane this stage removes is present at the stage's base"
-        - command: "test ! -e doc/plans/PLAN-warm-stage-builds.md"
-          description: "PLAN-warm-stage-builds has run first (its build-cache criterion filters on the path this stage renames)"
       after_stage:
         - command: "rg -qF 'on PATH to start sessions. Install' loom/src/orchestrator/terminal/backend.rs"
           description: "the single missing-tmux message lives at the spawn boundary"

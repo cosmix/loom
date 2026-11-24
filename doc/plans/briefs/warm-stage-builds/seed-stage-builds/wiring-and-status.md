@@ -21,7 +21,7 @@ Until that worker's files exist your code does not compile; write against the si
 - `loom/src/orchestrator/core/build_seed.rs` (new), `loom/src/orchestrator/core/build_seed_tests.rs` (new)
 - `loom/src/orchestrator/core/stage_executor.rs`, `loom/src/orchestrator/core/mod.rs` (the `mod build_seed;` line)
 - `loom/src/stage_cache/environment.rs`, `loom/src/daemon/server/environment.rs`
-- `loom/src/orchestrator/terminal/native/build_cache.rs`, `loom/src/orchestrator/terminal/native/mod.rs`
+- `loom/src/orchestrator/terminal/launch/build_cache.rs`, `loom/src/orchestrator/terminal/launch/mod.rs`
 - `loom/src/commands/run/checks.rs`, `loom/src/commands/status.rs`
 
 Read-only: `loom/src/stage_cache/seed_contract_tests.rs` is frozen.
@@ -56,17 +56,17 @@ Tests that set `HOME` are `#[serial_test::serial]`.
 
 ## Step 4: status lines
 
-`sccache_status_line()` (`loom/src/orchestrator/terminal/native/build_cache.rs:151-161`) is printed by `loom run` (`loom/src/commands/run/checks.rs:103-108`) and `loom doctor` (`loom/src/commands/status.rs:214-219`).
+`sccache_status_line()` (`loom/src/orchestrator/terminal/launch/build_cache.rs`; `loom map --outline` gives its lines) is printed by `loom run` (`loom/src/commands/run/checks.rs`) and `loom doctor` (`loom/src/commands/status.rs`); `rg -n sccache_status_line loom/src/commands` finds both call sites.
 
-- Add `pub(crate) fn build_seed_status_line(repo_root: &Path, work_dir: &Path) -> String` beside it, re-export it in `loom/src/orchestrator/terminal/native/mod.rs:35`, and print it at both call sites directly after the sccache line, with the same prefix each site uses. It starts with `build seed:` and then says one of:
+- Add `pub(crate) fn build_seed_status_line(repo_root: &Path, work_dir: &Path) -> String` beside it, re-export it in `loom/src/orchestrator/terminal/launch/mod.rs` next to the `sccache_status_line` re-export, and print it at both call sites directly after the sccache line, with the same prefix each site uses. It starts with `build seed:` and then says one of:
   - `off (LOOM_BUILD_SEED=0)`;
   - `this filesystem cannot clone; every stage builds cold`, when `can_clone_in(work_dir)` is false;
   - `nothing to seed; build the main checkout once to warm new stages`, when `seed_sources` is empty;
   - the comma-separated `seed_sources` names otherwise, for example `build seed: loom/target, web/node_modules, bun, npm`.
   When `work_dir` does not exist (a repository that was never initialised) skip the clone probe and report the sources alone.
-- Reword `sccache_status_line`. Its "not installed" text says each worktree compiles its dependencies from scratch and that installing sccache shares them. The tree does not do that: `RUSTC_WRAPPER` is never exported to a host job and reaches a session only where `sccache_usable_in` allows (`build_cache.rs:145`). State what is true in both branches: found, it is exported to sessions that can reach its socket and used in a host job only where the project's own build names it as a compiler launcher; not found, nothing uses it. Keep the `sccache:` prefix. The test near line 256 asserts on the line; update the assertion to the new text (the stage description records this as an expected integrity event).
+- Reword `sccache_status_line`. Its "not installed" text says each worktree compiles its dependencies from scratch and that installing sccache shares them. The tree does not do that: `RUSTC_WRAPPER` is never exported to a host job and reaches a session only where `sccache_usable_in` allows (same file). State what is true in both branches: found, it is exported to sessions that can reach its socket and used in a host job only where the project's own build names it as a compiler launcher; not found, nothing uses it. Keep the `sccache:` prefix. A test in the same file asserts on the line; update the assertion to the new text (the stage description records this as an expected integrity event).
 - Unit tests for `build_seed_status_line`: each of the four outcomes, with a temp repository.
 
 ## Done when
 
-From the repository root: `cargo test --manifest-path loom/Cargo.toml --lib orchestrator::core::build_seed`, `cargo test --manifest-path loom/Cargo.toml --lib orchestrator::terminal::native::build_cache` and `cargo test --manifest-path loom/Cargo.toml --lib daemon::server::environment` pass. Files stay at most 400 lines (`build_cache.rs` is at 324) and functions at most 50. Report: files changed, each command with its result, anything unresolved or outside your files, any mistake worth recording.
+From the repository root: `cargo test --manifest-path loom/Cargo.toml --lib orchestrator::core::build_seed`, `cargo test --manifest-path loom/Cargo.toml --lib orchestrator::terminal::launch::build_cache` and `cargo test --manifest-path loom/Cargo.toml --lib daemon::server::environment` pass. Files stay at most 400 lines (check `build_cache.rs` before adding to it) and functions at most 50. Report: files changed, each command with its result, anything unresolved or outside your files, any mistake worth recording.
