@@ -113,7 +113,7 @@ loom memory decision "<choice>" --context "<why>"
 loom memory note "stale-knowledge: <file>#<heading> claims X; the tree does Y (file:line). Correction: <text>"
 ```
 
-Do not edit knowledge files during a stage unless the task assigns them. A fix that failed once is reported, never retried: the orchestrator moves it to a stronger worker.
+Do not write knowledge files during a stage, by any tool or shell command, unless the task assigns them; nothing blocks the write, so this rule is the only guard. A fix that failed once is reported, never retried: the orchestrator moves it to a stronger worker.
 
 Outside a loom stage `loom memory` has no journal. In a repository that keeps
 `doc/loom/knowledge/`, write the knowledge files when the correction happens:
@@ -128,7 +128,7 @@ Outside a loom stage `loom memory` has no journal. In a repository that keeps
    stands. Name the wrong claim in the replacement.
 3. A new topic also gets `loom knowledge annotate <category>/<slug> --blurb "<80 chars max>"` and
    a 2-4 line summary plus link in its tier-1 file.
-4. A direct file edit leaves `INDEX.md` stale: run `loom knowledge sync` after it. End a batch
+4. A direct edit (only outside a stage) leaves `INDEX.md` stale: run `loom knowledge sync` after it. End a batch
    with `loom knowledge check`.
 
 Fix a stale claim the same way, at once. Every knowledge file except `mistakes.md` and

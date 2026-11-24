@@ -43,7 +43,7 @@ const FROZEN_LINES: &[&str] = &[
     r#"1. Find the home in `INDEX.md`: the tier-2 topic whose blurb covers it, else a new `<category>/<slug>`. Tier-1 files take summaries only."#,
     r#"2. Write through the CLI; every write regenerates `INDEX.md`. `loom knowledge update <category>/<slug> "<entry>"` APPENDS, scaffolding a new topic. Correct a section with `loom knowledge replace-section <file> "<Heading>" "<body WITHOUT the ## line>"`, never `update`; on a non-matching heading it appends and SAYS so — read that line, or the stale text stands. Name the wrong claim in the replacement."#,
     r#"3. A new topic also gets `loom knowledge annotate <category>/<slug> --blurb "<80 chars max>"` and a 2-4 line summary plus link in its tier-1 file."#,
-    r#"4. An Edit-tool fix leaves `INDEX.md` stale: run `loom knowledge sync` after it. End a batch with `loom knowledge check`."#,
+    r#"4. A direct edit (only outside a stage) leaves `INDEX.md` stale: run `loom knowledge sync` after it. End a batch with `loom knowledge check`."#,
     r#"### 13. SILENT FAILURE DETECTION"#,
     r#"### 14. TOKEN EFFICIENCY (HARD REQUIREMENT)"#,
     r#"- Query before reading (KNOWLEDGE-FIRST); open a file only once a lookup names its lines."#,

@@ -147,7 +147,7 @@ pub(in crate::orchestrator::signals) fn format_semi_stable_section(
             content.push_str(
                 "**For long content, use stdin:** `loom knowledge update <file> - <<'EOF'`\n\n",
             );
-            content.push_str("Use `loom knowledge replace-section` or `delete-section` for existing sections; after direct edits run `loom knowledge sync`.\n\n");
+            content.push_str("Use `loom knowledge replace-section` or `delete-section` for existing sections. Write knowledge only through these commands, never with a file tool or a shell redirect, `sed` or script.\n\n");
 
             // Review document generation (knowledge-distill only)
             if stage_type == StageType::KnowledgeDistill {

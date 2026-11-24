@@ -68,12 +68,7 @@ overwrites the body under the first `## <heading>` up to the next `##` heading, 
 body so a caller carrying `update` habits cannot double the heading. Pass the body WITHOUT its
 heading line.
 
-The channel doctrine now has a working shape end to end: file tools stay blocked on
-`doc/loom/knowledge/**` inside worktrees (`loom-hooks/worktree-file-guard.sh`) while the CLI writes
-through the sandbox grant (`sandbox::config::apply_knowledge_write_grant`); a non-knowledge stage
-records a staleness find as a `stale-knowledge:` memory; the knowledge-distill stage applies every
-one of them with `replace-section` BEFORE curating anything new (CLAUDE.md Rule 12). Still missing:
-a delete verb and a heading rename — see `concerns.md`.
+The channel: the CLI writes through the sandbox grant (`sandbox::config::apply_knowledge_write_grant`); a non-knowledge stage records a staleness find as a `stale-knowledge:` memory; the knowledge-distill stage applies every one of them with `replace-section` BEFORE curating anything new (CLAUDE.md Rule 12). No hook enforces the channel in a stage ([G8](../concerns/agent-rule-bending-hardening.md#gaps-found-continued-g8)); the doctrine is the only guard.
 
 ## Doctrine Baked Into Signals Reaches Only the NEXT Plan
 
@@ -152,3 +147,10 @@ include `INDEX.md` in it.
 **Prevention:** Describe the project as "a downstream project" and a stage by its role. Keep only what the next agent needs: the command, the condition and the fix. Before committing a knowledge change run `rg -n -i "<project-name>" doc/loom/knowledge` for each project involved. Fix a leak where it is found, in the same change.
 
 **Fix:** The seven entries naming downstream projects, plans and stages were rewritten without them.
+
+## Removing the Knowledge Write Block Left Doctrine Citing It (2026-11-24)
+
+**What happened:** `worktree-file-guard.sh` refused Write and Edit under `doc/loom/knowledge/` from abd594e52 until 70904c30e removed the block. For three weeks `CLAUDE.md.template` still told stage agents "Do NOT edit knowledge files (worktree guard blocks file tools)", and this file, `concerns/knowledge-cli-gaps.md` and G8 in `concerns/agent-rule-bending-hardening.md` described the block as live. An agent whose Edit succeeded learned that the rule was unenforced, and none of the text said a shell or interpreter write breaks the rule too.
+**Why:** the commit that removed the block changed the hook and its test, and nothing tied the doctrine text or the knowledge entries to the hook.
+**Prevention:** state a rule without naming its enforcement unless a test pins both together. When a hook check is removed, `rg` the templates, `skills/`, signal text under `loom/src/orchestrator/signals/` and `doc/loom/knowledge/` for its name and its block message.
+**Fix:** the templates and the knowledge-stage signal now state the rule for every write route without citing a guard; the three knowledge entries describe the current state.

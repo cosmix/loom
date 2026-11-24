@@ -288,28 +288,9 @@ The doctrine is BLOCK-F (`orchestrator/signals/helpers.rs::STAGE_EXIT_RULES`, by
 
 ## Gaps Found (continued): G8
 
-### G8 — The knowledge-file guard gates tool names over a path the sandbox grants
+### G8 — Nothing enforces the knowledge write channel
 
-**The check.** `loom-hooks/worktree-file-guard.sh` (the `KNOWLEDGE_DIR` check) refuses Write, Edit, MultiEdit and
-NotebookEdit under `<worktree>/doc/loom/knowledge/`. It is class 2 and the only check on the
-directory: `sandbox/config.rs::apply_knowledge_write_grant` adds `doc/loom/knowledge/**` to every
-merged config's `allow_write` and strips it from `deny_write`, because `loom knowledge update` is an
-ordinary child of the sandboxed shell ([Knowledge Write Channel](../mistakes/knowledge-write-channel.md)).
-Any process the agent starts (`python -c`, `sed -i`, a heredoc) writes the same bytes as the CLI.
-Agents observed in knowledge-distill worktrees take that route right after the block.
-
-**Why agents take it:**
-
-- **The message reads as "use another tool".** The reason line says "not file tools", and the shared
-  `block_path` footer (`worktree-file-guard.sh::block_path`) says "Use a path inside the current worktree"
-  about a path already inside it.
-- **The named verb cannot do an Edit's job.** The message names `update`, which appends. The
-  in-place verbs, `replace-section` and `delete-section`, go unmentioned.
-- **The sanctioned recipe is a shell transform.** [Knowledge CLI Gaps](knowledge-cli-gaps.md) has a
-  surgical fix extract the section with a fence-aware scanner, substitute, and pipe the body to
-  `replace-section`; writing the file directly skips one hop.
-- **It blocks the stage that owns the files.** The guard applies in knowledge-distill worktrees,
-  while CLAUDE.md Rule 12 step 4 permits an Edit plus `loom knowledge sync` outside a stage.
+**State.** No hook polices writes to `doc/loom/knowledge/` in a stage. `loom-hooks/worktree-file-guard.sh` checks only paths outside the worktree and shared state, and `loom-hooks/tests/worktree-file-guard-scratchpad.sh` asserts that Write and Edit under the directory are allowed. `sandbox/config.rs::apply_knowledge_write_grant` adds `doc/loom/knowledge/**` to every merged config's `allow_write` and strips it from `deny_write`, because `loom knowledge update` is an ordinary child of the sandboxed shell ([Knowledge Write Channel](../mistakes/knowledge-write-channel.md)). File tools and any process the agent starts (`python -c`, `sed -i`, a heredoc) write the same bytes as the CLI. The rule in CLAUDE.md Rule 12 and AGENTS.md is the only guard in a stage. The planner session guard (`plan_session/guard/mod.rs`) denies file tools on the directory, not Bash.
 
 **What a bypass costs.** The CLI's write path regenerates `INDEX.md`, handles headings and fences,
 and keeps the index under its `OversizedIndex` budget. A search of `verify/` and `commands/stage/`
@@ -325,17 +306,13 @@ standard-stage path (the memory spool drain, an index refresh) writes the direct
 
 1. Gate the result: for a stage whose diff touches `doc/loom/knowledge/`, run `loom knowledge check`
    and an index-freshness comparison (regenerate in memory, compare to disk) at completion, outside
-   agent control. Then the write route stops mattering, and distill stages can be allowed Edit with
-   a sync after it.
+   agent control. Then the write route stops mattering.
 2. Scope `apply_knowledge_write_grant` to Knowledge and KnowledgeDistill stages and deny the
    directory to the rest, once the unverified item above is checked. Spell the deny as a directory
    path (write globs are skipped on Linux, G2) and add a probe with matched controls (G3).
-3. Rewrite the block message: drop the worktree footer for this reason, name `replace-section`,
-   `delete-section` and `update`, and say a shell or interpreter write breaks the same rule. Claim
-   detection at completion only once item 1 exists.
-4. Add an exact-once `loom knowledge edit <topic> --old <text> --new <text>` verb, which removes the
+3. Add an exact-once `loom knowledge edit <topic> --old <text> --new <text>` verb, which removes the
    shell-transform recipe for most surgical fixes.
-5. No Bash-side text matcher: the SECURITY NOTE header of `commit-filter.sh` records why that class loses to `python -c`.
+4. No Bash-side text matcher: the SECURITY NOTE header of `commit-filter.sh` records why that class loses to `python -c`.
 
 ## Sibling Directory Denies: Residuals
 

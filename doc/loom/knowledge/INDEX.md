@@ -120,7 +120,7 @@
 | [adjudication-autonomy-deadlock](mistakes/adjudication-autonomy-deadlock.md) |  | 238 |
 | [ambient-filesystem-trust](mistakes/ambient-filesystem-trust.md) |  | 186 |
 | [briefs-and-bug-reports](mistakes/briefs-and-bug-reports.md) |  | 396 |
-| [cargo-under-confinement](mistakes/cargo-under-confinement.md) | Cargo in sandboxes and confined runs: audit fetches, cold builds, Seatbelt | 93 |
+| [cargo-under-confinement](mistakes/cargo-under-confinement.md) | Cargo in sandboxes and confined runs: audit fetches, cold builds, Seatbelt | 100 |
 | [ci-gate-rollout](mistakes/ci-gate-rollout.md) | CI gate rollout slips: untested strict gates, shared index, known-red runs | 84 |
 | [ci-toolchain-and-cargo](mistakes/ci-toolchain-and-cargo.md) |  | 399 |
 | [codex-lane-rogue-wrapper](mistakes/codex-lane-rogue-wrapper.md) |  | 207 |
@@ -143,11 +143,11 @@
 | [host-verify-group-containment](mistakes/host-verify-group-containment.md) |  | 47 |
 | [knowledge-base-drift](mistakes/knowledge-base-drift.md) |  | 286 |
 | [knowledge-cli-invariants](mistakes/knowledge-cli-invariants.md) | Rules | 241 |
-| [knowledge-write-channel](mistakes/knowledge-write-channel.md) | Writes | 154 |
+| [knowledge-write-channel](mistakes/knowledge-write-channel.md) | Writes | 156 |
 | [ledger-tui-rendering](mistakes/ledger-tui-rendering.md) |  | 84 |
 | [live-state-pollution](mistakes/live-state-pollution.md) |  | 143 |
 | [maintainability-baseline](mistakes/maintainability-baseline.md) |  | 134 |
-| [merge-cleanup-boundary](mistakes/merge-cleanup-boundary.md) |  | 237 |
+| [merge-cleanup-boundary](mistakes/merge-cleanup-boundary.md) |  | 244 |
 | [merge-in-operator-checkout](mistakes/merge-in-operator-checkout.md) |  | 77 |
 | [native-macos-delivery](mistakes/native-macos-delivery.md) | macOS boundary delivery slips: lint scope, pinned fields, shared TMPDIR | 67 |
 | [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Shared | 361 |
@@ -203,12 +203,12 @@
 
 | Topic | Blurb | Lines |
 | --- | --- | --- |
-| [agent-rule-bending-hardening](concerns/agent-rule-bending-hardening.md) |  | 374 |
+| [agent-rule-bending-hardening](concerns/agent-rule-bending-hardening.md) |  | 351 |
 | [automatic-knowledge-source-graph-followups](concerns/automatic-knowledge-source-graph-followups.md) | Gap | 68 |
 | [code-quality-and-hook-debt](concerns/code-quality-and-hook-debt.md) | Debt | 323 |
 | [consolidation-followups](concerns/consolidation-followups.md) |  | 147 |
 | [contract-autonomy-followups](concerns/contract-autonomy-followups.md) |  | 122 |
-| [knowledge-cli-gaps](concerns/knowledge-cli-gaps.md) |  | 87 |
+| [knowledge-cli-gaps](concerns/knowledge-cli-gaps.md) |  | 82 |
 | [loom-ask-and-read-gate](concerns/loom-ask-and-read-gate.md) |  | 107 |
 | [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Edges | 97 |
 | [native-codex-qualification](concerns/native-codex-qualification.md) |  | 139 |
