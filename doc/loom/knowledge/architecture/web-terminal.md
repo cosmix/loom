@@ -139,10 +139,16 @@ dashboard's well, and `-f read-only` also drops PageUp/PageDown, which view-mode
 Under tmux's `window-size latest` the dashboard client resizes the agent's window, as `loom
 attach` does.
 
-View mode is enforced by the bridge alone (`bridge.rs::pump_socket`): a `ClientFrame::Input` reaches
+View mode is enforced by the bridge alone (`bridge.rs::apply_client_frame`): a `ClientFrame::Input` reaches
 the pending queue only in `Mode::Control` and is parsed and discarded in `Mode::View`, so a
 compromised or buggy client cannot reach the PTY write path. A `ClientFrame::Scroll` is admitted
 in both modes and becomes only PageUp/PageDown keys (`protocol.rs::scroll_input`, :72-75).
+
+A `ClientFrame::Resize` is applied in both modes. The page fits xterm to its host and reports that
+size (`use-terminal.ts::fitAndResize`); a view-mode PTY left at the spawn size makes tmux draw for
+a screen xterm does not have, and the view corrupts within seconds
+(mistakes/web-dashboard-server.md, "Gating View-Mode Resize Corrupted the Viewer"). Gating resize
+in view mode requires the page to render at the server's size first.
 
 ## Frontend: the `Emulator` interface and the lazy xterm chunk
 

@@ -227,17 +227,17 @@ fn pump_socket(
     None
 }
 
-/// Act on one browser message. A viewer's keystrokes and resizes are dropped:
-/// the PTY keeps the size it started with, so a viewer cannot reflow what a
-/// controller is looking at.
+/// Act on one browser message. A viewer's keystrokes are dropped. Its resizes
+/// are applied: the browser fits its emulator to the page, and a PTY left at
+/// another size makes tmux draw for a screen the emulator does not have.
 fn apply_client_frame(child: &PtyChild, mode: Mode, pending: &mut VecDeque<u8>, message: &Message) {
     match parse_client_frame(message) {
         Some(ClientFrame::Input(bytes)) if mode == Mode::Control => pending.extend(bytes),
-        Some(ClientFrame::Resize(size)) if mode == Mode::Control => {
+        Some(ClientFrame::Resize(size)) => {
             let _ = child.resize(clamp(size));
         }
         Some(ClientFrame::Scroll(pages)) => pending.extend(scroll_input(pages)),
-        Some(ClientFrame::Input(_) | ClientFrame::Resize(_)) | None => {}
+        Some(ClientFrame::Input(_)) | None => {}
     }
 }
 

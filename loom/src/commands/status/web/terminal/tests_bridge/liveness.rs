@@ -145,8 +145,8 @@ fn bridge_keeps_a_peer_that_answers_pings() {
 }
 
 #[test]
-fn a_viewer_resize_is_ignored() {
-    if skip_bridge_test("a_viewer_resize_is_ignored") {
+fn a_viewer_resize_reaches_the_pty() {
+    if skip_bridge_test("a_viewer_resize_reaches_the_pty") {
         return;
     }
     let script = "sleep 1; stty size; sleep 30";
@@ -156,10 +156,10 @@ fn a_viewer_resize_is_ignored() {
         .socket
         .send(Message::text(resize))
         .expect("send viewer resize");
-    let unchanged = wait_for_binary(&mut viewer.socket, b"24 80", Duration::from_secs(10));
-    // Positive control: the same frame resizes a controller's PTY, so the
-    // viewer's unchanged size is the bridge ignoring it, not the frame being
-    // malformed.
+    let viewer_resized = wait_for_binary(&mut viewer.socket, b"30 100", Duration::from_secs(10));
+    // Positive control: both modes resize the PTY, so a controller reaching
+    // 30 by 100 shows the frame is well formed and the viewer's result is
+    // the bridge's doing.
     let mut controller = start_bridge(script, Mode::Control);
     controller
         .socket
@@ -171,8 +171,8 @@ fn a_viewer_resize_is_ignored() {
     join_within(viewer.server, Duration::from_secs(5));
     join_within(controller.server, Duration::from_secs(5));
     assert!(
-        unchanged,
-        "the viewer's PTY did not stay at 24 rows by 80 columns"
+        viewer_resized,
+        "the viewer's resize did not reach the PTY (expected 30 rows by 100 columns)"
     );
     assert!(
         resized,

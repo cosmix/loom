@@ -67,7 +67,7 @@
 | [usage-evidence](architecture/usage-evidence.md) |  | 256 |
 | [verification-v2-gates](architecture/verification-v2-gates.md) | Gates | 267 |
 | [web-dashboard](architecture/web-dashboard.md) | Web | 137 |
-| [web-terminal](architecture/web-terminal.md) |  | 194 |
+| [web-terminal](architecture/web-terminal.md) |  | 200 |
 
 ### entry-points
 
@@ -198,7 +198,7 @@
 | [verification-v2-delivery](mistakes/verification-v2-delivery.md) | v2 | 396 |
 | [visibility-and-reachability](mistakes/visibility-and-reachability.md) |  | 141 |
 | [web-dashboard](mistakes/web-dashboard.md) | UI | 204 |
-| [web-dashboard-server](mistakes/web-dashboard-server.md) | Races | 278 |
+| [web-dashboard-server](mistakes/web-dashboard-server.md) | Races | 288 |
 | [web-terminal](mistakes/web-terminal.md) | TTY | 166 |
 | [writer-reader-address](mistakes/writer-reader-address.md) | Keys | 115 |
 

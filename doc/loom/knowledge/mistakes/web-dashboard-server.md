@@ -276,3 +276,13 @@ the spawn fails; the other candidates stay as listed.
 **Why:** the status socket had no liveness check on either side. The server writes only when `Broadcaster::publish` sees a changed frame, so silence is normal; the client reacted only to `onclose`/`onerror`, which a half-open TCP connection (sleeping device, dropped NAT mapping) never fires. The rule in "A push-fed page read liveness out of the payload" (trust the socket) assumes the socket reports its own death; it does not.
 **Prevention:** a push feed whose server suppresses unchanged frames needs an application-level heartbeat the client can observe (browser JS cannot see protocol pings), and the client must treat a missed heartbeat as an outage.
 **Fix:** `web_server/ws.rs` resends the socket's last frame after 10 s of silence; `web/src/api/ws.ts` reconnects after 30 s without any message (checked every 5 s and on `visibilitychange`), and `applySnapshot` skips a frame whose `generated_at` is not newer, so a keepalive does not re-render. A frame republished with a notice is restamped for the same reason.
+
+## Gating View-Mode Resize Corrupted the Viewer (2026-11-25)
+
+**What happened:** A review remediation (finding CR-60 d) made the terminal bridge ignore `ClientFrame::Resize` in `Mode::View`, so a viewer could not reflow the agent's tmux window. The page still fitted xterm to its dialog. The viewer's PTY stayed at the 120x36 spawn size, tmux drew for that size into an xterm of another size, and the view-mode terminal corrupted a few seconds after opening. Control mode was unaffected. The first suspect was the wheel and trackpad paging work of the same week, which was unrelated.
+
+**Why:** The finding was one this file already records as a settled decision reported as a defect ("An Integration-Verify Reviewer Cannot See the Plan..."). The validation brief noted that a viewer's xterm might mis-wrap and put the page-side change out of scope, so the server half shipped without the page half. The bridge test pinned the PTY size only (`stty size`); nothing rendered tmux output into an emulator of the browser's size.
+
+**Prevention:** A PTY and the emulator that draws it must agree on size; treat a change to who may resize as a two-sided change (bridge and page) and ship both or neither. Before acting on a review finding, search the mistakes files for the same behaviour. When a brief names a consequence and marks it out of scope, the consequence is a release blocker for that change, not a follow-up.
+
+**Fix:** `bridge.rs::apply_client_frame` applies `Resize` in both modes again; `tests_bridge/liveness.rs::a_viewer_resize_reaches_the_pty` pins it. Gating it again needs the page to render at a server-reported size first (architecture/web-terminal.md, "View mode").
