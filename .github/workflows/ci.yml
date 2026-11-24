@@ -164,6 +164,8 @@ jobs:
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version: stable
+          # The repository has no go.sum to key a module cache on.
+          cache: false
 
       - name: Set up Java
         uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
@@ -195,6 +197,9 @@ jobs:
 
       - name: Set up uv
         uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+        with:
+          # The repository has no Python lock or requirements file to key a cache on.
+          enable-cache: false
 
       # The uv and bun confinement tests skip when their tool is not on PATH
       # and fail when the variable naming it points at no file. Naming both
