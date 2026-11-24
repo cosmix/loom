@@ -169,11 +169,12 @@ function RunningRebuildSection({ running }: { running: RunningRebuild }) {
 
 /**
  * The ids a pending question already lists (rebuild-question.tsx, drawn above this panel) are
- * left out of the queue, so each id shows once. Ids queued for another reason stay.
+ * left out of the queue, so each id shows once. Ids queued for another reason stay. An id the
+ * queue repeats is listed once, so the list keys stay unique.
  */
 function queueBesideQuestion(panel: SummaryPanelData): string[] {
   const asked = new Set(panel.question?.ids ?? []);
-  return panel.queue.filter((id) => !asked.has(id));
+  return [...new Set(panel.queue)].filter((id) => !asked.has(id));
 }
 
 /**

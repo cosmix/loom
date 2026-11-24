@@ -85,8 +85,16 @@ loom_read_input() {
 # would end only the subshell.
 loom_require_payload() {
 	local guard="${1%.sh}"
-	if command -v jq >/dev/null 2>&1 &&
-		printf '%s' "${INPUT_JSON:-}" |
+	if ! command -v jq >/dev/null 2>&1; then
+		# Without jq the payload cannot be judged: say so, not "retry the call".
+		if declare -F loom_jq_missing_message >/dev/null 2>&1; then
+			loom_jq_missing_message "$1" >&2 || true
+		else
+			printf 'LOOM_HOOK_ERROR: jq is not installed, so %s cannot read the Claude Code hook payload. Install jq and start a new session.\n' "$1" >&2 || true
+		fi
+		exit 2
+	fi
+	if printf '%s' "${INPUT_JSON:-}" |
 		jq -e 'type == "object" and (.tool_name | type == "string" and length > 0)' >/dev/null 2>&1; then
 		return 0
 	fi

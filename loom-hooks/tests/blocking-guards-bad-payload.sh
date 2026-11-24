@@ -46,6 +46,20 @@ for entry in "${BLOCKING[@]}"; do
 	[[ $RC -eq 0 ]] || fail "$hook must allow an unrelated tool, got $RC: $ERR"
 done
 
+# Without jq on PATH, loom_require_payload blocks with the jq guidance, not the
+# "retry the call" bad-payload line (the payload cannot be judged either way).
+mkdir -p "$TMP/nojq"
+BASH_BIN=$(command -v bash)
+for body in '' '{"tool_name":"Bash"}'; do
+	RC=0
+	ERR=$(printf '%s' "$body" | env -i PATH="$TMP/nojq" HOME="$TMP/home" "$BASH_BIN" -c \
+		'source "$1/_common.sh"; source "$1/_bounded.sh"; IFS= read -r -d "" INPUT_JSON || true; loom_require_payload guard.sh' \
+		_ "$HOOKS" 2>&1 >/dev/null) || RC=$?
+	[[ $RC -eq 2 ]] || fail "loom_require_payload without jq must exit 2 for stdin '$body', got $RC: $ERR"
+	[[ "$ERR" == *"jq is not installed"* && "$ERR" != *"Retry the call"* ]] ||
+		fail "loom_require_payload without jq must print the jq guidance for stdin '$body', got: $ERR"
+done
+
 for hook in prefer-modern-tools.sh no-preexisting-failures.sh; do
 	run_hook "$hook" ''
 	[[ $RC -eq 0 ]] || fail "advisory $hook must allow empty input, got $RC: $ERR"
