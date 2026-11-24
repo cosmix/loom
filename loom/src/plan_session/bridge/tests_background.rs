@@ -31,6 +31,7 @@ fn p1_background_bash_idles_with_an_agent_and_a_shell_until_the_shell_notifies()
     // The Stop that lists both tasks.
     replay.until(&s, "2026-11-10T06:37:40.648Z");
     wait_until("both tasks", || tasks(&h, &s).len() == 2);
+    replay.consumed(&h, &s);
     h.wait_state(&s, SessionState::Idle);
     let shell = task(&h, &s, "bmiyho9ji").unwrap();
     assert_eq!(

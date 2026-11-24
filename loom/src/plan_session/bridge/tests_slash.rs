@@ -110,6 +110,7 @@ fn p2_skills_a_prompt_type_skill_confirms_once_and_its_record_gives_the_chip() {
     listed(&h, &s, &[]);
     let mut replay = Replay::load("p2-skills", &s);
     replay.until(&s, "2026-11-10T06:39:54.754Z");
+    replay.consumed(&h, &s);
     h.wait_state(&s, SessionState::Idle);
     pasted(&h, &s, text);
     // Its prompt, its record and the skill body, the reply and the Stop.
@@ -136,6 +137,7 @@ fn p2_skills_a_fork_skill_settles_into_idle_and_its_notification_opens_the_next_
     listed(&h, &s, &[]);
     let mut replay = Replay::load("p2-skills", &s);
     replay.until(&s, "2026-11-10T06:40:01.380Z");
+    replay.consumed(&h, &s);
     h.wait_state(&s, SessionState::Idle);
     pasted(&h, &s, "/probe-fork");
     // Its prompt, its plain record, the launch record and the fork's SubagentStart.
@@ -174,6 +176,7 @@ fn p2_usage_context_confirms_on_its_system_record_and_settles_its_own_turn() {
     listed(&h, &s, &[]);
     let mut replay = Replay::load("p2-usage-context", &s);
     replay.until(&s, "2026-11-10T06:40:49.227Z");
+    replay.consumed(&h, &s);
     h.wait_state(&s, SessionState::Idle);
     pasted(&h, &s, "/context");
     replay.rest(&s);
@@ -212,6 +215,7 @@ fn p2_compact_confirms_on_pre_compact_and_holds_the_queue_until_its_boundary_set
     let s = h.idle(Authoring);
     let mut replay = Replay::load("p2-compact", &s);
     replay.until(&s, "2026-11-10T06:40:26.485Z");
+    replay.consumed(&h, &s);
     h.wait_state(&s, SessionState::Idle);
     pasted(&h, &s, "/compact");
     assert!(matches!(send(&h, &s, "next"), SendOutcome::Queued { .. }));
@@ -242,6 +246,7 @@ fn p2_unlisted_lengths_a_name_that_left_the_list_confirms_on_its_warning() {
     listed(&h, &s, &[gone]);
     let mut replay = Replay::load("p2-unlisted-lengths", &s);
     replay.until(&s, "2026-11-10T06:43:01.134Z");
+    replay.consumed(&h, &s);
     h.wait_state(&s, SessionState::Idle);
     pasted(&h, &s, "/probe-unlisted-zz");
     assert!(matches!(send(&h, &s, "next"), SendOutcome::Queued { .. }));
@@ -267,6 +272,7 @@ fn p2_unlisted_lengths_a_300_character_line_is_pasted_and_confirmed() {
     listed(&h, &s, &[]);
     let mut replay = Replay::load("p2-unlisted-lengths", &s);
     replay.until(&s, "2026-11-10T06:43:17.025Z");
+    replay.consumed(&h, &s);
     h.wait_state(&s, SessionState::Idle);
     let words: Vec<String> = (1..=57).map(|n| format!("w{n:03}")).collect();
     let line = format!("/probe-personal {}", words.join(" "));
@@ -287,6 +293,7 @@ fn p2_dialogs_a_paste_that_leaves_no_record_times_out_and_is_never_resent() {
     let s = h.idle(Authoring);
     let mut replay = Replay::load("p2-dialogs", &s);
     replay.until(&s, "2026-11-10T06:41:45.314Z");
+    replay.consumed(&h, &s);
     h.wait_state(&s, SessionState::Idle);
     pasted(&h, &s, "/context");
     assert!(matches!(send(&h, &s, "next"), SendOutcome::Queued { .. }));
