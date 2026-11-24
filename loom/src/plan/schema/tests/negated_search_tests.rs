@@ -26,6 +26,9 @@ fn warns_on_negated_pipelines_to_matchers() {
         "cd loom || ! cargo test | /usr/bin/egrep -q FAILED",
         "! (cargo build || cargo test) | cat | fgrep -q FAILED",
         "(! cargo test | ag -q FAILED);",
+        "! cargo test 2>&1 | rg -q FAILED && echo ok",
+        "! cargo test | rg -q FAILED && echo done",
+        "cd loom && ! cargo test | rg -q FAILED && echo ok",
     ] {
         assert_flags(command, Hazard::NegatedSearch);
     }
@@ -54,7 +57,6 @@ fn ignores_searches_outside_the_two_shapes() {
         "'!' cargo test | rg -q FAILED",
         "! cargo build | cat",
         "! cargo test | rg -q FAILED; echo done",
-        "! cargo test | rg -q FAILED && echo done",
         "cargo test | rg -q FAILED && echo done; test $? -eq 1",
         "cargo test | rg -q FAILED; test '$?' -eq 1",
         "((! cargo test | cat) | rg -q FAILED)",
@@ -81,6 +83,12 @@ fn negated_search_is_a_preflight_warning() {
             warning.contains("Acceptance criterion #1") && warning.contains("negates a search")
         }),
         "{warnings:?}"
+    );
+    assert!(
+        warnings
+            .iter()
+            .all(|warning| !warning.contains("search the file")),
+        "the remedy must not suggest the fail-open file form: {warnings:?}"
     );
     let result = validate(&metadata);
     assert!(result.is_ok(), "{result:?}");
