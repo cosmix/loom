@@ -1,10 +1,11 @@
 //! A bridge must notice a peer that is connected but no longer taking part:
 //! one that never reads, one that goes silent, and one that merely reads
 //! slowly (which it must keep).
+use std::net::TcpStream;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use tungstenite::Message;
+use tungstenite::{Message, WebSocket};
 
 use super::super::bridge::Timing;
 use super::super::protocol::Mode;
@@ -40,6 +41,32 @@ fn bridge_disconnects_a_peer_that_never_reads() {
     join_within(fixture.server, Duration::from_secs(10));
 }
 
+/// Output a slow reader takes per tick.
+const TICK_BYTES: usize = 16 * 1024;
+
+fn saw_end(seen: &[u8]) -> bool {
+    seen.windows(3).any(|part| part == b"END")
+}
+
+/// One tick of a slow reader: take messages until `TICK_BYTES` of output have
+/// arrived, the socket has nothing more, or END is in. Stopping at END keeps
+/// the read from reaching the bridge's close, which follows it at once.
+fn take_tick(socket: &mut WebSocket<TcpStream>, seen: &mut Vec<u8>) {
+    let mut taken = 0;
+    while taken < TICK_BYTES && !saw_end(seen) {
+        match socket.read() {
+            Ok(Message::Binary(bytes)) => {
+                taken += bytes.len();
+                seen.extend_from_slice(&bytes);
+            }
+            Ok(Message::Close(frame)) => panic!("the bridge dropped a slow reader: {frame:?}"),
+            Ok(_) => {}
+            Err(tungstenite::Error::Io(error)) if is_transient(&error) => return,
+            Err(error) => panic!("read bridge output: {error}"),
+        }
+    }
+}
+
 #[test]
 fn bridge_survives_a_client_that_reads_slowly() {
     if skip_bridge_test("bridge_survives_a_client_that_reads_slowly") {
@@ -55,22 +82,18 @@ fn bridge_survives_a_client_that_reads_slowly() {
         Some(8 * 1024),
         timing,
     );
-    // One message every 250 ms: 300 KiB is about 19 frames, so the transfer
-    // takes more than twice the stall time while the client keeps draining.
+    // 16 KiB every 250 ms: 300 KiB is about 19 ticks, so the transfer takes
+    // more than twice the stall time while the client keeps draining. The pace
+    // is set in bytes, not messages: a PTY read returns 1 KiB on macOS and up
+    // to 16 KiB on Linux, so one message per tick took 300 ticks (75 s) there.
     let started = Instant::now();
     let mut seen = Vec::new();
-    while !seen.windows(3).any(|part| part == b"END") {
+    while !saw_end(&seen) {
         assert!(
             started.elapsed() < Duration::from_secs(60),
             "no END in 60 s"
         );
-        match fixture.socket.read() {
-            Ok(Message::Binary(bytes)) => seen.extend_from_slice(&bytes),
-            Ok(Message::Close(frame)) => panic!("the bridge dropped a slow reader: {frame:?}"),
-            Ok(_) => {}
-            Err(tungstenite::Error::Io(error)) if is_transient(&error) => {}
-            Err(error) => panic!("read bridge output: {error}"),
-        }
+        take_tick(&mut fixture.socket, &mut seen);
         thread::sleep(Duration::from_millis(250));
     }
     assert!(

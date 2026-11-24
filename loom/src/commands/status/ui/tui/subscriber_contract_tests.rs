@@ -96,9 +96,12 @@ fn screen(terminal: &mut Terminal<TestBackend>, app: &mut TuiApp) -> String {
 fn first_subscription(work_dir: &Path) -> UnixStream {
     let mut stream = connect(work_dir).expect("connect to the fake daemon");
     subscribe(&mut stream, work_dir).expect("subscribe to the fake daemon");
+    // macOS refuses setsockopt (EINVAL) once the peer has closed, and the fake
+    // daemon drops this connection right after the subscription. As in
+    // `TuiApp::connect_and_subscribe`, a failure is harmless: the next read sees EOF.
     stream
         .set_read_timeout(Some(Duration::from_millis(50)))
-        .unwrap();
+        .ok();
     stream
 }
 
