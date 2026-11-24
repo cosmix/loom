@@ -249,7 +249,7 @@ Every stage description MUST include the line **`Use parallel subagents and skil
 | `consumer_deferred` | A stage's new units have no consumer anywhere in the plan | `consumer_deferred: "<reason>"`: one line, at most 300 bytes |
 | `wiring` `literal` (v2) | `pattern` matched as plain text | `literal: true` |
 | glob `source` (v2) | `wiring` over every file a glob matches | `source: "src/**/*.rs"` |
-| `ratchet_files` (v2, plan level) | Lowering or removing a ledger row raises nothing and is always allowed. A loosening must be reverted or resolved through an accepted integrity dispute. | `ratchet_files: ["loom/maintainability-baseline.txt"]` |
+| `ratchet_files` (v2, plan level) | Lowering or removing a row of a ledger whose lines end in an unsigned integer raises nothing and is always allowed; any change to a ratchet file in another format (a knowledge check baseline, `coverage 80%`) raises. A loosening must be reverted or resolved through an accepted integrity dispute. | `ratchet_files: ["loom/maintainability-baseline.txt"]` |
 
 The v2 rows need `version: 2`; a v1 plan using one is rejected. In a v2 plan every `standard` stage carries at least one contract, and knowledge, knowledge-distill and integration-verify stages carry none. Choosing contracts (the risk checklist), writing them, and what completion then enforces: `references/v2-contracts.md`.
 
@@ -267,7 +267,6 @@ The v2 rows need `version: 2`; a v1 plan using one is rejected. In a v2 plan eve
 **Four rules no check enforces:**
 
 - **A commit hook is a gate every stage must pass.** `loom stage commit` runs the repository's pre-commit and commit-msg hooks before anything is committed. Read them before writing a stage. Put each check a hook runs into the stage's `acceptance` with its plain exit status, so it fails at `loom check` and not at the commit. Never tell a stage to leave for a later stage a change the hook demands (a lowered ledger row, a reformatted file): a stage that cannot commit cannot finish.
-
 - **A criterion whose paths are disjoint from the stage's `files:` is a repo-wide gate on a narrow stage.** It goes red on work the stage cannot touch. Point it at the stage's own files or move it to integration-verify.
 - **Timeouts:** each `wiring_tests` command has a 30 s cap, an `after_stage` or `before_stage` check defaults to 30 s, and an acceptance command defaults to 300 s whether it is a string or the extended form; the extended form can set a timeout up to 3600 s. See `references/sandbox.md#where-criteria-run`. Prefer focused commands.
 - **A merged plan's pinned criteria go red after later renames.** Pin behaviour (a command's output, a test name) over paths and line text where possible.
