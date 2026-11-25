@@ -13,7 +13,15 @@ function transitionMessage(
       if (previous === "executing") return null;
       return `${id} started`;
     case "completed":
-      return `${id} completed`;
+      // A blocked or conflicted merge returns the stage to completed once it
+      // lands; a second "completed" would read as the stage finishing twice.
+      return previous === "merge-blocked" || previous === "merge-conflict"
+        ? `${id} merged`
+        : `${id} completed`;
+    case "merge-blocked":
+      return `${id} merge blocked`;
+    case "merge-conflict":
+      return `${id} merge conflict`;
     case "blocked":
       return `${id} blocked`;
     case "queued":

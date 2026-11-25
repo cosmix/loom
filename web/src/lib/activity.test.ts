@@ -80,6 +80,25 @@ describe("activityEntries", () => {
     ]);
   });
 
+  it("shows a held merge and words its landing as merged, not a second completion", () => {
+    const entries = activityEntries(
+      withEvents(
+        ["executing", "completed"],
+        ["completed", "merge-blocked"],
+        ["merge-blocked", "completed"],
+        ["completed", "merge-conflict"],
+        ["merge-conflict", "completed"],
+      ),
+    );
+    expect(entries.map((entry) => entry.message).reverse()).toEqual([
+      "changing completed",
+      "changing merge blocked",
+      "changing merged",
+      "changing merge conflict",
+      "changing merged",
+    ]);
+  });
+
   it("leaves out transitions that have no message", () => {
     expect(activityEntries(withEvents(["executing", "waiting-for-input"]))).toEqual([]);
   });
