@@ -58,7 +58,7 @@ Prerequisites:
 - `git`, `jq` (every hook parses its payload with it — required), `rg` and `fd` (recommended).
 - `bun` — both git hooks lint markdown with `bunx markdownlint-cli2`, and the web dashboard builds with it.
 - `cargo-audit` (`cargo install cargo-audit`) — optional; CI runs `cargo audit`, and you can run it before a push that changes dependencies.
-- `tmux` — optional; used by the tmux-backend e2e tests. CI's Linux test job installs it and sets `LOOM_E2E_REQUIRE_TMUX=1`.
+- `tmux` — required to run loom sessions (loom refuses to start them without it) and the tests that spawn sessions. CI's Linux test job installs it and sets `LOOM_E2E_REQUIRE_TMUX=1`.
 
 Enable the git hooks once, from the repo root:
 

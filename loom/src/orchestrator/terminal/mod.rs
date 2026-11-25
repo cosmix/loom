@@ -1,8 +1,8 @@
 //! Terminal session management
 //!
 //! Spawns and manages Claude Code sessions in tmux via
-//! [`backend::SessionBackend`]: stage, contract, merge, base-conflict,
-//! knowledge and adjudication sessions. [`launch`] holds the launch
+//! [`backend::SessionBackend`]: stage, contract, merge, knowledge and
+//! adjudication sessions. [`launch`] holds the launch
 //! preparation and PID tracking the tmux lane runs on.
 
 pub mod backend;

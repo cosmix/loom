@@ -1,5 +1,5 @@
 //! Contracts for the shared pressure pipeline (`loom::pressure`), its
-//! `## Pressure tests` record writer, and the built-in tmux backend default.
+//! `## Pressure tests` record writer.
 
 #[path = "pressure_pipeline_contracts/support.rs"]
 mod support;

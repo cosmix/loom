@@ -317,7 +317,7 @@ The dialog shows:
      and says to commit or stash them; the app does not touch files outside `doc/`.
 4. **A `--clean` notice**, when the workspace holds a finished plan: init stops the daemon if it
    still runs, reaps the old run's sessions, archives its memory, and removes its worktrees and
-   workspace (`loom/src/commands/init/execute.rs:185`).
+   workspace (`cleanup_previous_run`, `loom/src/commands/init/execute.rs:193-217`).
 
 **Committing planning documents.** The dialog offers "Commit changes under `doc/`" with every
 changed path under `doc/` listed and checked, including new files, and a message field prefilled

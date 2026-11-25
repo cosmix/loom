@@ -52,7 +52,7 @@ run_hook() {
 	shift 2
 	# -u LOOM_MAIN_AGENT_PID: this suite runs from a real Claude Code session,
 	# and if that session is itself inside a live loom stage, the wrapper
-	# (loom/src/orchestrator/terminal/native/wrapper.rs) has already exported
+	# (loom/src/orchestrator/terminal/launch/wrapper.rs) has already exported
 	# LOOM_MAIN_AGENT_PID as a live ancestor of every Bash-tool descendant -
 	# including this test process. Left inherited, case (g) below (which
 	# asserts "no loom session -> no blocking") would silently pass or fail
