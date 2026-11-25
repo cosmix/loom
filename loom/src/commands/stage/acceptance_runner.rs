@@ -180,11 +180,14 @@ fn print_criterion_result(index: usize, criterion_result: &CriterionResult, setu
     );
 }
 
-/// The guidance for a failed acceptance, wiring or wiring-test check: fix it,
-/// or dispute a check no correct work could pass or that fails only because of
-/// where completion runs. Block is refused while the latest completion shows a failing criterion, frozen
-/// contract or impact-selected test.
-fn failure_guidance(stage_id: &str) -> String {
+/// The guidance for a failed acceptance, wiring, wiring-test or artifact check:
+/// fix it, or dispute a check no correct work could pass or that fails only
+/// because of where completion runs. Block is refused while the latest
+/// completion shows a failing criterion, an indexed goal-backward gap
+/// (`[artifact n]`, `[wiring n]`, `[wiring_tests n]`), a frozen contract or an
+/// impact-selected test. The host job's report prints it too when its
+/// goal-backward check failed (`host_verify/wait_report.rs`).
+pub(crate) fn failure_guidance(stage_id: &str) -> String {
     let dispute = format!("    loom stage dispute-criteria {stage_id}");
     [
         format!("  Fix the issues and run 'loom stage complete {stage_id}' again\n"),
@@ -197,6 +200,10 @@ fn failure_guidance(stage_id: &str) -> String {
             "{dispute} --field wiring-tests --criterion-index <n> --reason \"<why>\"  \
              ([wiring_tests n])"
         ),
+        format!(
+            "{dispute} --field artifacts --criterion-index <n> --reason \"<why>\"  \
+             ([artifact n])"
+        ),
         "  <n> is the number in the label above; --failure-output <path> ships the captured \
          output as evidence. This routes to the adjudicator, which can amend the check. Do \
          not reach for --no-verify — it needs an operator proof the sandbox denies by \
@@ -207,14 +214,14 @@ fn failure_guidance(stage_id: &str) -> String {
          blocked: name every such criterion in one filing with a repeatable \
          --criterion-index <n> flag. loom stage block is for a credential, a host install or \
          a decision only a person can make, and loom refuses it while the latest \
-         `loom stage complete` shows a failing criterion, frozen contract or impact-selected \
-         test."
+         `loom stage complete` shows a failing criterion, an indexed goal-backward gap, a \
+         frozen contract or an impact-selected test."
             .to_string(),
     ]
     .join("\n")
 }
 
-/// Print what to do about a failed acceptance, wiring or wiring-test check.
+/// Print what to do about a failed acceptance, wiring, wiring-test or artifact check.
 pub(crate) fn print_acceptance_failure_guidance(stage_id: &str) {
     eprintln!("{}", failure_guidance(stage_id));
 }

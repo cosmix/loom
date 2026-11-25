@@ -48,8 +48,8 @@ pub(super) fn build_amendment_requests(
 }
 
 /// Whether an accept on a dispute over `disputed`'s list may amend `field`:
-/// an acceptance dispute may amend `acceptance` or `wiring`, a wiring or
-/// wiring-tests dispute only its own list.
+/// an acceptance dispute may amend `acceptance` or `wiring`; a wiring,
+/// wiring-tests or artifacts dispute only its own list.
 pub(super) fn admits(disputed: CriterionField, field: AmendmentField) -> bool {
     field == disputed.amendment_field()
         || (disputed == CriterionField::Acceptance && field == AmendmentField::Wiring)
@@ -62,6 +62,7 @@ pub(super) fn admitted_fields(disputed: CriterionField) -> &'static str {
         CriterionField::Acceptance => "\"acceptance\"|\"wiring\"",
         CriterionField::Wiring => "\"wiring\"",
         CriterionField::WiringTests => "\"wiring-tests\"",
+        CriterionField::Artifacts => "\"artifacts\"",
     }
 }
 
@@ -95,9 +96,11 @@ pub(super) fn normalize(
         Some("wiring") => AmendmentField::Wiring,
         Some("wiring-tests" | "wiring_tests") => AmendmentField::WiringTests,
         Some("contracts") => AmendmentField::Contracts,
+        Some("artifacts") => AmendmentField::Artifacts,
         Some(other) => {
             return Err(format!(
-                "plan_patch field '{other}' must be acceptance|wiring|wiring-tests|contracts"
+                "plan_patch field '{other}' must be \
+                 acceptance|wiring|wiring-tests|contracts|artifacts"
             ))
         }
         None => return Err("plan_patch missing 'field' string".to_string()),

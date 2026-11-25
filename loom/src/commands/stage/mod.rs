@@ -35,6 +35,8 @@ pub(crate) mod verify_host;
 #[cfg(test)]
 mod amend_contract_tests;
 #[cfg(test)]
+mod landing_note_contract_tests;
+#[cfg(test)]
 mod native_gate_contract_tests;
 #[cfg(test)]
 mod tests;

@@ -1,6 +1,6 @@
 //! The operator escape hatches land a parked stage whose completion never
 //! recorded a commit: `human-review --force-complete` merges the branch tip,
-//! and `complete --force-unsafe` records it for the daemon's auto-merge.
+//! and `complete --force-unsafe` records it for landing by the daemon or `loom run`.
 
 use super::*;
 use crate::commands::stage::human_review;

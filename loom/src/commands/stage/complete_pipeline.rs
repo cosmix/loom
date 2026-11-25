@@ -1,4 +1,5 @@
 use super::super::progressive_complete::{branch_work, warn_unconfirmed, BranchWork, Landing};
+use super::complete_force::landing_note;
 use super::*;
 use crate::handoff::completion::content::VerificationSnapshot;
 
@@ -75,8 +76,20 @@ fn complete_without_verification(stage: &mut Stage, stage_id: &str, work_dir: &P
         current.try_complete(None)
     })?;
     println!("Stage '{stage_id}' completed (skipped verification).");
-    println!("The orchestrator will handle merge and dependent triggering.");
+    let note = landing_note(stage_id, DaemonServer::is_running(work_dir));
+    println!("{}", landing_line(note, snapshot.is_some()));
     Ok(())
+}
+
+/// What `complete_without_verification` prints about landing: the landing note
+/// when a commit was recorded, else that the stage cannot merge.
+fn landing_line(note: String, recorded: bool) -> String {
+    if recorded {
+        note
+    } else {
+        "  → No commit recorded for landing: the stage cannot merge until a commit is recorded."
+            .to_string()
+    }
 }
 
 // An explicit operator skip still names the exact committed content authorized
@@ -180,6 +193,26 @@ fn verify_acceptance(
 ) -> Result<()> {
     let result = run_acceptance_phase(stage, &stage.id, no_verify, paths, work_dir)?;
     ensure_acceptance_passed(result, &stage.id)
+}
+
+#[cfg(test)]
+mod landing_tests {
+    use super::*;
+
+    #[test]
+    fn an_unverified_completion_names_how_a_recorded_commit_lands() {
+        let note = landing_note("s1", false);
+
+        let recorded = landing_line(note.clone(), true);
+        let none = landing_line(note.clone(), false);
+
+        assert_eq!(recorded, note);
+        assert!(recorded.contains("`loom run` merges it"), "{recorded}");
+        assert_eq!(
+            none,
+            "  → No commit recorded for landing: the stage cannot merge until a commit is recorded."
+        );
+    }
 }
 
 #[cfg(test)]

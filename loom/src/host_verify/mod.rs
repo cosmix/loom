@@ -86,6 +86,8 @@ mod tests_freeze_memo;
 #[cfg(test)]
 mod tests_freeze_refusal;
 #[cfg(test)]
+mod tests_goal_gaps;
+#[cfg(test)]
 mod tests_live_log;
 #[cfg(test)]
 mod tests_runner;

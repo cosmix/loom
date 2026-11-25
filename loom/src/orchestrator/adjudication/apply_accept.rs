@@ -207,6 +207,7 @@ pub(super) fn field_name(field: AmendmentField) -> &'static str {
         AmendmentField::WiringTests => "wiring-tests",
         AmendmentField::Contracts => "contracts",
         AmendmentField::Harness => "harness",
+        AmendmentField::Artifacts => "artifacts",
         AmendmentField::Reachable => "reachable",
     }
 }

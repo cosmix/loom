@@ -12,6 +12,8 @@ fn failure_guidance_names_every_route() {
         "loom stage dispute-criteria s1 --criterion-index",
         "--field wiring --criterion-index",
         "--field wiring-tests --criterion-index",
+        "--field artifacts --criterion-index",
+        "([artifact n])",
         "--criterion-index <n> flag",
         "never blocked",
     ] {

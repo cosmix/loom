@@ -22,8 +22,9 @@ use crate::verify::transitions::{load_stage, update_stage};
 
 /// A stage agent's `loom stage block`: refused while the stage session's
 /// latest signed `loom stage complete` attempt failed a check a dispute can
-/// answer: an `acceptance-<i>` criterion, the frozen contracts or the
-/// impact-selected tests, otherwise [`handle_block_stage`].
+/// answer: an `acceptance-<i>` criterion, an indexed goal-backward gap
+/// (`artifact-<i>`, `wiring-<i>` or `wiring_tests-<i>`), the frozen contracts
+/// or the impact-selected tests, otherwise [`handle_block_stage`].
 ///
 /// Each of those has a route that keeps the stage moving: a dispute, judged by
 /// an adjudicator and escalated to the operator once the budget is spent. A
@@ -64,6 +65,12 @@ pub(crate) fn handle_agent_block_for_session(
 struct DisputableFailures {
     /// Indices of the failing `acceptance-<i>` criteria.
     criteria: Vec<usize>,
+    /// Indices of the failing `artifact-<i>` patterns.
+    artifacts: Vec<usize>,
+    /// Indices of the failing `wiring-<i>` checks.
+    wiring: Vec<usize>,
+    /// Indices of the failing `wiring_tests-<i>` tests.
+    wiring_tests: Vec<usize>,
     /// The stage's frozen contracts when the contract check failed. The
     /// attempt records one outcome for the whole check, so it cannot say
     /// which contract failed; the refusal offers every contract.
@@ -74,7 +81,12 @@ struct DisputableFailures {
 
 impl DisputableFailures {
     fn is_empty(&self) -> bool {
-        self.criteria.is_empty() && self.contracts.is_empty() && !self.impact_tests
+        self.criteria.is_empty()
+            && self.artifacts.is_empty()
+            && self.wiring.is_empty()
+            && self.wiring_tests.is_empty()
+            && self.contracts.is_empty()
+            && !self.impact_tests
     }
 }
 
@@ -112,11 +124,6 @@ fn disputable_failures(work_dir: &Path, stage_id: &str) -> DisputableFailures {
 
 fn failures_in(stage: &Stage, results: &[CriterionResult]) -> DisputableFailures {
     let failed = || results.iter().filter(|result| !result.passed);
-    let mut criteria: Vec<usize> = failed()
-        .filter_map(|result| result.id.strip_prefix("acceptance-")?.parse().ok())
-        .collect();
-    criteria.sort_unstable();
-    criteria.dedup();
     let named = |label: &str| failed().any(|result| result.id == label);
     let contracts = if named(CONTRACTS_LABEL) {
         stage
@@ -128,7 +135,10 @@ fn failures_in(stage: &Stage, results: &[CriterionResult]) -> DisputableFailures
         Vec::new()
     };
     DisputableFailures {
-        criteria,
+        criteria: control_block_gaps::failed_indices(results, "acceptance"),
+        artifacts: control_block_gaps::failed_indices(results, "artifact"),
+        wiring: control_block_gaps::failed_indices(results, "wiring"),
+        wiring_tests: control_block_gaps::failed_indices(results, "wiring_tests"),
         contracts,
         impact_tests: named(IMPACT_TESTS_LABEL),
     }
@@ -139,8 +149,12 @@ fn failures_in(stage: &Stage, results: &[CriterionResult]) -> DisputableFailures
 fn failed_completion_refusal(stage_id: &str, failed: &DisputableFailures) -> String {
     let mut routes = Vec::new();
     if !failed.criteria.is_empty() {
-        routes.push(criteria_route(stage_id, &failed.criteria));
+        routes.push(control_block_gaps::criteria_route(
+            stage_id,
+            &failed.criteria,
+        ));
     }
+    routes.extend(control_block_gaps::gap_routes(stage_id, failed));
     if failed.impact_tests {
         routes.push(format!(
             "Failing impact-selected tests: `loom stage dispute-criteria {stage_id} --field \
@@ -155,21 +169,9 @@ fn failed_completion_refusal(stage_id: &str, failed: &DisputableFailures) -> Str
          checks. A failing check is disputed, never blocked. {} Other routes: `loom stage \
          dispute-findings` for open review findings, `loom stage dispute-integrity` for \
          test-integrity events, `loom stage dispute-criteria --field wiring` or `--field \
-         wiring-tests` for wiring entries. A filing past the dispute budget goes to the \
-         operator automatically.",
+         wiring-tests` for wiring entries, `--field artifacts` for artifact entries. A filing \
+         past the dispute budget goes to the operator automatically.",
         routes.join(" ")
-    )
-}
-
-fn criteria_route(stage_id: &str, criteria: &[usize]) -> String {
-    let flags: Vec<String> = criteria
-        .iter()
-        .map(|index| format!("--criterion-index {index}"))
-        .collect();
-    format!(
-        "Failing criteria: `loom stage dispute-criteria {stage_id} {} --reason \"...\"` names \
-         every failing criterion in one filing.",
-        flags.join(" ")
     )
 }
 
@@ -260,6 +262,9 @@ pub(crate) fn apply_block(stage: &mut Stage, reason: &str) -> Result<()> {
     stage.updated_at = Utc::now();
     Ok(())
 }
+
+#[path = "control_block_gaps.rs"]
+mod control_block_gaps;
 
 #[cfg(test)]
 #[path = "control_block_agent_tests.rs"]

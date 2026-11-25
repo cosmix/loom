@@ -27,3 +27,29 @@ fn a_tip_that_moved_before_the_locked_write_completes_nothing() {
     assert!(!stage.merged);
     assert_eq!(stage.completed_commit, None);
 }
+
+#[test]
+#[serial]
+fn the_forced_landing_note_names_loom_run_when_no_daemon_runs() {
+    let (_temp, work_dir) = parked_stage(StageStatus::NeedsHumanReview, true);
+    let stage = load_stage("test-stage", &work_dir).unwrap();
+    let snapshot = VerificationSnapshot::capture(&stage, &work_dir).unwrap();
+    let mut out = Vec::new();
+
+    report_forced_landing(
+        &stage,
+        &ForcedLanding::Unmerged(Some(snapshot)),
+        &work_dir,
+        &mut out,
+    )
+    .unwrap();
+
+    let out = String::from_utf8(out).unwrap();
+    assert!(out.contains(&landing_note("test-stage", false)), "{out}");
+    assert!(out.contains("no daemon is running"), "{out}");
+    assert!(out.contains("`loom run` merges it"), "{out}");
+    assert!(
+        out.contains("`loom stage merge test-stage` from .worktrees/test-stage"),
+        "{out}"
+    );
+}

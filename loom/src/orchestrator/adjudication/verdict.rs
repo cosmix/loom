@@ -33,6 +33,7 @@ use crate::models::dispute::{Citation, CriterionField, DisputeKind, DisputeVerdi
 use crate::models::stage::Stage;
 
 use super::plan_patch::{admits, admitted_fields, wrong_list};
+use super::verdict_indices::{disputed_list_patches, unfiled_patch, unfiled_question};
 use super::verdict_narrowing::{check_narrowing, narrowing_inputs};
 use super::{plan_patch, verdict_contract, verdict_freeze_refusal, verdict_kinds};
 
@@ -64,9 +65,36 @@ pub fn parse_and_validate(raw: &str) -> ValidationOutcome {
 /// [`parse_and_validate`] for a dispute of `kind`.
 pub fn parse_and_validate_for(raw: &str, kind: &DisputeKind) -> ValidationOutcome {
     match (parse_json_object(raw), kind) {
-        (Ok(json), DisputeKind::Criterion { field, .. }) => classify_and_validate(json, *field),
+        (
+            Ok(json),
+            DisputeKind::Criterion {
+                field,
+                criterion_indices,
+                ..
+            },
+        ) => require_filed(
+            classify_and_validate(json, *field),
+            *field,
+            criterion_indices,
+        ),
         (Ok(json), _) => verdict_kinds::classify_for_kind(&json, kind),
         (Err(coerced), _) => coerced,
+    }
+}
+
+/// An accept that replaces or deletes an entry the dispute did not file is
+/// re-requested, as the duplicate-index check does, so nothing is recorded or
+/// applied. An insert may name any index.
+fn require_filed(
+    outcome: ValidationOutcome,
+    disputed: CriterionField,
+    filed: &[usize],
+) -> ValidationOutcome {
+    let unfiled = disputed_list_patches(&outcome, disputed)
+        .and_then(|patches| unfiled_patch(&patches, filed));
+    match unfiled {
+        Some(index) => needs_more_evidence(unfiled_question(index, filed)),
+        None => outcome,
     }
 }
 

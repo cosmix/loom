@@ -58,7 +58,7 @@ pub fn refuse_session_identity(stage_id: Option<&str>, session_id: Option<&str>)
 }
 
 /// `loom stage amend` — repair one of a stage's `acceptance`, `wiring`,
-/// `wiring_tests`, `contracts`, `harness` or `reachable` arrays.
+/// `wiring_tests`, `contracts`, `harness`, `artifacts` or `reachable` arrays.
 ///
 /// `field`/`patch` are already-validated domain types built by the caller
 /// from the CLI's `--field`/`--op`/`--index`/`--value` flags; this function

@@ -5,6 +5,9 @@ use crate::plan::schema::AcceptanceCriterion;
 use crate::verify::transitions::save_stage;
 use tempfile::TempDir;
 
+#[path = "dispute_artifacts_tests.rs"]
+mod artifacts;
+
 #[path = "dispute_multi_tests.rs"]
 mod multi;
 

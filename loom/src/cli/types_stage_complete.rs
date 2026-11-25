@@ -21,8 +21,8 @@ pub struct CompleteArgs {
     pub no_verify: bool,
 
     /// UNSAFE: Force completion from any state, bypassing state machine validation.
-    /// Records the committed branch tip, if any, so the daemon's auto-merge
-    /// can land it; a zero-commit branch records nothing.
+    /// Records the committed branch tip, if any, for landing; the note printed
+    /// after names the route that merges it. A zero-commit branch records nothing.
     /// WARNING: This can corrupt dependency tracking. Use only for recovery.
     #[arg(long = "force-unsafe")]
     pub force_unsafe: bool,

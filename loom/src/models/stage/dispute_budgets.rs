@@ -161,10 +161,11 @@ mod tests {
             CriterionField::Acceptance,
             CriterionField::Wiring,
             CriterionField::WiringTests,
+            CriterionField::Artifacts,
         ] {
             spend(&mut stage, &DisputeKind::criterion(field, vec![0]));
         }
-        assert_eq!(stage.dispute_count, 3);
+        assert_eq!(stage.dispute_count, 4);
         assert_eq!(stage.tally, DisputeTally::default());
     }
 

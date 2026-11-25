@@ -258,7 +258,8 @@ pub(super) fn confirm(work_dir: &Path, stage: &Stage, kind: DisputeKind) -> Resu
     if stage.plan_version != 2 {
         return Ok(Admission::Rejected(format!(
             "stage '{}' is not a plan version 2 stage; only its acceptance criteria, wiring \
-             checks and wiring tests can be disputed, with `loom stage dispute-criteria --field`",
+             checks, wiring tests and artifacts can be disputed, with `loom stage \
+             dispute-criteria --field`",
             stage.id
         )));
     }

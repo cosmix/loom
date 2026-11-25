@@ -51,6 +51,7 @@ pub mod session;
 pub mod verdict;
 mod verdict_contract;
 mod verdict_freeze_refusal;
+mod verdict_indices;
 mod verdict_kinds;
 mod verdict_narrowing;
 
@@ -58,6 +59,8 @@ mod verdict_narrowing;
 mod apply_contract_tests;
 #[cfg(test)]
 mod apply_kinds_tests;
+#[cfg(test)]
+mod artifacts_contract_tests;
 #[cfg(test)]
 mod closed_disputes_tests;
 #[cfg(test)]
@@ -84,6 +87,8 @@ mod tests_verdicts;
 mod verdict_hold_contract_tests;
 #[cfg(test)]
 mod verdict_hold_tests;
+#[cfg(test)]
+mod verdict_indices_contract_tests;
 
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};

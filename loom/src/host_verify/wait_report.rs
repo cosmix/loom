@@ -11,6 +11,7 @@ use super::digest;
 use super::store::{job_dir, read_progress, unfinished_logs};
 use super::wait::{WaitOutcome, WaitSite};
 use super::{CriterionOutcome, JobKind, JobRecord, JobResult, JobState};
+use crate::commands::stage::acceptance_runner::failure_guidance;
 use crate::verify::contracts::completion::guidance;
 
 const SHORT_HEAD: usize = 12;
@@ -138,6 +139,10 @@ fn finished_text(
     let contract_failed = |o: &CriterionOutcome| !o.passed && o.label.starts_with("contract:");
     if word == "failed" && outcomes.iter().any(contract_failed) {
         let _ = writeln!(text, "{}", guidance(site.stage_id));
+    }
+    let goal_failed = |o: &CriterionOutcome| !o.passed && o.label == "goal-backward";
+    if word == "failed" && outcomes.iter().any(goal_failed) {
+        let _ = writeln!(text, "{}", failure_guidance(site.stage_id));
     }
     if word == "passed" && site.contracts.is_some_and(|files| !files.is_empty()) {
         let _ = writeln!(text, "{TRIAL_PASSED}");

@@ -360,6 +360,7 @@ fn disputed_entry(kind: &DisputeKind) -> String {
         CriterionField::Acceptance => "acceptance criterion",
         CriterionField::Wiring => "wiring check",
         CriterionField::WiringTests => "wiring test",
+        CriterionField::Artifacts => "artifacts entry",
     };
     match owner_stage {
         Some(owner) => format!("{entry} of stage '{owner}'"),

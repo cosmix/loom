@@ -99,6 +99,7 @@ fn stage_def_field_matches(
         AmendmentField::WiringTests => live.wiring_tests == snap.wiring_tests,
         AmendmentField::Contracts => live.contracts == snap.contracts,
         AmendmentField::Harness => live.harness == snap.harness,
+        AmendmentField::Artifacts => live.artifacts == snap.artifacts,
         AmendmentField::Reachable => live.reachable == snap.reachable,
     }
 }
@@ -111,6 +112,7 @@ fn copy_field(dest: &mut StageDefinition, src: &StageDefinition, field: Amendmen
         AmendmentField::WiringTests => dest.wiring_tests = src.wiring_tests.clone(),
         AmendmentField::Contracts => dest.contracts = src.contracts.clone(),
         AmendmentField::Harness => dest.harness = src.harness.clone(),
+        AmendmentField::Artifacts => dest.artifacts = src.artifacts.clone(),
         AmendmentField::Reachable => dest.reachable = src.reachable.clone(),
     }
 }
@@ -128,4 +130,39 @@ fn write_reconciled_plan(
     let new_content = splice_metadata_yaml(live_content, extracted, &new_yaml_body);
     safe_fs::safe_replace_outside_workdir(plan_path, project_root, new_content.as_bytes())
         .map_err(|_| ())
+}
+
+#[cfg(test)]
+mod artifacts_tests {
+    use super::*;
+
+    fn definition(artifacts: &str, harness: &str) -> StageDefinition {
+        StageDefinition {
+            artifacts: vec![artifacts.to_string()],
+            harness: vec![harness.to_string()],
+            ..StageDefinition::default()
+        }
+    }
+
+    #[test]
+    fn catch_up_reads_and_writes_only_the_artifacts_list() {
+        let live = definition("docs/old.md", "tests/live");
+        let snap = definition("docs/new.md", "tests/snap");
+        assert!(!stage_def_field_matches(
+            &live,
+            &snap,
+            AmendmentField::Artifacts
+        ));
+        assert!(stage_def_field_matches(
+            &live,
+            &definition("docs/old.md", "tests/other"),
+            AmendmentField::Artifacts
+        ));
+
+        let mut dest = live.clone();
+        copy_field(&mut dest, &snap, AmendmentField::Artifacts);
+
+        assert_eq!(dest.artifacts, vec!["docs/new.md"]);
+        assert_eq!(dest.harness, vec!["tests/live"]);
+    }
 }

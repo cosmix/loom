@@ -182,6 +182,7 @@ fn amendment_line(entry: &FreezePatch) -> String {
     let field = match entry.field {
         AmendmentField::Contracts => "contracts",
         AmendmentField::Harness => "harness",
+        AmendmentField::Artifacts => "artifacts",
         AmendmentField::Acceptance => "acceptance",
         AmendmentField::Wiring => "wiring",
         AmendmentField::WiringTests => "wiring-tests",

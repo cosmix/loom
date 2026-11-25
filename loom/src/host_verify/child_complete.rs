@@ -23,6 +23,7 @@ use crate::handoff::completion::content::VerificationSnapshot;
 use crate::models::dispute::truncate_to_byte_limit;
 use crate::models::stage::{Stage, StageType};
 use crate::verify::completion::{run_checks, OutputStream, VerificationChecks, IMPACT_TESTS_LABEL};
+use crate::verify::goal_backward::gap_labels::goal_gap_ids;
 use crate::verify::impact_tests::observed_impact;
 use crate::verify::impact_tests::{record_observed, ObservedImpact};
 use crate::verify::transitions::load_stage;
@@ -153,8 +154,34 @@ fn run_completion_checks(
     run_checks(&checks, &mut |label, checked| {
         observe_impact(&mut learned.impact, label, &checked);
         progress.record(check_outcome(label, &checked), None);
+        record_goal_gaps(progress, label, &checked);
         Ok(())
     })
+}
+
+/// A failed goal-backward check is one outcome for the whole check. Its
+/// message names each indexed gap (`[artifact n]`, `[wiring n]`,
+/// `[wiring_tests n]`), so each is also recorded as its own failed outcome
+/// (`artifact-n`, `wiring-n`, `wiring_tests-n`): the completion checkpoint
+/// keeps outcome labels as criterion ids, which the block guard reads to
+/// refuse a block and name the dispute route. A failure with no indexed gap
+/// (dead code, reachability, a setup error) records nothing more.
+pub(super) fn record_goal_gaps(progress: &Progress, label: &str, checked: &Result<()>) {
+    let Err(error) = checked else { return };
+    if label != "goal-backward" {
+        return;
+    }
+    for id in goal_gap_ids(&format!("{error:#}")) {
+        // The goal-backward outcome carries the full message; a gap points to it
+        // so the job's report does not print that message once per gap.
+        let gap = CriterionOutcome {
+            summary: format!("✗ {id}: see goal-backward"),
+            label: id,
+            passed: false,
+            log: None,
+        };
+        progress.record(gap, None);
+    }
 }
 
 fn log_event(stream: OutputStream, line: &str) {

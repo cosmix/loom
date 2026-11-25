@@ -244,7 +244,7 @@ fn a_wiring_tests_accept_must_amend_wiring_tests() {
 
 #[test]
 fn a_wiring_accept_may_not_amend_acceptance() {
-    let kind = DisputeKind::criterion(CriterionField::Wiring, vec![1]);
+    let kind = DisputeKind::criterion(CriterionField::Wiring, vec![0]);
     let question = the_question(parse_and_validate_for(
         &accept_amending("acceptance"),
         &kind,
@@ -267,6 +267,22 @@ fn an_acceptance_accept_may_still_amend_wiring() {
         &kind,
     ));
     assert!(question.contains("acceptance list"), "{question}");
+}
+
+/// The filed indices index the disputed list only: a `wiring` patch from an
+/// acceptance dispute filed on [3] is not an unfiled entry, a same-list one is.
+#[test]
+fn filed_indices_bind_only_the_disputed_list() {
+    let kind = DisputeKind::criterion(CriterionField::Acceptance, vec![3]);
+
+    let outcome = parse_and_validate_for(&accept_amending("wiring"), &kind);
+    assert_eq!(amended_field(outcome).as_deref(), Some("wiring"));
+
+    let question = the_question(parse_and_validate_for(
+        &accept_amending("acceptance"),
+        &kind,
+    ));
+    assert!(question.contains("did not file"), "{question}");
 }
 
 /// A malformed patch's re-emit hint names the field the dispute admits.

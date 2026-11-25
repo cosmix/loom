@@ -5,9 +5,14 @@
 //! - WIRING: Critical connections between components (grep patterns)
 //! - REACHABLE: Units the source graph must reach from an entry point (plan v2)
 
+#[cfg(test)]
+mod artifact_index_contract_tests;
 pub mod artifacts;
 pub mod dead_code;
 mod definition_sites;
+pub(crate) mod gap_labels;
+#[cfg(test)]
+mod gap_labels_contract_tests;
 pub(crate) mod plan;
 pub mod reachable;
 pub mod result;
@@ -46,10 +51,9 @@ pub fn run_goal_backward_verification(
     plan_version: u32,
 ) -> Result<GoalBackwardResult> {
     let mut gaps = Vec::new();
-    // 1. Verify artifacts (files exist with implementation)
-    if !stage_def.artifacts.is_empty() {
-        gaps.extend(verify_artifacts(&stage_def.artifacts, working_dir)?);
-    }
+    // 1. Verify artifacts (files exist with implementation), each gap labelled
+    // with its pattern's index
+    gaps.extend(artifact_gaps(stage_def, working_dir));
 
     // 2-3. Verify wiring checks (connections between components) and wiring
     // tests (command-based integration verification), each gap labelled with
@@ -86,6 +90,37 @@ pub fn run_goal_backward_verification(
     gaps.extend(reachable_gaps(stage_def, working_dir, plan_version)?);
 
     Ok(GoalBackwardResult::from_gaps(gaps))
+}
+
+/// The stage's artifact patterns, verified one pattern at a time so each gap's
+/// description starts `[artifact <n>]`: the 0-based index
+/// `loom stage dispute-criteria --field artifacts` and `loom stage amend` take.
+/// An invalid glob is one gap at its index rather than an error, so the other
+/// patterns are still checked and the pattern can be disputed or amended. Any
+/// other failure (a match outside the tree, a file past the size bound) fails
+/// closed as an unlabelled gap: amending the pattern is not its remedy, so it
+/// gets no `[artifact n]` route.
+fn artifact_gaps(stage_def: &StageDefinition, working_dir: &Path) -> Vec<VerificationGap> {
+    let mut gaps = Vec::new();
+    for (index, pattern) in stage_def.artifacts.iter().enumerate() {
+        match verify_artifacts(std::slice::from_ref(pattern), working_dir) {
+            Ok(found) => gaps.extend(indexed_gaps(CriterionField::Artifacts, index, found)),
+            Err(error) if glob::Pattern::new(pattern).is_err() => {
+                let gap = VerificationGap::new(
+                    GapType::ArtifactMissing,
+                    format!("{error:#}"),
+                    format!("Correct the artifact pattern: {pattern}"),
+                );
+                gaps.extend(indexed_gaps(CriterionField::Artifacts, index, vec![gap]));
+            }
+            Err(error) => gaps.push(VerificationGap::new(
+                GapType::ArtifactMissing,
+                format!("Artifact pattern '{pattern}' could not be checked: {error:#}"),
+                "Fix the cause named above; amending the pattern does not clear it".to_string(),
+            )),
+        }
+    }
+    gaps
 }
 
 /// The stage's wiring checks and wiring tests, verified one entry at a time so
@@ -154,6 +189,31 @@ mod tests {
             description: format!("{pattern} is wired"),
             literal: false,
         }
+    }
+
+    /// A pattern that matches a link out of the tree fails closed, but is not an
+    /// `[artifact n]` gap: amending the pattern is not its remedy.
+    #[cfg(unix)]
+    #[test]
+    fn a_non_glob_artifact_failure_is_a_gap_without_an_index_label() {
+        let tmp = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        std::fs::write(outside.path().join("secret.txt"), "data\n").unwrap();
+        std::os::unix::fs::symlink(outside.path().join("secret.txt"), tmp.path().join("l.rs"))
+            .unwrap();
+        let stage_def = StageDefinition {
+            artifacts: vec!["l.rs".to_string()],
+            ..StageDefinition::default()
+        };
+
+        let gaps = artifact_gaps(&stage_def, tmp.path());
+
+        assert_eq!(gaps.len(), 1, "{gaps:?}");
+        assert!(
+            gaps[0].description.contains("could not be checked"),
+            "{gaps:?}"
+        );
+        assert!(!gaps[0].description.contains("[artifact"), "{gaps:?}");
     }
 
     #[test]

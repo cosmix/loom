@@ -23,6 +23,8 @@ pub enum DisputeField {
     Wiring,
     /// The stage's wiring tests.
     WiringTests,
+    /// The stage's artifact patterns.
+    Artifacts,
     /// Failing impact-selected tests the stage did not cause.
     ImpactTests,
 }
@@ -34,6 +36,7 @@ impl DisputeField {
             DisputeField::Acceptance => Some(CriterionField::Acceptance),
             DisputeField::Wiring => Some(CriterionField::Wiring),
             DisputeField::WiringTests => Some(CriterionField::WiringTests),
+            DisputeField::Artifacts => Some(CriterionField::Artifacts),
             DisputeField::ImpactTests => None,
         }
     }
@@ -46,8 +49,9 @@ pub struct DisputeCriteriaArgs {
     pub stage_id: String,
 
     /// Which list --criterion-index indexes: `acceptance` (the default),
-    /// `wiring` or `wiring-tests`, as `loom stage complete` labels a failure
-    /// `[criterion n]`, `[wiring n]` or `[wiring_tests n]`. `impact-tests`
+    /// `wiring`, `wiring-tests` or `artifacts`, as `loom stage complete` labels
+    /// a failure `[criterion n]`, `[wiring n]`, `[wiring_tests n]` or
+    /// `[artifact n]`. `impact-tests`
     /// disputes failing impact-selected tests, named with --test.
     #[arg(long, value_enum, default_value = "acceptance")]
     pub field: DisputeField,
@@ -86,7 +90,7 @@ pub struct DisputeCriteriaArgs {
 
 /// What one `loom stage dispute-criteria` invocation files.
 pub enum CriteriaDispute {
-    /// Entries of a stage's acceptance, wiring or wiring-tests list: sorted,
+    /// Entries of a stage's acceptance, wiring, wiring-tests or artifacts list: sorted,
     /// without duplicates, never empty.
     Entry {
         stage_id: String,

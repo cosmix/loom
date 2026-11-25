@@ -93,6 +93,7 @@ impl AuditRow {
             AmendmentField::WiringTests => "wiring_tests",
             AmendmentField::Contracts => "contracts",
             AmendmentField::Harness => "harness",
+            AmendmentField::Artifacts => "artifacts",
             AmendmentField::Reachable => "reachable",
         }
     }

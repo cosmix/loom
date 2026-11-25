@@ -7,8 +7,8 @@
 //!
 //! This module provides exactly that, subject to a tight contract:
 //!
-//! - **Scope:** only `acceptance`, `wiring`, `wiring_tests`, `contracts`, `harness` and `reachable`
-//!   arrays on a single stage are mutable. Everything else (stage IDs, dependencies,
+//! - **Scope:** only `acceptance`, `wiring`, `wiring_tests`, `contracts`, `harness`, `artifacts` and
+//!   `reachable` arrays on a single stage are mutable. Everything else (stage IDs, dependencies,
 //!   working_dir, plan structure) is off-limits.
 //! - **Versioned + atomic:** under an `flock` on
 //!   `.loom/work/plan_versions/.lock`, the amendment writes a numbered
@@ -70,6 +70,8 @@ pub enum AmendmentField {
     Contracts,
     /// Mutate the `harness` array (glob strings naming harness files).
     Harness,
+    /// Mutate the `artifacts` array (glob strings naming expected output files).
+    Artifacts,
     /// Mutate the `reachable` array (goal-backward reachability checks).
     Reachable,
 }
@@ -227,6 +229,8 @@ pub(super) enum ParsedAmendmentValue {
     Contract(ContractSpec),
     /// A harness glob, taken verbatim (never parsed as YAML).
     Harness(String),
+    /// An artifacts glob, taken verbatim (never parsed as YAML).
+    Artifacts(String),
     Reachable(ReachableCheck),
     None,
 }
@@ -285,6 +289,10 @@ pub(super) fn splice_metadata_yaml(
 }
 
 mod apply;
+#[cfg(test)]
+mod artifacts_contract_tests;
+#[cfg(test)]
+mod artifacts_tests;
 #[cfg(test)]
 mod fence_tests;
 mod fence_width;
