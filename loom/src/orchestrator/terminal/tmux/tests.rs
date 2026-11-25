@@ -218,7 +218,7 @@ fn kill_session_retains_an_unverifiable_stale_socket() {
 
     let mut session = Session::new();
     session.assign_to_stage("dead-socket".to_string());
-    native::write_test_pid_identity(work_dir.path(), &session, 999_999_999).unwrap();
+    launch::write_test_pid_identity(work_dir.path(), &session, 999_999_999).unwrap();
 
     let socket = socket_path_for(&socket_name(&session));
     std::fs::create_dir_all(socket.parent().unwrap()).unwrap();

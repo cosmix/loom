@@ -66,8 +66,8 @@ pub fn process_start_time(pid: u32) -> Option<u64> {
 /// waits on it, so `kill(pid, 0)` and [`process_start_time`] both still answer
 /// as though it were running. It cannot execute anything, so every liveness
 /// question loom asks about it ("is this session still working?") must answer
-/// no. A pane process killed under tmux's `remain-on-exit`, or a session whose
-/// terminal emulator is slow to reap, otherwise reads as alive indefinitely.
+/// no. A pane process killed under tmux's `remain-on-exit`
+/// otherwise reads as alive indefinitely.
 #[cfg(target_os = "linux")]
 pub fn process_is_zombie(pid: u32) -> bool {
     let Ok(stat) = std::fs::read_to_string(format!("/proc/{pid}/stat")) else {

@@ -89,12 +89,12 @@ fn a_number_for_an_enum_key_reports_the_registry_message() {
     let scratch = scratch();
     let (status, body) = update(
         &scratch.base,
-        br#"{"scope":"user","name":"terminal.backend","value":42}"#,
+        br#"{"scope":"user","name":"plan.summary_backend","value":42}"#,
     );
 
     assert_eq!(status, 400);
     assert!(
-        body.contains("is not one of the expected values: native, tmux"),
+        body.contains("is not one of the expected values: claude, codex"),
         "{body}"
     );
 }

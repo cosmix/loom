@@ -16,26 +16,6 @@ use crate::verify::transitions::{load_stage, save_stage, update_stage};
 use serial_test::serial;
 use std::path::Path;
 
-/// `Orchestrator::new` eagerly constructs a `NativeBackend`, so it fails on a
-/// headless runner with no terminal emulator installed. Pinning
-/// `LOOM_TERMINAL` maps a name straight to an emulator without probing the
-/// host. Serialized because the detection tests mutate the same process-global.
-fn pin_terminal_env() -> Option<std::ffi::OsString> {
-    let saved = std::env::var_os("LOOM_TERMINAL");
-    // SAFETY: the test is serialized and restores the original value below.
-    unsafe { std::env::set_var("LOOM_TERMINAL", "xterm") };
-    saved
-}
-
-fn restore_terminal_env(saved: Option<std::ffi::OsString>) {
-    match saved {
-        // SAFETY: the serialized test is restoring its saved value.
-        Some(value) => unsafe { std::env::set_var("LOOM_TERMINAL", value) },
-        // SAFETY: the serialized test is restoring the variable's absence.
-        None => unsafe { std::env::remove_var("LOOM_TERMINAL") },
-    }
-}
-
 /// An `Executing` stage whose active session is `active_session`.
 fn executing_stage(work_dir: &Path, active_session: &str) -> Stage {
     let mut stage = Stage::new("weather-cache".to_string(), None);
@@ -53,9 +33,7 @@ fn orchestrator_for(work_dir: &Path, repo_root: &Path) -> Orchestrator {
         enable_skill_routing: false,
         ..Default::default()
     };
-    let saved = pin_terminal_env();
     let constructed = Orchestrator::new(config, ExecutionGraph::build(Vec::new()).unwrap());
-    restore_terminal_env(saved);
     constructed.unwrap()
 }
 

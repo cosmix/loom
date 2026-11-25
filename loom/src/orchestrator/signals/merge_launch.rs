@@ -8,7 +8,7 @@ use std::path::Path;
 
 use crate::fs::locking::locked_update;
 use crate::fs::session_files::{save_session, session_to_markdown};
-use crate::models::session::{Session, SessionBackendKind, SessionStatus, SessionType};
+use crate::models::session::{Session, SessionStatus, SessionType};
 use crate::parser::frontmatter::parse_from_markdown;
 
 #[cfg(test)]
@@ -77,15 +77,13 @@ fn lock_and_run<T>(file: File, f: impl FnOnce() -> Result<T>) -> Result<T> {
     f()
 }
 
-/// Persist attribution and the actual backend before a resolver can launch.
+/// Persist attribution before a resolver can launch.
 pub(crate) fn write_ahead_merge_session(
     session: &mut Session,
     stage_id: &str,
-    lane: SessionBackendKind,
     work_dir: &Path,
 ) -> Result<()> {
     session.assign_to_stage(stage_id.to_string());
-    session.backend = lane;
     save_session(session, work_dir).context("writing merge resolver session ahead of launch")
 }
 
@@ -105,7 +103,6 @@ pub(crate) fn publish_merge_session(spawned: &Session, work_dir: &Path) -> Resul
         if current.status == SessionStatus::Spawning {
             current.pid = spawned.pid;
             current.worktree_path = spawned.worktree_path.clone();
-            current.backend = spawned.backend;
             current.tracking_key = spawned.tracking_key.clone();
             current.try_mark_running()?;
         }
@@ -135,7 +132,7 @@ mod tests {
         let snapshot =
             crate::orchestrator::signals::publish_merge_snapshot(root, root, &session.id, "main")
                 .unwrap();
-        write_ahead_merge_session(&mut session, "s", SessionBackendKind::Tmux, root).unwrap();
+        write_ahead_merge_session(&mut session, "s", root).unwrap();
         git(root, &["commit", "--allow-empty", "-m", "later"]);
         publish_merge_session(&session, root).unwrap();
         let saved = load_session_exact(root, &session.id).unwrap().unwrap();
@@ -164,12 +161,7 @@ mod tests {
                     generate_merge_signal(&session, &stage, "loom/mine", "main", &[], work_dir)?;
                     signal_ready.send(()).unwrap();
                     proceed.recv().unwrap();
-                    write_ahead_merge_session(
-                        &mut session,
-                        "mine",
-                        SessionBackendKind::Tmux,
-                        work_dir,
-                    )
+                    write_ahead_merge_session(&mut session, "mine", work_dir)
                 })
                 .unwrap();
             });
@@ -204,8 +196,7 @@ mod tests {
         };
         let mut session = Session::new_merge("loom/mine".into(), "main".into());
         generate_merge_signal(&session, &stage, "loom/mine", "main", &[], work_dir).unwrap();
-        write_ahead_merge_session(&mut session, "mine", SessionBackendKind::Tmux, work_dir)
-            .unwrap();
+        write_ahead_merge_session(&mut session, "mine", work_dir).unwrap();
         let mut wrong = session.clone();
         wrong.stage_id = Some("other".into());
         assert!(publish_merge_session(&wrong, work_dir).is_err());
@@ -222,8 +213,7 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let work_dir = temp.path();
         let mut session = Session::new_merge("loom/mine".into(), "main".into());
-        write_ahead_merge_session(&mut session, "mine", SessionBackendKind::Tmux, work_dir)
-            .unwrap();
+        write_ahead_merge_session(&mut session, "mine", work_dir).unwrap();
         let mut heartbeat = session.clone();
         heartbeat.context_tokens = 42;
         save_session(&heartbeat, work_dir).unwrap();

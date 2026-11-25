@@ -27,7 +27,7 @@ use crate::models::session::{Session, SessionExitReason, SessionStatus, SessionT
 use crate::models::stage::{Stage, StageStatus};
 use crate::models::worktree::Worktree;
 use crate::orchestrator::signals::remove_signal;
-use crate::orchestrator::terminal::native::{session_process_status, SessionProcessStatus};
+use crate::orchestrator::terminal::launch::{session_process_status, SessionProcessStatus};
 use crate::verify::contracts::refusal::end_wait;
 use crate::verify::contracts::store::load_freeze;
 

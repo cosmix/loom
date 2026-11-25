@@ -11,7 +11,7 @@ use crate::daemon::server::tokens::USER_TOKEN_FILE;
 use crate::fs::session_files::save_session;
 use crate::models::session::{Session, SessionStatus};
 use crate::models::stage::{StageStatus, StageType};
-use crate::orchestrator::terminal::native::write_test_pid_identity;
+use crate::orchestrator::terminal::launch::write_test_pid_identity;
 use crate::verify::contracts::test_support::{
     contract_worktree, contract_worktree_with, pinned, plant_foreign_git_dir, CONTRACT_FILE,
 };

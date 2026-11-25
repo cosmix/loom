@@ -10,27 +10,6 @@ use crate::plan::ExecutionGraph;
 use crate::test_git::{git, git_unchecked, TestRepo};
 use serial_test::serial;
 
-/// `Orchestrator::new` eagerly constructs a `NativeBackend`, so it fails on a
-/// headless CI runner with no terminal emulator installed. Pinning
-/// `LOOM_TERMINAL` maps a name straight to an emulator without probing the
-/// host for the binary. Serialized because the detection tests mutate the same
-/// process-global variable.
-fn pin_terminal_env() -> Option<std::ffi::OsString> {
-    let saved = std::env::var_os("LOOM_TERMINAL");
-    // SAFETY: the test is serialized and restores the original value below.
-    unsafe { std::env::set_var("LOOM_TERMINAL", "xterm") };
-    saved
-}
-
-fn restore_terminal_env(saved: Option<std::ffi::OsString>) {
-    match saved {
-        // SAFETY: the serialized test is restoring its saved value.
-        Some(value) => unsafe { std::env::set_var("LOOM_TERMINAL", value) },
-        // SAFETY: the serialized test is restoring the variable's absence.
-        None => unsafe { std::env::remove_var("LOOM_TERMINAL") },
-    }
-}
-
 #[test]
 fn merge_probe_failure_does_not_consume_resolver_attempt_budget() {
     // `loom/probe` shares no history with `main`, so the merge-tree probe that
@@ -242,9 +221,7 @@ fn orchestrator_for(root: &std::path::Path, work_dir: &std::path::Path) -> Orche
         enable_skill_routing: false,
         ..Default::default()
     };
-    let saved_terminal = pin_terminal_env();
     let constructed = Orchestrator::new(config, ExecutionGraph::build(Vec::new()).unwrap());
-    restore_terminal_env(saved_terminal);
     constructed.unwrap()
 }
 

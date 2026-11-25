@@ -76,7 +76,7 @@ fn dirty_repo() -> (TestRepo, Arc<PlanContext>) {
     (repo, ctx)
 }
 
-fn assert_start_refused(ctx: &PlanContext, code: &str) {
+fn post_body(ctx: &PlanContext, body: Vec<u8>) -> ApiResponse {
     let head = RequestHead {
         method: "POST".into(),
         path: "/api/run/start".into(),
@@ -89,19 +89,26 @@ fn assert_start_refused(ctx: &PlanContext, code: &str) {
         content_length: None,
         csrf_token: None,
     };
-    let response = post_start(&ApiRequest {
+    post_start(&ApiRequest {
         ctx,
         head: &head,
         browser: &BrowserId::mint().unwrap(),
         public_id: &PublicId::mint(),
         query: Default::default(),
-        body: serde_json::to_vec(&RunStartRequest {
-            plan: "doc/plans/PLAN-demo.md".into(),
-            backend: Backend::Tmux,
-            clean: false,
-        })
-        .unwrap(),
-    });
+        body,
+    })
+}
+
+fn start_body(extra: Option<(&str, &str)>) -> Vec<u8> {
+    let mut body = serde_json::json!({ "plan": "doc/plans/PLAN-demo.md", "clean": false });
+    if let Some((key, value)) = extra {
+        body[key] = value.into();
+    }
+    serde_json::to_vec(&body).unwrap()
+}
+
+fn assert_start_refused(ctx: &PlanContext, code: &str) {
+    let response = post_body(ctx, start_body(None));
     assert_eq!(response.status, 409);
     let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
     assert_eq!(body["error"], code);
@@ -123,4 +130,18 @@ fn a_refused_start_leaves_no_job_active() {
 
     assert_start_refused(&ctx, "blocked");
     assert_eq!(child::jobs(&ctx).current(), None);
+}
+
+#[test]
+fn a_start_naming_a_backend_is_a_client_error_before_any_job_begins() {
+    let (_repo, ctx) = dirty_repo();
+
+    let response = post_body(&ctx, start_body(Some(("backend", "tmux"))));
+
+    assert_eq!(response.status, 400);
+    let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+    assert_eq!(body["error"], "bad_request");
+    assert_eq!(child::jobs(&ctx).current(), None);
+    // The jobs guard is free: a valid start gets past the guard to the state check.
+    assert_start_refused(&ctx, "blocked");
 }

@@ -1,20 +1,17 @@
 //! Terminal session management
 //!
-//! Spawns and manages Claude Code sessions via [`backend::SessionBackend`],
-//! which selects between the native and tmux backends according to the
-//! persisted `[terminal]` config (`.loom/work/config.toml`).
-//!
-//! Dispatches stage, contract, merge, base-conflict, knowledge and adjudication
-//! sessions through the selected backend.
+//! Spawns and manages Claude Code sessions in tmux via
+//! [`backend::SessionBackend`]: stage, contract, merge, base-conflict,
+//! knowledge and adjudication sessions. [`launch`] holds the launch
+//! preparation and PID tracking the tmux lane runs on.
 
 pub mod backend;
-pub mod emulator;
-pub mod native;
+#[cfg(test)]
+mod contract_tests;
+pub mod launch;
 mod session_tail;
 pub mod tmux;
 
-// Re-export terminal emulator
-pub use backend::SessionBackend;
-pub use emulator::TerminalEmulator;
+pub use backend::{require_tmux, tmux_on_path, SessionBackend, TMUX_MISSING_MESSAGE};
 pub use session_tail::session_tail;
 pub use tmux::TmuxBackend;

@@ -2,8 +2,7 @@
 //! branch the merge gate holds for human review, which stops through the same
 //! proof of death as a stale merge writer (`merge_writer_retirement_unproven`),
 //! and one whose spawn failed after its process may have started, which stops
-//! through the backend's kill and liveness probe as far as its lane lets them
-//! observe it (`teardown_proves_gone`).
+//! through the backend's kill and liveness probe (`teardown_proves_gone`).
 
 use std::fmt;
 use std::path::Path;
@@ -11,9 +10,7 @@ use std::path::Path;
 use anyhow::Result;
 
 use crate::fs::session_files::{load_session_exact, mark_session_terminal_reason};
-use crate::models::session::{
-    Session, SessionBackendKind, SessionExitReason, SessionStatus, SessionType,
-};
+use crate::models::session::{Session, SessionExitReason, SessionStatus, SessionType};
 use crate::models::stage::Stage;
 use crate::orchestrator::core::Orchestrator;
 use crate::orchestrator::signals::{find_live_merge_session_for_stage, remove_signal};
@@ -131,10 +128,9 @@ impl Orchestrator {
             Err(error) => error.context("Failed to spawn merge resolution session"),
         };
         session.assign_to_stage(stage_id.to_string());
-        session.backend = self.backend.resolve_lane();
         let killed = self.backend.kill_session(&session).is_ok();
         let confirm_gone = || matches!(self.confirm_session_gone(&session), Ok(true));
-        let gone = teardown_proves_gone(session.backend, killed, confirm_gone);
+        let gone = teardown_proves_gone(killed, confirm_gone);
         self.settle_failed_spawn(session, error, attempt, gone)
     }
 
@@ -232,30 +228,16 @@ impl Orchestrator {
     }
 }
 
-/// Whether the teardown of a failed spawn's would-be resolver on `lane`
-/// proves it gone. `killed` is whether the backend's kill succeeded, and
-/// `confirm_gone` runs the backend's liveness probe until it reads the
-/// resolver gone or gives up.
+/// Whether the teardown of a failed spawn's would-be resolver proves it
+/// gone. `killed` is whether the backend's kill succeeded, and `confirm_gone`
+/// runs the backend's liveness probe until it reads the resolver gone or gives
+/// up.
 ///
-/// The probe reads PID identity on every lane. On the native lane with a
-/// terminal it then reads the window titled with the session's tracking key,
-/// so a launched resolver whose PID was never recorded still reads alive, and
-/// a native kill fails only on PID identity the probe reads too, or for want
-/// of any PID identity on a native lane with no terminal, which launches
-/// nothing: there the probe decides alone. The tmux probe reads nothing else,
-/// and a launched pane whose PID was never recorded is seen only through its
-/// server's socket, which the kill tears down and fails on while the server
-/// survives: there the kill must succeed too.
-pub(super) fn teardown_proves_gone(
-    lane: SessionBackendKind,
-    killed: bool,
-    confirm_gone: impl FnOnce() -> bool,
-) -> bool {
-    let kill_must_succeed = match lane {
-        SessionBackendKind::Tmux => true,
-        SessionBackendKind::Native => false,
-    };
-    (killed || !kill_must_succeed) && confirm_gone()
+/// The kill must succeed as well as the probe: a launched pane whose PID was
+/// never recorded is seen only through its tmux server's socket, which the
+/// kill tears down and fails on while the server survives.
+pub(super) fn teardown_proves_gone(killed: bool, confirm_gone: impl FnOnce() -> bool) -> bool {
+    killed && confirm_gone()
 }
 
 fn unstopped_note(session_id: &str) -> String {

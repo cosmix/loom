@@ -12,7 +12,7 @@ use crate::models::failure::FailureType;
 use crate::models::session::Session;
 use crate::orchestrator::retry::classify_failure;
 use crate::orchestrator::spawner::read_log_tail;
-use crate::orchestrator::terminal::native::{stderr_log_path, wrapper_script_path};
+use crate::orchestrator::terminal::launch::{stderr_log_path, wrapper_script_path};
 
 pub(super) const FAST_FAIL_WINDOW_SECS: i64 = 15;
 
@@ -51,26 +51,12 @@ const STARTUP_REFUSAL_TAIL_LINES: usize = 20;
 ///
 /// # Why a verified PID, and not the backend
 ///
-/// This was gated on `backend == Native`, to stop a tmux *hosting* failure
-/// being misattributed to Remote Control. That reasoning does not survive
-/// contact with the spawn path: every tmux hosting failure returns `Err` from
-/// `TmuxBackend::spawn` and tears its PID file down, so it never produces a
-/// tracked session that can later be reported as crashed. Both lanes reach
-/// `Running` only after `await_session_pid` observes a real process. A
-/// recorded PID is therefore the evidence that hosting succeeded — which is
-/// what the backend check was reaching for — and it is available on both
-/// lanes.
-///
-/// The gate's real effect was to deny the fallback to the tmux lane
-/// entirely: a `--remote-control` that claude rejects exits at startup, the
-/// retry re-spawns with identical flags, and the stage burns its whole
-/// attempt budget on a flag that was never going to work — on the backend
-/// loom uses when there is no GUI terminal to fall back to.
-///
-/// Latent, not observed. This was found while investigating a crash run that
-/// turned out to have a different cause; no reproduction of the crash-loop
-/// exists. It is fixed because the fallback provably cannot fire on the tmux
-/// lane, not because it is known to have fired.
+/// Every tmux hosting failure returns `Err` from `TmuxBackend::spawn` and
+/// tears its PID file down, so it never produces a tracked session that can
+/// later be reported as crashed. A session reaches `Running` only after
+/// `await_session_pid` observes a real process. A recorded PID is therefore
+/// the evidence that hosting succeeded, and a `--remote-control` that claude
+/// rejects exits at startup, so the fallback must be able to fire for it.
 pub(super) fn is_remote_control_fast_fail(session_age_secs: i64, has_verified_pid: bool) -> bool {
     session_age_secs <= FAST_FAIL_WINDOW_SECS && has_verified_pid
 }

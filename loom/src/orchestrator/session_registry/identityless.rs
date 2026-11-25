@@ -24,14 +24,13 @@ use chrono::{DateTime, Utc};
 use std::path::Path;
 
 use crate::models::session::{Session, SessionStatus};
-use crate::orchestrator::terminal::native::{wrapper_script_path, NativeBackend};
+use crate::orchestrator::terminal::launch::{tracking_and_pid_key, wrapper_script_path};
 
 use super::LivenessProbe;
 
 /// A session younger than this cannot be judged dead by a failed liveness
-/// probe: its pid identity file and terminal window are written
-/// asynchronously after spawn, so a probe run inside this window observes
-/// "not written yet", not "gone".
+/// probe: its pid identity file is written asynchronously after spawn, so a
+/// probe run inside this window observes "not written yet", not "gone".
 pub(crate) const ORPHAN_PROBE_GRACE_SECS: i64 = 30;
 
 /// Whether `session` is too young for a failed liveness probe to be treated
@@ -49,7 +48,7 @@ pub(crate) fn launch_too_young_to_judge(
     now: DateTime<Utc>,
 ) -> bool {
     let wrapper_written = || -> Option<DateTime<Utc>> {
-        let (_, pid_key) = NativeBackend::window_title_and_pid_key(session)?;
+        let (_, pid_key) = tracking_and_pid_key(session)?;
         let path = wrapper_script_path(work_dir, &pid_key);
         let modified = std::fs::metadata(path).and_then(|meta| meta.modified());
         Some(modified.ok()?.into())
@@ -83,7 +82,7 @@ pub(crate) fn identityless_record_is_dead(
 /// `prepare_session_launch` writes the wrapper before a backend starts it.
 fn launch_never_began(work_dir: &Path, session: &Session) -> bool {
     session.status == SessionStatus::Spawning
-        && NativeBackend::window_title_and_pid_key(session)
+        && tracking_and_pid_key(session)
             .is_some_and(|(_, pid_key)| !wrapper_script_path(work_dir, &pid_key).exists())
 }
 

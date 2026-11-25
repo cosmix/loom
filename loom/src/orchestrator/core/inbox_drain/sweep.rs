@@ -9,7 +9,7 @@ use chrono::{DateTime, Utc};
 
 use crate::fs::inbox::session_inbox;
 use crate::models::session::{Session, SessionStatus};
-use crate::orchestrator::terminal::native::{cleanup_session_settings, session_settings_path};
+use crate::orchestrator::terminal::launch::{cleanup_session_settings, session_settings_path};
 use crate::relay::{session_dir, RequestKind, Ticket, MAX_TICKET_BYTES};
 
 use super::entry::{self, Regular};

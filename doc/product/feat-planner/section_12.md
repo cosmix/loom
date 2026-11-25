@@ -156,7 +156,7 @@ Planning sessions run in the main checkout on the user's branch (section 02), as
 Claude Code under the user's login (section 07). Their settings file is written by the server
 per session (section 07: `settings.json`, mode 0600) and is the only `--settings` source;
 `--setting-sources user,project` keeps the user's and the repository's committed settings in
-force, as for stages (`orchestrator/terminal/native/capsule.rs:14-28`).
+force, as for stages (`orchestrator/terminal/launch/capsule.rs:14-28`).
 
 The launch line of section 07 carries `--strict-mcp-config`, as stage launches do
 (`capsule.rs:35-37`): no MCP server from the project's `.mcp.json` or the user's
@@ -544,11 +544,11 @@ orchestration-state reads, and plan-authored `sandbox:` config, which planning h
 | ---------------------------------------------------------------------------- | ----------------------------------------- |
 | `failIfUnavailable`, `allowUnsandboxedCommands: false`, `strictAllowlist`    | `sandbox/settings/policy.rs:64-120`       |
 | The refusals of bypass mode, a disabled sandbox, and the unsandboxed escape, asserted on every planning settings file | `sandbox/config.rs:159` |
-| Tool denies `LSP`, `RemoteTrigger`, `CronCreate`, `PushNotification`, `Workflow` | `SESSION_TOOL_DENIES`, `native/session_settings/contents.rs:35` |
+| Tool denies `LSP`, `RemoteTrigger`, `CronCreate`, `PushNotification`, `Workflow` | `SESSION_TOOL_DENIES`, `launch/session_settings/contents.rs:35` |
 | Credential read denies                                                       | `policy::mandatory_deny_read`             |
 | Daemon token read denies                                                     | `state_root::token_deny_paths`            |
 | `Edit`, never `Write`; no `Read` deny; literal paths; no nested denies       | `session_denies.rs`, knowledge cited above |
-| Settings file written 0600 through `fs::safe_fs`, refusing planted symlinks  | `native/session_settings.rs:218-257`      |
+| Settings file written 0600 through `fs::safe_fs`, refusing planted symlinks  | `launch/session_settings.rs:218-257`     |
 | Linux and WSL sandbox prerequisite check                                     | `sandbox_prerequisite_problem`, `commands/run/sandbox_preflight.rs:56` |
 | `bgIsolation: none`, `--setting-sources user,project`, `--strict-mcp-config` | `sandbox/settings.rs:307`, `capsule.rs`   |
 

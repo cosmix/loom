@@ -108,13 +108,12 @@ impl Orchestrator {
     /// Warn about a silent session, and recover its stage once the silence is
     /// long enough to be evidence rather than suspicion.
     pub(super) fn on_session_hung(&mut self, report: HungReport<'_>) -> Result<()> {
-        let work_dir = self.config.work_dir.clone();
         let login = || {
             crate::claude::find_claude_path()
                 .ok()
                 .map(|p| stage_auth_status(&p))
         };
-        let tail = |s: &Session| session_tail(s, &work_dir, PANE_TAIL_LINES);
+        let tail = |s: &Session| session_tail(s, PANE_TAIL_LINES);
         self.on_session_hung_with(
             report,
             &StallProbes {

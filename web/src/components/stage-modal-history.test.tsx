@@ -123,10 +123,7 @@ describe("stage modal terminal history", () => {
   });
 
   it("prefers a live terminal when the stage has a live session", () => {
-    renderModal(
-      blockedStage({ session_alive: true, session_backend: "tmux" }),
-      "/?stage=local-runtime",
-    );
+    renderModal(blockedStage({ session_alive: true }), "/?stage=local-runtime");
 
     expect(screen.getByRole("button", { name: "open terminal" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "open terminal history" })).toBeNull();

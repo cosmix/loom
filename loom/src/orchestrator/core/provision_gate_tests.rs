@@ -2,9 +2,7 @@
 //! first, then the snapshot's provision entries; a failure of either blocks the stage.
 
 use super::*;
-use crate::fs::work_dir::write_terminal_config;
 use crate::models::failure::FailureType;
-use crate::models::session::{SessionBackendKind, TerminalConfig};
 use crate::models::stage::{StageStatus, TruthCheck};
 use crate::orchestrator::busy::BusyOp;
 use crate::orchestrator::core::OrchestratorConfig;
@@ -18,9 +16,7 @@ use std::fs;
 use std::path::PathBuf;
 use tempfile::TempDir;
 
-/// A `.loom/work` directory whose configured terminal lane is tmux, so
-/// `Orchestrator::new` never runs real terminal detection (which fails on a
-/// headless test runner). The provision snapshot is merged into this same
+/// A scratch `.loom/work` directory. The provision snapshot is merged into its
 /// `config.toml`, never written over it.
 fn work_dir() -> TempDir {
     let temp = TempDir::new().unwrap();
@@ -31,13 +27,6 @@ fn work_dir() -> TempDir {
 fn prepare_work_dir(root: &Path) -> PathBuf {
     let work = root.join(".loom").join("work");
     fs::create_dir_all(&work).unwrap();
-    write_terminal_config(
-        &work,
-        &TerminalConfig {
-            backend: SessionBackendKind::Tmux,
-        },
-    )
-    .unwrap();
     work
 }
 

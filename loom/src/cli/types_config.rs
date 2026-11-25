@@ -15,7 +15,7 @@ pub struct ConfigArgs {
 
     /// List every key with its value and origin (~/.loom/config.toml alone;
     /// a workspace .loom/work/config.toml, when present, overrides it: whole
-    /// `[terminal]`/`[context]` sections, `[pressure]`/`[models]` key by key)
+    /// `[context]` section, `[pressure]`/`[models]` key by key)
     #[arg(long, conflicts_with_all = ["key", "value"])]
     pub list: bool,
 

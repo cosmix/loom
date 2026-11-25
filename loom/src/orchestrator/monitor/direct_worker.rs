@@ -43,7 +43,7 @@ use chrono::{DateTime, Utc};
 
 use crate::fs::session_files::load_session_exact_unlocked;
 use crate::models::session::SessionType;
-use crate::orchestrator::terminal::native::{read_pid_entry, NativeBackend};
+use crate::orchestrator::terminal::launch::{read_pid_entry, tracking_and_pid_key};
 use crate::process::{process_start_time, verify_process_identity, IdentityStatus};
 
 use super::foreground_progress::{record, within_window, CommandProgress};
@@ -112,7 +112,7 @@ fn stage_agent(work_dir: &Path, session_id: &str) -> Option<u32> {
     if session.session_type != SessionType::Stage || session.status.is_terminal() {
         return None;
     }
-    let (_, pid_key) = NativeBackend::window_title_and_pid_key(&session)?;
+    let (_, pid_key) = tracking_and_pid_key(&session)?;
     let agent = read_pid_entry(work_dir, &pid_key)?;
     (verify_process_identity(agent) == IdentityStatus::VerifiedAlive).then_some(agent.pid)
 }

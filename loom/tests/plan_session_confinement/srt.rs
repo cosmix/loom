@@ -4,7 +4,7 @@
 //! The translation reads the block the way Claude Code does: `~/` is the session's home, a
 //! relative entry is relative to the working directory, the working directory itself is
 //! writable, and the network is closed. Unlike the stage capsule translation
-//! (`orchestrator/terminal/native/tests_confinement_srt.rs`, an in-crate module this test
+//! (`orchestrator/terminal/launch/tests_confinement_srt.rs`, an in-crate module this test
 //! cannot import) it also passes `allowRead` through: the runtime carve-outs under the
 //! planning-root deny exist only there, and there is no fallback when srt cannot express them.
 //!

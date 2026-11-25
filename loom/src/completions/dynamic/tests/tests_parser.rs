@@ -22,10 +22,7 @@ fn valued_options_do_not_become_command_path_segments() {
         path("loom knowledge context --query merge", ""),
         ["knowledge", "context"]
     );
-    assert_eq!(
-        path("loom run --max-parallel 4 --backend tmux", ""),
-        ["run"]
-    );
+    assert_eq!(path("loom run --max-parallel 4", ""), ["run"]);
 }
 
 #[test]

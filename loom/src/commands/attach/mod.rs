@@ -6,9 +6,6 @@
 //! whose panes each host a nested attach client into one live session's own
 //! server, tiled side by side, then `exec`s into the viewer.
 //!
-//! Native-backend sessions are out of scope: they already own a visible OS
-//! terminal window, so there is nothing for this command to attach to.
-//!
 //! Both paths apply one precondition the rest of loom deliberately does not:
 //! the target's tmux server must be accepting clients *now*. That check lives
 //! in `orchestrator::terminal::tmux::viewer::endpoint_ready`, shared with the
@@ -28,7 +25,7 @@ use std::process::Command;
 
 use crate::commands::common::work_dir_path;
 use crate::fs::tmux_tmpdir::{adopt_recorded_tmux_tmpdir, TmuxTmpdirAdoption};
-use crate::models::session::{Session, SessionBackendKind};
+use crate::models::session::Session;
 use crate::orchestrator::terminal::tmux::socket_name;
 use crate::orchestrator::terminal::tmux::viewer::{self, endpoint_ready, tmux_session_name};
 use diagnose::diagnose_empty_live_set;
@@ -57,7 +54,8 @@ pub fn execute(stage_id: Option<String>) -> Result<()> {
     let sessions = viewer::live_tmux_sessions(&work_dir)?;
 
     if sessions.is_empty() {
-        return report_no_live_sessions(&work_dir);
+        report_no_live_sessions(&work_dir);
+        return Ok(());
     }
 
     match stage_id {
@@ -232,50 +230,24 @@ fn format_tmux_tmpdir_adoption_message(
 }
 
 /// Build the wording for an empty live set, naming the resolved work dir so
-/// "wrong repo of two" reads differently from "backend is actually broken" —
+/// "wrong repo of two" reads differently from "tmux is actually broken" —
 /// without it both looked identical (see
 /// `doc/loom/knowledge/mistakes/tmux-backend.md`). Split out from
 /// `report_no_live_sessions` purely so the text is testable without a
 /// `config.toml` on disk.
-fn no_live_sessions_message(work_dir: &Path, backend: SessionBackendKind) -> String {
-    match backend {
-        SessionBackendKind::Native => format!(
-            "loom attach requires the tmux backend for {0} (set [terminal] backend = \"tmux\" \
-             in {0}/config.toml or run loom run --backend tmux)",
-            work_dir.display()
-        ),
-        SessionBackendKind::Tmux => {
-            format!(
-                "No live tmux sessions in {} (backend: tmux)",
-                work_dir.display()
-            )
-        }
-    }
+fn no_live_sessions_message(work_dir: &Path) -> String {
+    format!("No live tmux sessions in {}", work_dir.display())
 }
 
-/// Explain an empty live set, choosing the message from the CONFIGURED
-/// backend. Consulted ONLY here, to pick the wording — gating the whole
-/// command on it would be wrong, since live tmux-hosted sessions from before
-/// a config flip to native must stay attachable.
-///
-/// The native branch keeps the flat message: there is no tmux session state
-/// to diagnose when the backend itself is not tmux. The tmux branch replaces
-/// it with [`diagnose_empty_live_set`] — a flat "no live sessions" is exactly
-/// the misleading surface this exists to fix (see module docs and
+/// Explain an empty live set: the flat headline naming the work dir, then
+/// [`diagnose_empty_live_set`] — a flat "no live sessions" alone is exactly
+/// the misleading surface this exists to fix (see
 /// `doc/loom/knowledge/mistakes/`): it cannot tell an operator whether a
 /// session record exists and failed one filter, or whether a stage claims to
 /// be executing with no session record at all.
-fn report_no_live_sessions(work_dir: &Path) -> Result<()> {
-    let config = crate::fs::work_dir::read_terminal_config(work_dir)?;
-    match config.backend {
-        SessionBackendKind::Native => {
-            bail!("{}", no_live_sessions_message(work_dir, config.backend))
-        }
-        SessionBackendKind::Tmux => {
-            diagnose_empty_live_set(work_dir);
-            Ok(())
-        }
-    }
+fn report_no_live_sessions(work_dir: &Path) {
+    println!("{}", no_live_sessions_message(work_dir));
+    diagnose_empty_live_set(work_dir);
 }
 
 #[cfg(test)]

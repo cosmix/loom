@@ -21,7 +21,7 @@ use crate::models::session::{Session, SessionExitReason, SessionStatus};
 use crate::models::stage::{AcceptanceCriterion, StageType};
 use crate::orchestrator::monitor::heartbeat::{write_heartbeat, Heartbeat};
 use crate::orchestrator::monitor::stall_line::COMPLETION_ACTIVITY;
-use crate::orchestrator::terminal::native::write_test_pid_identity;
+use crate::orchestrator::terminal::launch::write_test_pid_identity;
 use crate::test_git::{git, TestRepo};
 use crate::test_stand_in::{orphan, require_orphan_signals, Orphan};
 use crate::verify::transitions::{load_stage, update_stage};

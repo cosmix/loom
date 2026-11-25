@@ -8,29 +8,22 @@ use tempfile::TempDir;
 
 use super::{reset_and_cancel, OsRuntime};
 use crate::fs::session_files::{load_session_exact, save_session};
-use crate::fs::work_dir::write_terminal_config;
-use crate::models::session::{
-    Session, SessionBackendKind, SessionExitReason, SessionStatus, TerminalConfig,
-};
+use crate::models::session::{Session, SessionExitReason, SessionStatus};
 use crate::models::stage::{Stage, StageStatus};
-use crate::orchestrator::terminal::native::{
-    wrapper_script_path, write_test_pid_identity, NativeBackend,
+use crate::orchestrator::terminal::launch::{
+    tracking_and_pid_key, wrapper_script_path, write_test_pid_identity,
 };
 use crate::verify::transitions::{load_stage, save_stage};
 
 const STAGE: &str = "alpha";
 
 fn work_dir() -> TempDir {
-    let temp = TempDir::new().unwrap();
-    let backend = SessionBackendKind::Tmux;
-    write_terminal_config(temp.path(), &TerminalConfig { backend }).unwrap();
-    temp
+    TempDir::new().unwrap()
 }
 
 fn record(work: &std::path::Path, status: SessionStatus, age_secs: i64) -> Session {
     let mut session = Session::new();
     session.assign_to_stage(STAGE.to_string());
-    session.backend = SessionBackendKind::Tmux;
     session.status = status;
     session.created_at = Utc::now() - Duration::seconds(age_secs);
     save_session(&session, work).unwrap();
@@ -44,7 +37,7 @@ fn record(work: &std::path::Path, status: SessionStatus, age_secs: i64) -> Sessi
 
 /// What `prepare_session_launch` leaves before the backend starts anything.
 fn begin_launch(work: &std::path::Path, session: &Session) {
-    let (_, pid_key) = NativeBackend::window_title_and_pid_key(session).unwrap();
+    let (_, pid_key) = tracking_and_pid_key(session).unwrap();
     let wrapper = wrapper_script_path(work, &pid_key);
     std::fs::create_dir_all(wrapper.parent().unwrap()).unwrap();
     std::fs::write(wrapper, "#!/bin/sh\n").unwrap();
@@ -105,7 +98,7 @@ fn a_launch_that_died_ends_after_the_grace_period() {
         let session = record(temp.path(), SessionStatus::Spawning, 300);
         begin_launch(temp.path(), &session);
         // Grace runs from the wrapper, so an old launch needs an old wrapper too.
-        let (_, pid_key) = NativeBackend::window_title_and_pid_key(&session).unwrap();
+        let (_, pid_key) = tracking_and_pid_key(&session).unwrap();
         let aged = std::time::SystemTime::now() - std::time::Duration::from_secs(300);
         std::fs::File::options()
             .write(true)

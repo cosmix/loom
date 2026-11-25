@@ -8,7 +8,7 @@ use super::tests::{
 use super::*;
 use crate::fs::session_files::{load_session_exact, save_session};
 use crate::models::session::{SessionExitReason, SessionStatus};
-use crate::orchestrator::terminal::native::{
+use crate::orchestrator::terminal::launch::{
     session_process_status, write_test_pid_identity, SessionProcessStatus,
 };
 use crate::verify::transitions::{load_stage, update_stage};

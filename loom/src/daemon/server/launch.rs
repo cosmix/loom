@@ -13,7 +13,6 @@ use super::environment::DaemonEnvironment;
 use crate::context::untrusted::terminal_safe;
 use crate::daemon::DaemonConfig;
 use crate::orchestrator::spawner::{clamp_from_front, read_log_tail};
-use crate::orchestrator::terminal::native::detect_terminal;
 
 use anyhow::{anyhow, Context, Result};
 use nix::errno::Errno;
@@ -89,12 +88,8 @@ pub(crate) fn spawn_daemon(work_dir: &Path, config: &DaemonConfig) -> Result<()>
         return Ok(());
     }
     let exe = std::env::current_exe().context("cannot locate the running loom binary")?;
-    // `loom run` still has the operator's terminal context; the daemon does not.
-    let terminal = detect_terminal()
-        .ok()
-        .map(|terminal| terminal.display_name());
     let environment = DaemonEnvironment::capture();
-    let mut command = daemon_command(&exe, work_dir, config, &environment, terminal);
+    let mut command = daemon_command(&exe, work_dir, config, &environment);
     let (reader, writer) = std::io::pipe().context("Failed to create the daemon's output pipe")?;
     let stdout = writer
         .try_clone()
@@ -115,17 +110,14 @@ pub(crate) fn spawn_daemon(work_dir: &Path, config: &DaemonConfig) -> Result<()>
 }
 
 /// The daemon child's command: `<exe> run --daemon-child <work_root>` plus
-/// the config flags, started from `env` alone, with `LOOM_TERMINAL` set to
-/// `terminal` when given. It never detects the terminal itself, so a host with
-/// no terminal emulator can test it. The working directory is inherited: `loom
-/// run` runs from the repository root, and `loom repair` matches daemons by
-/// their cwd.
+/// the config flags, started from `env` alone. The working directory is
+/// inherited: `loom run` runs from the repository root, and `loom repair`
+/// matches daemons by their cwd.
 fn daemon_command(
     exe: &Path,
     work_root: &Path,
     config: &DaemonConfig,
     env: &DaemonEnvironment,
-    terminal: Option<&str>,
 ) -> Command {
     let mut command = Command::new(exe);
     command.arg("run").arg("--daemon-child").arg(work_root);
@@ -139,9 +131,6 @@ fn daemon_command(
         command.arg("--no-merge");
     }
     env.apply_to(&mut command);
-    if let Some(terminal) = terminal {
-        command.env("LOOM_TERMINAL", terminal);
-    }
     command.stdin(Stdio::null());
     command
 }
@@ -348,5 +337,7 @@ fn readable(reader: &PipeReader) -> Result<bool> {
     }
 }
 
+#[cfg(test)]
+mod contract_tests;
 #[cfg(test)]
 mod tests;

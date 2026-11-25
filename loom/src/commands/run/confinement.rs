@@ -27,7 +27,7 @@ pub(super) fn require_confinement(work_dir: &WorkDir, accept_unix_socket_risk: b
         repo_root,
         home: home.as_deref(),
         path: &path,
-        facts: crate::orchestrator::terminal::native::run_host_facts(work_dir.root()),
+        facts: crate::orchestrator::terminal::launch::run_host_facts(work_dir.root()),
         accept_unix_socket_risk,
     })?;
     for warning in &findings.warnings {

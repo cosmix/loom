@@ -12,10 +12,9 @@ use crate::test_stand_in::StandIn;
 pub(super) fn persist_running(work: &Path, session: &mut Session) -> StandIn {
     let agent = StandIn::direct(std::process::Command::new("sleep").arg("300"));
     let pid = agent.id();
-    session.backend = crate::models::session::SessionBackendKind::Tmux;
     session.status = crate::models::session::SessionStatus::Running;
     session.pid = Some(pid);
-    crate::orchestrator::terminal::native::write_test_pid_identity(work, session, pid).unwrap();
+    crate::orchestrator::terminal::launch::write_test_pid_identity(work, session, pid).unwrap();
     crate::fs::session_files::save_session(session, work).unwrap();
     agent
 }

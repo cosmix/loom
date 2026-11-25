@@ -1,7 +1,7 @@
 //! Crash reporting utilities.
 //!
-//! Session spawning lives in `crate::orchestrator::terminal::native`
-//! (`NativeBackend`). This module retains the crash reporting types
+//! Session spawning lives in `crate::orchestrator::terminal`
+//! (`SessionBackend`). This module retains the crash reporting types
 //! until they are migrated to a dedicated crash reporting module:
 //!
 //! - `CrashReport`

@@ -14,7 +14,6 @@ use tempfile::TempDir;
 use super::{create_stage_def, isolate_user_config};
 
 #[test]
-#[ignore] // Requires a terminal emulator - skipped in CI
 #[serial]
 fn test_orchestrator_creation_with_config() {
     let temp_dir = TempDir::new().unwrap();
@@ -85,7 +84,6 @@ fn test_stage_definition_auto_merge_serialization() {
 }
 
 #[test]
-#[ignore] // Requires a terminal emulator - skipped in CI
 #[serial]
 fn test_orchestrator_creates_successfully() {
     // Test that the orchestrator creates with default config

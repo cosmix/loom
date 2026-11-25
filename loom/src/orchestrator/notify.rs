@@ -3,7 +3,6 @@
 //! Sends desktop notifications for events that need human attention,
 //! using notify-send on Linux and osascript on macOS.
 
-use crate::orchestrator::terminal::emulator::escape_applescript_string;
 use crate::process::run_bounded_output;
 use crate::utils::truncate;
 use anyhow::{bail, Context, Result};
@@ -30,6 +29,21 @@ fn escape_markup(text: &str) -> String {
     text.replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
+}
+
+/// Escape a string for use in AppleScript double-quoted strings.
+///
+/// In AppleScript, within double quotes:
+/// - Backslashes must be escaped: `\` → `\\`
+/// - Double quotes must be escaped: `"` → `\"`
+///
+/// This prevents injection attacks where malicious stage IDs or commands
+/// could break out of the AppleScript string context.
+fn escape_applescript_string(s: &str) -> String {
+    s.replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\r', "\\r")
+        .replace('\n', "\\n")
 }
 
 /// The notifier for `os` (a `std::env::consts::OS` value): AppleScript's
@@ -246,5 +260,34 @@ mod tests {
         assert_eq!(timeout_error.operation(), "test notification");
         assert_eq!(timeout_error.timeout(), timeout);
         assert!(started.elapsed() < Duration::from_secs(2));
+    }
+
+    #[test]
+    fn test_escape_applescript_string() {
+        // Test basic escaping
+        assert_eq!(escape_applescript_string("hello"), "hello");
+
+        // Test quote escaping
+        assert_eq!(escape_applescript_string(r#"say "hi""#), r#"say \"hi\""#);
+
+        // Test backslash escaping
+        assert_eq!(
+            escape_applescript_string(r#"path\to\file"#),
+            r#"path\\to\\file"#
+        );
+
+        // Test combined escaping
+        assert_eq!(
+            escape_applescript_string(r#"echo "test\path""#),
+            r#"echo \"test\\path\""#
+        );
+
+        // Test potential injection attempt
+        let malicious = r#""; do shell script "rm -rf /" --"#;
+        let escaped = escape_applescript_string(malicious);
+        // The quotes should be escaped, preventing breakout
+        assert!(escaped.contains(r#"\""#));
+        assert!(!escaped.contains(r#"" do"#)); // No unescaped quote followed by space
+        assert_eq!(escape_applescript_string("one\ntwo"), "one\\ntwo");
     }
 }

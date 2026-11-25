@@ -34,14 +34,8 @@ fn stage(id: &str, status: StageStatus, dependencies: &[&str]) -> Stage {
     stage
 }
 
-/// An orchestrator over the plan "notes (knowledge) -> build", on the tmux
-/// lane so that building it never probes the host for a terminal emulator.
+/// An orchestrator over the plan "notes (knowledge) -> build".
 fn knowledge_then_build(work_dir: &std::path::Path, repo_root: std::path::PathBuf) -> Orchestrator {
-    std::fs::write(
-        work_dir.join("config.toml"),
-        "[terminal]\nbackend = \"tmux\"\n",
-    )
-    .unwrap();
     let knowledge = Some(crate::plan::schema::StageType::Knowledge);
     let graph = ExecutionGraph::build(vec![
         definition("notes", &[], knowledge),

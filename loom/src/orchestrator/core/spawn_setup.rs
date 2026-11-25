@@ -145,7 +145,7 @@ impl Orchestrator {
 
     /// Merge and re-validate this knowledge stage's sandbox config at spawn
     /// time. Writes nothing: the capsule built for the session
-    /// (`native/session_settings.rs`) carries the resolved config directly
+    /// (`launch/session_settings.rs`) carries the resolved config directly
     /// into the session, not the main repo's `.claude/settings.local.json`.
     ///
     /// Returns `Ok(false)` if the stage was marked Blocked instead (invalid

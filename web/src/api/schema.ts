@@ -58,7 +58,6 @@ export const sessionTypeSchema = z.enum([
   "adjudication",
   "contract",
 ]);
-export const sessionBackendSchema = z.enum(["native", "tmux"]);
 /// A saved screen is the scrollback a session kept or the one screen a fullscreen session left.
 export const historyKindSchema = z.enum(["history", "last_screen"]);
 export const outgoingSessionExitReasonSchema = z.enum([
@@ -190,7 +189,6 @@ export const stageSummarySchema = z
     execution_models: z.array(z.string()),
     dispute_count: z.number().int(),
     judge_heartbeat_secs: z.number().int().nullable(),
-    session_backend: sessionBackendSchema.nullable(),
     merge_resolver_session: z.string().optional(),
     merge_resolver_attempts: z.number().int().optional(),
     close_reason: z.string().optional(),

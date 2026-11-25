@@ -1,7 +1,6 @@
 //! `block_stage` edges the frozen contract tests leave open: the defaults of
 //! `StageBlock::new`, a stage the graph does not hold, and a missing stage file.
 use super::*;
-use crate::models::session::{SessionBackendKind, TerminalConfig};
 use crate::models::stage::Stage;
 use crate::orchestrator::core::OrchestratorConfig;
 use crate::plan::{schema::StageDefinition, ExecutionGraph};
@@ -11,13 +10,6 @@ use tempfile::TempDir;
 /// An orchestrator over `on_disk` stage files whose graph holds `in_graph`.
 fn fixture(on_disk: &[Stage], in_graph: &[&str]) -> (TempDir, Orchestrator) {
     let temp = TempDir::new().unwrap();
-    crate::fs::work_dir::write_terminal_config(
-        temp.path(),
-        &TerminalConfig {
-            backend: SessionBackendKind::Tmux,
-        },
-    )
-    .unwrap();
     for stage in on_disk {
         save_stage(stage, temp.path()).unwrap();
     }

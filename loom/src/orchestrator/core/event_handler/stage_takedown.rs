@@ -16,7 +16,7 @@ use crate::orchestrator::session_registry::{
     identityless_record_is_dead, in_progress_sessions_for_stage, Admission,
 };
 use crate::orchestrator::signals::remove_signal;
-use crate::orchestrator::terminal::native::{session_process_status, SessionProcessStatus};
+use crate::orchestrator::terminal::launch::{session_process_status, SessionProcessStatus};
 
 use super::super::{persistence::Persistence, Orchestrator};
 use super::takedown_evidence::{include_assigned_session, retain_missing_identity};
@@ -171,8 +171,7 @@ impl Orchestrator {
             // The liveness probe decides, not the kill's return value: a kill
             // that reported an error may still have taken the agent down, and
             // one that reported success may not have (`TmuxBackend::kill_session`
-            // returns `Ok` unconditionally, and the native lane returns `Ok`
-            // when it refuses to signal an unverifiable identity).
+            // returns `Ok` unconditionally).
             if self.confirm_session_gone(session)? {
                 self.record_context_exhausted(session, reason)?;
                 if let Err(e) = remove_signal(&session.id, &self.config.work_dir) {

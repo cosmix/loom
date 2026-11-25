@@ -36,7 +36,7 @@ use serde::{Deserialize, Serialize};
 // Re-export types that consumers will need
 pub use crate::models::failure::FailureInfo;
 pub use crate::models::session::SessionExitReason;
-pub use crate::models::session::{SessionBackendKind, SessionType};
+pub use crate::models::session::SessionType;
 pub use crate::models::stage::{IssueKind, StageIssue, StageStatus, StageType};
 
 /// What a saved terminal history file holds.
@@ -240,9 +240,6 @@ pub struct StageSummary {
     /// `None` when no judge has written one.
     #[serde(default)]
     pub judge_heartbeat_secs: Option<u64>,
-    /// Which terminal backend hosts this stage's session, when one is known.
-    #[serde(default)]
-    pub session_backend: Option<crate::models::session::SessionBackendKind>,
     /// Why the session named by `stage.session` exited, once terminal.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub outgoing_session_exit_reason: Option<SessionExitReason>,

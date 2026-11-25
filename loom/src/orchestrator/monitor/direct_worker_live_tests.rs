@@ -139,7 +139,7 @@ pub(crate) fn wait_until_gone(invocation: &str) {
 /// Bind `session` to this test process, as the wrapper's PID file would.
 pub(crate) fn mark_own_agent(work: &Path, session: &Session) {
     save_session(session, work).unwrap();
-    let (_, key) = NativeBackend::window_title_and_pid_key(session).unwrap();
+    let (_, key) = tracking_and_pid_key(session).unwrap();
     let pid = std::process::id();
     let path = work.join("pids").join(format!("{key}.pid"));
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();

@@ -26,7 +26,7 @@ use std::os::unix::net::UnixStream;
 use std::path::Path;
 
 use crate::models::session::Session;
-use crate::orchestrator::terminal::native::{read_pid_entry, NativeBackend};
+use crate::orchestrator::terminal::launch::{read_pid_entry, tracking_and_pid_key};
 use crate::parser::frontmatter::parse_from_markdown;
 use crate::process::{verify_process_identity, IdentityStatus};
 
@@ -168,7 +168,7 @@ pub fn caller_is_inside_session(work_dir: &Path, session_id: &str, caller_pid: u
     // The same PID-file evidence the backends use, read through the same
     // helper — not `session.pid`, which carries no start time and so cannot be
     // told apart from a recycled pid.
-    let Some((_, pid_key)) = NativeBackend::window_title_and_pid_key(&session) else {
+    let Some((_, pid_key)) = tracking_and_pid_key(&session) else {
         return false;
     };
     let Some(identity) = read_pid_entry(work_dir, &pid_key) else {

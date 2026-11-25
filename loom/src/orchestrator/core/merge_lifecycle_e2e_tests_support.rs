@@ -10,9 +10,8 @@ use chrono::Utc;
 use tempfile::TempDir;
 
 use crate::fs::inbox::{read_ledger, write_entry, LedgerOutcome, WriteOutcome};
-use crate::fs::work_dir::write_terminal_config;
 use crate::git::merge::merge_head_exists;
-use crate::models::session::{SessionBackendKind, SessionType, TerminalConfig};
+use crate::models::session::SessionType;
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::core::{Orchestrator, OrchestratorConfig};
 use crate::orchestrator::merge_lifecycle::test_support::write_live_session;
@@ -92,16 +91,13 @@ pub(super) fn resolve_by_merging(root: &Path, resolution: &str) {
     git(&wt, &["commit", "-q", "-m", "resolve"]);
 }
 
-/// A new orchestrator over `root` on the tmux lane, so building it never
-/// probes the host for a terminal emulator, with an empty graph.
+/// A new orchestrator over `root` with an empty graph.
 pub(super) fn orchestrator(root: &Path) -> Orchestrator {
     orchestrator_with_graph(root, ExecutionGraph::build(Vec::new()).unwrap())
 }
 
 pub(super) fn orchestrator_with_graph(root: &Path, graph: ExecutionGraph) -> Orchestrator {
     let work_dir = root.join(".loom").join("work");
-    let backend = SessionBackendKind::Tmux;
-    write_terminal_config(&work_dir, &TerminalConfig { backend }).unwrap();
     let config = OrchestratorConfig {
         work_dir,
         repo_root: root.to_path_buf(),

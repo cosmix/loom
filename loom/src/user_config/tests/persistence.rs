@@ -13,21 +13,21 @@ fn set_in_preserves_comments_and_unknown_keys() {
     let path = temp.path().join("config.toml");
     std::fs::write(
         &path,
-        "# a comment worth keeping\n[terminal]\nbackend = \"native\"\nsome_future_key = \"kept\"\n",
+        "# a comment worth keeping\n[plan]\nsummary_backend = \"claude\"\nsome_future_key = \"kept\"\n",
     )
     .unwrap();
 
     set_in(
         &path,
-        spec("terminal.backend").unwrap(),
-        ConfigValue::Text("tmux".to_string()),
+        spec("plan.summary_backend").unwrap(),
+        ConfigValue::Text("codex".to_string()),
     )
     .unwrap();
 
     let after = std::fs::read_to_string(&path).unwrap();
     assert!(after.contains("# a comment worth keeping"), "{after}");
     assert!(after.contains("some_future_key = \"kept\""), "{after}");
-    assert!(after.contains("backend = \"tmux\""), "{after}");
+    assert!(after.contains("summary_backend = \"codex\""), "{after}");
 }
 
 #[test]
@@ -122,17 +122,17 @@ fn unset_in_leaves_comments_and_unrelated_keys() {
     let path = temp.path().join("config.toml");
     std::fs::write(
         &path,
-        "# a comment worth keeping\n[terminal]\nbackend = \"tmux\"\nsome_future_key = \"kept\"\n\n[update]\ncheck = false\n",
+        "# a comment worth keeping\n[plan]\nsummary_backend = \"codex\"\nsome_future_key = \"kept\"\n\n[update]\ncheck = false\n",
     )
     .unwrap();
 
-    unset_in(&path, spec("terminal.backend").unwrap()).unwrap();
+    unset_in(&path, spec("plan.summary_backend").unwrap()).unwrap();
 
     let after = std::fs::read_to_string(&path).unwrap();
     assert!(after.contains("# a comment worth keeping"), "{after}");
     assert!(after.contains("some_future_key = \"kept\""), "{after}");
     assert!(after.contains("check = false"), "{after}");
-    assert!(!after.contains("backend"), "{after}");
+    assert!(!after.contains("summary_backend"), "{after}");
 }
 
 /// Unlike the workspace config, this file resolves key by key, so an emptied

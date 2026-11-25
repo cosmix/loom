@@ -1,9 +1,8 @@
 use super::*;
 use crate::fs::session_files::save_session;
-use crate::fs::work_dir::write_terminal_config;
 use crate::models::dispute::dispute_dir;
-use crate::models::session::{Session, SessionBackendKind, SessionStatus, TerminalConfig};
-use crate::orchestrator::terminal::native::write_test_pid_identity;
+use crate::models::session::{Session, SessionStatus};
+use crate::orchestrator::terminal::launch::write_test_pid_identity;
 use crate::verify::contracts::store::{attempts_spent, spend_attempt};
 use crate::verify::contracts::test_support::contract_stage;
 use tempfile::TempDir;
@@ -198,14 +197,9 @@ fn test_human_review_approve_refuses_while_a_worker_session_is_live() {
     let temp = TempDir::new().unwrap();
     let work_dir = temp.path();
     setup_stage(&temp, StageStatus::NeedsHumanReview, Some("Agent live"));
-    let tmux = TerminalConfig {
-        backend: SessionBackendKind::Tmux,
-    };
-    write_terminal_config(work_dir, &tmux).unwrap();
     let mut worker = Session::new();
     worker.assign_to_stage("test-stage".to_string());
     worker.status = SessionStatus::Running;
-    worker.backend = SessionBackendKind::Tmux;
     save_session(&worker, work_dir).unwrap();
     write_test_pid_identity(work_dir, &worker, std::process::id()).unwrap();
 
@@ -237,15 +231,10 @@ fn test_human_review_approve_refuses_while_a_merge_resolver_is_live() {
         StageStatus::NeedsHumanReview,
         Some("resolver may run"),
     );
-    let tmux = TerminalConfig {
-        backend: SessionBackendKind::Tmux,
-    };
-    write_terminal_config(work_dir, &tmux).unwrap();
     let mut resolver = Session::new();
     resolver.session_type = crate::models::session::SessionType::Merge;
     resolver.assign_to_stage("test-stage".to_string());
     resolver.status = SessionStatus::Running;
-    resolver.backend = SessionBackendKind::Tmux;
     save_session(&resolver, work_dir).unwrap();
     write_test_pid_identity(work_dir, &resolver, std::process::id()).unwrap();
 

@@ -59,9 +59,9 @@ fn bool_cell_renders_its_glyph_and_an_enum_cell_renders_guillemets() {
     state.cycle(1);
     let rows = screen(&state);
     assert!(contains(&rows, "◯ off"), "{rows:?}");
-    focus_by_name(&mut state, "terminal.backend");
+    focus_by_name(&mut state, "plan.summary_backend");
     let rows = screen(&state);
-    assert!(contains(&rows, "‹ tmux ›"), "{rows:?}");
+    assert!(contains(&rows, "‹ claude ›"), "{rows:?}");
 }
 
 /// The screen names both files and marks the one the keyboard writes, which
@@ -82,7 +82,7 @@ fn the_scope_band_names_both_tiers() {
 /// Saving acts on all staged scopes, including one hidden by the active tab.
 fn assert_hidden_user_save(scratch: Scratch, has_workspace: bool) {
     let mut state = scratch.state();
-    focus_by_name(&mut state, "terminal.backend");
+    focus_by_name(&mut state, "plan.summary_backend");
     state.cycle(1);
     state.toggle_scope();
 
@@ -117,11 +117,11 @@ fn assert_hidden_user_save(scratch: Scratch, has_workspace: bool) {
     );
     assert!(std::fs::read_to_string(scratch.user_config())
         .unwrap()
-        .contains("backend = \"native\""));
+        .contains("summary_backend = \"codex\""));
     if has_workspace {
         assert!(std::fs::read_to_string(scratch.project_config())
             .unwrap()
-            .contains("backend = \"native\""));
+            .contains("summary_backend = \"codex\""));
     }
     assert!(contains(&screen(&state), "s writes: no pending edits"));
 }
@@ -163,18 +163,18 @@ fn the_scope_tabs_survive_narrow_widths() {
 #[test]
 fn the_inspector_survives_a_narrow_frame_as_a_strip() {
     let (_scratch, mut state) = state();
-    focus_by_name(&mut state, "terminal.backend");
+    focus_by_name(&mut state, "plan.summary_backend");
     let rows = screen_sized(&state, 80, 24);
 
     // The strip's own two lines: the help text, then the tiers and the file.
-    assert!(contains(&rows, "Terminal backend loom run"), "{rows:?}");
+    assert!(contains(&rows, "Which agent builds summaries"), "{rows:?}");
     assert!(contains(&rows, "built-in"), "{rows:?}");
     assert!(contains(&rows, "s →"), "{rows:?}");
     // The strip's block is titled with the full dotted key.
-    assert!(contains(&rows, "terminal.backend"), "{rows:?}");
+    assert!(contains(&rows, "plan.summary_backend"), "{rows:?}");
     // The table still shows the key and its value.
-    assert!(contains(&rows, "‹ tmux ›"), "{rows:?}");
-    assert!(contains(&rows, "── terminal"), "{rows:?}");
+    assert!(contains(&rows, "‹ claude ›"), "{rows:?}");
+    assert!(contains(&rows, "── plan"), "{rows:?}");
     // 80 columns still carries every column of the table.
     assert!(contains(&rows, "SOURCE"), "{rows:?}");
     assert!(contains(&rows, "OTHER"), "{rows:?}");
@@ -229,19 +229,19 @@ fn the_longest_key_is_not_truncated_at_eighty_columns() {
 #[test]
 fn a_cramped_frame_drops_columns_rather_than_information() {
     let (_scratch, mut state) = state();
-    focus_by_name(&mut state, "terminal.backend");
+    focus_by_name(&mut state, "plan.summary_backend");
 
     // Inner width 54: past OTHER's floor, still above SOURCE's.
     let rows = screen_sized(&state, 56, 16);
     assert!(contains(&rows, "backend"), "{rows:?}");
-    assert!(contains(&rows, "‹ tmux ›"), "{rows:?}");
+    assert!(contains(&rows, "‹ claude ›"), "{rows:?}");
     assert!(contains(&rows, "SOURCE"), "{rows:?}");
     assert!(!contains(&rows, "OTHER"), "{rows:?}");
 
     // Inner width 46: SOURCE goes too. KEY and VALUE never do.
     let rows = screen_sized(&state, 48, 16);
     assert!(contains(&rows, "backend"), "{rows:?}");
-    assert!(contains(&rows, "‹ tmux ›"), "{rows:?}");
+    assert!(contains(&rows, "‹ claude ›"), "{rows:?}");
     assert!(!contains(&rows, "SOURCE"), "{rows:?}");
     // The logo has collapsed by this height, but the screen still names itself.
     assert!(contains(&rows, "configuration"), "{rows:?}");
@@ -264,7 +264,7 @@ fn strip_rows(state: &ConfigState, width: u16) -> Vec<String> {
 #[test]
 fn the_inspector_strip_never_drops_the_write_segment() {
     let (_scratch, mut state) = state();
-    focus_by_name(&mut state, "terminal.backend");
+    focus_by_name(&mut state, "plan.summary_backend");
 
     for width in [80, 67, 63, 56, 48] {
         let rows = strip_rows(&state, width);
@@ -278,7 +278,7 @@ fn the_inspector_strip_never_drops_the_write_segment() {
 #[test]
 fn built_in_gives_way_before_a_tier_does() {
     let (_scratch, mut state) = state();
-    focus_by_name(&mut state, "terminal.backend");
+    focus_by_name(&mut state, "plan.summary_backend");
 
     let widest_without_built_in = (40..=100)
         .rev()

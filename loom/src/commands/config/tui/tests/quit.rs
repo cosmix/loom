@@ -42,7 +42,7 @@ fn quitting_is_refused_once_while_edits_are_staged() {
 #[test]
 fn an_intervening_key_re_arms_the_quit_warning() {
     let (_scratch, mut state) = state();
-    focus_by_name(&mut state, "terminal.backend");
+    focus_by_name(&mut state, "plan.summary_backend");
     state.cycle(1);
 
     assert!(!dispatch_key(
@@ -73,7 +73,7 @@ fn an_intervening_key_re_arms_the_quit_warning() {
 #[test]
 fn escape_dismisses_an_armed_quit_warning_instead_of_confirming_it() {
     let (_scratch, mut state) = state();
-    focus_by_name(&mut state, "terminal.backend");
+    focus_by_name(&mut state, "plan.summary_backend");
     state.cycle(1);
 
     assert!(!dispatch_key(
@@ -116,7 +116,7 @@ fn escape_behaves_like_q_when_nothing_is_armed() {
     }
     {
         let (_scratch, mut state) = state();
-        focus_by_name(&mut state, "terminal.backend");
+        focus_by_name(&mut state, "plan.summary_backend");
         state.cycle(1);
         assert!(!dispatch_key(
             &mut state,
@@ -131,7 +131,7 @@ fn escape_behaves_like_q_when_nothing_is_armed() {
 #[test]
 fn a_save_stops_the_quit_warning() {
     let (_scratch, mut state) = state();
-    focus_by_name(&mut state, "terminal.backend");
+    focus_by_name(&mut state, "plan.summary_backend");
     state.cycle(1);
     state.save();
 
@@ -142,7 +142,7 @@ fn a_save_stops_the_quit_warning() {
 #[test]
 fn ctrl_c_quits_even_with_edits_staged() {
     let (_scratch, mut state) = state();
-    focus_by_name(&mut state, "terminal.backend");
+    focus_by_name(&mut state, "plan.summary_backend");
     state.cycle(1);
 
     assert!(dispatch_key(

@@ -13,17 +13,8 @@ fn stub_stage(id: &str, status: StageStatus) -> Stage {
 }
 
 #[test]
-fn attach_rejection_reason_names_a_non_tmux_backend() {
-    let mut session = stub_session("session-a", "stage-x", Utc::now());
-    session.backend = SessionBackendKind::Native;
-    let reason = attach_rejection_reason(&session, |_| Ok(true));
-    assert_eq!(reason, "backend is native");
-}
-
-#[test]
 fn attach_rejection_reason_names_a_non_live_status() {
     let mut session = stub_session("session-a", "stage-x", Utc::now());
-    session.backend = SessionBackendKind::Tmux;
     session.status = SessionStatus::Completed;
     let reason = attach_rejection_reason(&session, |_| Ok(true));
     assert_eq!(reason, "status is Completed");
@@ -32,7 +23,6 @@ fn attach_rejection_reason_names_a_non_live_status() {
 #[test]
 fn attach_rejection_reason_names_a_dead_process() {
     let mut session = stub_session("session-a", "stage-x", Utc::now());
-    session.backend = SessionBackendKind::Tmux;
     session.status = SessionStatus::Running;
     let reason = attach_rejection_reason(&session, |_| Ok(false));
     assert_eq!(reason, "process is not running");
@@ -41,13 +31,12 @@ fn attach_rejection_reason_names_a_dead_process() {
 #[test]
 fn attach_rejection_reason_names_a_missing_tracking_key() {
     // Alive-with-no-tracking-key cannot occur for real: both derive from the
-    // same `window_title_and_pid_key` call (see `viewer::tmux_session_name`'s
+    // same `tracking_and_pid_key` call (see `viewer::tmux_session_name`'s
     // doc comment). This proves the defensive branch still explains itself
     // instead of silently misreporting the session as live if that
     // invariant is ever broken.
     let mut session = Session::new();
     session.id = "session-a".to_string();
-    session.backend = SessionBackendKind::Tmux;
     session.status = SessionStatus::Running;
     let reason = attach_rejection_reason(&session, |_| Ok(true));
     assert_eq!(reason, "no tracking key");

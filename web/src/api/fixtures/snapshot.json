@@ -39,8 +39,7 @@
         "incoherence": null,
         "execution_models": [],
         "dispute_count": 0,
-        "judge_heartbeat_secs": null,
-        "session_backend": null
+        "judge_heartbeat_secs": null
       },
       {
         "id": "server",
@@ -107,8 +106,7 @@
         "incoherence": null,
         "execution_models": ["sonnet/medium", "gpt-6.1-terra/xhigh (requested)"],
         "dispute_count": 0,
-        "judge_heartbeat_secs": null,
-        "session_backend": "native"
+        "judge_heartbeat_secs": null
       },
       {
         "id": "client",
@@ -169,8 +167,7 @@
         "incoherence": null,
         "execution_models": [],
         "dispute_count": 0,
-        "judge_heartbeat_secs": null,
-        "session_backend": null
+        "judge_heartbeat_secs": null
       },
       {
         "id": "design",
@@ -210,8 +207,7 @@
         "incoherence": null,
         "execution_models": [],
         "dispute_count": 0,
-        "judge_heartbeat_secs": null,
-        "session_backend": null
+        "judge_heartbeat_secs": null
       },
       {
         "id": "docs",
@@ -252,7 +248,6 @@
         "execution_models": [],
         "dispute_count": 0,
         "judge_heartbeat_secs": null,
-        "session_backend": "tmux",
         "merge_resolver_session": "session-3f9a2c1e-1788720000",
         "merge_resolver_attempts": 1
       },
@@ -294,8 +289,7 @@
         "incoherence": null,
         "execution_models": [],
         "dispute_count": 2,
-        "judge_heartbeat_secs": 40,
-        "session_backend": null
+        "judge_heartbeat_secs": 40
       },
       {
         "id": "knowledge-distill",
@@ -335,8 +329,7 @@
         "incoherence": null,
         "execution_models": [],
         "dispute_count": 0,
-        "judge_heartbeat_secs": null,
-        "session_backend": null
+        "judge_heartbeat_secs": null
       },
       {
         "id": "merge-gate",
@@ -377,8 +370,7 @@
         "incoherence": null,
         "execution_models": [],
         "dispute_count": 0,
-        "judge_heartbeat_secs": null,
-        "session_backend": null
+        "judge_heartbeat_secs": null
       },
       {
         "id": "local-runtime",
@@ -419,7 +411,6 @@
         "execution_models": [],
         "dispute_count": 0,
         "judge_heartbeat_secs": null,
-        "session_backend": "tmux",
         "close_reason": "Adjudicator needs an unsandboxed run only the operator can do. From the worktree root run: TROOFOO_STACK=ephemeral bun run stack:ephemeral --with objectstore -- bun test packages/storage packages/db/src/ephemeral-services; report exit code, test summary, and .stack/objectstore.log on failure. Criterion 5 (stack:ephemeral --with objectstore) cannot pass in this sandbox: it denies AF_UNIX socket creation everywhere.\nOr allow AF_UNIX for this stage. All work committed; 0 open findings.",
         "acceptance": [
           "cargo build",

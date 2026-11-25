@@ -73,13 +73,10 @@ impl BoundedOutput {
 /// output, while the daemon's socket thread keeps answering `loom status`
 /// as if everything were healthy.
 ///
-/// Window management is the dangerous case. On macOS `osascript` sends an
+/// Desktop notification is the dangerous case. On macOS `osascript` sends an
 /// Apple Event and blocks with no timeout of its own: a TCC Automation
-/// prompt (which a detached daemon cannot surface), a terminal-side modal,
-/// or an unresponsive terminal app all park the call indefinitely. Linux is
-/// less exposed — the `wmctrl`/`xdotool` paths are `which`-guarded and no-op
-/// when the tools are absent — but an unresponsive X server can stall them
-/// the same way.
+/// prompt (which a detached daemon cannot surface) or an unresponsive app
+/// parks the call indefinitely.
 ///
 /// Every external command issued from the orchestrator loop must therefore be
 /// bounded. A timed-out teardown is a warning; an unbounded one is a hang.

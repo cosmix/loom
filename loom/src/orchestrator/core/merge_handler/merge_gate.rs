@@ -20,7 +20,7 @@ use crate::models::session::{Session, SessionExitReason, SessionStatus, SessionT
 use crate::orchestrator::core::recovery_guards::launch_too_young_to_judge;
 use crate::orchestrator::core::Orchestrator;
 use crate::orchestrator::signals::remove_signal;
-use crate::orchestrator::terminal::native::{session_process_status, SessionProcessStatus};
+use crate::orchestrator::terminal::launch::{session_process_status, SessionProcessStatus};
 
 impl Orchestrator {
     /// The control paths `is_control_path` matches, worded for operator

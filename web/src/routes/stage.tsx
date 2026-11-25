@@ -5,7 +5,6 @@ import { Link, useNavigate, useParams } from "react-router";
 import type { StageSummary } from "@/api/schema";
 import { EmptyState } from "@/aurora-ui/feedback/EmptyState";
 
-import { CopyCommand } from "@/components/copy-command";
 import { StageHeading } from "@/components/stage-heading";
 import { ThreadChips } from "@/components/stage-thread";
 import { stageHref } from "@/components/stage-href";
@@ -73,9 +72,6 @@ function StageActions({ stage, terminals }: { stage: StageSummary; terminals: bo
           <TerminalMark className="size-3.5" />
           Terminal
         </Button>
-      )}
-      {terminals && stage.session_backend === "native" && (
-        <CopyCommand command="loom run --backend tmux" />
       )}
     </div>
   );

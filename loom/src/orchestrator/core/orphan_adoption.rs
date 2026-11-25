@@ -303,7 +303,6 @@ impl Orchestrator {
             stage_id = %evidence.stage_id,
             session_id = %session.id,
             pid = evidence.pid,
-            backend = %evidence.backend,
             "Adopted a live agent that had no session record; it is attachable again"
         );
         self.active_sessions

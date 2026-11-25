@@ -11,7 +11,6 @@ export const runOfferSchema = z.enum([
   "resume",
   "start_next",
 ]);
-export const backendSchema = z.enum(["tmux", "native"]);
 export const runJobSchema = z.enum(["commit", "start", "abandon", "finish_abandon", "dashboard"]);
 export const outputStreamSchema = z.enum(["stdout", "stderr"]);
 
@@ -38,8 +37,6 @@ export const runStateSchema = z.strictObject({
   branch: z.string(),
   doc_changes: z.array(changedPathSchema),
   blocking_changes: z.array(changedPathSchema),
-  backends: z.array(backendSchema),
-  default_backend: backendSchema,
   clean_notice: z.boolean(),
   abandon: abandonViewSchema.nullable(),
   finish_abandon: z.string().nullable(),
@@ -52,7 +49,6 @@ export const commitRequestSchema = z.strictObject({
 });
 export const runStartRequestSchema = z.strictObject({
   plan: z.string(),
-  backend: backendSchema,
   clean: z.boolean(),
 });
 export const abandonRequestSchema = z.strictObject({
@@ -82,7 +78,6 @@ export const runMessageSchemas = [
 
 export type WorkspaceState = z.infer<typeof workspaceStateSchema>;
 export type RunOffer = z.infer<typeof runOfferSchema>;
-export type Backend = z.infer<typeof backendSchema>;
 export type RunJob = z.infer<typeof runJobSchema>;
 export type OutputStream = z.infer<typeof outputStreamSchema>;
 export type PlanChoice = z.infer<typeof planChoiceSchema>;

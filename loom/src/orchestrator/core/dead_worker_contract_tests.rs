@@ -10,20 +10,17 @@ use serial_test::serial;
 use tempfile::TempDir;
 
 use crate::fs::session_files::save_session;
-use crate::fs::work_dir::write_terminal_config;
-use crate::models::session::{Session, SessionBackendKind, SessionStatus, TerminalConfig};
+use crate::models::session::{Session, SessionStatus};
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::core::{Orchestrator, OrchestratorConfig};
 use crate::orchestrator::liveness::LivenessService;
-use crate::orchestrator::terminal::native::{wrapper_script_path, NativeBackend};
+use crate::orchestrator::terminal::launch::{tracking_and_pid_key, wrapper_script_path};
 use crate::plan::{schema::StageDefinition, ExecutionGraph};
 use crate::verify::transitions::{load_stage, save_stage};
 
 fn work_dir(temp: &TempDir) -> PathBuf {
     let work_dir = temp.path().join(".loom").join("work");
     std::fs::create_dir_all(&work_dir).unwrap();
-    let backend = SessionBackendKind::Tmux;
-    write_terminal_config(&work_dir, &TerminalConfig { backend }).unwrap();
     work_dir
 }
 
@@ -131,7 +128,7 @@ fn a_young_spawning_record_is_retired_on_a_later_pass() {
     session.assign_to_stage("alpha".to_string());
     save_session(&session, &work).unwrap();
     stage_under(&work, "alpha", StageStatus::Executing, &session.id);
-    let (_, pid_key) = NativeBackend::window_title_and_pid_key(&session).unwrap();
+    let (_, pid_key) = tracking_and_pid_key(&session).unwrap();
     let wrapper = wrapper_script_path(&work, &pid_key);
     std::fs::create_dir_all(wrapper.parent().unwrap()).unwrap();
     std::fs::write(&wrapper, "").unwrap();

@@ -143,7 +143,7 @@ fn a_write_without_a_csrf_token_is_refused() {
     let missing = post(
         port,
         "Origin: http://localhost\r\nContent-Type: application/json\r\n",
-        r#"{"scope":"project","name":"terminal.backend","value":"tmux"}"#,
+        r#"{"scope":"project","name":"plan.summary_backend","value":"codex"}"#,
     );
     let wrong = post(
         port,
@@ -151,7 +151,7 @@ fn a_write_without_a_csrf_token_is_refused() {
             "Origin: http://localhost\r\nContent-Type: application/json\r\nX-Loom-Csrf: {}\r\n",
             "0".repeat(64)
         ),
-        r#"{"scope":"project","name":"terminal.backend","value":"tmux"}"#,
+        r#"{"scope":"project","name":"plan.summary_backend","value":"codex"}"#,
     );
     stop(running);
     for response in [&missing, &wrong] {
@@ -173,7 +173,7 @@ fn a_write_must_declare_a_json_body() {
             "Origin: http://localhost\r\nContent-Type: text/plain\r\nX-Loom-Csrf: {}\r\n",
             token()
         ),
-        r#"{"scope":"project","name":"terminal.backend","value":"tmux"}"#,
+        r#"{"scope":"project","name":"plan.summary_backend","value":"codex"}"#,
     );
     stop(running);
     assert!(response.starts_with("HTTP/1.1 415"), "{response}");
@@ -227,7 +227,7 @@ fn a_lying_content_length_does_not_widen_what_is_read() {
     }
     let (_temp, base) = workspace();
     let (port, running) = start(base);
-    let payload = r#"{"scope":"project","name":"terminal.backend","value":"tmux"}"#;
+    let payload = r#"{"scope":"project","name":"plan.summary_backend","value":"codex"}"#;
     let head = format!(
         "POST /api/config HTTP/1.1\r\nHost: localhost\r\n{}Content-Length: {}\r\n\r\n",
         valid_headers(),
@@ -245,7 +245,7 @@ fn a_lying_content_length_does_not_widen_what_is_read() {
     let _ = std::io::Read::read_to_string(&mut stream, &mut response);
     stop(running);
     assert!(response.starts_with("HTTP/1.1 200"), "{response}");
-    assert!(body(&response).contains("\"new\":\"tmux\""), "{response}");
+    assert!(body(&response).contains("\"new\":\"codex\""), "{response}");
 }
 
 #[test]

@@ -10,7 +10,7 @@ use super::tests::{
 use super::*;
 use crate::fs::session_files::save_session;
 use crate::models::session::{Session, SessionExitReason, SessionStatus};
-use crate::orchestrator::terminal::native::write_test_pid_identity;
+use crate::orchestrator::terminal::launch::write_test_pid_identity;
 use crate::test_stand_in::{orphan, require_orphan_signals};
 use crate::verify::transitions::{load_stage, update_stage};
 use std::path::Path;

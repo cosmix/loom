@@ -6,11 +6,10 @@ use std::collections::HashSet;
 use std::path::Path;
 use std::time::SystemTime;
 
-use crate::models::session::{Session, SessionBackendKind, SessionType};
+use crate::models::session::{Session, SessionType};
 use crate::process::{verify_process_identity, IdentityStatus};
 
-use crate::orchestrator::terminal::native::read_pid_entry;
-use crate::orchestrator::terminal::tmux::socket_path_for;
+use crate::orchestrator::terminal::launch::read_pid_entry;
 
 use super::OrphanEvidence;
 
@@ -49,12 +48,6 @@ pub(super) fn orphan_candidate(
         return None;
     }
 
-    let backend = if socket_path_for(&format!("loom-{session_id}")).exists() {
-        SessionBackendKind::Tmux
-    } else {
-        SessionBackendKind::Native
-    };
-
     Some((
         OrphanEvidence {
             session_id: session_id.to_string(),
@@ -62,7 +55,6 @@ pub(super) fn orphan_candidate(
             tracking_key,
             session_type: kind,
             pid: identity.pid,
-            backend,
         },
         mtime,
     ))

@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 
 use crate::models::session::Session;
 
-use super::native::pid_only_is_alive;
+use super::launch::pid_only_is_alive;
 
 /// The tmux socket directory tmux itself would use: `$TMUX_TMPDIR` if set,
 /// else `/tmp`, joined with `tmux-<uid>`.
@@ -93,8 +93,7 @@ pub fn list_loom_sockets(work_dir: &Path) -> Vec<LoomSocket> {
 /// Whether the session recorded at `<work_dir>/sessions/<session_id>.md` is
 /// still alive, using the SAME PID layers as
 /// [`super::TmuxBackend::is_session_alive`] — but as a free function that
-/// needs neither a `TmuxBackend` nor a working terminal. `loom clean` runs
-/// headless, where terminal detection can fail; this must not depend on it.
+/// needs no `TmuxBackend`, so `loom clean` can call it directly.
 ///
 /// Returns `false` only when the session file is ABSENT (nothing to be alive)
 /// or the PID evidence positively says dead.
@@ -326,8 +325,7 @@ pub(crate) mod tests {
         session.pid = Some(999_999_999);
         crate::fs::session_files::save_session(&session, work.path()).unwrap();
 
-        let (_, pid_key) =
-            super::super::native::NativeBackend::window_title_and_pid_key(&session).unwrap();
+        let (_, pid_key) = super::super::launch::tracking_and_pid_key(&session).unwrap();
         std::fs::create_dir_all(work.path().join("pids")).unwrap();
         let pid_file = work.path().join("pids").join(format!("{pid_key}.pid"));
         std::fs::write(&pid_file, "999999999\n").unwrap();

@@ -4,16 +4,14 @@
 #[path = "pressure_pipeline_contracts/support.rs"]
 mod support;
 
-use loom::process::sandbox_probe::skip_without_plan_locks;
-use std::fs;
-use std::os::unix::fs::PermissionsExt;
-use std::path::Path;
-
-use loom::models::session::SessionBackendKind;
 use loom::pressure::record::{append_record, append_to_text, RecordWrite};
 use loom::pressure::{
     completion_instruction, run_pipeline, MarkerHome, PipelineInput, PipelineOutcome,
 };
+use loom::process::sandbox_probe::skip_without_plan_locks;
+use std::fs;
+use std::os::unix::fs::PermissionsExt;
+use std::path::Path;
 use support::{
     date, git_repo_with_plan, record_line, run_loom, Call, FakeDriver, END_MARKER, MINIMAL_PLAN,
 };
@@ -273,9 +271,4 @@ fn dry_run_lists_the_record_step() {
         first_delete < record && record < last_delete,
         "record step is not between initial and final report cleanup: {stdout}"
     );
-}
-
-#[test]
-fn builtin_backend_default_is_tmux() {
-    assert_eq!(SessionBackendKind::default(), SessionBackendKind::Tmux);
 }

@@ -15,7 +15,7 @@ use crate::orchestrator::session_registry::{
     identityless_record_is_dead, in_progress_sessions_for_stage, Admission,
 };
 use crate::orchestrator::terminal::backend::SessionBackend;
-use crate::orchestrator::terminal::native::{session_process_status, SessionProcessStatus};
+use crate::orchestrator::terminal::launch::{session_process_status, SessionProcessStatus};
 use crate::orchestrator::DEFAULT_KILL_CONFIRM_TIMEOUT;
 use crate::verify::transitions::{load_stage, update_stage};
 
@@ -41,13 +41,13 @@ pub(super) trait ResetRuntime {
 }
 
 pub(super) struct OsRuntime {
-    backend: Option<SessionBackend>,
+    backend: SessionBackend,
 }
 
 impl OsRuntime {
     pub(super) fn new(work_dir: &Path) -> Self {
         Self {
-            backend: SessionBackend::from_config(work_dir.to_path_buf()).ok(),
+            backend: SessionBackend::new(work_dir.to_path_buf()),
         }
     }
 }
@@ -63,15 +63,8 @@ impl ResetRuntime for OsRuntime {
             && !identityless_record_is_dead(work_dir, &session, Admission::Held, Utc::now())
     }
 
-    fn is_alive(&self, work_dir: &Path, agent: &LiveAgent) -> Result<bool> {
-        let session = agent_session(agent);
-        match &self.backend {
-            Some(backend) => backend.is_session_alive(&session),
-            None => Ok(matches!(
-                session_process_status(work_dir, &session),
-                SessionProcessStatus::VerifiedAlive | SessionProcessStatus::Unverifiable
-            )),
-        }
+    fn is_alive(&self, _work_dir: &Path, agent: &LiveAgent) -> Result<bool> {
+        self.backend.is_session_alive(&agent_session(agent))
     }
 
     fn wait(&self) {
@@ -326,7 +319,6 @@ fn agent_session(agent: &LiveAgent) -> Session {
             session.stage_id = Some(evidence.stage_id.clone());
             session.tracking_key = evidence.tracking_key.clone();
             session.session_type = evidence.session_type;
-            session.backend = evidence.backend;
             session.pid = Some(evidence.pid);
             session
         }

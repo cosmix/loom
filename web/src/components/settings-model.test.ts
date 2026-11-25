@@ -22,10 +22,9 @@ const fixture = configResponseSchema.parse(fixtureJson);
 describe("sectionRows", () => {
   const sections = sectionRows(fixture.entries);
 
-  it("groups the fixture into seven sections in registry order", () => {
+  it("groups the fixture into six sections in registry order", () => {
     expect(sections.map((s) => s.section)).toEqual([
       "update",
-      "terminal",
       "context",
       "pressure",
       "models",
@@ -34,15 +33,14 @@ describe("sectionRows", () => {
     ]);
   });
 
-  it("keeps update and terminal/context as single rows, sized as expected", () => {
+  it("keeps update and context as single rows, sized as expected", () => {
     expect(sections[0]?.rows).toHaveLength(2);
     expect(sections[0]?.rows.every((row) => row.kind === "single")).toBe(true);
     expect(sections[1]?.rows).toHaveLength(1);
-    expect(sections[2]?.rows).toHaveLength(1);
   });
 
   it("pairs pressure into three rows labelled claude, codex, address with their captions, then the rounds key", () => {
-    const pressure = sections[3];
+    const pressure = sections[2];
     expect(pressure?.rows).toHaveLength(4);
     expect(pressure?.rows[3]?.kind).toBe("single");
     const pairs = (pressure?.rows ?? []).slice(0, 3) as PairRow[];
@@ -56,7 +54,7 @@ describe("sectionRows", () => {
   });
 
   it("pairs models into six rows plus a single follow-up model row", () => {
-    const models = sections[4];
+    const models = sections[3];
     expect(models?.rows).toHaveLength(7);
     expect(models?.rows.map((row) => rowLabel(row))).toEqual([
       "standard",
@@ -72,7 +70,7 @@ describe("sectionRows", () => {
   });
 
   it("pairs plan into six rows", () => {
-    const plan = sections[5];
+    const plan = sections[4];
     expect(plan?.rows).toHaveLength(6);
     expect(plan?.rows.map((row) => rowLabel(row))).toEqual([
       "document_summary",
@@ -117,7 +115,7 @@ describe("sectionRows", () => {
 
   it("titles a section from SECTION_TITLES, else from its prefix", () => {
     expect(sections.find((s) => s.section === "models")?.title).toBe("stage sessions");
-    expect(sections.find((s) => s.section === "terminal")?.title).toBe("terminal");
+    expect(sections.find((s) => s.section === "context")?.title).toBe("context");
   });
 });
 

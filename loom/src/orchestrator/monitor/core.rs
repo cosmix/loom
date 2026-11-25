@@ -107,7 +107,7 @@ impl Monitor {
     pub fn new(mut config: MonitorConfig) -> Self {
         // Resolve the plan-wide ceilings once, here, rather than re-reading
         // `.loom/work/config.toml` for every session on every tick. Operators edit
-        // the section between runs, exactly like `[terminal]`.
+        // the section between runs.
         config.context =
             crate::fs::work_dir::read_context_config(&config.work_dir).unwrap_or_default();
 
@@ -126,7 +126,7 @@ impl Monitor {
     }
 
     /// Attach the [`LivenessService`] to the monitor. The orchestrator calls this
-    /// once the `NativeBackend` is constructed; until then,
+    /// once the session backend is constructed; until then,
     /// `check_session_alive` returns an unknown result.
     pub fn set_liveness(&mut self, liveness: LivenessService) {
         self.handlers.set_liveness(liveness);

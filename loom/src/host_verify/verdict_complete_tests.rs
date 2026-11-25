@@ -7,13 +7,11 @@
 use chrono::Utc;
 
 use super::{latest_completion_head, submit_verdict_completion, VerdictStart, STAGE_BOUND_SESSION};
-use crate::fs::work_dir::write_terminal_config;
 use crate::host_verify::apply::{self, Applied, APPLIED_MARKER};
 use crate::host_verify::tests_complete_support::{ignored, Fixture, STAGE};
 use crate::host_verify::{
     apply_retry, runner, store, CriterionOutcome, JobKind, JobRecord, JobResult, JobState,
 };
-use crate::models::session::{SessionBackendKind, TerminalConfig};
 use crate::models::stage::{StageStatus, StageType};
 use crate::orchestrator::adjudication::feedback;
 use crate::orchestrator::core::{Orchestrator, OrchestratorConfig};
@@ -276,14 +274,8 @@ fn giving_up_on_the_application_hands_the_stage_back() {
     );
 }
 
-/// An orchestrator over the fixture on the tmux lane. Its terminal section
-/// goes into `config.toml`, which the completion policy digests, so build it
-/// before saving a run whose policy must still match.
+/// An orchestrator over the fixture.
 fn orchestrator(fx: &Fixture) -> Orchestrator {
-    let tmux = TerminalConfig {
-        backend: SessionBackendKind::Tmux,
-    };
-    write_terminal_config(&fx.work_dir, &tmux).expect("write the terminal config");
     let config = OrchestratorConfig {
         work_dir: fx.work_dir.clone(),
         repo_root: fx.repo.clone(),

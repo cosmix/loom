@@ -18,7 +18,7 @@ const fixture = snapshotSchema.parse(fixtureJson);
 function terminalStage(): StageSummary {
   const source = fixture.status.stages.find((stage) => stage.id === "client");
   if (!source) throw new Error("fixture stage client is missing");
-  return { ...source, session_alive: true, session_backend: "tmux" };
+  return { ...source, session_alive: true };
 }
 
 function snapshotFor(stage: StageSummary): Snapshot {

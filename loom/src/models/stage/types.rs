@@ -159,7 +159,7 @@ pub struct RegressionTest {
 }
 
 /// Allowed values for `reasoning_effort` on a stage: the set Claude Code accepts on its CLI.
-/// A new value needs a matching change in `native/mod.rs`, which passes it as `--effort <value>`.
+/// A new value needs a matching change in `launch/mod.rs`, which passes it as `--effort <value>`.
 pub const ALLOWED_REASONING_EFFORTS: &[&str] = &["low", "medium", "high", "xhigh", "max"];
 
 /// A structured output from a completed stage that can be passed to dependent stages.

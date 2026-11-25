@@ -70,7 +70,7 @@ fn init_clean_refuses_a_cyclic_plan_and_keeps_the_old_run() {
     let plan = cyclic_plan(&repo.root);
     let _cwd = CwdGuard::enter(&repo.root);
 
-    let error = execute(Some(plan), true, None, true).unwrap_err();
+    let error = execute(Some(plan), true, true).unwrap_err();
 
     assert!(
         format!("{error:#}").contains("Circular dependency detected"),
@@ -97,7 +97,7 @@ fn init_clean_from_a_subdirectory_refuses_like_the_root_does() {
     std::fs::create_dir_all(&subdirectory).unwrap();
     let _cwd = CwdGuard::enter(&subdirectory);
 
-    let error = execute(None, true, None, true).unwrap_err().to_string();
+    let error = execute(None, true, true).unwrap_err().to_string();
 
     assert!(error.contains("Stop all sessions"), "{error}");
     assert_eq!(
@@ -149,7 +149,7 @@ fn init_clean_refuses_through_execute_and_deletes_nothing() {
     let record = std::fs::read(repo.work.join(RECORD_FILE)).unwrap();
     let _cwd = CwdGuard::enter(&repo.root);
 
-    let error = execute(None, true, None, true).unwrap_err().to_string();
+    let error = execute(None, true, true).unwrap_err().to_string();
 
     assert!(
         error.contains("the target branch main has a move loom did not accept"),
@@ -175,7 +175,7 @@ fn init_refuses_unanchored_existing_sessions_without_deleting_them() {
     std::fs::write(&session, "preserve session").unwrap();
     let _cwd = CwdGuard::enter(&repo.root);
 
-    let error = execute(None, true, None, true).unwrap_err().to_string();
+    let error = execute(None, true, true).unwrap_err().to_string();
     assert!(error.contains("Stop all sessions"), "{error}");
     assert_eq!(
         std::fs::read_to_string(session).unwrap(),

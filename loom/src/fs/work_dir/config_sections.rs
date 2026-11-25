@@ -35,7 +35,6 @@ mod codex_config;
 mod models_config;
 mod plan_config;
 mod pressure_config;
-mod terminal_config;
 
 pub(crate) use models_config::ModelsConfig;
 
@@ -46,7 +45,6 @@ pub use models_config::{
 };
 pub use plan_config::{read_plan_config, PlanConfig};
 pub use pressure_config::{read_pressure_config, PressureConfig};
-pub use terminal_config::{read_terminal_config, write_terminal_config};
 
 const PLAN_SANDBOX_SECTION: &str = "plan_sandbox";
 const REMOTE_CONTROL_SECTION: &str = "remote_control";
@@ -195,7 +193,7 @@ fn write_section<T: serde::Serialize>(work_dir: &Path, section: &str, value: &T)
 ///
 /// `[context]` has more than one owner: [`ContextConfig`] writes the two
 /// ceilings, while `prompt_cache_split` is read straight from the document by
-/// `native::launch::prompt_cache_split_enabled` and belongs to no struct at
+/// `launch::prepare::prompt_cache_split_enabled` and belongs to no struct at
 /// all. Replacing that table on a re-init would silently switch prompt cache
 /// splitting back off. Single-owner sections keep using [`write_section`],
 /// whose replace semantics are what they want.
@@ -263,7 +261,7 @@ pub fn insert_key(
 ///
 /// Every workspace-backed key falls through to `~/.loom/config.toml`, then
 /// the built-in, when the project's own file does not set it (see
-/// [`read_context_config`], [`read_terminal_config`]) — so a keyless section
+/// [`read_context_config`]) — so a keyless section
 /// changes nothing. Dropping it once empty is tidiness: it keeps
 /// `.work/config.toml` from accumulating bracket headers that say nothing.
 ///

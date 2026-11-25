@@ -23,11 +23,11 @@ fn a_live_merge_resolver_is_automatic_with_no_command() {
 }
 
 #[test]
-fn a_working_tmux_resolver_says_how_to_look_at_it() {
+fn a_working_resolver_with_a_live_session_says_how_to_look_at_it() {
     let mut stage = make_stage_summary("docs", StageStatus::MergeConflict);
     stage.merge_resolver_session = Some("session-abc".to_string());
     stage.merge_resolver_attempts = Some(1);
-    stage.session_backend = Some(SessionBackendKind::Tmux);
+    stage.session_alive = true;
 
     let entry = entry_for(stage);
 
@@ -49,7 +49,7 @@ fn a_resolver_with_no_recent_tool_call_is_not_automatic_and_says_to_look_first()
     let mut stage = make_stage_summary("docs", StageStatus::MergeConflict);
     stage.merge_resolver_session = Some("session-abc".to_string());
     stage.merge_resolver_attempts = Some(1);
-    stage.session_backend = Some(SessionBackendKind::Native);
+    stage.session_alive = true;
     stage.activity_status = ActivityStatus::Stale;
     stage.staleness_secs = Some(12 * 60 + 5);
 
@@ -63,9 +63,9 @@ fn a_resolver_with_no_recent_tool_call_is_not_automatic_and_says_to_look_first()
             Some(
                 "merge resolver session-abc has shown no progress for 12 min and has not run loom \
                  stage merge docs --resolved: it may be inside one long command or may have \
-                 stopped (attempt 1 of 6). Look first: look for terminal window loom-v2-merge-docs \
-                 (or loom-merge-docs for an older session). Only if it is stuck, loom sessions kill session-abc ends it and \
-                 the daemon starts the next attempt"
+                 stopped (attempt 1 of 6). Look first: run loom attach docs to watch it, or open \
+                 the stage's terminal in the web UI. Only if it is stuck, loom sessions kill \
+                 session-abc ends it and the daemon starts the next attempt"
             ),
             false
         )

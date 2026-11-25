@@ -107,7 +107,7 @@ impl Orchestrator {
 /// silent skip: spawning without them would run the agent unguarded.
 ///
 /// Every session now launches from a per-session capsule
-/// (`native/session_settings.rs`) that embeds the hooks configuration
+/// (`launch/session_settings.rs`) that embeds the hooks configuration
 /// itself, so this no longer writes `.claude/settings.local.json` — it only
 /// refuses the spawn when the directory backing those hooks is missing.
 pub(super) fn install_required_hooks(

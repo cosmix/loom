@@ -8,11 +8,10 @@ use super::super::event_handler::EventHandler;
 use super::super::merge_handler::with_read_only_stages;
 use super::super::{Orchestrator, OrchestratorConfig};
 use crate::fs::session_files::{load_session_exact, save_session};
-use crate::fs::work_dir::write_terminal_config;
-use crate::models::session::{Session, SessionBackendKind, SessionStatus, TerminalConfig};
+use crate::models::session::{Session, SessionStatus};
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::monitor::MonitorEvent;
-use crate::orchestrator::terminal::native::write_test_pid_identity;
+use crate::orchestrator::terminal::launch::write_test_pid_identity;
 use crate::plan::ExecutionGraph;
 use crate::verify::transitions::{load_stage, save_stage, update_stage};
 
@@ -35,11 +34,8 @@ fn running_stage_as(mut session: Session) -> (TempDir, Orchestrator, Session) {
     let temp = TempDir::new().unwrap();
     let work = temp.path().join(".loom").join("work");
     std::fs::create_dir_all(&work).unwrap();
-    let backend = SessionBackendKind::Tmux;
-    write_terminal_config(&work, &TerminalConfig { backend }).unwrap();
     session.assign_to_stage(STAGE.to_string());
     session.status = SessionStatus::Running;
-    session.backend = backend;
     save_session(&session, &work).unwrap();
     write_test_pid_identity(&work, &session, std::process::id()).unwrap();
     let mut stage = Stage::new(STAGE.to_string(), None);
@@ -154,11 +150,8 @@ fn a_contract_writers_exit_is_never_redelivered_as_a_crash() {
     let temp = TempDir::new().unwrap();
     let work = temp.path().join(".loom").join("work");
     std::fs::create_dir_all(&work).unwrap();
-    let backend = SessionBackendKind::Tmux;
-    write_terminal_config(&work, &TerminalConfig { backend }).unwrap();
     let mut writer = Session::new_contract(STAGE);
     writer.status = SessionStatus::Running;
-    writer.backend = backend;
     save_session(&writer, &work).unwrap();
     write_test_pid_identity(&work, &writer, std::process::id()).unwrap();
     let mut stage = Stage::new(STAGE.to_string(), None);

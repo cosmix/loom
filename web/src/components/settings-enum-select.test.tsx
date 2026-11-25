@@ -10,16 +10,16 @@ afterEach(() => {
 function renderEnumSelect() {
   render(
     <ValueControl
-      id="terminal-backend"
-      kind={{ type: "enum", variants: ["native", "tmux"] }}
+      id="summary-backend"
+      kind={{ type: "enum", variants: ["claude", "codex"] }}
       value="screen"
       pending={false}
       invalid={false}
-      label="backend at user scope"
+      label="summary_backend at user scope"
       onCommit={vi.fn()}
     />,
   );
-  return { select: screen.getByRole("combobox", { name: "backend at user scope" }) };
+  return { select: screen.getByRole("combobox", { name: "summary_backend at user scope" }) };
 }
 
 describe("EnumSelect", () => {
@@ -28,6 +28,6 @@ describe("EnumSelect", () => {
 
     expect(select).toHaveProperty("value", "screen");
     const options = Array.from(select.querySelectorAll("option")).map((option) => option.value);
-    expect(options).toStrictEqual(["screen", "native", "tmux"]);
+    expect(options).toStrictEqual(["screen", "claude", "codex"]);
   });
 });

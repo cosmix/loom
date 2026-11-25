@@ -41,8 +41,7 @@ pub(super) fn stage_local_runtime() -> StageSummary {
         None,
         empty,
         0,
-        None,
-        Some(SessionBackendKind::Tmux)
+        None
     );
     stage.close_reason = Some(REASON.to_owned());
     stage.acceptance = [

@@ -2,8 +2,8 @@
 //!
 //! Never reads or writes a workspace config: this command needs no git repo
 //! and no `.loom/work/`. The workspace fallback tier that makes
-//! `terminal.backend`/`context.ceiling_tokens` visible to `loom run` lives in
-//! `crate::fs::work_dir::read_terminal_config`/`read_context_config`, on the
+//! `context.ceiling_tokens` visible to `loom run` lives in
+//! `crate::fs::work_dir::read_context_config`, on the
 //! opposite (read) side of the workspace/user split from this module.
 
 use anyhow::Result;

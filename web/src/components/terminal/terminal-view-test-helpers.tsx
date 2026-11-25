@@ -163,7 +163,7 @@ export function fakeFactory() {
 export function terminalStage(overrides: Partial<StageSummary> = {}): StageSummary {
   const source = fixture.status.stages.find((stage) => stage.id === "client");
   if (!source) throw new Error("fixture stage client is missing");
-  return { ...source, session_alive: true, session_backend: "tmux", ...overrides };
+  return { ...source, session_alive: true, ...overrides };
 }
 export function snapshotFor(stage: StageSummary, terminals = true): Snapshot {
   return {

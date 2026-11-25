@@ -8,33 +8,19 @@
 
 use super::*;
 use crate::fs::session_files::save_session;
-use crate::fs::work_dir::write_terminal_config;
-use crate::models::session::TerminalConfig;
 use crate::models::stage::Stage;
-use crate::orchestrator::terminal::native::write_test_pid_identity;
+use crate::orchestrator::terminal::launch::write_test_pid_identity;
 use crate::orchestrator::terminal::tmux::viewer::live_tmux_sessions;
 use crate::verify::transitions::save_stage;
 use tempfile::TempDir;
 
-/// A `.loom/work` directory whose configured terminal lane is tmux.
-///
-/// The tmux setting is about the TEST HOST, not the sessions under test:
-/// `SessionBackend::from_config` eagerly constructs a `NativeBackend` when the
-/// configured lane is native, and that runs terminal detection, which fails on
-/// a headless runner. Configuring tmux defers the native lane to
-/// `native_lane()`, which degrades to `pid_only_is_alive` — the same verdict a
-/// terminal-having host reaches through `NativeBackend::is_session_alive`,
-/// which consults PID identity before it ever looks at a window.
+/// A scratch `.loom/work` directory.
 fn work_dir() -> TempDir {
-    let temp = TempDir::new().unwrap();
-    write_terminal_config(
-        temp.path(),
-        &TerminalConfig {
-            backend: SessionBackendKind::Tmux,
-        },
-    )
-    .unwrap();
-    temp
+    TempDir::new().unwrap()
+}
+
+fn backend_probe(work: &Path) -> LivenessProbe {
+    LivenessProbe::Backend(SessionBackend::new(work.to_path_buf()))
 }
 
 fn session_for(stage_id: &str, status: SessionStatus) -> Session {
@@ -165,47 +151,9 @@ fn in_progress_scan_rejects_filename_and_record_identity_mismatch() {
     assert!(format!("{error:#}").contains("does not match record id"));
 }
 
-/// A `.loom/work` directory configured for the native lane — the setting that makes
-/// `SessionBackend::from_config` build a `NativeBackend` eagerly.
-fn native_work_dir() -> TempDir {
-    let temp = TempDir::new().unwrap();
-    write_terminal_config(
-        temp.path(),
-        &TerminalConfig {
-            backend: SessionBackendKind::Native,
-        },
-    )
-    .unwrap();
-    temp
-}
-
 #[test]
-fn a_native_configured_work_dir_never_makes_the_answer_an_error() {
-    // `loom stage reset` and the spawn guard in `start_stage` both call this
-    // unconditionally, so an `Err` here would stop resets working and stop the
-    // daemon spawning ANY stage. On a host with a terminal this runs the
-    // backend branch; on a headless one (CI, a container) it runs the PID-only
-    // fallback. Neither may error, and both must see the agent.
-    let temp = native_work_dir();
-    let work = temp.path();
-
-    let alive = session_for("alpha", SessionStatus::Running);
-    spawn_a_live_agent(work, &alive);
-    save_session(&alive, work).unwrap();
-
-    let live = live_sessions_for_stage(work, "alpha").unwrap();
-    assert_eq!(ids(&live), vec![alive.id.as_str()]);
-}
-
-#[test]
-fn the_pid_only_probe_answers_liveness_with_no_terminal_backend_at_all() {
-    // Drives the fallback branch DIRECTLY. Forcing `detect_terminal` to fail
-    // is not possible from a test: it falls through `LOOM_TERMINAL`, then
-    // `TERMINAL`, then gsettings, xdg-terminal-exec and every common emulator,
-    // so on any developer machine it succeeds whatever the environment says.
-    // Asserting through `live_sessions_for_stage` alone would therefore leave
-    // this branch untested exactly where it is not exercised anyway.
-    let temp = native_work_dir();
+fn the_backend_probe_answers_liveness_from_pid_identity_alone() {
+    let temp = work_dir();
     let work = temp.path();
 
     let alive = session_for("alpha", SessionStatus::Running);
@@ -216,7 +164,7 @@ fn the_pid_only_probe_answers_liveness_with_no_terminal_backend_at_all() {
     spawn_a_dead_agent(work, &dead);
     save_session(&dead, work).unwrap();
 
-    let live = live_sessions_with_probe(&LivenessProbe::PidOnly, work, "alpha").unwrap();
+    let live = live_sessions_with_probe(&backend_probe(work), work, "alpha").unwrap();
     assert_eq!(
         ids(&live),
         vec![alive.id.as_str()],
@@ -276,7 +224,7 @@ fn symlinked_work_root_reads_its_real_session_inventory() {
     spawn_a_live_agent(&real, &running);
     save_session(&running, &real).unwrap();
 
-    let live = live_sessions_with_probe(&LivenessProbe::PidOnly, &alias, "alpha").unwrap();
+    let live = live_sessions_with_probe(&backend_probe(&alias), &alias, "alpha").unwrap();
     assert_eq!(ids(&live), vec![running.id.as_str()]);
 }
 
@@ -295,7 +243,7 @@ fn spawning_record_without_pid_identity_is_unknown() {
     let spawning = session_for("alpha", SessionStatus::Spawning);
     save_session(&spawning, temp.path()).unwrap();
     let error =
-        live_sessions_with_probe(&LivenessProbe::PidOnly, temp.path(), "alpha").unwrap_err();
+        live_sessions_with_probe(&backend_probe(temp.path()), temp.path(), "alpha").unwrap_err();
     assert!(format!("{error:#}").contains("no PID identity evidence"));
 }
 

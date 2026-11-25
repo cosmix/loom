@@ -68,7 +68,7 @@ impl DaemonServer {
             .context("Failed to acquire daemon lock")?;
 
         // From here on we hold the singleton lock; destructive setup is safe.
-        crate::orchestrator::terminal::native::record_daemon_binary();
+        crate::orchestrator::terminal::launch::record_daemon_binary();
 
         // Remove stale socket if it exists (ignore NotFound to avoid TOCTOU race)
         remove_control_file(&self.work_dir, Path::new(SOCKET_FILE))

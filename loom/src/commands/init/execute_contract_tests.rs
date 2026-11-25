@@ -98,7 +98,7 @@ fn cyclic_plan_leaves_the_previous_run_untouched() {
     );
     let _cwd = CwdGuard::enter(&repo.root);
 
-    let result = execute(Some(plan), true, None, true);
+    let result = execute(Some(plan), true, true);
 
     let error = format!("{:#}", result.expect_err("a cyclic plan must be refused"));
     assert!(error.contains("Circular dependency detected"), "{error}");
@@ -116,7 +116,7 @@ fn detached_head_leaves_the_previous_run_untouched() {
     git(&repo.root, &["checkout", "-q", "--detach"]);
     let _cwd = CwdGuard::enter(&repo.root);
 
-    let result = execute(Some(plan), true, None, true);
+    let result = execute(Some(plan), true, true);
 
     let error = format!("{:#}", result.expect_err("a detached HEAD must be refused"));
     assert!(error.contains("HEAD is detached"), "{error}");

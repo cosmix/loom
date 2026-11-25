@@ -5,6 +5,17 @@ All notable changes to loom are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **Every session runs in tmux** — `loom run` (background and `--foreground`) and any direct session spawn, such as the manual merge resolver, fail with `Loom needs tmux on PATH to start sessions. Install tmux and retry.` when tmux is missing; `loom init <plan>` prints the same text as a warning and finishes. Plan verification, `loom config`, `loom status` and history work without tmux, and `install.sh` warns when tmux is absent.
+- **Upgrading from native terminal windows** — let running native-terminal sessions finish, stop the old daemon, install tmux, then start the new binary with `loom run`. `loom init --clean` is not needed.
+
+### Removed
+
+- **The native terminal backend** — loom no longer opens a terminal-emulator window per session. The `--backend` flag on `loom init` and `loom run`, the init backend prompt, the `terminal.backend` key (`loom config`, dashboard Settings), the planner Run dialog's backend choice and `LOOM_TERMINAL` are gone; a leftover `[terminal]` section in a config file is ignored. `codex.backend`, `plan.summary_backend` and `loom ask --backend` are unchanged.
+
 ## [1.3.x] - 2026-10-22
 
 ### Added

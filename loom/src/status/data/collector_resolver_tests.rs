@@ -5,7 +5,7 @@
 use super::tests::{make_test_stage, temp_work_dir};
 use super::*;
 use crate::models::constants::STALENESS_THRESHOLD_SECS;
-use crate::models::session::{SessionBackendKind, SessionStatus};
+use crate::models::session::SessionStatus;
 use crate::orchestrator::monitor::heartbeat::{write_heartbeat, Heartbeat};
 use crate::status::data::ActivityStatus;
 
@@ -19,7 +19,6 @@ fn merging_stage_with_ended_worker(status: StageStatus) -> (Stage, Session) {
     worker.stage_id = Some("stage-1".to_string());
     worker.status = SessionStatus::Completed;
     worker.pid = Some(999_999_999);
-    worker.backend = SessionBackendKind::Tmux;
     (stage, worker)
 }
 
@@ -31,7 +30,6 @@ fn live_resolver() -> Session {
     resolver.stage_id = Some("stage-1".to_string());
     resolver.status = SessionStatus::Running;
     resolver.pid = Some(std::process::id());
-    resolver.backend = SessionBackendKind::Tmux;
     resolver
 }
 
@@ -53,7 +51,6 @@ fn a_live_resolver_speaks_for_a_merge_stage_whose_named_worker_ended() {
 
         assert_eq!(summary.pid, Some(std::process::id()));
         assert!(summary.session_alive);
-        assert_eq!(summary.session_backend, Some(SessionBackendKind::Tmux));
         assert_eq!(summary.session_type, Some(SessionType::Merge));
         assert_eq!(
             summary.merge_resolver_session.as_deref(),
@@ -119,7 +116,6 @@ fn a_live_judge_speaks_for_an_adjudicating_stage_whose_named_worker_ended() {
 
     assert_eq!(summary.pid, Some(std::process::id()));
     assert!(summary.session_alive);
-    assert_eq!(summary.session_backend, Some(SessionBackendKind::Tmux));
     assert_eq!(summary.session_type, Some(SessionType::Adjudication));
     assert_eq!(summary.merge_resolver_session, None);
 }

@@ -10,13 +10,12 @@ use tempfile::TempDir;
 
 use super::super::{Orchestrator, OrchestratorConfig};
 use crate::fs::session_files::save_session;
-use crate::fs::work_dir::write_terminal_config;
 use crate::host_verify::apply_retry::apply_record;
 use crate::host_verify::runner::{HostJobRunner, RunnerConfig};
 use crate::host_verify::store::{load_current, load_job_file, save_current, save_job_file};
 use crate::host_verify::submit::{submit, Submission, SubmitRequest};
 use crate::host_verify::{JobKind, JobRecord, JobState};
-use crate::models::session::{Session, SessionBackendKind, SessionStatus, TerminalConfig};
+use crate::models::session::{Session, SessionStatus};
 use crate::models::stage::{Stage, StageStatus};
 use crate::plan::ExecutionGraph;
 use crate::test_stand_in::require_signals;
@@ -26,16 +25,12 @@ const STAGE: &str = "stage-a";
 /// Writes a passing `result.json` for the job the runner named.
 const PASS: &str = r#"printf '{"job_id":"%s","head":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","passed":true,"criteria":[],"error":null}' "$3" > "$LOOM_WORK_DIR/verification/$1/$3/result.json""#;
 
-/// An orchestrator over `<temp>/.loom/work` on the tmux lane (no terminal
-/// detection), with stage-a's file in place for the runner.
+/// An orchestrator over `<temp>/.loom/work`, with stage-a's file in place for
+/// the runner.
 fn orchestrator() -> (TempDir, PathBuf, Orchestrator) {
     let temp = TempDir::new().unwrap();
     let work = temp.path().join(".loom").join("work");
     std::fs::create_dir_all(&work).unwrap();
-    let tmux = TerminalConfig {
-        backend: SessionBackendKind::Tmux,
-    };
-    write_terminal_config(&work, &tmux).unwrap();
     let stage = Stage {
         id: STAGE.to_string(),
         name: STAGE.to_string(),

@@ -11,7 +11,7 @@ use super::super::resolver_spawn::test_fixtures::{
     write_signal,
 };
 use crate::fs::session_files::{load_session_exact, save_session};
-use crate::models::session::{SessionBackendKind, SessionStatus};
+use crate::models::session::SessionStatus;
 use crate::models::stage::StageStatus;
 use crate::orchestrator::core::merge_handler::resolver_attempts::merge_resolver_attempts;
 use crate::orchestrator::signals::merge_test_backend;
@@ -101,10 +101,9 @@ fn recovery_adopts_a_running_resolver_left_spawning() {
     let repo = repo_with_conflicting_stage_branches(&[STAGE]);
     let mut orchestrator = orchestrator_over(repo.path());
     let work = orchestrator.config.work_dir.clone();
-    let mut resolver = resolver_for(STAGE);
-    resolver.backend = SessionBackendKind::Tmux;
+    let resolver = resolver_for(STAGE);
     save_session(&resolver, &work).unwrap();
-    crate::orchestrator::terminal::native::write_test_pid_identity(
+    crate::orchestrator::terminal::launch::write_test_pid_identity(
         &work,
         &resolver,
         std::process::id(),
@@ -129,7 +128,6 @@ fn recovery_retires_a_dead_launch_reservation() {
     let mut orchestrator = orchestrator_over(repo.path());
     let work = orchestrator.config.work_dir.clone();
     let mut resolver = resolver_for(STAGE);
-    resolver.backend = SessionBackendKind::Tmux;
     resolver.created_at = Utc::now() - Duration::seconds(300);
     save_session(&resolver, &work).unwrap();
     let signal = write_signal(&orchestrator, &resolver.id);
@@ -149,8 +147,7 @@ fn recovery_leaves_a_fresh_reservation_and_retires_a_dead_process() {
     let repo = repo_with_conflicting_stage_branches(&[STAGE]);
     let mut orchestrator = orchestrator_over(repo.path());
     let work = orchestrator.config.work_dir.clone();
-    let mut resolver = resolver_for(STAGE);
-    resolver.backend = SessionBackendKind::Tmux;
+    let resolver = resolver_for(STAGE);
     save_session(&resolver, &work).unwrap();
     let signal = write_signal(&orchestrator, &resolver.id);
 

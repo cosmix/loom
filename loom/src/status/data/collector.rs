@@ -90,8 +90,7 @@ fn assigned_session<'a>(stage: &Stage, sessions: &'a [Session]) -> Option<&'a Se
 }
 
 /// Everything a stage's summary takes from its session record.
-struct SessionFacts<'a> {
-    session: Option<&'a Session>,
+struct SessionFacts {
     session_type: Option<SessionType>,
     incoherence: Option<String>,
     context_tokens: Option<u32>,
@@ -105,11 +104,7 @@ struct SessionFacts<'a> {
     heartbeat: HeartbeatFacts,
 }
 
-fn session_facts<'a>(
-    stage: &Stage,
-    sessions: &'a [Session],
-    work_dir: &WorkDir,
-) -> SessionFacts<'a> {
+fn session_facts(stage: &Stage, sessions: &[Session], work_dir: &WorkDir) -> SessionFacts {
     let session = session_for_stage(stage, sessions);
     let assigned = assigned_session(stage, sessions);
     // A resolver or judge speaking for the stage is the session a person
@@ -136,7 +131,6 @@ fn session_facts<'a>(
         merge_resolver_facts(stage, sessions, work_dir);
 
     SessionFacts {
-        session,
         session_type,
         incoherence,
         context_tokens,
@@ -154,7 +148,7 @@ fn session_facts<'a>(
 ///
 /// `Stage::effective_model()` stops at the plan-field/stage-type tier and
 /// ignores both config tiers, so it would show the dashboard a name the real
-/// spawn (`native::launch::model_and_effort`) has already overridden — use
+/// spawn (`launch::prepare::model_and_effort`) has already overridden — use
 /// the same resolver that spawn calls instead.
 fn resolved_model_effort(stage: &Stage, work_dir: &WorkDir) -> (String, String) {
     crate::fs::work_dir::resolve_stage_model_effort(
@@ -223,7 +217,6 @@ fn build_stage_summary(stage: &Stage, sessions: &[Session], work_dir: &WorkDir) 
         execution_models, codex_jobs,
         dispute_count: crate::models::stage::dispute_budgets::filed_total(stage),
         judge_heartbeat_secs: facts.heartbeat.judge_heartbeat_secs,
-        session_backend: facts.session.map(|s| s.backend),
         outgoing_session_exit_reason: facts.completion_view.0, completion_blocker: facts.completion_view.1,
         merge_resolver_session: facts.merge_resolver_session, merge_resolver_attempts: facts.merge_resolver_attempts,
         close_reason: blocked_close_reason(stage), acceptance: blocked_acceptance(stage),

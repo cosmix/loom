@@ -80,7 +80,7 @@ pub fn ensure_work_symlink(worktree_path: &Path, repo_root: &Path) -> Result<()>
 /// We create a real directory and symlink CLAUDE.md from main repo.
 /// settings.json is created separately with the resolved state-root grants
 /// (see `create_worktree_settings`). Every session now launches from a
-/// per-session capsule (`native/session_settings.rs`) rather than
+/// per-session capsule (`launch/session_settings.rs`) rather than
 /// `.claude/settings.local.json`, so this no longer copies the main repo's
 /// local settings into the worktree.
 pub fn setup_claude_directory(worktree_path: &Path, repo_root: &Path) -> Result<()> {
@@ -180,7 +180,7 @@ fn extract_permissions(settings: &Value) -> (Vec<String>, Vec<String>) {
 ///    from the inherited `env` block
 /// 4. Writes the merged result to the worktree
 ///
-/// The session capsule (`native/session_settings.rs`) owns resolved permission
+/// The session capsule (`launch/session_settings.rs`) owns resolved permission
 /// mode, sandbox policy and session hooks. This base file inherits project
 /// settings and adds only narrow state-root grants.
 fn create_worktree_settings(

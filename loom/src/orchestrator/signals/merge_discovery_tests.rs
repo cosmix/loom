@@ -7,25 +7,20 @@ use tempfile::TempDir;
 
 use super::find_live_merge_session_for_stage;
 use crate::fs::session_files::{load_session_exact, save_session};
-use crate::fs::work_dir::write_terminal_config;
-use crate::models::session::{Session, SessionBackendKind, SessionStatus, TerminalConfig};
+use crate::models::session::{Session, SessionStatus};
 use crate::models::stage::Stage;
 use crate::orchestrator::signals::generate_merge_signal;
-use crate::orchestrator::terminal::native::write_test_pid_identity;
+use crate::orchestrator::terminal::launch::write_test_pid_identity;
 
 const STAGE: &str = "alpha";
 
 fn work_dir() -> TempDir {
-    let temp = TempDir::new().unwrap();
-    let backend = SessionBackendKind::Tmux;
-    write_terminal_config(temp.path(), &TerminalConfig { backend }).unwrap();
-    temp
+    TempDir::new().unwrap()
 }
 
 fn reservation(work: &std::path::Path, status: SessionStatus, age_secs: i64) -> Session {
     let mut session = Session::new_merge("loom/alpha".into(), "main".into());
     session.assign_to_stage(STAGE.to_string());
-    session.backend = SessionBackendKind::Tmux;
     session.status = status;
     session.created_at = Utc::now() - Duration::seconds(age_secs);
     let mut stage = Stage::new(STAGE.to_string(), None);

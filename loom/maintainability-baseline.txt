@@ -8,7 +8,7 @@
 # refactor it back. New violations must be refactored or explicitly recorded.
 
 file src/fs/work_dir.rs 429
-file src/fs/work_dir/tests.rs 869
+file src/fs/work_dir/tests.rs 797
 file src/models/stage/methods.rs 492
 file src/models/stage/types.rs 567
 file src/orchestrator/signals/cache.rs 508
@@ -24,18 +24,17 @@ file src/sandbox/settings/tests.rs 1565
 file tests/adjudication_e2e.rs 490
 file tests/integration/plan_verify.rs 1027
 
-function src/cli/dispatch.rs dispatch 57
+function src/cli/dispatch.rs dispatch 56
 function src/commands/clean/mod.rs print_summary 52
 function src/commands/clean/worktrees.rs clean_worktrees 103
 function src/commands/graph/tree.rs build_tree_display 57
-function src/commands/init/plan_setup.rs initialize_with_plan 181
+function src/commands/init/plan_setup.rs initialize_with_plan 175
 function src/commands/knowledge/tests.rs test_knowledge_update_in_worktree_writes_to_worktree 74
 function src/commands/knowledge/tests.rs test_parse_file_type 70
 function src/commands/repair.rs execute 84
 function src/commands/repair/tests.rs repair_fixes_a_stale_knowledge_directory_deny_in_a_worktree 62
 function src/commands/resume.rs execute 57
 function src/commands/sessions.rs kill 54
-function src/commands/sessions.rs kill_single_session 51
 function src/commands/skill_index.rs parse_skill_triggers 80
 function src/commands/status.rs execute_static 81
 function src/commands/status/render/graph.rs render_graph 64
@@ -77,11 +76,7 @@ function src/orchestrator/signals/recovery_parsing.rs read_recovery_signal 61
 function src/orchestrator/signals/tests_cache.rs test_recovery_signal_carries_codex_implementers_section 56
 function src/orchestrator/signals/tests_cache.rs test_signal_codex_implementers_section_gated 116
 function src/orchestrator/spawner.rs generate_crash_report 98
-function src/orchestrator/terminal/emulator.rs build_command 135
-function src/orchestrator/terminal/native/detection.rs detect_parent_terminal 51
-function src/orchestrator/terminal/native/detection.rs detect_terminal#1 56
-function src/orchestrator/terminal/native/detection.rs detect_terminal#2 65
-function src/orchestrator/terminal/tmux/tests_discovery.rs live_tmux_sessions_orders_by_created_at_then_id 60
+function src/orchestrator/terminal/tmux/tests_discovery.rs live_tmux_sessions_orders_by_created_at_then_id 58
 function src/orchestrator/terminal/tmux/tests_viewer.rs pane_command_neutralises_hostile_session_ids 69
 function src/plan/parser/mod.rs test_parse_plan_with_all_fields 74
 function src/plan/schema/tests/security_policy_tests.rs rejects_misspelled_nested_sandbox_fields 58

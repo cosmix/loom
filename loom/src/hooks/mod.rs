@@ -21,7 +21,7 @@
 //! ## Configuration
 //!
 //! Hooks are configured into each session's capsule
-//! (`orchestrator/terminal/native/session_settings.rs`), not into a worktree's
+//! (`orchestrator/terminal/launch/session_settings.rs`), not into a worktree's
 //! own settings files. The hook scripts are located in the loom installation
 //! directory under `hooks/`.
 

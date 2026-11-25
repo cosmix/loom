@@ -12,16 +12,13 @@
 //! shut the daemon down with the `Queued` stage left unspawned.
 
 use super::*;
-use tempfile::TempDir;
-
-use crate::fs::work_dir::write_terminal_config;
 use crate::models::failure::{FailureInfo, FailureType};
-use crate::models::session::{SessionBackendKind, TerminalConfig};
 use crate::orchestrator::core::merge_handler::resolver_attempts::{attempts_dir, attempts_file};
 use crate::orchestrator::core::{OrchestratorConfig, MAX_MERGE_RESOLVER_ATTEMPTS};
 use crate::plan::schema::StageDefinition;
 use crate::plan::ExecutionGraph;
 use crate::verify::transitions::save_stage;
+use tempfile::TempDir;
 
 fn minimal_stage_definition(id: &str) -> StageDefinition {
     StageDefinition {
@@ -132,13 +129,6 @@ fn orchestrator_with_one_node(
 ) -> (Orchestrator, TempDir) {
     let temp = TempDir::new().unwrap();
     let work_dir = temp.path().to_path_buf();
-    write_terminal_config(
-        &work_dir,
-        &TerminalConfig {
-            backend: SessionBackendKind::Tmux,
-        },
-    )
-    .unwrap();
     save_stage(&file_stage, &work_dir).unwrap();
 
     let mut graph = ExecutionGraph::build(vec![minimal_stage_definition(&file_stage.id)]).unwrap();

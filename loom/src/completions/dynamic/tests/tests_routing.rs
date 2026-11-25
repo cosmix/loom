@@ -49,7 +49,6 @@ const CASES: &[Case] = &[
         ("stage flag", "core", "--stage", &["sessions", "kill"], &["core-architecture"]),
         ("memory stage flag", "core", "--stage", &["memory", "note"], &["core-architecture"]),
         ("entry type flag", "de", "--entry-type", &["memory", "list"], &["decision"]),
-        ("backend flag", "t", "--backend", &["run"], &["tmux"]),
         ("effort flag", "xh", "--claude-effort", &["pressure"], &["xhigh"]),
         ("knowledge update", "pa", "update", &["knowledge", "update"], &["patterns"]),
         ("shell", "", "completions", &["completions"], &["bash", "fish", "zsh"]),

@@ -97,7 +97,7 @@ impl fmt::Display for SandboxPreflightRefusal {
 impl std::error::Error for SandboxPreflightRefusal {}
 
 /// The host facts checks 2-4 read, resolved once per launch or per
-/// `loom run` (`native::launch`).
+/// `loom run` (`launch::prepare`).
 #[derive(Debug, Clone)]
 pub(crate) struct HostFacts {
     /// Every root a session could write (`session_writable_roots`).

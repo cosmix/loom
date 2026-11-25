@@ -104,8 +104,6 @@ cases:
   - name: machine-generated-background-agent-stopped-noise
     query: 'Background agent "reviewer" was stopped by the user.'
     forbid:
-      - "loom/src/orchestrator/terminal/native/window_ops.rs#function:close_window_by_title"
-      - "loom/src/orchestrator/terminal/native/window_ops.rs#function:window_exists_by_title"
       - "loom/src/orchestrator/core/spool_drain_tests.rs#function:entry_is_attributed_to_the_worktree_it_was_spooled_in_not_a_sibling_stage"
 
   # --- Prompts for which unsolicited retrieval should stay silent --------

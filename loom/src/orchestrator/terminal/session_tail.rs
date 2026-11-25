@@ -1,34 +1,23 @@
 //! The last lines a session's terminal showed, for reports about a parked stage.
 //!
-//! A tmux session is read from its pane, a native session from its stderr log.
-//! The result is text for a human (the park reason of a stalled stage); it is
+//! A session is read from its tmux pane. The result is text for a human (the park reason of a stalled stage); it is
 //! never consulted for liveness.
 
 use std::iter::Peekable;
-use std::path::Path;
 use std::str::Chars;
 
 use crate::context::untrusted::flatten_char;
-use crate::models::session::{Session, SessionBackendKind};
+use crate::models::session::Session;
 
-use super::{native, tmux};
+use super::tmux;
 
 /// The last `lines` non-empty lines of `session`'s terminal, control
 /// characters stripped, or `None` when nothing is readable.
 ///
-/// A tmux session is captured from its own server (`capture-pane`, bounded by
-/// the tmux probe timeout). A native session's stderr log is read as
-/// `lines * 4` raw lines first, because `read_log_tail` cuts raw lines, blank
-/// ones included, and a log ending in blanks would otherwise yield fewer than
-/// `lines` non-empty ones.
-pub fn session_tail(session: &Session, work_dir: &Path, lines: usize) -> Option<String> {
-    let raw = match session.backend {
-        SessionBackendKind::Tmux => tmux::capture_pane_tail(session, lines),
-        SessionBackendKind::Native => crate::orchestrator::spawner::read_log_tail(
-            &native::stderr_log_path(work_dir, &session.id),
-            lines.saturating_mul(4).max(lines),
-        ),
-    }?;
+/// The pane is captured from the session's own server (`capture-pane`,
+/// bounded by the tmux probe timeout).
+pub fn session_tail(session: &Session, lines: usize) -> Option<String> {
+    let raw = tmux::capture_pane_tail(session, lines)?;
     normalise_tail(&raw, lines)
 }
 
@@ -91,19 +80,6 @@ fn skip_csi_body(chars: &mut Peekable<Chars<'_>>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
-
-    fn native_session() -> Session {
-        let mut session = Session::new();
-        session.backend = SessionBackendKind::Native;
-        session
-    }
-
-    fn write_log(work: &Path, session: &Session, body: &str) {
-        let path = native::stderr_log_path(work, &session.id);
-        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        std::fs::write(path, body).unwrap();
-    }
 
     #[test]
     fn normalise_tail_strips_control_characters_and_blank_lines() {
@@ -149,34 +125,9 @@ mod tests {
     }
 
     #[test]
-    fn a_native_session_reads_its_stderr_log_tail() {
-        let work = TempDir::new().unwrap();
-        let session = native_session();
-        write_log(
-            work.path(),
-            &session,
-            "first\n\n\u{1b}[33msecond\u{1b}[0m\n\nthird\nfourth\n",
-        );
-        assert_eq!(
-            session_tail(&session, work.path(), 3).as_deref(),
-            Some("second\nthird\nfourth")
-        );
-
-        // A log ending in blank lines still yields `lines` non-empty ones.
-        let padded = native_session();
-        write_log(work.path(), &padded, "a\nb\nc\n\n\n\n\n");
-        assert_eq!(
-            session_tail(&padded, work.path(), 3).as_deref(),
-            Some("a\nb\nc")
-        );
-    }
-
-    #[test]
     fn a_tmux_session_without_a_server_has_no_tail() {
-        let work = TempDir::new().unwrap();
         let mut session = Session::new();
-        session.backend = SessionBackendKind::Tmux;
         session.assign_to_stage("stage-key".to_string());
-        assert_eq!(session_tail(&session, work.path(), 40), None);
+        assert_eq!(session_tail(&session, 40), None);
     }
 }

@@ -1,3 +1,5 @@
+#[cfg(test)]
+mod contract_tests;
 mod dispatch;
 mod dispatch_admin;
 mod dispatch_stage;

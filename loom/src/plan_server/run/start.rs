@@ -13,7 +13,7 @@ use crate::plan_server::context::PlanContext;
 use crate::plan_server::request::{ApiRequest, ApiResponse};
 use crate::plan_server::shutdown::ShutdownHook;
 use crate::plan_server::wire::run::{
-    Backend, OutputStream, RunJob, RunStartRequest, RunStateView, WorkspaceState,
+    OutputStream, RunJob, RunStartRequest, RunStateView, WorkspaceState,
 };
 
 /// Give borrowed HTTP requests an owned context for their worker thread.
@@ -213,14 +213,7 @@ fn run_init(
 ) -> io::Result<i32> {
     *step = "loom init";
     let mut init = Command::new(loom_bin);
-    init.current_dir(root)
-        .arg("init")
-        .arg(&request.plan)
-        .arg("--backend");
-    init.arg(match request.backend {
-        Backend::Tmux => "tmux",
-        Backend::Native => "native",
-    });
+    init.current_dir(root).arg("init").arg(&request.plan);
     if request.clean {
         init.arg("--clean");
     }

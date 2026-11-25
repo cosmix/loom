@@ -92,7 +92,7 @@ pub(super) fn format_search_tools_warning(missing: &[&str]) -> Option<String> {
 /// Advisory sccache preflight — never aborts startup.
 ///
 /// Prints ONE line, shared verbatim with `loom doctor`
-/// (`orchestrator::terminal::native::sccache_status_line`), reporting
+/// (`orchestrator::terminal::launch::sccache_status_line`), reporting
 /// whether sccache is available to share compiled dependencies across stage
 /// worktrees. Every stage worktree gets its own `target/`, so absent
 /// sccache each one recompiles every dependency from scratch before running
@@ -103,7 +103,7 @@ pub(super) fn format_search_tools_warning(missing: &[&str]) -> Option<String> {
 fn advisory_sccache_preflight() {
     println!(
         "{}",
-        crate::orchestrator::terminal::native::sccache_status_line()
+        crate::orchestrator::terminal::launch::sccache_status_line()
     );
 }
 

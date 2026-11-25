@@ -169,7 +169,7 @@ fn check_daemon_socket_and_pid(work_dir: &Path) -> Vec<DetectedIssue> {
 /// Enumerate the PIDs of currently-running `loom run` processes.
 ///
 /// Uses `ps aux` (portable across Linux and macOS, matching the existing
-/// process-scan pattern in `native/pid_tracking.rs`) and matches command lines
+/// process-scan pattern in `launch/pid_tracking.rs`) and matches command lines
 /// containing the `loom run` invocation, excluding this `loom repair` process.
 /// On any `ps` failure returns an empty vec — the daemon-health checks degrade to
 /// "no duplicates detected" rather than failing the whole repair run.

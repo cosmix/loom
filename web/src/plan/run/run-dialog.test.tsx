@@ -139,7 +139,7 @@ it("prefills the commit message and posts only checked doc paths", async () => {
   );
 });
 
-it("Start posts the selected plan, backend and clean requirement", async () => {
+it("Start posts the selected plan and clean requirement", async () => {
   const other = "doc/plans/PLAN-other.md";
   const { fetchSpy } = renderRun({
     workspace: "initialized",
@@ -150,7 +150,6 @@ it("Start posts the selected plan, backend and clean requirement", async () => {
     ],
   });
   fireEvent.change(screen.getByRole("combobox", { name: "Plan" }), { target: { value: other } });
-  fireEvent.click(screen.getByRole("radio", { name: "Native" }));
   expect(screen.getByText(/Starting this plan uses --clean/)).toBeTruthy();
   expect(screen.getByRole("option", { name: /PLAN-other.md \(unlisted\)/ })).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Start the run" }));
@@ -158,7 +157,7 @@ it("Start posts the selected plan, backend and clean requirement", async () => {
     expect(fetchSpy).toHaveBeenCalledWith(
       "/api/run/start",
       expect.objectContaining({
-        body: JSON.stringify({ plan: other, backend: "native", clean: true }),
+        body: JSON.stringify({ plan: other, clean: true }),
       }),
     ),
   );
@@ -191,10 +190,9 @@ it("falls back to the state's preselected plan", () => {
   );
 });
 
-it("hides Native when the server does not offer it", () => {
-  renderRun({ backends: ["tmux"] });
-  expect(screen.queryByRole("radio", { name: "Native" })).toBeNull();
-  expect(screen.getByRole<HTMLInputElement>("radio", { name: "tmux" }).checked).toBe(true);
+it("offers no backend choice", () => {
+  renderRun();
+  expect(screen.queryAllByRole("radio")).toHaveLength(0);
 });
 
 it("shows the clean notice supplied by the server", () => {

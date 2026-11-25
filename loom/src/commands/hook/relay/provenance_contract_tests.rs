@@ -20,7 +20,7 @@ use super::ticket_check::ticket_file;
 use super::{relay_payload, RelayEnv};
 use crate::fs::session_files::save_session;
 use crate::models::session::{Session, SessionStatus};
-use crate::orchestrator::terminal::native::write_test_pid_identity;
+use crate::orchestrator::terminal::launch::write_test_pid_identity;
 use crate::relay::{new_request_id, RelayLine, RequestKind, Ticket};
 use crate::utils::sha256_hex;
 

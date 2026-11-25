@@ -3,7 +3,7 @@
 //! the terminal history of its last tmux session.
 
 use crate::fs::work_dir::WorkDir;
-use crate::models::session::{Session, SessionBackendKind};
+use crate::models::session::Session;
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::terminal::tmux::has_history;
 
@@ -58,9 +58,7 @@ pub(super) fn terminal_history(
     let latest = sessions
         .iter()
         .filter(|session| {
-            session.stage_id.as_deref() == Some(stage.id.as_str())
-                && session.backend == SessionBackendKind::Tmux
-                && !is_live(session)
+            session.stage_id.as_deref() == Some(stage.id.as_str()) && !is_live(session)
         })
         .max_by_key(|session| session.created_at)?;
     let kind = if latest.fullscreen_seen {
@@ -98,7 +96,6 @@ mod tests {
     fn ended_session(stage_id: &str, age_secs: i64) -> Session {
         let mut session = Session::new();
         session.assign_to_stage(stage_id.to_string());
-        session.backend = SessionBackendKind::Tmux;
         session.status = SessionStatus::Completed;
         session.created_at = Utc::now() - Duration::seconds(age_secs);
         session
@@ -185,17 +182,13 @@ mod tests {
     }
 
     #[test]
-    fn other_stages_and_native_sessions_are_not_named() {
+    fn other_stages_are_not_named() {
         let (_temp, work) = work_dir();
         let elsewhere = ended_session("client", 60);
-        let mut native = ended_session("server", 60);
-        native.backend = SessionBackendKind::Native;
-        for session in [&elsewhere, &native] {
-            write_history(work.root(), &session.id, b"screen").unwrap();
-        }
+        write_history(work.root(), &elsewhere.id, b"screen").unwrap();
 
         assert_eq!(
-            terminal_history_session(&stage(StageStatus::Blocked), &[elsewhere, native], &work),
+            terminal_history_session(&stage(StageStatus::Blocked), &[elsewhere], &work),
             None
         );
     }

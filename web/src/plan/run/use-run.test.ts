@@ -170,7 +170,7 @@ describe("run requests", () => {
     vi.stubGlobal("fetch", fetchMock);
     const store = createStore();
     const commit = { paths: ["doc/plans/PLAN-example.md"], message: "docs(plan): example" };
-    const start = { plan: "doc/plans/PLAN-example.md", backend: "tmux", clean: false } as const;
+    const start = { plan: "doc/plans/PLAN-example.md", clean: false } as const;
 
     expect(await commitRun(store, commit)).toEqual({ ok: true, value: { accepted: true } });
     expect(await startRun(store, start)).toEqual({ ok: true, value: { accepted: true } });
@@ -333,7 +333,7 @@ describe("run state refresh after actions", () => {
     const store = createStore();
     vi.stubGlobal("fetch", route({ accepted: true }, 202));
 
-    await startRun(store, { plan: "doc/plans/PLAN-example.md", backend: "tmux", clean: false });
+    await startRun(store, { plan: "doc/plans/PLAN-example.md", clean: false });
 
     await vi.waitFor(() => expect(store.get(runStateAtom)).toEqual(fresh()));
   });

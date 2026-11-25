@@ -7,8 +7,8 @@ use super::super::{ConfigValue, KeySpec};
 
 const BOOL_KEY: &str = "update.check";
 const NUMBER_KEY: &str = "context.ceiling_tokens";
-const ENUM_KEY: &str = "terminal.backend";
-const ENUM_VARIANTS: &[&str] = &["native", "tmux"];
+const ENUM_KEY: &str = "plan.summary_backend";
+const ENUM_VARIANTS: &[&str] = &["claude", "codex"];
 
 /// A `ValueKind::String` key. No entry in `keys::KEYS` uses this kind yet, so
 /// tests that want to drive it need their own [`KeySpec`].
@@ -42,7 +42,7 @@ fn round_trips_through_to_toml_edit_and_from_toml_value() {
     let cases: [(ValueKind, &str, &str); 4] = [
         (ValueKind::Bool, BOOL_KEY, "true"),
         (ValueKind::Number, NUMBER_KEY, "24"),
-        (ValueKind::Enum(ENUM_VARIANTS), ENUM_KEY, "native"),
+        (ValueKind::Enum(ENUM_VARIANTS), ENUM_KEY, "claude"),
         (ValueKind::String, "test.free_text", "opus"),
     ];
     for (kind, name, raw) in cases {
@@ -58,8 +58,8 @@ fn display_reproduces_value_ofs_pre_typed_output() {
     assert_eq!(ConfigValue::Bool(true).to_string(), "true");
     assert_eq!(ConfigValue::Number(24).to_string(), "24");
     assert_eq!(
-        ConfigValue::Text("native".to_string()).to_string(),
-        "native"
+        ConfigValue::Text("claude".to_string()).to_string(),
+        "claude"
     );
     assert_eq!(ConfigValue::Text("opus".to_string()).to_string(), "opus");
 }
@@ -69,8 +69,8 @@ fn to_toml_literal_per_kind() {
     assert_eq!(ConfigValue::Bool(true).to_toml_literal(), "true");
     assert_eq!(ConfigValue::Number(24).to_toml_literal(), "24");
     assert_eq!(
-        ConfigValue::Text("native".to_string()).to_toml_literal(),
-        "\"native\""
+        ConfigValue::Text("claude".to_string()).to_toml_literal(),
+        "\"claude\""
     );
 }
 
@@ -113,10 +113,10 @@ fn checked_accepts_the_matching_variant() {
         ConfigValue::Number(24)
     );
     assert_eq!(
-        ConfigValue::Text("native".to_string())
+        ConfigValue::Text("claude".to_string())
             .checked(&ValueKind::Enum(ENUM_VARIANTS), ENUM_KEY)
             .unwrap(),
-        ConfigValue::Text("native".to_string())
+        ConfigValue::Text("claude".to_string())
     );
     assert_eq!(
         ConfigValue::Text("anything at all".to_string())
@@ -213,7 +213,7 @@ fn checked_rejects_an_enum_value_not_in_the_variant_list() {
         .unwrap_err()
         .to_string();
     assert!(
-        err.contains("is not one of the expected values: native, tmux"),
+        err.contains("is not one of the expected values: claude, codex"),
         "{err}"
     );
 }

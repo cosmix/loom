@@ -16,7 +16,7 @@ use super::*;
 use crate::assets::install::test_env::InstallRootsEnv;
 use crate::codex_lifecycle::test_support::{Fixture, INV_A};
 use crate::orchestrator::monitor::direct_worker::live_tests::cannot_run_live_trees;
-use crate::orchestrator::terminal::native::NativeBackend;
+use crate::orchestrator::terminal::launch::tracking_and_pid_key;
 use crate::process::process_start_time;
 use crate::test_stand_in::StandIn;
 
@@ -73,7 +73,7 @@ fn burn(worker: u32) {
 }
 
 fn write_agent_pid(work: &Path, session: &Session, agent: u32) {
-    let (_, key) = NativeBackend::window_title_and_pid_key(session).unwrap();
+    let (_, key) = tracking_and_pid_key(session).unwrap();
     let pids = work.join("pids");
     std::fs::create_dir_all(&pids).unwrap();
     let start = process_start_time(agent).unwrap();

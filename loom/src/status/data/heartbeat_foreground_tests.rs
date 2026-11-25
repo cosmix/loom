@@ -9,7 +9,6 @@ use nix::sys::signal::Signal;
 use super::*;
 use crate::orchestrator::monitor::detection::Detection;
 use crate::orchestrator::monitor::heartbeat::write_heartbeat;
-use crate::orchestrator::terminal::native::NativeBackend;
 use crate::process::process_start_time;
 use crate::process::sandbox_probe::skip_without_process_control;
 use crate::test_stand_in::StandIn;
@@ -49,7 +48,8 @@ impl LiveFixture {
             heartbeat.last_tool = Some("Read".into());
         }
         write_heartbeat(work.root(), &heartbeat).unwrap();
-        let (_, key) = NativeBackend::window_title_and_pid_key(&session).unwrap();
+        let (_, key) =
+            crate::orchestrator::terminal::launch::tracking_and_pid_key(&session).unwrap();
         std::fs::write(
             work.root().join("pids").join(format!("{key}.pid")),
             format!(

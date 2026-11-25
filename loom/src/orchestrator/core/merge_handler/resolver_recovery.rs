@@ -7,7 +7,7 @@ use crate::models::worktree::Worktree;
 use crate::orchestrator::core::Orchestrator;
 use crate::orchestrator::session_registry::record_may_be_running;
 use crate::orchestrator::signals::publish_merge_session;
-use crate::orchestrator::terminal::native::{session_process_status, SessionProcessStatus};
+use crate::orchestrator::terminal::launch::{session_process_status, SessionProcessStatus};
 
 use super::super::launch_completion::complete_lost_launch;
 use super::review_route::awaits_merge;

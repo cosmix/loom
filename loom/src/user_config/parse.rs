@@ -9,8 +9,6 @@
 use anyhow::Result;
 use toml_edit::DocumentMut;
 
-use crate::models::session::SessionBackendKind;
-
 pub(super) fn section_item<'a>(
     doc: &'a DocumentMut,
     section: &str,
@@ -54,10 +52,8 @@ pub(super) fn get_u32(doc: &DocumentMut, section: &str, field: &str) -> Result<O
     }
 }
 
-/// Extract and validate an enum-typed field against `allowed`, the same
-/// shape as [`get_backend`] but for a registry key whose variants come from a
-/// `&'static [&'static str]` (see [`super::keys::ValueKind::Enum`]) rather
-/// than a fixed Rust enum.
+/// Extract and validate an enum-typed field against `allowed`, a
+/// `&'static [&'static str]` (see [`super::keys::ValueKind::Enum`]).
 pub(super) fn get_enum(
     doc: &DocumentMut,
     section: &str,
@@ -80,27 +76,6 @@ pub(super) fn get_enum(
                     "{section}.{field}: {raw:?} is not one of the expected values: {}",
                     allowed.join(", ")
                 ))
-            }
-        }
-    }
-}
-
-pub(super) fn get_backend(doc: &DocumentMut) -> Result<Option<SessionBackendKind>> {
-    match section_item(doc, "terminal", "backend") {
-        None => Ok(None),
-        Some(item) => {
-            let raw = item.as_str().ok_or_else(|| {
-                anyhow::anyhow!(
-                    "terminal.backend: expected a string, found {}",
-                    item.type_name()
-                )
-            })?;
-            match raw {
-                "native" => Ok(Some(SessionBackendKind::Native)),
-                "tmux" => Ok(Some(SessionBackendKind::Tmux)),
-                other => Err(anyhow::anyhow!(
-                    "terminal.backend: {other:?} is not one of native, tmux"
-                )),
             }
         }
     }

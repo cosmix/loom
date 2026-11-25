@@ -5,40 +5,10 @@ use super::{create_test_stage, save_test_stage, setup_work_dir};
 use crate::fs::session_files::save_session;
 use crate::models::session::Session;
 use crate::models::stage::StageStatus;
-use crate::orchestrator::terminal::native::write_test_pid_identity;
+use crate::orchestrator::terminal::launch::write_test_pid_identity;
 use crate::verify::transitions::load_stage;
 use chrono::Utc;
 use serial_test::serial;
-
-/// Pins `LOOM_TERMINAL` for a test's duration and restores it on drop.
-///
-/// `reset()` now always asks the session registry for live agents, which
-/// constructs a `SessionBackend` and, on the default `native` config, that
-/// eagerly runs `detect_terminal()`. Headless CI runners without any
-/// terminal emulator installed would otherwise fail every `reset()` test for
-/// a reason unrelated to what each test actually checks. Same technique as
-/// `tests/e2e/daemon_config/stale_project_execution.rs`.
-struct EnvVarGuard {
-    key: &'static str,
-    original: Option<String>,
-}
-
-impl EnvVarGuard {
-    fn set(key: &'static str, value: &str) -> Self {
-        let original = std::env::var(key).ok();
-        std::env::set_var(key, value);
-        Self { key, original }
-    }
-}
-
-impl Drop for EnvVarGuard {
-    fn drop(&mut self) {
-        match &self.original {
-            Some(value) => std::env::set_var(self.key, value),
-            None => std::env::remove_var(self.key),
-        }
-    }
-}
 
 #[test]
 #[serial]
@@ -66,7 +36,6 @@ fn test_block_updates_status() {
 #[test]
 #[serial]
 fn test_reset_clears_completion() {
-    let _terminal_env = EnvVarGuard::set("LOOM_TERMINAL", "xterm");
     let temp_dir = setup_work_dir();
     let work_dir_path = temp_dir.path().join(".loom").join("work");
 
@@ -93,7 +62,6 @@ fn test_reset_clears_completion() {
 #[test]
 #[serial]
 fn test_reset_hard_clears_session() {
-    let _terminal_env = EnvVarGuard::set("LOOM_TERMINAL", "xterm");
     let temp_dir = setup_work_dir();
     let work_dir_path = temp_dir.path().join(".loom").join("work");
 
@@ -117,7 +85,6 @@ fn test_reset_hard_clears_session() {
 #[test]
 #[serial]
 fn test_reset_soft_also_clears_session() {
-    let _terminal_env = EnvVarGuard::set("LOOM_TERMINAL", "xterm");
     let temp_dir = setup_work_dir();
     let work_dir_path = temp_dir.path().join(".loom").join("work");
 
@@ -145,7 +112,6 @@ fn test_reset_soft_also_clears_session() {
 #[test]
 #[serial]
 fn test_reset_proceeds_when_nothing_is_live() {
-    let _terminal_env = EnvVarGuard::set("LOOM_TERMINAL", "xterm");
     let temp_dir = setup_work_dir();
     let work_dir_path = temp_dir.path().join(".loom").join("work");
 
@@ -172,7 +138,6 @@ fn test_reset_proceeds_when_nothing_is_live() {
 #[test]
 #[serial]
 fn test_reset_refuses_with_live_session_and_no_kill_flag() {
-    let _terminal_env = EnvVarGuard::set("LOOM_TERMINAL", "xterm");
     let temp_dir = setup_work_dir();
     let work_dir_path = temp_dir.path().join(".loom").join("work");
 

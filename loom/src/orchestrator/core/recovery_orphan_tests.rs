@@ -15,7 +15,7 @@ use crate::models::stage::StageStatus;
 use crate::orchestrator::core::recovery::Recovery;
 use crate::orchestrator::core::Orchestrator;
 use crate::orchestrator::liveness::LivenessService;
-use crate::orchestrator::terminal::native::{wrapper_script_path, NativeBackend};
+use crate::orchestrator::terminal::launch::{tracking_and_pid_key, wrapper_script_path};
 use crate::plan::ExecutionGraph;
 use crate::verify::transitions::{load_stage, save_stage, update_stage};
 
@@ -31,7 +31,7 @@ fn dead_backend_orchestrator(temp: &TempDir) -> Orchestrator {
 }
 
 fn write_wrapper(work: &std::path::Path, session: &Session) -> std::path::PathBuf {
-    let (_, pid_key) = NativeBackend::window_title_and_pid_key(session).unwrap();
+    let (_, pid_key) = tracking_and_pid_key(session).unwrap();
     let wrapper = wrapper_script_path(work, &pid_key);
     std::fs::create_dir_all(wrapper.parent().unwrap()).unwrap();
     std::fs::write(&wrapper, "").unwrap();

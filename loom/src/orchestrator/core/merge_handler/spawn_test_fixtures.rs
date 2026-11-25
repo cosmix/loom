@@ -5,8 +5,7 @@ use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
 use crate::fs::session_files::save_session;
-use crate::fs::work_dir::write_terminal_config;
-use crate::models::session::{Session, SessionBackendKind, SessionStatus, TerminalConfig};
+use crate::models::session::{Session, SessionStatus};
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::core::merge_handler::resolver_attempts::ReservedAttempt;
 use crate::orchestrator::core::{Orchestrator, OrchestratorConfig};
@@ -113,12 +112,9 @@ pub(crate) fn with_read_only_stages<R>(
 }
 
 /// An orchestrator over `repo_root` whose work dir holds one `MergeConflict`
-/// stage `stage_id`. The tmux backend keeps `Orchestrator::new` from probing
-/// the host for a terminal emulator.
+/// stage `stage_id`.
 pub(crate) fn orchestrator_with_conflict(repo_root: &Path, stage_id: &str) -> Orchestrator {
     let work_dir = repo_root.join(".loom").join("work");
-    let backend = SessionBackendKind::Tmux;
-    write_terminal_config(&work_dir, &TerminalConfig { backend }).unwrap();
     let stage = Stage {
         id: stage_id.to_string(),
         status: StageStatus::MergeConflict,

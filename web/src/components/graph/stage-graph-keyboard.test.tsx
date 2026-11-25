@@ -14,7 +14,6 @@ const snapshot = snapshotSchema.parse(fixture);
 snapshot.terminals = true;
 const stage = snapshot.status.stages.find((item) => item.id === "client")!;
 stage.session_alive = true;
-stage.session_backend = "tmux";
 
 function renderGraph() {
   const store = createStore();

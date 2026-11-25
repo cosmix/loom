@@ -274,7 +274,6 @@ fn dispatch_run(args: RunArgs) -> Result<()> {
             args.max_parallel,
             args.watch,
             auto_merge,
-            args.backend,
             args.accept_unix_socket_risk,
         )
     } else {
@@ -282,7 +281,6 @@ fn dispatch_run(args: RunArgs) -> Result<()> {
             args.manual,
             args.max_parallel,
             auto_merge,
-            args.backend,
             args.accept_unix_socket_risk,
             args.daemon_child,
         )
@@ -307,9 +305,8 @@ pub fn dispatch(command: Commands) -> Result<()> {
         Commands::Init {
             plan_path,
             clean,
-            backend,
             no_repair,
-        } => init::execute(Some(PathBuf::from(plan_path)), clean, backend, no_repair),
+        } => init::execute(Some(PathBuf::from(plan_path)), clean, no_repair),
         Commands::Run(args) => dispatch_run(args),
         Commands::Status(args) => dispatch_status(args),
         Commands::Resume { stage_id } => resume::execute(stage_id),

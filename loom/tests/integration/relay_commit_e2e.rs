@@ -340,9 +340,6 @@ fn a_relayed_stage_commit_flows_end_to_end() {
     if skip_for_missing_tools("a_relayed_stage_commit_flows_end_to_end") {
         return;
     }
-    // Orchestrator::new eagerly constructs a NativeBackend even in manual mode.
-    let _terminal_env = helpers::EnvVarGuard::set("LOOM_TERMINAL", "xterm");
-
     let fx = build_fixture();
     let staged = stage_and_request_commit(&fx);
     relay_and_assert_landed(&fx, &staged);
@@ -355,8 +352,6 @@ fn a_relayed_commit_is_signed_when_gpgsign() {
     if skip_for_missing_tools("a_relayed_commit_is_signed_when_gpgsign") {
         return;
     }
-    let _terminal_env = helpers::EnvVarGuard::set("LOOM_TERMINAL", "xterm");
-
     let fx = build_fixture();
     let signer_dir = TempDir::new().expect("create signer dir");
     enable_fake_signer(&fx, signer_dir.path());

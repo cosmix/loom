@@ -4,30 +4,17 @@
 
 use super::*;
 use crate::fs::session_files::{load_session_exact, save_session};
-use crate::fs::work_dir::write_terminal_config;
-use crate::models::session::{
-    Session, SessionBackendKind, SessionExitReason, SessionStatus, TerminalConfig,
-};
+use crate::models::session::{Session, SessionExitReason, SessionStatus};
 use crate::models::stage::{Stage, StageStatus};
-use crate::orchestrator::terminal::native::write_test_pid_identity;
+use crate::orchestrator::terminal::launch::write_test_pid_identity;
 use crate::verify::transitions::{load_stage, save_stage};
 use anyhow::{bail, Result};
 use std::path::Path;
 use tempfile::TempDir;
 
-/// A work directory whose configured terminal lane is tmux, so liveness
-/// checks never run real terminal detection (which fails on a headless test
-/// runner).
+/// A scratch work directory.
 fn work_dir() -> TempDir {
-    let temp = TempDir::new().unwrap();
-    write_terminal_config(
-        temp.path(),
-        &TerminalConfig {
-            backend: SessionBackendKind::Tmux,
-        },
-    )
-    .unwrap();
-    temp
+    TempDir::new().unwrap()
 }
 
 fn session_for(stage_id: &str, status: SessionStatus) -> Session {

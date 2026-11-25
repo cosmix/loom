@@ -16,7 +16,7 @@ use crate::orchestrator::signals::read_merge_signal;
 use crate::orchestrator::spawner::{
     generate_crash_report, read_log_tail, CrashReport, CRASH_LOG_TAIL_LINES,
 };
-use crate::orchestrator::terminal::native::stderr_log_path;
+use crate::orchestrator::terminal::launch::stderr_log_path;
 
 use super::config::MonitorConfig;
 
@@ -158,7 +158,7 @@ impl Handlers {
     /// Creates a CrashReport, generates the crash report file, and preserves stage memory.
     ///
     /// The wrapper script tees claude's stderr into `logs/<session-id>.stderr.log`
-    /// (see `terminal::native::wrapper`), so a session that refused to start
+    /// (see `terminal::launch::wrapper`), so a session that refused to start
     /// still left its reason on disk after its terminal pane died. That tail is
     /// attached here; without it the report says only "no log output captured",
     /// which is what once sent a sandbox refusal through three identical

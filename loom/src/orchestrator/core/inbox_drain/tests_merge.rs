@@ -63,14 +63,8 @@ fn advance_main(fx: &Fixture, name: &str, text: &str) {
     git(&fx.repo_root, &["commit", "-q", "-m", "main work"]);
 }
 
-/// An orchestrator over the fixture, on the tmux lane so that building it
-/// never probes the host for a terminal emulator.
+/// An orchestrator over the fixture.
 pub(super) fn orchestrator(fx: &Fixture) -> Orchestrator {
-    std::fs::write(
-        fx.work_dir.join("config.toml"),
-        "[terminal]\nbackend = \"tmux\"\n",
-    )
-    .unwrap();
     let config = OrchestratorConfig {
         work_dir: fx.work_dir.clone(),
         repo_root: fx.repo_root.clone(),

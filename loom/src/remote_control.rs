@@ -1,4 +1,4 @@
-//! Claude Code Remote Control integration for the native backend.
+//! Claude Code Remote Control integration for the sessions loom spawns.
 //!
 //! Remote Control lets the loom orchestrator drive Claude Code sessions
 //! programmatically, gated behind a preflight check: `claude

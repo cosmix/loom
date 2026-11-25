@@ -6,24 +6,23 @@ use std::time::Duration;
 
 use super::checks::prepare_repo_for_run;
 use super::graph_loader::build_execution_graph;
-use super::resolve_backend_flag;
 use crate::commands::status::render::print_completion_summary;
 use crate::daemon::collect_completion_summary;
 use crate::fs::work_dir::WorkDir;
 use crate::git::signing;
+use crate::orchestrator::terminal::{require_tmux, tmux_on_path};
 use crate::orchestrator::{
     Orchestrator, OrchestratorConfig, OrchestratorResult, DEFAULT_KILL_CONFIRM_TIMEOUT,
 };
 use crate::plan::schema::SandboxConfig;
 
 /// Execute plan stages in foreground (for --foreground flag)
-/// Usage: `loom run --foreground [--manual] [--max-parallel <n>] [--watch] [--no-merge] [--backend <native|tmux>] [--accept-unix-socket-risk]`
+/// Usage: `loom run --foreground [--manual] [--max-parallel <n>] [--watch] [--no-merge] [--accept-unix-socket-risk]`
 pub fn execute(
     manual: bool,
     max_parallel: Option<usize>,
     watch: bool,
     auto_merge: bool,
-    backend: Option<String>,
     accept_unix_socket_risk: bool,
 ) -> Result<()> {
     // First, before any thread exists (`main` spawns none before dispatch):
@@ -42,7 +41,8 @@ pub fn execute(
 
     super::plan_inputs::require_committed_plan(&work_dir)?;
 
-    resolve_backend_flag(&work_dir, backend, "loom run --foreground")?;
+    // Before the orchestrator exists: every session it starts runs in tmux.
+    require_tmux(tmux_on_path)?;
 
     super::run_startup_preflights(&work_dir, accept_unix_socket_risk)?;
     crate::daemon::remove_previous_outcome(work_dir.root())?;

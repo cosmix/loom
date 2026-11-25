@@ -61,7 +61,7 @@ const STAGE_HOST_ENV_ALLOWLIST: &[&str] = &[
     // Cache settings are inert without a selected wrapper. An ambient wrapper
     // that fails in the stage sandbox (for example, sccache with EPERM) must
     // never sit between a confined criterion and rustc; launch-owned wrapper
-    // policy lives in orchestrator/terminal/native/build_cache.rs.
+    // policy lives in orchestrator/terminal/launch/build_cache.rs.
     "SCCACHE_DIR",
     "SCCACHE_CACHE_SIZE",
     "LANG",

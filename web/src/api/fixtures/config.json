@@ -42,28 +42,6 @@
       }
     },
     {
-      "name": "terminal.backend",
-      "help": "Terminal backend loom run defaults to (built-in default: tmux)",
-      "kind": {
-        "type": "enum",
-        "variants": ["native", "tmux"]
-      },
-      "scopes": ["user", "project"],
-      "default": "tmux",
-      "user": {
-        "value": "tmux",
-        "set": false
-      },
-      "project": {
-        "value": "tmux",
-        "set": false
-      },
-      "effective": {
-        "value": "tmux",
-        "source": "default"
-      }
-    },
-    {
       "name": "context.ceiling_tokens",
       "help": "Default context ceiling, in resident tokens, for a stage's agent session",
       "kind": {

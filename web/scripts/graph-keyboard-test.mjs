@@ -12,7 +12,6 @@ snapshot.terminals = true;
 const stage = snapshot.status.stages.find((item) => item.id === "client");
 assert.ok(stage);
 stage.session_alive = true;
-stage.session_backend = "tmux";
 
 const server = await createServer({ server: { host: "127.0.0.1", port: 0 } });
 await server.listen();

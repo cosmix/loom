@@ -229,7 +229,7 @@ impl Detection {
     /// writes the verdict and stamps it with the judge's own session id; the
     /// daemon applies the verdict and closes the session on a later tick.
     /// But if the daemon restarts between those two steps, or an operator
-    /// closes the judge's terminal window, the session record is left
+    /// kills the judge's tmux session, the session record is left
     /// `Running` with no process behind it. Without this check that gets
     /// filed as a crash — a misleading "Preserved stage memory" copy for a
     /// stage that is perfectly healthy — even though the judge's exit is as

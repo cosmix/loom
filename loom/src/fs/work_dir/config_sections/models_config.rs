@@ -18,8 +18,8 @@ const MODELS_SECTION: &str = "models";
 /// Every key is optional and the fallback is KEY-level: a present section
 /// that omits a key falls through to `~/.loom/config.toml` for that key
 /// rather than shadowing it with a built-in the operator never asked for —
-/// the same rule `[terminal]`/`[context]` resolve under (see
-/// `read_terminal_config`, `read_context_config`).
+/// the same rule `[context]` resolves under (see
+/// `read_context_config`).
 #[derive(Debug, Clone, Default, serde::Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ModelsConfig {

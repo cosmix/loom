@@ -82,7 +82,7 @@ fn a_caller_outside_the_session_it_names_is_refused() {
     session.assign_to_stage("stage-b".to_string());
     session.pid = Some(1);
     crate::fs::session_files::save_session(&session, work.path()).unwrap();
-    crate::orchestrator::terminal::native::write_test_pid_identity(work.path(), &session, 1)
+    crate::orchestrator::terminal::launch::write_test_pid_identity(work.path(), &session, 1)
         .unwrap();
 
     assert!(

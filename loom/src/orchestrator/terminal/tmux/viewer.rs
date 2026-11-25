@@ -16,8 +16,8 @@ use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 
 use crate::fs::work_dir::WorkDir;
-use crate::models::session::{Session, SessionBackendKind, SessionStatus};
-use crate::orchestrator::terminal::native::NativeBackend;
+use crate::models::session::{Session, SessionStatus};
+use crate::orchestrator::terminal::launch::tracking_and_pid_key;
 use crate::parser::frontmatter::parse_from_markdown;
 
 use super::{socket_name, socket_path_for, TmuxBackend};
@@ -179,16 +179,16 @@ pub(crate) fn is_plain_identifier(value: &str) -> bool {
 
 /// The tmux session name a spawned session was created under.
 ///
-/// NOT sourced from `TmuxBackend::spawn` calling `window_title_and_pid_key`
-/// — it doesn't: `prepare_session_launch` (`native/launch.rs:50`) sets
+/// NOT sourced from `TmuxBackend::spawn` calling `launch::tracking_and_pid_key`
+/// — it doesn't: `prepare_session_launch` (`launch/prepare.rs:50`) sets
 /// `title = session.tracking_key.clone()` directly, and that title is what
 /// `spawn_in_tmux` uses as the tmux session name. This function agrees with
-/// it only because `window_title_and_pid_key` itself returns `tracking_key`
+/// it only because `tracking_and_pid_key` itself returns `tracking_key`
 /// whenever it is non-empty; the `loom-<stage_id>` fallback branch below is
 /// therefore unreachable for any session that has actually been spawned
 /// (`assign_to_stage` always sets `tracking_key` first).
 pub(crate) fn tmux_session_name(session: &Session) -> Option<String> {
-    NativeBackend::window_title_and_pid_key(session).map(|(title, _)| title)
+    tracking_and_pid_key(session).map(|(title, _)| title)
 }
 
 /// Every live tmux-hosted session recorded in `<work_dir>/sessions`, oldest
@@ -200,9 +200,8 @@ pub(crate) fn live_tmux_sessions(work_dir: &Path) -> Result<Vec<Session>> {
         return Ok(Vec::new());
     };
 
-    // Constructed ONCE, outside the loop: `TmuxBackend::new` is infallible
-    // (unlike `NativeBackend::new`, it never probes for a terminal), so there
-    // is no reason to pay for repeated construction per session.
+    // Constructed ONCE, outside the loop: `TmuxBackend::new` is infallible,
+    // so there is no reason to pay for repeated construction per session.
     let backend = TmuxBackend::new(work_dir.to_path_buf());
 
     let mut sessions = Vec::new();
@@ -224,7 +223,7 @@ pub(crate) fn live_tmux_sessions(work_dir: &Path) -> Result<Vec<Session>> {
     Ok(sessions)
 }
 
-/// Parse one session file, returning it only if live and tmux-hosted.
+/// Parse one session file, returning it only if live.
 /// `Ok(None)` covers everything filtered out, including an unreadable or
 /// corrupt file (e.g. read mid-write by the daemon) — never fail the whole
 /// command over one bad session file.
@@ -236,9 +235,6 @@ fn load_live_tmux_session(backend: &TmuxBackend, path: &Path) -> Result<Option<S
         return Ok(None);
     };
 
-    if session.backend != SessionBackendKind::Tmux {
-        return Ok(None);
-    }
     if !matches!(
         session.status,
         SessionStatus::Running | SessionStatus::Spawning
@@ -280,8 +276,8 @@ fn load_live_tmux_session(backend: &TmuxBackend, path: &Path) -> Result<Option<S
 ///
 /// This probe is called from `tmux::reconcile`, which runs on the daemon's
 /// single scheduler loop — an unbounded subprocess here would wedge the whole
-/// orchestrator, the same reason every native terminal probe carries a
-/// two-second deadline (see `architecture/terminal-backends.md`). The socket
+/// orchestrator, the same reason every tmux control command carries a
+/// deadline (see `architecture/terminal-backends.md`). The socket
 /// existence check stays a cheap filesystem stat ahead of it; only the
 /// `has-session` probe itself needs a deadline.
 ///

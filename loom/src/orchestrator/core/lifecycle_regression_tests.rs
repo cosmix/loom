@@ -3,7 +3,7 @@ use super::recovery::Recovery;
 use super::stage_executor::{get_dependency_status, StageExecutor};
 use super::{Orchestrator, OrchestratorConfig};
 use crate::models::failure::{FailureInfo, FailureType};
-use crate::models::session::{Session, SessionBackendKind, TerminalConfig};
+use crate::models::session::Session;
 use crate::models::stage::{Stage, StageOutput, StageStatus, StageType};
 use crate::plan::{schema::StageDefinition, ExecutionGraph};
 use crate::verify::transitions::{load_stage, save_stage, update_stage};
@@ -11,13 +11,6 @@ use tempfile::TempDir;
 
 fn fixture(stages: &[Stage]) -> (TempDir, Orchestrator) {
     let temp = TempDir::new().unwrap();
-    crate::fs::work_dir::write_terminal_config(
-        temp.path(),
-        &TerminalConfig {
-            backend: SessionBackendKind::Tmux,
-        },
-    )
-    .unwrap();
     for stage in stages {
         save_stage(stage, temp.path()).unwrap();
     }
@@ -78,7 +71,7 @@ fn scheduler_scans_past_all_held_candidates_and_target_held_knowledge() {
         });
         let mut session = Session::new();
         session.assign_to_stage("b".into());
-        crate::orchestrator::terminal::native::write_test_pid_identity(
+        crate::orchestrator::terminal::launch::write_test_pid_identity(
             temp.path(),
             &session,
             std::process::id(),

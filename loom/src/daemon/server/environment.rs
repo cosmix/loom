@@ -48,7 +48,7 @@ const HOST_ENV_ALLOWLIST: &[&str] = &[
     "NO_PROXY",
     // Read by the daemon itself: `RUST_LOG` sets its tracing filter,
     // `LOOM_SCCACHE`, `RUSTC_WRAPPER` and the two `SCCACHE_*` names feed the
-    // stage build cache (`orchestrator/terminal/native/build_cache.rs`), and
+    // stage build cache (`orchestrator/terminal/launch/build_cache.rs`), and
     // `LOOM_HOME` locates the user config (`user_config`).
     "RUST_LOG",
     "SCCACHE_DIR",
@@ -76,7 +76,7 @@ const HOST_ENV_ALLOWLIST: &[&str] = &[
     "GOFLAGS",
 ];
 
-const LOOM_CONTROL_ALLOWLIST: &[&str] = &["LOOM_HOOKS_DIR", "LOOM_TERMINAL"];
+const LOOM_CONTROL_ALLOWLIST: &[&str] = &["LOOM_HOOKS_DIR"];
 
 /// Snapshot of the small host environment the daemon child is started with.
 pub(super) struct DaemonEnvironment {
@@ -151,7 +151,6 @@ mod tests {
             ("TERM", "xterm-256color"),
             ("TERMINFO", "/home/user/.local/kitty.app/lib/kitty/terminfo"),
             ("TERMINFO_DIRS", "/usr/share/terminfo:/etc/terminfo"),
-            ("LOOM_TERMINAL", "kitty"),
             ("HTTP_PROXY", "http://proxy.internal:8080"),
             ("HTTPS_PROXY", "http://proxy.internal:8080"),
             ("NO_PROXY", "localhost,127.0.0.1"),
@@ -175,7 +174,6 @@ mod tests {
         // terminfo location is half a contract.
         assert!(keys.contains(&OsStr::new("TERMINFO")));
         assert!(keys.contains(&OsStr::new("TERMINFO_DIRS")));
-        assert!(keys.contains(&OsStr::new("LOOM_TERMINAL")));
         // The quota poller's outbound HTTP requests need these to honor a
         // proxied network from inside the daemon's stripped environment.
         assert!(keys.contains(&OsStr::new("HTTP_PROXY")));

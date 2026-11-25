@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use super::*;
 use crate::models::session::SessionType;
 use crate::orchestrator::monitor::direct_worker::live_tests::cannot_run_live_trees;
-use crate::orchestrator::terminal::native::create_wrapper_script;
+use crate::orchestrator::terminal::launch::create_wrapper_script;
 #[cfg(target_os = "linux")]
 use crate::test_stand_in::require_signals;
 use crate::test_stand_in::StandIn;
@@ -257,7 +257,7 @@ fn the_session_wrapper_reads_as_a_command_only_while_a_tool_call_runs() {
     let dir = temp.path();
     let mut session = Session::new_adjudication("wrapped-stage");
     session.id = "judge-wrapped-1".to_string();
-    let (_, pid_key) = NativeBackend::window_title_and_pid_key(&session).unwrap();
+    let (_, pid_key) = tracking_and_pid_key(&session).unwrap();
     let _wrapper = run_wrapped_stub(dir, &session, &pid_key);
 
     wait_until("the stand-in to start", || dir.join("ready").exists());
@@ -267,7 +267,7 @@ fn the_session_wrapper_reads_as_a_command_only_while_a_tool_call_runs() {
     // The wrapper records a start time only where /proc has one; the spawner
     // then records the kernel's (`spawner::finalize_pid_identity`), which is
     // all macOS gets. Without it the agent is unverifiable and reads as idle.
-    crate::orchestrator::terminal::native::write_test_pid_identity(dir, &session, agent).unwrap();
+    crate::orchestrator::terminal::launch::write_test_pid_identity(dir, &session, agent).unwrap();
     wait_until("the wrapper's tee", || wrapper_tee_runs_under(agent));
     for _ in 0..5 {
         let command = running_command(dir, &session);

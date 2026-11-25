@@ -67,7 +67,7 @@ fn refresh_skips_default_and_xdg_symlink_escapes() {
 
 /// Pins an environment variable for a test's duration and restores whatever
 /// value (or absence) it had beforehand on drop. Mirrors the same-purpose
-/// guard in `orchestrator/terminal/native/tests_wrapper_env.rs`, which is
+/// guard in `orchestrator/terminal/launch/tests_wrapper_env.rs`, which is
 /// private to that module and not reachable from here.
 struct EnvVarGuard {
     key: &'static str,

@@ -97,7 +97,7 @@ pub(super) use crate::orchestrator::session_registry::{
 
 /// Logs and returns `true` when `session` is too young for a failed liveness
 /// probe to be treated as evidence that it is dead — its pid identity file
-/// and terminal window are written asynchronously after spawn, so a probe
+/// and tmux session are written asynchronously after spawn, so a probe
 /// run inside that window observes "not written yet", not "gone", and
 /// requeuing now would spawn a duplicate session into the same worktree. The
 /// window also runs from the launch's wrapper script, which a slow launch writes

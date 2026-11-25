@@ -29,10 +29,6 @@ pub struct RunArgs {
     #[arg(long)]
     pub no_merge: bool,
 
-    /// Terminal backend for sessions (native|tmux); persisted to the `[terminal]` section of the loom config
-    #[arg(long, value_parser = ["native", "tmux"])]
-    pub backend: Option<String>,
-
     /// Start although a stage sets `allow_all_unix_sockets`; required on every such run
     #[arg(long)]
     pub accept_unix_socket_risk: bool,

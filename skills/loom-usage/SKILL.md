@@ -549,7 +549,7 @@ The daemon (`loom run`) is a background process that:
 1. Listens on Unix socket (`.loom/work/orchestrator.sock`)
 2. Polls stage files every 5 seconds
 3. Creates worktrees for ready stages
-4. Spawns Claude Code sessions in terminal windows
+4. Spawns Claude Code sessions in detached tmux servers
 5. Monitors session health via heartbeat files
 6. Detects crashes via PID liveness checks
 7. Auto-merges completed stages (progressive merge)

@@ -11,7 +11,7 @@ use crate::orchestrator::session_registry::{
     live_sessions_for_stage_admitted, orphan_evidence, OrphanEvidence,
 };
 use crate::orchestrator::terminal::backend::SessionBackend;
-use crate::orchestrator::terminal::native;
+use crate::orchestrator::terminal::launch;
 use crate::relay::emit::{mode, EnvSnapshot, StdSink};
 use crate::verify::contracts::refusal::{self, Standing};
 use crate::verify::transitions::update_stage;
@@ -114,7 +114,7 @@ impl LiveAgent {
     }
 
     /// Human-readable description for the refusal message: names the
-    /// session, its pid (if known), and its backend. Never claims a pid we
+    /// session and its pid (if known). Never claims a pid we
     /// have not actually observed.
     fn describe(&self) -> String {
         match self {
@@ -122,14 +122,11 @@ impl LiveAgent {
                 let pid = session
                     .pid
                     .map_or_else(|| "unknown".to_string(), |pid| pid.to_string());
-                format!(
-                    "session '{}' (pid {pid}, {} backend)",
-                    session.id, session.backend
-                )
+                format!("session '{}' (pid {pid})", session.id)
             }
             LiveAgent::Orphan(evidence) => format!(
-                "orphan session '{}' (pid {}, {} backend, no session record)",
-                evidence.session_id, evidence.pid, evidence.backend
+                "orphan session '{}' (pid {}, no session record)",
+                evidence.session_id, evidence.pid
             ),
         }
     }
@@ -175,7 +172,7 @@ fn live_agent_refusal(stage_id: &str, agents: &[LiveAgent]) -> anyhow::Error {
 }
 
 /// Kill every live agent found for the stage. Known sessions go through the
-/// configured backend; orphans have no session record for a backend to
+/// tmux session backend; orphans have no session record for a backend to
 /// dispatch on, so they go through the shared PID-identity teardown
 /// directly, reconstructing just enough of a `Session` to identify them.
 fn kill_live_agents(work_dir: &Path, agents: &[LiveAgent]) {
@@ -194,8 +191,7 @@ fn kill_live_agents(work_dir: &Path, agents: &[LiveAgent]) {
 }
 
 fn kill_known_session(work_dir: &Path, session: &Session) -> Result<()> {
-    let backend = SessionBackend::from_config(work_dir.to_path_buf())
-        .context("Failed to construct session backend")?;
+    let backend = SessionBackend::new(work_dir.to_path_buf());
     if backend.is_session_alive(session)? {
         backend.kill_session(session)?;
         println!("  Killed session '{}'", session.id);
@@ -205,19 +201,17 @@ fn kill_known_session(work_dir: &Path, session: &Session) -> Result<()> {
     Ok(())
 }
 
-/// Terminate an orphan through the same PID-identity path the backend falls
-/// back to when it has no window to close, since there is no session record
-/// here for a backend to be constructed against.
+/// Terminate an orphan through the shared PID-identity teardown, since there
+/// is no session record here to dispatch a backend on.
 fn kill_orphan_session(work_dir: &Path, evidence: &OrphanEvidence) -> Result<()> {
     let mut session = Session::new();
     session.id = evidence.session_id.clone();
     session.stage_id = Some(evidence.stage_id.clone());
     session.tracking_key = evidence.tracking_key.clone();
     session.session_type = evidence.session_type;
-    session.backend = evidence.backend;
     session.pid = Some(evidence.pid);
 
-    native::pid_only_terminate(work_dir, &session)?;
+    launch::pid_only_terminate(work_dir, &session)?;
     println!("  Killed orphan session '{}'", evidence.session_id);
     Ok(())
 }

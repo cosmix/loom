@@ -98,8 +98,7 @@ pub struct Orchestrator {
     pub(super) monitor: Monitor,
     /// Track reported crashes to avoid duplicate messages
     pub(super) reported_crashes: HashSet<String>,
-    /// Session backend (native or tmux, selected by the persisted `[terminal]`
-    /// config) — spawns and kills sessions.
+    /// Session backend — spawns and kills tmux sessions.
     pub(super) backend: Arc<SessionBackend>,
     /// Liveness probe (shared with the monitor thread).
     pub(super) liveness: LivenessService,
@@ -185,7 +184,7 @@ impl Orchestrator {
         if config.max_parallel_sessions == 0 {
             anyhow::bail!("max_parallel_sessions must be at least 1");
         }
-        let backend = Arc::new(SessionBackend::from_config(config.work_dir.clone())?);
+        let backend = Arc::new(SessionBackend::new(config.work_dir.clone()));
         let liveness = LivenessService::new(Arc::clone(&backend));
         let monitor = Self::new_monitor(&config, liveness.clone());
 

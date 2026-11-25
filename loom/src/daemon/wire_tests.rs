@@ -1,6 +1,6 @@
 use super::*;
 use crate::daemon::protocol::{CompletionSummary, DaemonConfig, StageCompletionInfo};
-use crate::models::session::{SessionBackendKind, SessionExitReason};
+use crate::models::session::SessionExitReason;
 use crate::models::stage::StageStatus;
 use crate::status::data::{
     CompletionBlockerState, CompletionBlockerSummary, MergeSummary, ProgressSummary, StageSummary,
@@ -58,16 +58,12 @@ fn status_update_round_trip() {
         Response::StatusUpdate { data } => {
             assert_eq!(data.stages[0].id, "stage-1");
             assert_eq!(data.stages[0].status, StageStatus::Executing);
-            // The four fields the ledger dashboard added. Asserted with
+            // The three fields the ledger dashboard added. Asserted with
             // non-default values: at their defaults a field that never
             // reached the wire at all would decode identically.
             assert_eq!(data.stages[0].execution_models, ["opus", "terra"]);
             assert_eq!(data.stages[0].dispute_count, 3);
             assert_eq!(data.stages[0].judge_heartbeat_secs, Some(42));
-            assert_eq!(
-                data.stages[0].session_backend,
-                Some(SessionBackendKind::Tmux)
-            );
             assert_eq!(data.stages[1].id, "stage-2");
             assert_eq!(data.stages[1].status, StageStatus::WaitingForDeps);
         }
@@ -90,7 +86,6 @@ fn status_data() -> StatusData {
     executing.execution_models = vec!["opus".to_string(), "terra".to_string()];
     executing.dispute_count = 3;
     executing.judge_heartbeat_secs = Some(42);
-    executing.session_backend = Some(SessionBackendKind::Tmux);
     executing.close_reason = Some("the agent's reason".to_string());
 
     StatusData {

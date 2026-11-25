@@ -16,7 +16,7 @@ const fixture = snapshotSchema.parse(fixtureJson);
 function terminalStage(overrides: Partial<StageSummary> = {}): StageSummary {
   const source = fixture.status.stages.find((stage) => stage.id === "client");
   if (!source) throw new Error("fixture stage client is missing");
-  return { ...source, session_alive: true, session_backend: "tmux", ...overrides };
+  return { ...source, session_alive: true, ...overrides };
 }
 
 function snapshotFor(
@@ -94,15 +94,15 @@ describe("stage modal", () => {
     );
     cleanup();
 
-    const native = terminalStage({ session_backend: "native" });
-    const blocked = renderModal(native, `/?stage=${native.id}`);
+    const dead = terminalStage({ session_alive: false });
+    const blocked = renderModal(dead, `/?stage=${dead.id}`);
     fireEvent.keyDown(screen.getByRole("dialog"), { key: "t" });
 
-    expect(blocked.state.location.search).toBe(`?stage=${native.id}`);
+    expect(blocked.state.location.search).toBe(`?stage=${dead.id}`);
   });
 
   it.each([
-    [terminalStage({ session_backend: "native" }), true],
+    [terminalStage({ session_alive: false }), true],
     [terminalStage(), false],
   ])("disables unavailable terminals without a tooltip", (stage, terminals) => {
     renderModal(stage, `/?stage=${stage.id}`, terminals);

@@ -6,11 +6,7 @@ use crate::plan_server::run::start::blocked_message;
 #[test]
 fn workspace_naming_no_plan_is_an_initialized_start_that_needs_clean() {
     let dir = repo();
-    put(
-        dir.path(),
-        ".loom/work/config.toml",
-        "[terminal]\nbackend = \"tmux\"\n",
-    );
+    put(dir.path(), ".loom/work/config.toml", "[plan]\n");
     ordered_plans(dir.path());
     assert_eq!(
         workspace_state(dir.path()).unwrap(),
@@ -40,11 +36,7 @@ fn commit_empty(root: &Path) {
 /// The state view of a workspace whose config names no plan but which holds `kept`.
 fn nameless_view(kept: impl FnOnce(&Path)) -> RunStateView {
     let dir = repo();
-    put(
-        dir.path(),
-        ".loom/work/config.toml",
-        "[terminal]\nbackend = \"tmux\"\n",
-    );
+    put(dir.path(), ".loom/work/config.toml", "[plan]\n");
     ordered_plans(dir.path());
     kept(dir.path());
     state_view(&context(dir.path())).unwrap()

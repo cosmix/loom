@@ -180,26 +180,23 @@ fn a_project_scope_unset_reports_the_user_tier_when_a_sibling_key_keeps_the_sect
 }
 
 #[test]
-fn a_project_scope_write_reaches_the_terminal_section_too() {
+fn a_project_scope_write_reaches_the_planning_section() {
     let scratch = scratch();
     let updated = post_ok(
         &scratch,
-        r#"{"scope":"project","name":"terminal.backend","value":"tmux"}"#,
+        r#"{"scope":"project","name":"plan.summary_backend","value":"codex"}"#,
     );
-    assert_eq!(updated.new, ConfigValue::Text("tmux".to_owned()));
+    assert_eq!(updated.new, ConfigValue::Text("codex".to_owned()));
     assert_eq!(
-        crate::fs::work_dir::read_terminal_config(&scratch.work())
-            .expect("resolve the terminal config")
-            .backend
-            .to_string(),
-        "tmux"
+        crate::fs::work_dir::read_plan_config(&scratch.work()).summary_backend(),
+        Some("codex")
     );
     let updated = post_ok(
         &scratch,
-        r#"{"scope":"project","name":"terminal.backend","value":null}"#,
+        r#"{"scope":"project","name":"plan.summary_backend","value":null}"#,
     );
     assert_eq!(updated.entry.effective.source, Source::Default);
-    assert!(!project_text(&scratch).contains("[terminal]"));
+    assert!(!project_text(&scratch).contains("[planning]"));
 }
 
 #[test]
@@ -217,12 +214,12 @@ fn an_invalid_value_returns_the_registrys_own_message() {
 
     let (status, message) = post_err(
         &scratch,
-        r#"{"scope":"user","name":"terminal.backend","value":"kitty"}"#,
+        r#"{"scope":"user","name":"plan.summary_backend","value":"kitty"}"#,
     );
     assert_eq!(status, 400);
     assert_eq!(
         message,
-        r#"terminal.backend: "kitty" is not one of the expected values: native, tmux"#
+        r#"plan.summary_backend: "kitty" is not one of the expected values: claude, codex"#
     );
 }
 
@@ -276,7 +273,7 @@ fn a_project_write_without_a_workspace_is_a_conflict() {
     let scratch = scratch_without_workspace();
     let (status, message) = post_err(
         &scratch,
-        r#"{"scope":"project","name":"terminal.backend","value":"tmux"}"#,
+        r#"{"scope":"project","name":"plan.summary_backend","value":"codex"}"#,
     );
     assert_eq!(status, 409);
     assert!(message.contains("loom init"), "{message}");
@@ -285,10 +282,10 @@ fn a_project_write_without_a_workspace_is_a_conflict() {
     assert_eq!(
         post_ok(
             &scratch,
-            r#"{"scope":"user","name":"terminal.backend","value":"tmux"}"#,
+            r#"{"scope":"user","name":"plan.summary_backend","value":"codex"}"#,
         )
         .new,
-        ConfigValue::Text("tmux".to_owned())
+        ConfigValue::Text("codex".to_owned())
     );
 }
 
