@@ -2,6 +2,7 @@ use super::super::progressive_complete::{branch_work, warn_unconfirmed, BranchWo
 use super::complete_force::landing_note;
 use super::*;
 use crate::handoff::completion::content::VerificationSnapshot;
+use std::io::Write;
 
 /// Run verification phase (goal-backward verification)
 ///
@@ -19,7 +20,15 @@ pub(super) struct VerificationPhase<'a> {
 
 pub(super) fn run_verification_phase(phase: VerificationPhase<'_>) -> Result<()> {
     if phase.no_verify {
-        return complete_without_verification(phase.stage, phase.stage_id, phase.work_dir);
+        let cwd = std::env::current_dir().context("Failed to get current directory")?;
+        let repo_root = find_repo_root_from_cwd(&cwd).unwrap_or(cwd);
+        return complete_without_verification(
+            phase.stage,
+            phase.stage_id,
+            &repo_root,
+            phase.work_dir,
+            &mut std::io::stdout(),
+        );
     }
     complete_verification::run(&complete_verification::VerificationChecks {
         stage: phase.stage,
@@ -64,10 +73,16 @@ fn merge_verified_stage(
     Ok(())
 }
 
-fn complete_without_verification(stage: &mut Stage, stage_id: &str, work_dir: &Path) -> Result<()> {
-    let cwd = std::env::current_dir().context("Failed to get current directory")?;
-    let repo_root = find_repo_root_from_cwd(&cwd).unwrap_or_else(|| cwd.clone());
-    let snapshot = no_verify_snapshot(stage, &repo_root, work_dir)?;
+/// Completes `stage` with no checks, recording the branch tip of `repo_root`
+/// for landing when it carries work. The report goes to `out`.
+fn complete_without_verification(
+    stage: &mut Stage,
+    stage_id: &str,
+    repo_root: &Path,
+    work_dir: &Path,
+    out: &mut dyn Write,
+) -> Result<()> {
+    let snapshot = no_verify_snapshot(stage, repo_root, work_dir)?;
     *stage = update_stage(stage_id, work_dir, |current| {
         if let Some(snapshot) = &snapshot {
             snapshot.validate_locked(current, work_dir)?;
@@ -75,9 +90,9 @@ fn complete_without_verification(stage: &mut Stage, stage_id: &str, work_dir: &P
         }
         current.try_complete(None)
     })?;
-    println!("Stage '{stage_id}' completed (skipped verification).");
+    writeln!(out, "Stage '{stage_id}' completed (skipped verification).")?;
     let note = landing_note(stage_id, DaemonServer::is_running(work_dir));
-    println!("{}", landing_line(note, snapshot.is_some()));
+    writeln!(out, "{}", landing_line(note, snapshot.is_some()))?;
     Ok(())
 }
 
@@ -196,24 +211,8 @@ fn verify_acceptance(
 }
 
 #[cfg(test)]
-mod landing_tests {
-    use super::*;
-
-    #[test]
-    fn an_unverified_completion_names_how_a_recorded_commit_lands() {
-        let note = landing_note("s1", false);
-
-        let recorded = landing_line(note.clone(), true);
-        let none = landing_line(note.clone(), false);
-
-        assert_eq!(recorded, note);
-        assert!(recorded.contains("`loom run` merges it"), "{recorded}");
-        assert_eq!(
-            none,
-            "  → No commit recorded for landing: the stage cannot merge until a commit is recorded."
-        );
-    }
-}
+#[path = "complete_pipeline_landing_tests.rs"]
+mod landing_tests;
 
 #[cfg(test)]
 mod native_gate_tests {

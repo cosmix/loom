@@ -33,12 +33,15 @@ pub(super) fn index_list(indices: &[usize]) -> String {
 }
 
 /// Step 1's scope: the run decides every failing entry of the list, so one
-/// verdict settles them all and no failing entry is left for a later block.
+/// verdict judges them all; it patches only the disputed ones (the filed-only
+/// rule) and names any other failing entry in its reasoning for the agent.
 pub(super) fn judge_every_failing(noun: &str) -> String {
     format!(
         "Judge every disputed {noun} AND every other {noun} `loom check` reports\n\
-         failing; a verdict may patch any of them. The aggregate command exit status\n\
-         decides nothing.\n\n"
+         failing. A verdict may replace or delete only a disputed {noun}, and may\n\
+         insert new ones; name any other failing {noun} you find wrong in your\n\
+         reasoning, so the stage agent can dispute it. The aggregate command exit\n\
+         status decides nothing.\n\n"
     )
 }
 

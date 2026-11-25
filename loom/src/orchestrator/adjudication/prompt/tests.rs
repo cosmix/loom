@@ -202,7 +202,7 @@ fn a_dispute_over_two_criteria_judges_both_and_every_other_failure() {
 
     assert!(p
         .instructions
-        .contains("Judge every disputed criterion AND every other criterion `loom check` reports\nfailing; a verdict may patch any of them."));
+        .contains("Judge every disputed criterion AND every other criterion `loom check` reports\nfailing. A verdict may replace or delete only a disputed criterion, and may\ninsert new ones;"));
     assert!(p
         .instructions
         .contains("disputed acceptance criteria\n13, 14."));
