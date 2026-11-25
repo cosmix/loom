@@ -65,7 +65,7 @@
 | [terminal-backends](architecture/terminal-backends.md) |  | 282 |
 | [token-accounting-and-receipts](architecture/token-accounting-and-receipts.md) | Ledger | 355 |
 | [usage-evidence](architecture/usage-evidence.md) |  | 256 |
-| [verification-v2-gates](architecture/verification-v2-gates.md) | Gates | 267 |
+| [verification-v2-gates](architecture/verification-v2-gates.md) | Gates | 278 |
 | [web-dashboard](architecture/web-dashboard.md) | Web | 137 |
 | [web-terminal](architecture/web-terminal.md) |  | 200 |
 
@@ -128,7 +128,7 @@
 | [codex-navigation](mistakes/codex-navigation.md) | Reader | 202 |
 | [codex-worker-briefing](mistakes/codex-worker-briefing.md) |  | 258 |
 | [completion-broker-credential](mistakes/completion-broker-credential.md) |  | 225 |
-| [completion-runner-blocks](mistakes/completion-runner-blocks.md) |  | 221 |
+| [completion-runner-blocks](mistakes/completion-runner-blocks.md) |  | 231 |
 | [completion-runtime](mistakes/completion-runtime.md) | Churn | 134 |
 | [computed-values-and-hidden-couplings](mistakes/computed-values-and-hidden-couplings.md) | Values | 284 |
 | [concurrency-and-locking](mistakes/concurrency-and-locking.md) |  | 207 |
@@ -155,7 +155,7 @@
 | [native-macos-delivery](mistakes/native-macos-delivery.md) | macOS boundary delivery slips: lint scope, pinned fields, shared TMPDIR | 67 |
 | [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Shared | 361 |
 | [phantom-merges](mistakes/phantom-merges.md) | Merges | 347 |
-| [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Pins | 332 |
+| [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Pins | 342 |
 | [plan-authoring](mistakes/plan-authoring.md) |  | 357 |
 | [plan-server-delivery](mistakes/plan-server-delivery.md) | Slips | 376 |
 | [planner-design-brainstorm](mistakes/planner-design-brainstorm.md) | Stubs | 141 |
@@ -228,6 +228,6 @@
 | [stage-exits-and-guards-followups](concerns/stage-exits-and-guards-followups.md) | Out-of-scope rows, open reviewer suggestions, proposed checks after exits plan | 63 |
 | [state-confinement-gaps](concerns/state-confinement-gaps.md) | Open confinement gaps: caches, task outputs, macOS networking, stage cache | 77 |
 | [token-accounting-and-proof-defects](concerns/token-accounting-and-proof-defects.md) |  | 323 |
-| [verification-v2-followups](concerns/verification-v2-followups.md) |  | 248 |
+| [verification-v2-followups](concerns/verification-v2-followups.md) |  | 247 |
 | [web-dashboard-latent-issues](concerns/web-dashboard-latent-issues.md) | UI | 100 |
 | [worktree-build-cold-start](concerns/worktree-build-cold-start.md) | Cold | 121 |

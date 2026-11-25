@@ -219,3 +219,13 @@ The unfiltered suite ran only inside host jobs.
 **Prevention:** a command a guard hook pins gets the hook's own `permissionDecision: "allow"`. A settings allow rule for it would be a second source that drifts from `resolve_trusted_loom`'s fallback.
 
 **Fix:** `emit_pinned_allow` serves the exact pinned command and the rewritten plain spelling for a main agent; `loom-hooks/tests/loom-control-complete-rewrite.sh` asserts the allow, the carried `timeout`, the dropped `run_in_background`, and no allow for a subagent.
+
+## Guidance Asked for the Gate Three Times and Guarded None of Them (2026-11-25)
+
+**What happened:** stage main agents ran `loom check` while fix workers were out, again after review fixes, and again right before `loom stage complete`. The operator reported it as recurring waste of time and tokens.
+
+**Why:** the surfaces disagreed. The signal and the review-order paragraph said one check beside the final review; Rule 4 of the orchestration skill said "gate green again" after review fixes; the settled-completion rules said "re-verified" and "Verify acceptance criteria before completing". No surface said completion runs every criterion itself. The wait-for-workers condition covered only the first check, and nothing refused a check at a bad moment. `loom check` printed no next step.
+
+**Prevention:** one end sequence on every surface, with the three phrases retired and pinned absent (`RETIRED_PHRASES`). A timing rule that agents keep breaking gets a refusal in the command itself, with an override flag, rather than a hook that scans command text. A command whose result leaves the agent choosing prints the next step.
+
+**Fix:** [Check Timing Refusals in Standard Stages](../architecture/verification-v2-gates.md#check-timing-refusals-in-standard-stages); `loom/tests/check_timing_contracts.rs` pins the refusals.

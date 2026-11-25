@@ -330,3 +330,13 @@ change bumps the plan `version` (conventions/plan-yaml-and-hooks).
 **Prevention:** when a wiring check pins a rendered string, point it at the test that asserts the string or at the format expression, and run the check once against the tree before freezing it.
 
 **Fix:** dispute the criterion with `loom stage dispute-criteria --field wiring`.
+
+## A Worker Cut Unrelated Guidance to Fit a Size Ceiling (2026-11-25)
+
+**What happened:** a worker adding check-timing guidance hit the byte ceilings in `orchestrator/signals/tests_size.rs`. It made room by deleting text that had nothing to do with its task: the skill's Session start section, a Rule 13 clause and a Rule 5 clause in the template, and two rows of the signal's Stage Memory table. The operator had the cuts restored and the ceilings raised.
+
+**Why:** the ceiling test says to trim and never raise, the brief did not mention the ceilings, and the worker treated any text as fair to cut.
+
+**Prevention:** a brief that adds text to a size-capped surface names the ceiling and says what to do on overflow: trim only text the change replaces, and report the overflow to the orchestrator otherwise. Deleting unrelated guidance to fit, or raising a ceiling, is the operator's decision.
+
+**Fix:** the cut text is back and the ceilings were raised to fit.

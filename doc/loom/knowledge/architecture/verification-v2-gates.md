@@ -265,3 +265,14 @@ A live resolver of a stage in `MergeConflict` or `MergeBlocked` may relay `loom 
 Gates and a check must not share a worktree. `--resolved` (after its worktree refusal) and the resolver-exit landing call `orchestrator/core/host_jobs.rs::stop_running_check`, which cancels the job and settles it with `HostJobRunner::settle_held`, starting no other job; a child still held refuses the landing. The operator's `--resolved` refuses a live job while a daemon runs. With no daemon it cancels a queued job and continues, and cancels a running one and asks for a rerun, since `child_watchdog` stops the orphan asynchronously.
 
 `loom knowledge sync` in a capsule can exit non-zero after writing `INDEX.md`: `--structural-only` skips only the semantic reconcile, and the catalog publish to the denied `.loom/cache` still runs and is not tolerated. `loom knowledge check`'s output is the proof there.
+
+## Check Timing Refusals in Standard Stages
+
+A standard stage runs one full `loom check <stage-id>`, beside the final review round. `commands/verify_timing.rs` refuses the other cases from a stage session, before a request ticket is written, with exit 3 and the reason on stderr:
+
+- **A worker is out.** Any selection except `--at-base` is refused while `subagents/<stage>/starts.jsonl` holds a start for this session whose `agent_type` is not `loom-code-reviewer` and `lifecycle.jsonl` holds no terminal record for it, or while a native Codex worker is outstanding (`commands/stage/native_gate.rs`). A reviewer being out refuses nothing.
+- **A review round is recorded.** A full check (no `--criterion`, `--contracts`, `--at-base`) is refused once `reviews/<stage>/` holds a round. Fix rounds use `--criterion <n>`; the full gate then belongs to `loom stage complete`.
+
+`--force` overrides both. A call that finds its own pending request (the wait or join call) is never refused. Operator shells, integration-verify stages, knowledge stages and merge resolvers are outside the guard. After a result the check prints a `Next:` line naming the following step and, on failure, the exact `--criterion` re-check.
+
+Limits: a dropped stop event, an unparsable lifecycle row, or a start row of an earlier attempt under the same session id refuses a check that should run; rounds carried from an earlier attempt refuse the first full check of a retry. `--force` is the way out of each. Integration-verify has no timing guard.
