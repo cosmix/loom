@@ -307,7 +307,7 @@ only thing that proves it reaches the path. See [[tests-that-cannot-fail]].
 ## A Signal Said "the Fixed Prompt" and Defined None (2026-10-06)
 
 The wave signal told the orchestrator to spawn workers "with the fixed prompt plus Your brief", but neither the
-plan nor `common.md` held any such text. The orchestrator assembled the worker preamble, the brief path, the
+plan nor `briefs/<plan>/common.md` held any such text. The orchestrator assembled the worker preamble, the brief path, the
 amendment lines, the frozen contract (read-only) and the territory's acceptance list instead. A plan that names
 a shared prompt includes its text, so the orchestrator does not invent one.
 

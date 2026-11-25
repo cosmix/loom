@@ -385,3 +385,13 @@ never by adding a baseline entry.
 **Prevention:** when a test paces a stream by bytes, carry each tick's overshoot into the next tick as debt, so the average rate holds whatever the message size.
 
 **Fix:** `take_tick` in `commands/status/web/terminal/tests_bridge/liveness.rs` keeps a running budget across ticks.
+
+## Knowledge check passed locally on untracked files
+
+**What happened:** `loom knowledge check --strict` passed in the main checkout and failed in CI: five knowledge files named a bare `common.md`, which resolved against untracked brief bundles under `doc/plans/briefs/` that CI's checkout does not have.
+
+**Why:** reference resolution reads the working tree, so untracked and ignored files make a missing reference look present.
+
+**Prevention:** reproduce a CI knowledge-check result in a fresh `git clone` of the commit, and write a brief file as `briefs/<plan>/common.md`, never a bare file name.
+
+**Fix:** the five mentions name `briefs/<plan>/common.md`.

@@ -173,7 +173,7 @@ exists, or pin the interface inline in the brief so codex does not wait for it.
 
 ## Brief Paths Are Not Repository Paths, and Briefs Can Contradict the Code
 
-**What happened:** source outlines used `src/...` paths from a brief while the crate lives under `loom/src`; a brief asked for a zero digest while `store::create_invocation` validates the digest against the brief bytes (`sha256_hex(b"brief")` works); `common.md` spells `--unit-id` while the I2 brief named the clap field `unit`; the runtime brief and stage text asked for a `mod testkit;` line the freeze scaffold check refuses. In each case the worker followed the brief literally or guessed.
+**What happened:** source outlines used `src/...` paths from a brief while the crate lives under `loom/src`; a brief asked for a zero digest while `store::create_invocation` validates the digest against the brief bytes (`sha256_hex(b"brief")` works); `briefs/<plan>/common.md` spells `--unit-id` while the I2 brief named the clap field `unit`; the runtime brief and stage text asked for a `mod testkit;` line the freeze scaffold check refuses. In each case the worker followed the brief literally or guessed.
 
 **Why:** briefs were written from the design, not from the final tree, and the contract freeze checks only the scaffold lines it lists.
 
