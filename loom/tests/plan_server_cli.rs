@@ -71,9 +71,8 @@ fn start(cmd: &mut Command) -> (Server, String) {
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
         for line in BufReader::new(stdout).lines().map_while(Result::ok) {
-            if tx.send(line).is_err() {
-                break;
-            }
+            // Keep draining once the URL is read so the server never sees a closed stdout.
+            let _ = tx.send(line);
         }
     });
     let server = Server(child);

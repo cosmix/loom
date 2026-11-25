@@ -251,9 +251,7 @@ fn launch_command(
         port: args.port,
         read_only: Box::new(ReadOnly::detect),
         install: Box::new(|ctx| {
-            for line in startup::read_only_lines(ctx.read_only().problems()) {
-                println!("{line}");
-            }
+            lifecycle::print_lines(startup::read_only_lines(ctx.read_only().problems()));
             routes::install_all(ctx);
         }),
         routes: routes::all_routes(),
@@ -275,9 +273,7 @@ fn announce(server: &RunningServer, root: &Path, no_open: bool) {
         hostname: hostname(),
         read_only: &[],
     });
-    for line in lines {
-        println!("{line}");
-    }
+    lifecycle::print_lines(lines);
     if let (OpenDecision::Open, Some(url)) = (browser::decide(&env, no_open), bind.urls.first()) {
         browser::open(url);
     }
