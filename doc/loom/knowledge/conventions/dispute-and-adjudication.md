@@ -39,9 +39,10 @@ The adjudicator amends ONLY:
 
 - `acceptance: Vec<AcceptanceCriterion>` (plan/schema/types.rs::StageDefinition)
 - `wiring: Vec<WiringCheck>` (plan/schema/types.rs::StageDefinition)
+- `wiring_tests` and `artifacts` on a dispute that names that list (`CriterionField::WiringTests`, `CriterionField::Artifacts`)
 - `contracts: Vec<ContractSpec>` on a v2 contract dispute (`AmendmentField::Contracts`)
 
-Never amends: `before_stage`, `after_stage`, `artifacts`, `dependencies`, `id`, `working_dir`, `model`, `sandbox`, `execution`. Use `AmendmentField` enum to enforce this at the type level.
+Never amends: `before_stage`, `after_stage`, `dependencies`, `id`, `working_dir`, `model`, `sandbox`, `execution`. Use `AmendmentField` enum to enforce this at the type level. A criterion accept may replace or delete only the indices the dispute filed (an insert may name any index): `orchestrator/adjudication/verdict_indices.rs::unfiled_patch` finds an unfiled one and `parse_and_validate_in` returns Err, so `record.rs` refuses the verdict and writes nothing; a verdict defect meant for the judge goes through that Err, never through a coerced needs-more-evidence, which is persisted and handed to the stage agent.
 
 **A stage session cannot amend.** `loom stage amend` is an operator command: `commands/stage/amend.rs` refuses a process whose `LOOM_WORKTREE_PATH` names a stage worktree (`refuse_stage_session`) and one with `LOOM_STAGE_ID` or `LOOM_SESSION_ID` set (`refuse_session_identity`). Both are guards against a session running the command by mistake; the boundary is the session's write denies on `.loom`, which stop the amendment from being written whatever the environment says.
 

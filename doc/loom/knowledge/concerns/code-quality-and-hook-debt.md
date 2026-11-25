@@ -60,12 +60,6 @@ that grows it (see `mistakes/testing-and-lint.md`).
 
 ## Ledger TUI: Tech Debt From the Live-Ledger-Dashboard Plan
 
-- **`StageSummary.session_backend` has no Rust reader.** Populated by `build_stage_summary`
-  (`status/data/collector.rs`, from `session.backend`), but no ledger column, static
-  renderer line, or attention entry reads it; every other Rust occurrence is a test-fixture struct
-  literal. Its only reader is the web stage page (`web/src/routes/stage.tsx`), which shows the
-  `loom run --backend tmux` command when the backend is `native`. Either give the ledger a BACKEND
-  cell or accept the web as the sole consumer.
 - **Apparently unused:** `pub use theme::{StatusColors,
 Theme}` (`commands/status/ui/mod.rs`, every consumer imports `ui::theme::Theme` directly) and `pub use
 app::TuiApp` (`commands/status/ui/tui/mod.rs`, used only by `run_tui` in the same file).
@@ -163,7 +157,7 @@ Reviewer suggestions and findings the plan left unimplemented, with no fix in th
 - **The large-output notice may never reach the model.** `_loom_bash_output_notice` in `loom-hooks/post-tool-use.sh` prints its notice on stderr and exits 0. Claude Code passes a hook's stderr to the model only on exit 2, so the notice reaches only the transcript. The fix shape is the stdout `additionalContext` JSON channel that `_loom_main_edit_advisory` uses ([hook-system.md](../architecture/hook-system.md)). The notice text already matches Rule 14 (log with `2>&1; echo "exit=$?"`, read failures with `rg -n`, no `tail`), and `loom-hooks/tests/post-tool-use-large-output-notice.sh` pins that wording.
 - **`post-tool-use.sh` is 398 of 400 lines (Rule 17).** The next addition moves `_loom_main_edit_advisory` into a sourced helper, as `_read_ledger.sh` was split for size; a new embedded helper costs the four hook-registration surfaces (`fs/permissions/constants.rs`, the hook configuration builder, the asset tests, `install.sh`).
 - **The advisory's tally is heavier than it needs to be.** It runs three `jq` processes per edit call (agent id, file path, line count), computes the ledger path twice and re-extracts the edited path that the EDIT RECORDING block already extracts. One `jq` call and a shared ledger-path helper would cut the hot-path cost; the recording block needs the `loom` binary and the tally must not, so the extractor cannot simply be shared.
-- **Worktree containment is a lexical prefix test.** A symlinked spelling of the worktree never tallies, unlike `is_within` in `worktree-file-guard.sh`, which canonicalizes with `pwd -P`. Risk is low because `terminal/native/wrapper.rs` canonicalizes `LOOM_WORKTREE_PATH`.
+- **Worktree containment is a lexical prefix test.** A symlinked spelling of the worktree never tallies, unlike `is_within` in `worktree-file-guard.sh`, which canonicalizes with `pwd -P`. Risk is low because `terminal/launch/wrapper.rs` canonicalizes `LOOM_WORKTREE_PATH`.
 - **The `warned` check and the `warned` append are not locked.** Two parallel main-agent edit calls that both cross the limit can each print the advisory once. Rare duplicate, no data loss.
 - **`completion_rejection_reason` in `loom-hooks/loom-control-complete.sh` tests the unquoted-heredoc pattern first and against the raw command.** A refused command with an inner `cat <<X` inside a quoted body, or a `<<n` shift, reports "quote the delimiter" instead of the real cause (a separator, a relative path, a shell wrapper). Message text only; the refusal is unchanged. Check it after the `ATTEMPT_*` reasons.
 - **`loom-hooks/session-start.sh` opens its re-anchor with "Context was compacted."** even for source `resume`, which template Rule 3b now routes to the same message; the wording could name both.

@@ -52,7 +52,7 @@ child ([Launching the Daemon](orchestrator-loop.md)).
 on macOS the `claude` CLI finds its Keychain login by `$USER`, so a session without it reads "Not
 logged in"); `CARGO_HOME`, `RUSTUP_HOME` (locations CI images relocate); `SCCACHE_DIR`,
 `SCCACHE_CACHE_SIZE` (inert without a selected wrapper, whose policy is in
-`orchestrator/terminal/native/build_cache.rs`; `RUSTC_WRAPPER` is not forwarded); `LANG`, `LC_ALL`,
+`orchestrator/terminal/launch/build_cache.rs`; `RUSTC_WRAPPER` is not forwarded); `LANG`, `LC_ALL`,
 `LC_CTYPE`, `TERM`, `TERMINFO`, `TERMINFO_DIRS`, `COLORTERM`, `TERM_PROGRAM`, `SHELL`; `DISPLAY`,
 `WAYLAND_DISPLAY`, `XAUTHORITY`, `DBUS_SESSION_BUS_ADDRESS`, `XDG_RUNTIME_DIR`; `TMUX_TMPDIR`, `TMUX`,
 `TMUX_PANE`, `TMPDIR`; the proxy variables in both cases (`HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`,
@@ -170,7 +170,7 @@ produced.
 | `loom/src/models/stage/sandbox_config.rs::CommandConfinement`  | `CommandConfinement`; `NetworkConfig`                                              |
 | `loom/src/plan/schema/types.rs::SandboxConfig`                 | plan-level `command_confinement`                                                          |
 | `loom/src/sandbox/settings.rs`                                 | per-stage session sandbox emission                                                        |
-| `loom/src/orchestrator/terminal/native/wrapper/script_text.rs` | renders the session `exec env -i` loop from `AGENT_SESSION_ENV_NAMES` (see `concerns.md`) |
+| `loom/src/orchestrator/terminal/launch/wrapper/script_text.rs` | renders the session `exec env -i` loop from `AGENT_SESSION_ENV_NAMES` (see `concerns.md`) |
 | `loom/src/verify/criteria/tests/confine_tests.rs`              | the matched-control test pattern                                                          |
 
 ## Claude Code Grants a Linked Worktree Its Whole Git Common Directory
@@ -238,7 +238,7 @@ Loom's own administrative-directory denies and `config.worktree` check: [Loom's 
 
 ## In-Tree `allow_write` Entries Are Not Emitted
 
-`sandbox::build_settings` (`sandbox/settings.rs`) drops every non-glob `allow_write` entry whose resolved path is the session's working directory or inside it, so it reaches neither `sandbox.filesystem.allowWrite` nor an `Edit(...)` allow. The predicate is `sandbox/grant_paths.rs::is_inside_cwd`: `~/`, `/` and `//` entries resolve as absolute, a bare entry against the cwd, and both sides through symlinks, so an entry reaching through a link to a target outside the cwd (a worktree's `.loom/work/...`) is kept; globs (`*`, `?`, `[`, `{`) and entries that fail to resolve are kept too. `SettingsTarget::cwd` carries the working directory, and the session capsule (`orchestrator/terminal/native/session_settings/contents.rs::capsule_settings`) always sets it. `loom plan verify` warns on a relative non-glob entry outside `.loom/` and `.work/` (`plan/schema/validation/v2_lints/sandbox_capability.rs::report_in_tree_grants`).
+`sandbox::build_settings` (`sandbox/settings.rs`) drops every non-glob `allow_write` entry whose resolved path is the session's working directory or inside it, so it reaches neither `sandbox.filesystem.allowWrite` nor an `Edit(...)` allow. The predicate is `sandbox/grant_paths.rs::is_inside_cwd`: `~/`, `/` and `//` entries resolve as absolute, a bare entry against the cwd, and both sides through symlinks, so an entry reaching through a link to a target outside the cwd (a worktree's `.loom/work/...`) is kept; globs (`*`, `?`, `[`, `{`) and entries that fail to resolve are kept too. `SettingsTarget::cwd` carries the working directory, and the session capsule (`orchestrator/terminal/launch/session_settings/contents.rs::capsule_settings`) always sets it. `loom plan verify` warns on a relative non-glob entry outside `.loom/` and `.work/` (`plan/schema/validation/v2_lints/sandbox_capability.rs::report_in_tree_grants`).
 
 Why: the cwd is writable already, so the entry grants nothing, while Claude Code's Linux sandbox bind-mounts every listed non-glob path on its own and the kernel refuses to unlink or rename a mount point: git replacing the file, or `rm -rf` of a listed directory, fails with `Device or resource busy`. Deny rules still win, so effective permissions do not change. One side effect: under `permission_mode: default` a dropped exact-path entry yields no `Edit(...)` allow, so a file-tool edit there can prompt; a glob keeps its rule.
 
@@ -308,8 +308,8 @@ Claude Code sandbox and have not shown this. Treat it as an srt CLI concurrency 
 otherwise, and keep the probes' sentinel rule (`mistakes/verification-harness.md`, "A Must-Fail Probe
 That Counts Any Non-Zero Exit Passes When the Harness Never Started").
 
-`orchestrator/terminal/native/tests_confinement_e2e.rs` and its `srt`-backed sibling
-`tests_confinement_srt.rs` (loaded via `#[path]`, registered from `native/launch.rs`), plus
+`orchestrator/terminal/launch/tests_confinement_e2e.rs` and its `srt`-backed sibling
+`tests_confinement_srt.rs` (loaded via `#[path]`, registered from `launch/prepare.rs`), plus
 `tests/integration/confinement_status.rs`, exercise the OS-level sandbox denies end to end. Run with
 `env -u LOOM_WORK_DIR LOOM_TEST_REQUIRE_SANDBOX_FREE=1 cargo test confinement` outside the Claude
 Code Bash sandbox: `srt` (`@anthropic-ai/sandbox-runtime`, runnable via `bunx`) cannot run INSIDE

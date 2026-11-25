@@ -31,8 +31,8 @@ The full hook roster — every script in `loom-hooks/`, the event it binds to, w
 
 ## Terminal Backends and `loom attach`
 
-The dispatcher/lanes, `[terminal]` config, `--backend` flag, and `loom attach` entry
-points all live in one topic file now.
+The `SessionBackend` facade, the tmux lane, the launch machinery and the `loom attach` entry
+points all live in one topic file.
 
 Full detail: [terminal-backends.md](architecture/terminal-backends.md).
 
@@ -43,7 +43,7 @@ Full detail: [terminal-backends.md](architecture/terminal-backends.md).
 | `verify/criteria/confine.rs`                                         | `spawn_confined` (the single leaf primitive for every plan-authored command), `resolve_confinement`, `plan_confinement` |
 | `process/environment.rs`                                             | `AGENT_SESSION_ENV_NAMES`, `STAGE_HOST_ENV_ALLOWLIST`, `apply_stage_environment`                                        |
 | `models/stage/sandbox_config.rs::CommandConfinement`                 | `CommandConfinement`; `NetworkConfig`                                                                            |
-| `orchestrator/terminal/native/wrapper/script_text.rs::env_allowlist` | renders the shared `process::AGENT_SESSION_ENV_NAMES` allowlist                                                         |
+| `orchestrator/terminal/launch/wrapper/script_text.rs::env_allowlist` | renders the shared `process::AGENT_SESSION_ENV_NAMES` allowlist                                                         |
 
 Start from `architecture/execution-containment.md` — it states precisely what these do and
 do not guarantee, which is narrower than the word "containment" suggests.

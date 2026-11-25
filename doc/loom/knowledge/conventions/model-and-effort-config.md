@@ -49,12 +49,12 @@ writer session (`SessionType::Contract`), independently of the stage type it wri
 contract turns into disputes, adjudication and delay, so it does not inherit a cheaper
 orchestrator model. They resolve project -> user -> built-in per key through
 `fs::work_dir::resolve_contract_writer_model_effort`, called from
-`terminal/native/launch.rs::model_and_effort`; a plan stage's `model` / `reasoning_effort`
+`terminal/launch/prepare.rs::model_and_effort`; a plan stage's `model` / `reasoning_effort`
 fields never reach it. A malformed project section falls through, as for stage sessions.
 
 ## KEY-Level vs SECTION-Level Fallback
 
-All five project-backed sections (`[pressure]`, `[models]`, `[terminal]`, `[context]` and `[planning]`) resolve **per key**: a project section that omits a key lets that key fall through to the user config, then the built-in. A keyless section changes nothing (`fs/work_dir/config_sections.rs::remove_key` drops a section once its last key goes). The runtime readers are `read_context_config`, `read_terminal_config` and `read_plan_config` in `fs/work_dir/`, and the web `/api/config` resolves through the same predicate.
+All four project-backed sections (`[pressure]`, `[models]`, `[context]` and `[planning]`) resolve **per key**: a project section that omits a key lets that key fall through to the user config, then the built-in. A keyless section changes nothing (`fs/work_dir/config_sections.rs::remove_key` drops a section once its last key goes). The runtime readers are `read_context_config` and `read_plan_config` in `fs/work_dir/`, and the web `/api/config` resolves through the same predicate.
 
 One qualification: a project `[context]` that sets `model_window_tokens` supplies
 `ceiling_tokens` (derived from that window) even when it omits `ceiling_tokens`, so a user

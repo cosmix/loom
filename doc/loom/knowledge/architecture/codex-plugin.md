@@ -134,11 +134,11 @@ Scope decides the file: user is `~/.claude/settings.json`, project is `.claude/s
 `.claude/settings.local.json`; the plugin lives under `enabledPlugins` and `extraKnownMarketplaces`.
 
 Every loom-spawned session launches with `--settings <capsule> --setting-sources user,project`
-(`capsule_from` in `loom/src/orchestrator/terminal/native/capsule.rs`), so user and project scope load in
+(`capsule_from` in `loom/src/orchestrator/terminal/launch/capsule.rs`), so user and project scope load in
 every session of every kind with no further condition. Local scope does not load by itself: the capsule
 carries the checkout's `enabledPlugins` and `extraKnownMarketplaces` from `.claude/settings.local.json`
 only when `capsule_settings` sets `SettingsTarget::carry_plugin_keys` from `implementers.includes_codex()`
-(`native/session_settings/contents.rs`), which `build_settings` then applies through
+(`launch/session_settings/contents.rs`), which `build_settings` then applies through
 `preserve_unowned_keys` over `PRESERVED_SETTINGS_KEYS` (`loom/src/sandbox/settings.rs`). A local-scope
 install therefore reaches a loom-spawned session only on a stage whose `implementers` include codex.
 User or project scope has no such condition. `skills/loom-plan-writer/references/codex-implementers.md`

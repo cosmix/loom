@@ -74,7 +74,7 @@ prints the record; `loom stage contracts restore <stage> [--contract <id>]` copi
 
 **Session-kind filters.** A second worker kind breaks every filter keyed on `SessionType::Stage`. Six sites
 missed it: `orchestrator/coherence.rs` (`worker_session_type`, now `is_worker_session_type` and
-`live_worker_sessions`), `core/session_adoption.rs`, `native/wrapper.rs::kind_env` (`LOOM_WORKTREE_PATH` export, else
+`live_worker_sessions`), `core/session_adoption.rs`, `launch/wrapper.rs::kind_env` (`LOOM_WORKTREE_PATH` export, else
 `relay/emit/cwd.rs::checkout_boundary` and `loom-control-complete.sh` treat the agent as a main-repo agent),
 `status/render/graph.rs`, `self_service.rs` (`BlockStage`), and `relay/matrix.rs` (Contract sends everything
 Stage does except `Dispute`, `Verdict` and completion, plus `FreezeContracts`, which only Contract may send).

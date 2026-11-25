@@ -138,7 +138,7 @@ First dated log line is `2026-05-13T16:13:18.544430Z` — within 1s of the lock 
 
 **Prevention:** a long-lived process must not re-derive its own binary path from `current_exe()` after start. Record the path once and re-validate it at use. An installer that replaces a binary must name any running process still on the old one.
 
-**Fix:** `DaemonServer::serve` (`daemon/server/lifecycle.rs`, the daemon child) calls `record_daemon_binary`, which stores the canonical path in a `OnceLock` (`orchestrator/terminal/native/launch/host.rs`). `host_facts` uses that path, and `accepted_loom_bin` still checks it on every spawn. `loom update` warns when the current workspace's daemon is alive (`commands/self_update/daemon_notice.rs`). A daemon started before this fix still needs a restart after an update.
+**Fix:** `DaemonServer::serve` (`daemon/server/lifecycle.rs`, the daemon child) calls `record_daemon_binary`, which stores the canonical path in a `OnceLock` (`orchestrator/terminal/launch/prepare/host.rs`). `host_facts` uses that path, and `accepted_loom_bin` still checks it on every spawn. `loom update` warns when the current workspace's daemon is alive (`commands/self_update/daemon_notice.rs`). A daemon started before this fix still needs a restart after an update.
 
 ## The Daemon Was Forked After Threads Existed, and the Ready Byte Went Out Before the Crash (2026-10-06)
 

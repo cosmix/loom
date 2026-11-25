@@ -43,11 +43,11 @@
 ## Sandbox
 
 - `sandbox/config.rs` - MergedSandboxConfig, merge_config(), expand_paths()
-- `sandbox/settings.rs` - generate_settings_json(), build_settings() (builds the settings document and writes nothing; the per-session capsule file is written by `write_session_capsule` in `orchestrator/terminal/native/session_settings.rs`, contents from `capsule_settings`); `target_is_worktree` decides whether a capsule is worktree-rooted
+- `sandbox/settings.rs` - generate_settings_json(), build_settings() (builds the settings document and writes nothing; the per-session capsule file is written by `write_session_capsule` in `orchestrator/terminal/launch/session_settings.rs`, contents from `capsule_settings`); `target_is_worktree` decides whether a capsule is worktree-rooted
 - `sandbox/settings/policy.rs` - `mandatory_deny_read(codex_licensed)`: the read denies every capsule carries (credential directories, nine credential files, the codex credential unless the stage licenses the lane)
 - `sandbox/control_surfaces/session_denies.rs` - `session_denies`: the capsule's write denies, including the whole-directory sibling administrative denies (`deny_worktree_admin_dirs`)
-- `orchestrator/terminal/native/session_settings/contents.rs` - `capsule_deny_rules`: the Edit rules plus the tool-route denies (`SESSION_TOOL_DENIES`, and `Workflow` unless `workflow_licensed`)
-- `orchestrator/terminal/native/tests_capsule_bwrap.rs` - the bubblewrap probe of the emitted capsule (`tests_capsule_denies::bwrap`); `process/sandbox_probe.rs` holds its skip helpers
+- `orchestrator/terminal/launch/session_settings/contents.rs` - `capsule_deny_rules`: the Edit rules plus the tool-route denies (`SESSION_TOOL_DENIES`, and `Workflow` unless `workflow_licensed`)
+- `orchestrator/terminal/launch/tests_capsule_bwrap.rs` - the bubblewrap probe of the emitted capsule (`tests_capsule_denies::bwrap`); `process/sandbox_probe.rs` holds its skip helpers
 - `orchestrator/core/manual_start.rs` - the pure builders for the `To start:` command lines `loom run --manual` prints, each followed by a `Confinement: none.` notice
 - `doc/sandbox-release-checklist.md` - the fifteen-row manual canary a person runs against a live Claude Code session before a release that touches the capsule
 
@@ -91,11 +91,11 @@ The state root is `<repo>/.loom/work`. A workspace created before the move keeps
 Two more subdirectories, resolved by their own modules rather than a `WorkDir` helper:
 
 - `acceptance-cache/` — cached acceptance passes, `<sha256>.json`, keyed by the criterion's contract digest plus the input fingerprint (content manifest and branch name, environment, executables, containment; `verify/criteria/cache.rs`)
-- `capsules/` — per-session generated Claude Code settings files (`<session-id>.settings.json`) for judge sessions, written at spawn and removed on close (`terminal/native/session_settings.rs`)
+- `capsules/` — per-session generated Claude Code settings files (`<session-id>.settings.json`) for judge sessions, written at spawn and removed on close (`terminal/launch/session_settings.rs`)
 
 ## Sandbox Settings — ANTHROPIC_API_KEY
 
-`ANTHROPIC_API_KEY` never reaches an agent session through the environment: the session wrapper rebuilds the child environment from a minimal host allowlist (`orchestrator/terminal/native/wrapper/script_text.rs::env_allowlist`), so ambient credentials and token-shaped variables are not inherited. `sandbox/settings.rs` has no env filter.
+`ANTHROPIC_API_KEY` never reaches an agent session through the environment: the session wrapper rebuilds the child environment from a minimal host allowlist (`orchestrator/terminal/launch/wrapper/script_text.rs::env_allowlist`), so ambient credentials and token-shaped variables are not inherited. `sandbox/settings.rs` has no env filter.
 
 - This is env hygiene only and has nothing to do with adjudication, which runs as an interactive loom session through the `TerminalBackend` with no API key and no `claude -p` — see conventions/dispute-and-adjudication.md § Adjudicator Transport Convention.
 
@@ -115,7 +115,7 @@ This is the pattern for loom's HTTP consumers (self-update). The adjudicator is 
 
 ## Installation Asset Roots
 
-`assets::install::default_paths` (`assets/install/resolve.rs`) is the one resolver for installation roots: canonical `<home>/.claude` and `<home>/.codex` (`canonical_or_lexical`, so a symlinked `~/.claude` matches the shell guards' `pwd -P` spelling and the sandbox denies cover the real path). A missing or relative `$HOME` is an error; `require_default_roots` (`orchestrator/terminal/native/launch/host.rs`) turns it into a refused spawn and a refused `loom run`, and `fs/permissions/approved.rs` refuses the approved-list fold-back. `loom install-assets` takes no root flags and honours no root env var; tests isolate it by pointing `HOME` at a temp dir (`assets/install/test_env.rs` `InstallRootsEnv` pins `HOME` and `LOOM_HOOKS_DIR`).
+`assets::install::default_paths` (`assets/install/resolve.rs`) is the one resolver for installation roots: canonical `<home>/.claude` and `<home>/.codex` (`canonical_or_lexical`, so a symlinked `~/.claude` matches the shell guards' `pwd -P` spelling and the sandbox denies cover the real path). A missing or relative `$HOME` is an error; `require_default_roots` (`orchestrator/terminal/launch/prepare/host.rs`) turns it into a refused spawn and a refused `loom run`, and `fs/permissions/approved.rs` refuses the approved-list fold-back. `loom install-assets` takes no root flags and honours no root env var; tests isolate it by pointing `HOME` at a temp dir (`assets/install/test_env.rs` `InstallRootsEnv` pins `HOME` and `LOOM_HOOKS_DIR`).
 
 Every reader of an installed asset uses those roots: the hooks dir (`hooks::generator::find_hooks_dir`, via `claude_hooks_dir`), hook registration and drift, the skill index, `loom skill-index`/`repair`/`init`, the forward-wrapper spelling (the signal names `~/.claude/hooks/loom/codex-forward.sh`; the guard and `models/forward_receipt/transcript/argv.rs` accept that tilde form, the `$HOME` path or the canonical path), and the shell hooks, which resolve everything from `$HOME`. `skill-trigger.sh` alone reads its own location, to tell its `~/.claude` copy from its `~/.codex` copy. These are the directories Claude Code and Codex read for their defaults, which is why no other location is offered: see "A relocated Claude root never reached stage sessions" in [computed-values-and-hidden-couplings](../mistakes/computed-values-and-hidden-couplings.md) and "Loom Assets Outside ~/.claude Need a Plugin" in [guidance-channels-and-plugin-scope](../conventions/guidance-channels-and-plugin-scope.md).
 

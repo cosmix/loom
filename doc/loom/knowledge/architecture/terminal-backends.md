@@ -2,55 +2,6 @@
 
 >
 
-## Two Lanes Behind One Dispatcher
-
-`SessionBackend` (`orchestrator/terminal/backend.rs`) is the single type every spawn/kill/liveness
-call goes through. It wraps two concrete lanes:
-
-| Lane               | Type                                 | Where sessions run                      |
-| ------------------ | ------------------------------------ | --------------------------------------- |
-| `Native` (opt-in)  | `NativeBackend` (`terminal/native/`) | a host terminal emulator window         |
-| `Tmux` (default)   | `TmuxBackend` (`terminal/tmux/`)     | a detached tmux server, no GUI required |
-
-`SessionBackend::from_config(work_dir)` constructs `NativeBackend::new` eagerly when Native is configured (`orchestrator/terminal/backend.rs::from_config`), so valid configuration alone does not guarantee success: terminal detection can fail on a headless host. Tmux configuration constructs no native backend at startup. Each native detection/process-discovery probe has a two-second deadline.
-
-When Tmux is configured but a persisted session belongs to Native, `native_lane` constructs the native backend lazily and memoizes success or failure in `OnceLock<Result<NativeBackend, String>>` (`orchestrator/terminal/backend.rs::native_lane`). The configured Native lane uses the eagerly constructed backend. `OnceLock` keeps the dispatcher `Send + Sync` for monitor access through `Arc`; storing errors as strings permits repeated reporting without rerunning terminal probes.
-
-## Configuration and Lane Resolution
-
-- **Config:** `[terminal]` / `backend = "native" | "tmux"` in `.loom/work/config.toml`.
-  `TerminalConfig` (`models/session/types.rs::TerminalConfig`) holds one `SessionBackendKind`
-  (`models/session/types.rs::SessionBackendKind`, `#[serde(rename_all = "lowercase")]`, `#[default] Tmux`).
-  Helpers `read_terminal_config` / `write_terminal_config` (`fs/work_dir/config_sections/terminal_config.rs`); a missing
-  `backend` key (section absent or empty) falls through to `~/.loom/config.toml`'s `terminal.backend`, THEN the built-in default —
-  absence is the inheritance channel, not a synonym for any one backend. Written at init by
-  `commands/init/plan_setup.rs`, and only when someone chose explicitly.
-- **CLI:** `--backend <native|tmux>` on both `loom init` (skips the interactive prompt) and
-  `loom run` / `loom run --foreground` (persists to `[terminal]`). `loom run`'s
-  `resolve_backend_flag` (`commands/run/mod.rs::resolve_backend_flag`) is shared by both run paths.
-- **`loom init`'s prompt inherits** (`commands/init/backend.rs`): pressing Enter returns `None`, so
-  no `[terminal]` section is written and the repo follows the user config live; typing `native` or
-  `tmux` pins that value into the workspace. The prompt's default label comes from
-  `backend_default_label`, so an operator with `terminal.backend = "tmux"` in `~/.loom/config.toml` sees
-  `(tmux, from ~/.loom/config.toml)` and keeps following the user config. The tmux-missing-from-PATH warning keys off `effective_backend` (explicit
-  choice, else the user config) because an inherited tmux backend arrives as `None`.
-- **Per-spawn resolution** — `SessionBackend::resolve_lane` returns the configured kind verbatim; there
-  is no marker and no automatic lane switch. `dispatch_spawn` dispatches on that configured kind only:
-  configured tmux with no tmux on PATH returns `Err` (message names the missing binary and how to
-  reconfigure), and a tmux spawn failure returns `Err` with context `tmux spawn failed for session
-'<id>'` instead of retrying on the native lane.
-
-## Session-Recorded Backend Dispatch
-
-`Session.backend: SessionBackendKind` (`#[serde(default)]`, `models/session/types.rs::Session`) records
-the lane **actually used**, and is persisted to `.loom/work/sessions/<id>.md`.
-
-This is the load-bearing part: sessions are reconstructed from disk after a daemon restart, so
-kill/liveness must route on the _session's_ recorded backend, never on the currently-configured one.
-`SessionBackend::is_session_alive` and `kill_session` dispatch on `session.backend`, so a run that
-changed `[terminal] backend` between sessions still kills and monitors older sessions through the lane
-that spawned them.
-
 ## One tmux Server Per Session — Crash Containment
 
 The tmux lane deliberately does **not** use one shared server with many windows. Each session gets its
@@ -69,16 +20,11 @@ ids run up to 128 chars and would silently blow the limit. See `mistakes/tmux-ba
 
 ## Liveness Uses Verified Process Identity, Not tmux
 
-`TmuxBackend::is_session_alive` and the native/headless lanes consult the shared
-`process::ProcessIdentity { pid, start_time }` service. There is deliberately no `tmux has-session`
-fallback for liveness and no raw `session.pid` fallback for signaling.
+`TmuxBackend::is_session_alive` consults the shared `process::ProcessIdentity { pid, start_time }` service. There is deliberately no `tmux has-session` fallback for liveness and no raw `session.pid` fallback for signaling.
 
-A tmux server whose pane process has died but which has not yet reaped itself still answers
-`has-session` with exit 0. Consulting it would make the monitor report a dead `claude` as alive, and
-the crash would never be filed or retried — defeating the containment property the backend exists for.
-The recorded start time is mandatory identity evidence. A mismatch means the recorded process is
-dead; missing or unreadable evidence is `Unverifiable`. Neither outcome may signal the numeric PID.
-The shared identity service gives native, tmux, headless, and daemon integrations the same fail-closed rule.
+A tmux server whose pane process has died but which has not yet reaped itself still answers `has-session` with exit 0. Consulting it would make the monitor report a dead `claude` as alive, and the crash would never be filed or retried — defeating the containment property the backend exists for.
+The recorded start time is mandatory identity evidence. A mismatch means the recorded process is dead; missing or unreadable evidence is `Unverifiable`. Neither outcome may signal the numeric PID.
+The shared identity service gives tmux, headless and daemon integrations the same fail-closed rule. `TmuxBackend::kill_session` reads the PID identity before it tears anything down, asks the attributed tmux server to exit first, then terminates a `VerifiedAlive` pane PID through `launch::pid_only_terminate`; an `Unverifiable` entry is never signalled.
 
 ## Spawn Path and the Silent-Failure Guard
 
@@ -90,7 +36,7 @@ exit 0. Two checks follow the spawn:
 2. an authoritative `tmux has-session` probe against the socket.
 
 Every error path _after_ the server may exist routes through teardown — killing the socket server and
-calling `native::cleanup_stage_files` to drop the PID/wrapper files — before returning `Err`. Skipping
+calling `launch::cleanup_stage_files` to drop the PID/wrapper files — before returning `Err`. Skipping
 either leaks a live agent (see `mistakes/tmux-backend.md`).
 
 After a successful spawn, `PRESENTATION_OPTIONS` is applied best-effort: `status off`, `mouse off`,
@@ -102,30 +48,18 @@ tmux 3.6a. Full chain in `mistakes/tmux-backend.md`.
 
 ## Tmux Unavailable or Failing
 
-There is no fallback marker and no automatic lane switch (removed 2026-09-13, see
-[Live State Pollution](../mistakes/live-state-pollution.md)). A spawn dispatches on the configured
-backend only:
+There is no fallback marker and no automatic lane switch (see [Live State Pollution](../mistakes/live-state-pollution.md)); tmux is the only lane. One message covers every refusal: `TMUX_MISSING_MESSAGE` (`orchestrator/terminal/backend.rs`), `"Loom needs tmux on PATH to start sessions. Install tmux and retry."`.
 
-- Configured tmux with no tmux on PATH → `Err("terminal backend \"tmux\" is configured but tmux is not
-on PATH; install tmux or set [terminal] backend = \"native\" ...")`.
-- A tmux spawn that fails after the server may exist → `Err` with context `tmux spawn failed for
-session '<id>'`, after teardown (killing the socket server and calling
-  `native::cleanup_stage_files`).
+- `require_tmux(tmux_available: impl Fn() -> bool) -> Result<()>` returns `Err(anyhow!(TMUX_MISSING_MESSAGE))` when the probe says no. `tmux_on_path()` is the production probe (`which::which("tmux")`).
+- `SessionBackend::ensure_tmux()` runs `require_tmux` on the backend's injected probe. `dispatch_spawn` calls it before any spawn writes launch state; `commands/stage/merge_resolver.rs::spawn_resolver_session` calls it as its first statement, before it publishes the merge snapshot, so a missing tmux leaves no write-ahead session or signal behind.
+- `loom run` and `loom run --foreground` call `require_tmux(tmux_on_path)` before the daemon starts (`commands/run/mod.rs`, `run/foreground.rs`): a daemon started without tmux would fail every spawn. `loom init <plan>` only warns (`commands/init/plan_setup.rs::tmux_advisory`, built on `require_tmux`), since init never spawns anything.
+- A tmux spawn that fails after the server may exist returns `Err` with context `tmux spawn failed for session '<id>'`, after teardown (killing the socket server and calling `launch::cleanup_stage_files`).
 
-Either `Err` propagates to `stage_executor.rs`, which calls `block_and_undo_session`
-(`orchestrator/core/session_lifecycle.rs`) to mark the stage `Blocked` with
-`FailureType::InfrastructureError`. There is no auto-retry; the operator fixes tmux (or reconfigures
-the backend) and runs `loom stage retry`.
-
-`loom run` / `loom run --foreground` fail startup outright when the effective backend is tmux and tmux
-is not on PATH (`resolve_backend_flag_with_probe`, `commands/run/mod.rs`); `loom init`'s equivalent
-check stays an advisory warning, since `loom init` only persists config and never spawns anything.
-See [Configuration Is the Only Authority for Configurable Behavior](../conventions.md) for why no
-marker may override the configured backend.
+Either `Err` propagates to `stage_executor.rs`, which calls `block_and_undo_session` (`orchestrator/core/session_lifecycle.rs`) to mark the stage `Blocked` with `FailureType::InfrastructureError`. There is no auto-retry; the operator fixes tmux and runs `loom stage retry`.
 
 ## `loom attach` — Overview and Direct
 
-`commands/attach/` discovers sessions with `backend == Tmux`, status `Running | Spawning`, a live PID
+`commands/attach/` discovers sessions with status `Running | Spawning`, a live PID
 and a resolvable tmux session name, sorted oldest-first by `(created_at, id)`. `mod.rs` owns
 discovery and direct attach; `overview.rs` owns the viewer server.
 
@@ -217,16 +151,6 @@ under tmux's own start lock, an exclusive `flock` on `<socket>.lock` (`tmux/view
 from tmux 3.6). A socket that listens and cannot be verified is refused. Residual: a server rebinding its
 socket on SIGUSR1 takes no such lock.
 
-## macOS Terminal Detection Priority
-
-1. `LOOM_TERMINAL` env var (explicit override)
-2. `TERMINAL` env var (user preference)
-3. Parent process detection (walks process tree up to 10 levels via `ps`)
-4. Cross-platform binary check (ghostty, kitty, alacritty, wezterm via `which`)
-5. macOS native apps (`/Applications/Ghostty.app`, `/Applications/iTerm.app`, `Terminal.app` fallback)
-
-Note: `$TERM_PROGRAM` is NOT checked.
-
 ## find_claude_path() (src/claude.rs)
 
 Shared binary resolution: `which::which("claude")` -> `~/.claude/local/claude` -> `~/.local/bin/claude` -> `~/.cargo/bin/claude` -> `/usr/local/bin/claude` -> `/opt/homebrew/bin/claude`.
@@ -237,41 +161,27 @@ Every tmux server starts with `set-option -g history-limit 50000` and `set-optio
 
 **Fullscreen sampling.** A pane on tmux's alternate screen has no scrollback, so what it showed would vanish with the server. `Monitor::poll` (`monitor/core.rs`) calls `tmux::fullscreen::sample_fullscreen` each poll: every live tmux session on its alternate screen gets its visible screen saved as `history::save_last_screen`, replacing the previous frame. Sampling is best effort on the monitor's single thread: one tmux operation per session, a `SAMPLE_BUDGET` of 2 s for starting samples, and a start offset that rotates across polls, so a wedged server costs at most the budget plus one `TMUX_PROBE_TIMEOUT` and delays the sessions after it by one poll. `save_last_screen` records `Session.fullscreen_seen` (sticky, persisted in the session file) before it writes the frame, and writes nothing for an empty frame. Tests inject tmux through the `PaneReads` trait in `tmux/capture.rs` (`save_history_with`, `sample_fullscreen_with`).
 
-`TmuxBackend::kill_session` saves the history before it kills the server, and `history.rs::capture_mode(fullscreen_seen, alternate_now)` decides what: a pane on the alternate screen now is captured `Visible`; otherwise a session ever seen fullscreen keeps its last sampled frame (`None`, the file stays); only a session never seen fullscreen gets `Full` scrollback, `capture-pane -p -e -J -S - -E -` (`capture.rs` `capture_history_argv`). The result is written through `safe_fs` to `.loom/work/terminal-history/<session-id>.terminal`, the id validated, symlinks refused, the tail kept within 4 MiB. A failed capture never blocks the kill, and an empty capture does not overwrite an earlier file. Every daemon and CLI teardown reaches `kill_session`; an agent that exits by itself reaches it through `monitor/session_events.rs` `mark_terminal` -> `release_ended_session` (`terminal/backend.rs` `end_tmux_server`, one retry, then an error naming `loom clean`). The sweeps in `loom clean --sessions` and `loom init` kill dead servers without saving history. Native sessions keep no history. The status data layer reports a stopped session's file as `HistoryKind::LastScreen` when `fullscreen_seen` is set (`status/data/stopped.rs`; the attention view labels it "last screen"), else as scrollback.
+`TmuxBackend::kill_session` saves the history before it kills the server, and `history.rs::capture_mode(fullscreen_seen, alternate_now)` decides what: a pane on the alternate screen now is captured `Visible`; otherwise a session ever seen fullscreen keeps its last sampled frame (`None`, the file stays); only a session never seen fullscreen gets `Full` scrollback, `capture-pane -p -e -J -S - -E -` (`capture.rs` `capture_history_argv`). The result is written through `safe_fs` to `.loom/work/terminal-history/<session-id>.terminal`, the id validated, symlinks refused, the tail kept within 4 MiB. A failed capture never blocks the kill, and an empty capture does not overwrite an earlier file. Every daemon and CLI teardown reaches `kill_session`; an agent that exits by itself reaches it through `monitor/session_events.rs` `mark_terminal` -> `release_ended_session` (`terminal/backend.rs` `end_tmux_server`, one retry, then an error naming `loom clean`). The sweeps in `loom clean --sessions` and `loom init` kill dead servers without saving history. The status data layer reports a stopped session's file as `HistoryKind::LastScreen` when `fullscreen_seen` is set (`status/data/stopped.rs`; the attention view labels it "last screen"), else as scrollback.
 
-`terminal-history/` is a `STATE_SUBDIRS` entry (`fs/work_dir.rs`), so it exists before any session starts: every capsule denies it to Bash by its real path (`session_settings/contents.rs`), since the sandbox skips a deny whose path is missing at spawn, and `credential-guard.sh` refuses it to a session's file tools ([gaps](../concerns/sandbox-and-confinement-gaps.md#terminal-history-is-guarded-by-a-hook-not-a-boundary)). The web host serves a transcript read-only at `GET /api/terminal-history/<session-id>` (`commands/status/web/terminal/history.rs`, behind the terminal lane's Origin and cookie checks), and the dashboard replays it in an xterm with no input and a link handler that refuses navigation. Tmux tests guard every server they start with `TmuxServerGuard`, because `remain-on-exit` keeps a panicked test's server alive.
+`terminal-history/` is a `STATE_SUBDIRS` entry (`fs/work_dir.rs`), so it exists before any session starts: every capsule denies it to Bash by its real path (`launch/session_settings/contents.rs`), since the sandbox skips a deny whose path is missing at spawn, and `credential-guard.sh` refuses it to a session's file tools ([gaps](../concerns/sandbox-and-confinement-gaps.md#terminal-history-is-guarded-by-a-hook-not-a-boundary)). The web host serves a transcript read-only at `GET /api/terminal-history/<session-id>` (`commands/status/web/terminal/history.rs`, behind the terminal lane's Origin and cookie checks), and the dashboard replays it in an xterm with no input and a link handler that refuses navigation. Tmux tests guard every server they start with `TmuxServerGuard`, because `remain-on-exit` keeps a panicked test's server alive.
 
 ## Terminal Backend Entry Points
 
-**Dispatcher and lanes**
+**Backend and tmux lane**
 
-- `loom/src/orchestrator/terminal/backend.rs` — `SessionBackend`: `from_config`, `resolve_lane`,
-  `dispatch_spawn` and the lazy `OnceLock` native lane. Tests in `terminal/backend/tests.rs`.
+- `loom/src/orchestrator/terminal/backend.rs` — `SessionBackend` (`new`, `ensure_tmux`, the private `dispatch_spawn`, `kill_session`, `release_ended_session`, `is_session_alive`), `require_tmux`, `tmux_on_path` and `TMUX_MISSING_MESSAGE`. Tests in `terminal/backend/tests.rs`; `terminal/contract_tests.rs` pins the missing-tmux contract.
 - `loom/src/orchestrator/terminal/tmux/mod.rs` owns `socket_name`, `spawn_in_tmux` and `evaluate_new_session`. It re-exports `TmuxBackend`; the implementation, including `kill_session`, lives in `terminal/tmux/backend.rs`.
 - `loom/src/orchestrator/terminal/tmux/socket.rs` — `loom_socket_dir`, `socket_path_for`, `list_loom_sockets`, `socket_session_is_alive`, `kill_socket_server`.
-- `loom/src/orchestrator/terminal/native/pid_guard.rs` — the deduped PID-file liveness layers shared by
-  both lanes (six former copies).
+- `loom/src/orchestrator/terminal/session_tail.rs` — `session_tail(session, lines)`: the last lines of a session's tmux pane, for the park report of a hung session (`orchestrator/core/event_handler/recover_hung.rs`); it takes no work dir.
 - `loom/tests/e2e/tmux_backend.rs` — external e2e; `TmuxTmpDirGuard` works around the sandbox. Note
   `tests/` can only reach `pub` items, never `pub(crate)`.
 
-**`[terminal]` config**
+**Launch machinery (`loom/src/orchestrator/terminal/launch/`)**
 
-- `loom/src/models/session/types.rs` — `SessionBackendKind` (`native`/`tmux`, default
-  `tmux`), `TerminalConfig`, `Session.backend`.
-- `loom/src/fs/work_dir/config_sections/terminal_config.rs` — `TERMINAL_SECTION`, `read_terminal_config` /
-  `write_terminal_config`.
-- `loom/src/commands/init/plan_setup.rs::initialize_with_plan` — writes the section at init.
-
-**`--backend` flag**
-
-- `loom/src/cli/types.rs::Commands` defines the init option. `loom/src/cli/types_runtime.rs::RunArgs` defines the run option. Both use
-  `value_parser = ["native", "tmux"]`.
-- `loom/src/commands/run/mod.rs::resolve_backend_flag` — shared by `run/mod.rs::execute_background` and
-  `run/foreground.rs::execute`. Rejects unknown values, refuses to persist a change while the daemon is
-  running (prints a restart hint), and calls `resolve_backend_flag_with_probe`, which FAILS startup
-  (not just warns) when the effective backend is tmux and tmux is not on PATH.
-- `loom/src/commands/init/backend.rs::resolve_backend_choice`; flag wins, else prompts when
-  both stdin and stdout are TTYs, else inherits (user config, then the built-in tmux default).
+- `mod.rs` — `build_claude_command`, plus the re-exports the tmux lane and the rest of the crate use (`cleanup_stage_files`, `read_pid_entry`, `wrapper_script_path`, `create_wrapper_script`, `session_settings_path`, `prepare_session_launch`).
+- `prepare.rs` (with `prepare/command.rs`, `prepare/host.rs`) — assembles one session's launch: capsule, settings, wrapper script, build cache.
+- `capsule.rs`, `session_settings.rs` (+ `session_settings/contents.rs`, `host_sockets.rs`), `wrapper.rs` (+ `wrapper/script_text.rs`, `wrapper/host_env.rs`), `build_cache.rs`, `session_log.rs`.
+- `pid_tracking.rs`, `pid_wait.rs` and `pid_guard.rs` — PID/wrapper files, the wait for the `exec`ed process, and the PID-file liveness and termination layers.
 
 **`loom attach`**
 
@@ -279,4 +189,10 @@ Every tmux server starts with `set-option -g history-limit 50000` and `set-optio
   `attach_direct`, `require_tty`; `attach/overview.rs` — `build_overview_argv` (pure), `run_overview`;
   `attach/wait.rs` and `attach/diagnose.rs` — endpoint wait and failure diagnosis. Tests in `attach/tests.rs`.
 - `loom/src/cli/types.rs::Commands` — `Attach { stage_id: Option<String> }`; dispatch in
-  `cli/dispatch.rs` (`Commands::Attach`). Shell completions complete live stage ids after `loom attach`.
+  `cli/dispatch.rs` (`Commands::Attach`). Shell completion offers live stage ids after `loom attach`.
+
+## One tmux Lane Behind SessionBackend
+
+`SessionBackend` (`orchestrator/terminal/backend.rs`) is the single type every spawn, kill and liveness call goes through. It is a thin facade over `TmuxBackend` (`terminal/tmux/`): every session runs in a detached tmux server, no GUI required. It holds two fields, the `TmuxBackend` (which owns the work dir) and an injectable `tmux_available: fn() -> bool` probe; a work-dir field of its own would be read by nothing and fail clippy `dead_code`. `SessionBackend::new(work_dir)` reads no configuration; `with_tmux_probe` (test-only) swaps the probe. Nothing selects a lane (no config section, flag or environment variable, and a `Session` records no backend), and `is_session_alive` and `kill_session` forward straight to `TmuxBackend`.
+
+`dispatch_spawn` is the one private seam all five spawn entry points share (stage, contract, merge, knowledge, adjudication). It calls `ensure_tmux()` FIRST, before anything writes a wrapper or PID file, then runs the tmux spawn wrapped in the context `tmux spawn failed for session '<id>'`. Shared launch code (capsule, session settings, wrapper script, build cache, PID tracking and the PID-file liveness layers in `pid_guard.rs`) lives in `orchestrator/terminal/launch/`; see Terminal Backend Entry Points.

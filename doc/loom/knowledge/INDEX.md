@@ -8,13 +8,13 @@
 
 | File | Description | Lines |
 | --- | --- | --- |
-| [architecture.md](architecture.md) | High-level component relationships, data flow, module dependencies | 250 |
+| [architecture.md](architecture.md) | High-level component relationships, data flow, module dependencies | 246 |
 | [entry-points.md](entry-points.md) | Key files agents should read first | 86 |
 | [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 200 |
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 230 |
 | [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 243 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 116 |
-| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 250 |
+| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 246 |
 
 ## Tier 2 — Topics
 
@@ -58,16 +58,16 @@
 | [source-graph-build](architecture/source-graph-build.md) |  | 142 |
 | [source-graph-resolution](architecture/source-graph-resolution.md) |  | 269 |
 | [stage-build-cache](architecture/stage-build-cache.md) | Per-stage cache root: env, seeds, sockets, read roots, xcrun bypass | 60 |
-| [stage-exit-recording](architecture/stage-exit-recording.md) | Stage exits: refused-commit route, idle-stop block, verdict delivery, new guards | 33 |
-| [status-data-model](architecture/status-data-model.md) | Fields | 271 |
+| [stage-exit-recording](architecture/stage-exit-recording.md) | Stage exits: refused commit, idle stop, verdicts, artifact disputes | 41 |
+| [status-data-model](architecture/status-data-model.md) | Fields | 269 |
 | [summary-store](architecture/summary-store.md) |  | 352 |
 | [target-guard](architecture/target-guard.md) | Tip | 180 |
-| [terminal-backends](architecture/terminal-backends.md) |  | 282 |
+| [terminal-backends](architecture/terminal-backends.md) |  | 198 |
 | [token-accounting-and-receipts](architecture/token-accounting-and-receipts.md) | Ledger | 355 |
 | [usage-evidence](architecture/usage-evidence.md) |  | 256 |
 | [verification-v2-gates](architecture/verification-v2-gates.md) | Gates | 278 |
 | [web-dashboard](architecture/web-dashboard.md) | Web | 137 |
-| [web-terminal](architecture/web-terminal.md) |  | 200 |
+| [web-terminal](architecture/web-terminal.md) |  | 199 |
 
 ### entry-points
 
@@ -77,7 +77,7 @@
 | [context-and-source-graph](entry-points/context-and-source-graph.md) |  | 80 |
 | [filesystem-and-integration-modules](entry-points/filesystem-and-integration-modules.md) |  | 134 |
 | [hooks](entry-points/hooks.md) |  | 152 |
-| [orchestrator-daemon-and-sessions](entry-points/orchestrator-daemon-and-sessions.md) |  | 262 |
+| [orchestrator-daemon-and-sessions](entry-points/orchestrator-daemon-and-sessions.md) |  | 261 |
 | [remote-control](entry-points/remote-control.md) | RC | 96 |
 
 ### patterns
@@ -85,11 +85,11 @@
 | Topic | Blurb | Lines |
 | --- | --- | --- |
 | [canonical-helpers](patterns/canonical-helpers.md) |  | 72 |
-| [cli-process-and-conventions](patterns/cli-process-and-conventions.md) |  | 239 |
+| [cli-process-and-conventions](patterns/cli-process-and-conventions.md) |  | 229 |
 | [doctrine-cross-surface](patterns/doctrine-cross-surface.md) | Pins | 144 |
 | [hook-content-stripping](patterns/hook-content-stripping.md) | Text | 162 |
 | [merge-and-recovery](patterns/merge-and-recovery.md) |  | 111 |
-| [orchestrator-daemon-loop](patterns/orchestrator-daemon-loop.md) | Loop | 115 |
+| [orchestrator-daemon-loop](patterns/orchestrator-daemon-loop.md) | Loop | 112 |
 | [remote-control](patterns/remote-control.md) | RC | 51 |
 | [security-sandbox-and-hooks](patterns/security-sandbox-and-hooks.md) |  | 144 |
 | [stage-daemon-channels](patterns/stage-daemon-channels.md) |  | 211 |
@@ -104,7 +104,7 @@
 | [commits](conventions/commits.md) | Format | 24 |
 | [config-plan-and-gate-rules](conventions/config-plan-and-gate-rules.md) |  | 39 |
 | [defect-triage](conventions/defect-triage.md) | Blocking and security defects are fixed when found, not deferred | 9 |
-| [dispute-and-adjudication](conventions/dispute-and-adjudication.md) |  | 155 |
+| [dispute-and-adjudication](conventions/dispute-and-adjudication.md) |  | 156 |
 | [git-and-build-workflow](conventions/git-and-build-workflow.md) |  | 222 |
 | [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) |  | 134 |
 | [host-job-test-guards](conventions/host-job-test-guards.md) | macOS host-job denials, sandbox_probe guards, strict-CI skips | 67 |
@@ -133,11 +133,11 @@
 | [computed-values-and-hidden-couplings](mistakes/computed-values-and-hidden-couplings.md) | Values | 284 |
 | [concurrency-and-locking](mistakes/concurrency-and-locking.md) |  | 207 |
 | [consolidation-drift](mistakes/consolidation-drift.md) |  | 139 |
-| [contract-autonomy-delivery](mistakes/contract-autonomy-delivery.md) | Bypass | 119 |
+| [contract-autonomy-delivery](mistakes/contract-autonomy-delivery.md) | Bypass | 127 |
 | [daemon-singleton](mistakes/daemon-singleton.md) |  | 176 |
 | [detached-spawn-in-tests](mistakes/detached-spawn-in-tests.md) |  | 95 |
 | [dev-install](mistakes/dev-install.md) | Daemon | 68 |
-| [dispute-guards-delivery](mistakes/dispute-guards-delivery.md) | host-job hangs, parallel worker collisions, scaffold wording, hook quirks | 131 |
+| [dispute-guards-delivery](mistakes/dispute-guards-delivery.md) | host-job hangs, parallel worker collisions, scaffold wording, hook quirks | 141 |
 | [doctrine-and-acceptance](mistakes/doctrine-and-acceptance.md) |  | 392 |
 | [fixture-replay-waits](mistakes/fixture-replay-waits.md) | Waiting on a state a replayed session already holds races the bridge | 11 |
 | [hooks-macos-and-bash32](mistakes/hooks-macos-and-bash32.md) | macOS Bash 3.2 and BSD tool faults that Linux hook runs hid | 96 |
@@ -155,7 +155,7 @@
 | [native-macos-delivery](mistakes/native-macos-delivery.md) | macOS boundary delivery slips: lint scope, pinned fields, shared TMPDIR | 67 |
 | [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Shared | 361 |
 | [phantom-merges](mistakes/phantom-merges.md) | Merges | 347 |
-| [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Pins | 342 |
+| [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Pins | 350 |
 | [plan-authoring](mistakes/plan-authoring.md) |  | 357 |
 | [plan-server-delivery](mistakes/plan-server-delivery.md) | Slips | 376 |
 | [planner-design-brainstorm](mistakes/planner-design-brainstorm.md) | Stubs | 141 |
@@ -166,10 +166,10 @@
 | [planner-ui-repair](mistakes/planner-ui-repair.md) | Repair | 215 |
 | [planning-sandbox-delivery](mistakes/planning-sandbox-delivery.md) |  | 98 |
 | [pre-commit-hardening](mistakes/pre-commit-hardening.md) |  | 93 |
-| [refactor-stragglers](mistakes/refactor-stragglers.md) |  | 335 |
+| [refactor-stragglers](mistakes/refactor-stragglers.md) |  | 341 |
 | [review-continuation-verification](mistakes/review-continuation-verification.md) | Repair | 331 |
 | [review-final-wave](mistakes/review-final-wave.md) |  | 200 |
-| [review-integration-verification](mistakes/review-integration-verification.md) |  | 303 |
+| [review-integration-verification](mistakes/review-integration-verification.md) |  | 311 |
 | [review-remediation-stage-practice](mistakes/review-remediation-stage-practice.md) | Stage-practice mistakes: scratch rm, cwd, fmt, gate timing, briefs | 123 |
 | [review-tracker](mistakes/review-tracker.md) |  | 363 |
 | [sandbox-and-settings](mistakes/sandbox-and-settings.md) |  | 391 |
@@ -187,7 +187,7 @@
 | [subagent-briefing](mistakes/subagent-briefing.md) |  | 394 |
 | [subagent-liveness-and-watch](mistakes/subagent-liveness-and-watch.md) |  | 387 |
 | [subagent-orchestration](mistakes/subagent-orchestration.md) | Agents | 397 |
-| [test-concurrency-and-fixtures](mistakes/test-concurrency-and-fixtures.md) | Races | 398 |
+| [test-concurrency-and-fixtures](mistakes/test-concurrency-and-fixtures.md) | Races | 396 |
 | [test-sweep-and-fixture-discipline](mistakes/test-sweep-and-fixture-discipline.md) |  | 398 |
 | [testing-and-lint](mistakes/testing-and-lint.md) |  | 377 |
 | [tests-that-cannot-fail](mistakes/tests-that-cannot-fail.md) |  | 392 |
@@ -208,24 +208,24 @@
 | --- | --- | --- |
 | [agent-rule-bending-hardening](concerns/agent-rule-bending-hardening.md) |  | 351 |
 | [automatic-knowledge-source-graph-followups](concerns/automatic-knowledge-source-graph-followups.md) | Gap | 68 |
-| [code-quality-and-hook-debt](concerns/code-quality-and-hook-debt.md) | Debt | 331 |
+| [code-quality-and-hook-debt](concerns/code-quality-and-hook-debt.md) | Debt | 325 |
 | [consolidation-followups](concerns/consolidation-followups.md) |  | 147 |
 | [contract-autonomy-followups](concerns/contract-autonomy-followups.md) |  | 122 |
 | [knowledge-cli-gaps](concerns/knowledge-cli-gaps.md) |  | 82 |
 | [loom-ask-and-read-gate](concerns/loom-ask-and-read-gate.md) |  | 107 |
-| [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Edges | 97 |
+| [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Edges | 96 |
 | [native-codex-qualification](concerns/native-codex-qualification.md) |  | 139 |
 | [planner-follow-ups-followups](concerns/planner-follow-ups-followups.md) | Planner, chat, guidance, kickoff and typed-config open follow-ups | 221 |
 | [planner-ui-repair-followups](concerns/planner-ui-repair-followups.md) | UI | 213 |
 | [planning-document-model-followups](concerns/planning-document-model-followups.md) |  | 173 |
 | [planning-session-sandbox-limits](concerns/planning-session-sandbox-limits.md) |  | 234 |
-| [platform-and-commit-gaps](concerns/platform-and-commit-gaps.md) |  | 249 |
-| [review-remediation-followups](concerns/review-remediation-followups.md) | Open review suggestions and findings left out of the remediation plan | 113 |
+| [platform-and-commit-gaps](concerns/platform-and-commit-gaps.md) |  | 237 |
+| [review-remediation-followups](concerns/review-remediation-followups.md) | Open review suggestions and findings left out of the remediation plan | 112 |
 | [runtime-and-session-safety](concerns/runtime-and-session-safety.md) |  | 201 |
 | [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) |  | 394 |
 | [source-graph-known-gaps](concerns/source-graph-known-gaps.md) | Limits | 94 |
 | [source-graph-review-backlog](concerns/source-graph-review-backlog.md) | Todo | 287 |
-| [stage-exits-and-guards-followups](concerns/stage-exits-and-guards-followups.md) | Out-of-scope rows, open reviewer suggestions, proposed checks after exits plan | 63 |
+| [stage-exits-and-guards-followups](concerns/stage-exits-and-guards-followups.md) | Out-of-scope rows, open reviewer suggestions, proposed checks after exits plan | 82 |
 | [state-confinement-gaps](concerns/state-confinement-gaps.md) | Open confinement gaps: caches, task outputs, macOS networking, stage cache | 77 |
 | [token-accounting-and-proof-defects](concerns/token-accounting-and-proof-defects.md) |  | 323 |
 | [verification-v2-followups](concerns/verification-v2-followups.md) |  | 247 |

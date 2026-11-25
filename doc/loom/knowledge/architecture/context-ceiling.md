@@ -3,7 +3,7 @@ sources:
 - loom/src/models/constants.rs
 - loom/src/fs/work_dir/context_config.rs
 - loom-hooks/post-tool-use.sh
-- loom/src/orchestrator/terminal/native/wrapper.rs
+- loom/src/orchestrator/terminal/launch/wrapper.rs
 - loom/src/orchestrator/monitor/detection.rs
 - loom/src/fs/work_dir/config_sections.rs
 verified: 6642fab24c3bdda26a2f32a751552411eca2039b
@@ -24,7 +24,7 @@ each firing at a different multiple of it, from softest to hardest:
 | -------- | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1.0x     | `PostToolUse` hook instruction     | `loom-hooks/post-tool-use.sh`, reading resident tokens off the transcript tail                                                                                       | Runs after the tool has already executed, so exit 2 blocks nothing; it only writes a stderr message telling the agent to finish the unit of work, run `loom handoff --trigger ceiling`, and stop                                                                                                            |
 | 1.25x    | Daemon backstop (`BudgetExceeded`) | `orchestrator/monitor/detection.rs` (`DAEMON_CEILING_MULTIPLIER`, `models/constants.rs`)                                                                             | Writes the outgoing handoff, discovers in-progress records even after daemon restart, KILLS the session, persists `ContextExhausted` only after confirmed death, then re-queues. Discovery/probe/persistence uncertainty leaves the stage in `NeedsHandoff`; stale events naming a predecessor are ignored. |
-| 1.5x     | `CLAUDE_CODE_AUTO_COMPACT_WINDOW`  | The installed Claude Code binary itself, via an env var loom's native wrapper sets (`auto_compact_window_tokens`, `orchestrator/terminal/native/wrapper.rs::AUTO_COMPACT_WINDOW_MAX_TOKENS`) | Claude Code's own native auto-compaction kicks in — "effectively unreachable in practice" per the source comment, because the two lower thresholds should already have ended the session by this point                                                                                                      |
+| 1.5x     | `CLAUDE_CODE_AUTO_COMPACT_WINDOW`  | The installed Claude Code binary itself, via an env var loom's native wrapper sets (`auto_compact_window_tokens`, `orchestrator/terminal/launch/wrapper.rs::AUTO_COMPACT_WINDOW_MAX_TOKENS`) | Claude Code's own native auto-compaction kicks in — "effectively unreachable in practice" per the source comment, because the two lower thresholds should already have ended the session by this point                                                                                                      |
 
 The daemon backstop is level-triggered while the exact over-budget assignment remains
 `Executing` or `NeedsHandoff`, so a handler failure before the state transition cannot disarm it.

@@ -180,7 +180,7 @@ Acceptance runs in a confined host job with no network and no `~/.codex`, so eve
 
 ## Tracing Native Workers
 
-`nativeBackend` in `web/src/components/stage-modal.tsx:104` means `session_backend === 'native'`, a native terminal window; it has no relation to a native Codex worker (`loom/src/native_worker`). Search `native_worker`, `codex.backend` and `WorkerControl` when tracing the lane.
+Search `native_worker`, `codex.backend` and `WorkerControl` when tracing the lane.
 
 ## macOS Boundary (Seatbelt)
 

@@ -288,7 +288,7 @@ Evidence freshness probes run Git through the bounded process runner and `OwnedP
 `--structural-only` stops after phase 1. `--dry-run` prints the plan and the exact `claude` argv
 (`shell_quote_argv`, `commands/knowledge/bootstrap/mod.rs::shell_quote_argv`) without spawning. The command refuses inside a stage session
 (`guard_not_in_stage`, commands/knowledge/bootstrap/mod.rs::guard_not_in_stage): every stage exports `LOOM_STAGE_ID`
-(`orchestrator/terminal/native/wrapper.rs::build_wrapper_script`) and child processes inherit it; stages write
+(`orchestrator/terminal/launch/wrapper.rs::build_wrapper_script`) and child processes inherit it; stages write
 knowledge through `loom knowledge update` instead.
 
 ## Clusters and Digest

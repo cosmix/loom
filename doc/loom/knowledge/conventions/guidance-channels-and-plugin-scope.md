@@ -53,16 +53,16 @@ Scope decides the file: user is `~/.claude/settings.json`, project is `.claude/s
 `.claude/settings.local.json`.
 
 **Why.** Every loom-spawned session, whatever its kind, launches with `--settings <work_dir>/capsules/<session-id>.settings.json --setting-sources user,project`
-(`session_capsule` and `capsule_from` in `loom/src/orchestrator/terminal/native/capsule.rs`; the flags
+(`session_capsule` and `capsule_from` in `loom/src/orchestrator/terminal/launch/capsule.rs`; the flags
 are emitted when the installed claude advertises them). Claude Code therefore loads the user and
 project files and never the local one, so a plugin enabled at user or project scope loads in every
 session with no further condition. A plugin folder `~/.claude/skills/<name>/` that holds
 `.claude-plugin/plugin.json` is auto-enabled at user scope as `<name>@skills-dir` and still loads under
 a capsule that carries `enabledPlugins` (checked against Claude Code 2.1.295).
 
-**What loom writes per spawn.** `write_session_capsule` (`native/session_settings.rs`) writes the
+**What loom writes per spawn.** `write_session_capsule` (`launch/session_settings.rs`) writes the
 capsule, file mode 0600 in a 0700 directory, and `cleanup_session_settings` removes it when the
-session ends. `capsule_settings` (`native/session_settings/contents.rs`) builds it over
+session ends. `capsule_settings` (`launch/session_settings/contents.rs`) builds it over
 `sandbox::build_settings` (`loom/src/sandbox/settings.rs`), which only builds a document and writes
 nothing. Spawning writes no `.claude/settings.local.json`: `install_required_hooks`
 (`orchestrator/core/stage_executor.rs`) only refuses a spawn that has no hooks directory.

@@ -29,7 +29,7 @@
 - Every OTHER fast verified-pid crash is a startup refusal (`is_startup_refusal`, `orchestrator/core/crash_classification.rs`): blocked, not retried, remote control untouched.
 - Nothing is persisted to disk — a daemon restart tries remote control again; CLI processes are unaffected by another process's disable flag.
 
-**`build_claude_command()` helper (native/mod.rs) — CURRENT signature:**
+**`build_claude_command()` helper (launch/mod.rs) — CURRENT signature:**
 
 ```rust
 pub(crate) fn build_claude_command(

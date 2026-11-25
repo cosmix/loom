@@ -61,3 +61,22 @@ Each row is a decision to leave something out, with the condition that reopens i
 
 - **A stage adds a test file that runs git with a hand-written identity or runner.** `loom/tests/test_git_guard_contracts.rs` fails on it only in the full suite, and a stage's gate runs filtered targets, so the guard never ran in the stage ([testing-and-lint](../mistakes/testing-and-lint.md), [consolidation-drift](../mistakes/consolidation-drift.md)). Proposal: a `loom plan verify` warning when a stage's `files:` names a `loom/tests/*.rs` file and no criterion runs `cargo test --test test_git_guard_contracts`.
 - **The tree is edited while a `loom-code-reviewer` runs.** The reviewer's stop hook skips the round (`review_harvest_failed.worktree_changed`) and a full re-review follows ([planner-follow-ups-delivery](../mistakes/planner-follow-ups-delivery.md), [ci-gate-rollout](../mistakes/ci-gate-rollout.md)). Proposal: a PreToolUse warning on Edit and Write in a stage session while the reviewer lifecycle journal shows a live `loom-code-reviewer`.
+
+## Tmux-Only and Operator-Recovery Follow-ups
+
+Open reviewer suggestions and gotchas left by the tmux-only terminal plan and the operator-recovery plan. Each names its file.
+
+**Tmux-only**
+
+- `require_tmux` runs in `commands/run/mod.rs` and `run/foreground.rs` after `prepare_repo_for_run`, which may bootstrap or commit. Calling it beside `require_jq` in `prepare_repo_for_run` would refuse before any side effect (`commands/run/checks.rs`); the foreground wiring pattern would need re-pointing.
+- The `--terminals` hint string is written twice, in `web/src/components/terminal/terminal-glyph.tsx` and `terminal-notice.tsx`; one exported constant keeps them in step.
+- `web/src/tmux-only.contract.test.tsx` copies `holderStore` from `web/src/plan/run/run-dialog.test.tsx` and repeats its no-radio assertion; a shared test helper would remove both. Its `delete raw.session_backend` (and the `backends`/`default_backend` deletes) do nothing now that the fixtures lack those keys; the strict schema parse is the real check, and a comment saying so would help.
+- `loom-hooks/tests/codex-forward-guard-stage-evidence.sh` cannot pass inside a macOS stage sandbox: its positive E2 ancestor case shells out to `/bin/ps`, which the sandbox denies, so the script exits 1 before its later cases. No acceptance criterion runs it; run it from a plain shell. Its E2 negative comment cites `codex-forward-guard.sh` for the ancestor-evidence rule, which lives in `loom-hooks/_codex_forward.sh`.
+
+**Operator recovery**
+
+- `orchestrator/adjudication/apply.rs` labels an artifacts entry "artifacts entry", unlike "wiring check" and "wiring test"; the plan mandated that text.
+- `host_verify/child_complete.rs`: no test catches removing the `record_goal_gaps` call from `run_completion_checks`; clippy `-D warnings` would flag the then test-only function as dead code.
+- `verify/goal_backward/mod.rs::gaps_name_their_wiring_and_wiring_tests_index` returns early when confined commands cannot run, as the project's other such tests do; the wiring-check half could be asserted without running the command, and the early return gives a visible pass with no skip note.
+- `stage_service/control_block_gaps.rs`: `criteria_route` and `gap_routes` each build the `--criterion-index` flag list; one helper would do.
+- `host_verify/wait_report.rs:145`: an adjudicator running `loom check` on a failing artifact sees agent-facing dispute guidance; scope it to stage sessions. Gap ids reach the host-job report path anchored by `goal_gap_ids` but not bounded by the stage's list lengths (only `control_block_gaps::failed_gaps` bounds them), so a label-shaped literal after `;` inside a gap's own text could still produce an undisputable route in the report. Narrow case.

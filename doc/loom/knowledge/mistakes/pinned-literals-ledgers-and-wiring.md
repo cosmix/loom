@@ -45,8 +45,8 @@ front.
 **Current pressure to know about:** fifteen files sit in the 390-400 band, i.e. one
 edit from tripping the gate, and two are exactly AT 400 —
 `orchestrator/signals/tests_doctrine.rs` and `commands/clean/sessions.rs`. Others
-include `utils.rs` 399, `terminal/native/detection.rs` 399, `verify/before_after.rs`
-398, `terminal/tmux/reconcile.rs` 398, `terminal/native/mod.rs` 398,
+include `utils.rs` 399, terminal/native/detection.rs 399, `verify/before_after.rs`
+398, `terminal/tmux/reconcile.rs` 398, terminal/native/mod.rs 398,
 `context/refresh/source_graph.rs` 397, `git/merge/in_progress.rs` 396,
 `context/coverage.rs` 394 (since renamed to the `context/coverage/` module), `signals/format/brief.rs` 392, `verify/wiring_detection.rs` 390. None is a violation today. `wc -l` your target first; at >=390 plan the split in
 the same round, because a split then collides with the wiring pins below.
@@ -323,7 +323,7 @@ change bumps the plan `version` (conventions/plan-yaml-and-hooks).
 
 ## A Wiring Check Named the File That Asserts a String, Not the File That Renders It
 
-**What happened:** the wiring test `rg -qF "tmux, built-in default" src/commands/init/backend.rs` could not pass. `backend.rs` renders the label with `format!("{}, built-in default", SessionBackendKind::default())`; the literal appears only in `backend_tests.rs`. The behaviour was correct and tested.
+**What happened:** the wiring test for the literal "tmux, built-in default" in the init backend source file could not pass. That file rendered the label with `format!("{}, built-in default", SessionBackendKind::default())`; the literal appeared only in its test file. The behaviour was correct and tested.
 
 **Why:** the check was written from the expected output, not from the code that produces it.
 
@@ -340,3 +340,11 @@ change bumps the plan `version` (conventions/plan-yaml-and-hooks).
 **Prevention:** a brief that adds text to a size-capped surface names the ceiling and says what to do on overflow: trim only text the change replaces, and report the overflow to the orchestrator otherwise. Deleting unrelated guidance to fit, or raising a ceiling, is the operator's decision.
 
 **Fix:** the cut text is back and the ceilings were raised to fit.
+
+## A Wiring Check Pattern Binds to One File, So Moving the Call Into a Helper File Fails Goal-Backward
+
+**What happened:** two operator-recovery wiring checks named a call (`unfiled_patch\(` in `verdict.rs`, `landing_note` in `complete_force.rs`). A worker moved each call into a helper (`verdict_indices.rs`, `current_landing_note`). The `unfiled_patch` check failed because the pattern bound to `verdict.rs`. The `landing_note` greps still matched, but only because the name is a substring of the helper's name.
+
+**Why:** goal-backward reachability follows direct calls only, and a wiring pattern is searched in the file the plan names.
+
+**Prevention:** a plan that pins a call with a wiring check also names the file that must hold it, and the worker brief says so. A helper that moves the call needs the wiring check amended to the helper's file first. A pass that matches only as a substring of a helper's name proves nothing about the call.

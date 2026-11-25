@@ -129,3 +129,13 @@
 **Prevention:** a fixture whose directories are checked for mode or owner creates them with explicit modes (`test_private_dirs::private_tempdir`, `create_dirs`) and never relies on or sets the umask. A failure reproduced in one sandbox is not evidence about another: get the failing output from the environment that reported it before fixing. A test failing at a plan's base commit already exists there; read the dry-run note's failing lines.
 
 **Fix:** explicit modes in the five fixtures; `require_directory_owners!` for the session sandbox; the scratch sweep test accepts the user's own private `/tmp`; the dry run lists the failing lines of a test command that fails at the base commit.
+
+## An Unfiled Verdict Patch Was Prescribed as needs_more_evidence, Which the Stage Agent Receives
+
+**What happened:** the operator-recovery plan told the worker to answer a replace or delete of an unfiled index with needs_more_evidence "as the duplicate-index check does, so nothing is recorded". `record.rs` persists every coerced needs-more-evidence verdict and `apply.rs` hands it to the stage agent, and the pinned judge text still said "a verdict may patch any of them".
+
+**Why:** the plan author assumed a validation-coerced verdict is re-requested from the judge, and did not cross-check the briefings against the new rule.
+
+**Prevention:** a verdict defect meant for the judge returns `Err` from `parse_and_validate_in` (`orchestrator/adjudication/verdict.rs`; `record.rs` refuses and writes nothing), never a coerced verdict. When a validator narrows what a verdict may do, grep every briefing that describes the verdict (`prompt/criterion.rs`, the wiring briefing's copy) and reword it for every criterion kind, golden fixtures included; an instruction the validator refuses wastes a judge round each time.
+
+**Fix:** `judge_every_failing` and the wiring briefing now say a verdict may replace or delete only the filed entries; the acceptance golden and `prompt/tests.rs` follow. The pinned-text edit raises a test-integrity event, which is disputed, not reverted.

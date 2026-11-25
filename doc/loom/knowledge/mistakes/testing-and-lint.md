@@ -99,7 +99,7 @@ Expect `Summary: 0 issues`. `.markdownlint.json` disables MD013/MD033/MD036/MD04
 
 ## A `[`link`]` to a Private Item Fails the Docs Build — Four Recurrences, Now Gated at Commit Time (2026-08-11)
 
-**What happened:** CI's `Documentation` job failed on main while build, test, clippy, fmt, maintainability, audit and deny were all green. Two module doc comments used intra-doc link syntax for private functions — ``[`tmux_endpoint_ready`]`` in `src/commands/attach/mod.rs` and ``[`kind_env`]`` in `src/orchestrator/terminal/native/wrapper.rs`. Both targets are private `fn`s referenced from public docs.
+**What happened:** CI's `Documentation` job failed on main while build, test, clippy, fmt, maintainability, audit and deny were all green. Two module doc comments used intra-doc link syntax for private functions — ``[`tmux_endpoint_ready`]`` in `src/commands/attach/mod.rs` and ``[`kind_env`]`` in `src/orchestrator/terminal/launch/wrapper.rs`. Both targets are private `fn`s referenced from public docs.
 
 **Why:** the job runs `cargo doc --workspace --all-features --no-deps` under `RUSTDOCFLAGS: -D warnings`, which promotes `rustdoc::private_intra_doc_links` to an error. That lint is a rustdoc lint — `cargo build`, `cargo clippy` and `cargo test` never evaluate it, so the usual pre-push loop cannot see it. Prose that merely _mentions_ a private helper is the common way to trip it.
 

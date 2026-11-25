@@ -259,7 +259,7 @@ summarizes them per stage.
 
 ### LOOM_* Env Vars Available to All Hooks
 
-Set by the wrapper script before `exec claude` (`orchestrator/terminal/native/wrapper.rs`: `kind_env`,
+Set by the wrapper script before `exec claude` (`orchestrator/terminal/launch/wrapper.rs`: `kind_env`,
 `work_dir_env`, and `LOOM_SESSION_TYPE`):
 
 | Variable               | Purpose                                                                                   |
