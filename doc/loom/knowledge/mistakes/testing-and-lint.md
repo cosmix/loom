@@ -375,3 +375,13 @@ never by adding a baseline entry.
 **Prevention:** wait on a PID (`while kill -0 "$pid"`; `wait "$pid"`), or run the command in the foreground. Never wait with `pgrep -f` on a pattern the waiting command itself contains.
 
 **Fix:** killed both loops; the subagent re-ran its module tests in the foreground.
+
+## Byte-paced reader overshot its per-tick budget
+
+**What happened:** `bridge_survives_a_client_that_reads_slowly` paced its reads at 16 KiB per 250 ms tick but stopped only after a message pushed it past 16 KiB, so on Linux (PTY reads up to 16 KiB) a tick took nearly 32 KiB and the 300 KiB transfer ended under the asserted 4 s; CI failed.
+
+**Why:** a stop-after-crossing loop takes up to one whole message beyond its budget per tick, and the message size depends on the platform.
+
+**Prevention:** when a test paces a stream by bytes, carry each tick's overshoot into the next tick as debt, so the average rate holds whatever the message size.
+
+**Fix:** `take_tick` in `commands/status/web/terminal/tests_bridge/liveness.rs` keeps a running budget across ticks.

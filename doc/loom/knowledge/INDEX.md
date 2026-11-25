@@ -190,7 +190,7 @@
 | [subagent-orchestration](mistakes/subagent-orchestration.md) | Agents | 397 |
 | [test-concurrency-and-fixtures](mistakes/test-concurrency-and-fixtures.md) | Races | 396 |
 | [test-sweep-and-fixture-discipline](mistakes/test-sweep-and-fixture-discipline.md) |  | 398 |
-| [testing-and-lint](mistakes/testing-and-lint.md) |  | 377 |
+| [testing-and-lint](mistakes/testing-and-lint.md) |  | 387 |
 | [tests-that-cannot-fail](mistakes/tests-that-cannot-fail.md) |  | 392 |
 | [tmux-backend](mistakes/tmux-backend.md) | tmux | 176 |
 | [typed-config-values-process](mistakes/typed-config-values-process.md) | Dev | 86 |
@@ -198,7 +198,7 @@
 | [verification-harness](mistakes/verification-harness.md) |  | 399 |
 | [verification-v2-delivery](mistakes/verification-v2-delivery.md) | v2 | 396 |
 | [visibility-and-reachability](mistakes/visibility-and-reachability.md) |  | 141 |
-| [web-dashboard](mistakes/web-dashboard.md) | UI | 204 |
+| [web-dashboard](mistakes/web-dashboard.md) | UI | 211 |
 | [web-dashboard-server](mistakes/web-dashboard-server.md) | Races | 288 |
 | [web-terminal](mistakes/web-terminal.md) | TTY | 166 |
 | [writer-reader-address](mistakes/writer-reader-address.md) | Keys | 115 |
@@ -214,10 +214,10 @@
 | [contract-autonomy-followups](concerns/contract-autonomy-followups.md) |  | 122 |
 | [knowledge-cli-gaps](concerns/knowledge-cli-gaps.md) |  | 82 |
 | [loom-ask-and-read-gate](concerns/loom-ask-and-read-gate.md) |  | 107 |
-| [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Edges | 104 |
+| [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Edges | 105 |
 | [native-codex-qualification](concerns/native-codex-qualification.md) |  | 139 |
 | [planner-follow-ups-followups](concerns/planner-follow-ups-followups.md) | Planner, chat, guidance, kickoff and typed-config open follow-ups | 221 |
-| [planner-ui-repair-followups](concerns/planner-ui-repair-followups.md) | UI | 213 |
+| [planner-ui-repair-followups](concerns/planner-ui-repair-followups.md) | UI | 212 |
 | [planning-document-model-followups](concerns/planning-document-model-followups.md) |  | 173 |
 | [planning-session-sandbox-limits](concerns/planning-session-sandbox-limits.md) |  | 234 |
 | [platform-and-commit-gaps](concerns/platform-and-commit-gaps.md) |  | 237 |

@@ -202,3 +202,10 @@
 **Prevention:** judge view-mode scroll direction or distance only against a real Claude Code session in the pane, and check `git log` on the pager before changing it. A fake stage works with: a standard stage's record set to status `executing` and `session: <session_id>`; a session `.md` with `stage_id`, backend `tmux`, status `running`, and the session kind the stage's type needs (`worker_session_type`: `knowledge` for a knowledge stage, else `stage`); tracking key `loom-v2-<kind>-<stage_id>`; a PID file `pids/<tracking_key>-<session_id>.pid` holding the pane PID; and `tmux -L loom-<session_id> new-session -s <tracking_key>` running `claude`, served by `loom status --web --terminals`.
 
 **Fix:** reverted the edits; tested with a real Claude Code session in the pane.
+
+## Mock dashboard showed a finished plan
+
+**What happened:** a mock status backend for manual testing served web/src/api/fixtures/plan-stats-snapshot.json, and the dashboard opened on the Plan complete overlay.
+**Why:** status.plan_stats is the finished-plan record; its presence alone makes routes/shell.tsx render PlanOverviewDialog, whatever the stage states say.
+**Prevention:** for an in-progress plan, serve snapshot.json or strip status.plan_stats.
+**Fix:** delete status.plan_stats before sending the full frame.
