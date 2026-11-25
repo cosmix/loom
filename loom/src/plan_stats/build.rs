@@ -21,8 +21,9 @@ const FALLBACK_PLAN_NAME: &str = "Plan";
 /// Build the record of the initialized run in `work_dir` from its persisted stages.
 ///
 /// Wall time starts at the earliest stage start (first phase span or persisted `started_at`)
-/// and ends at the latest completion or skip transition; a skip sets no `completed_at`, so a
-/// skipped stage counts through its last update. A plan in which no stage ever ran has the
+/// and ends at the latest completion, phase end or skip transition; a phase can end after
+/// `completed_at` (a merge wait), and a skip sets no `completed_at`, so a skipped stage
+/// counts through its last update. A plan in which no stage ever ran has the
 /// initialization time for both ends and no duration. Every count is a saturating sum.
 pub fn build(work_dir: &Path) -> Result<PlanStatsRecord> {
     let run = identity::ensure(work_dir)?;
@@ -94,13 +95,15 @@ fn plan_span(stages: &[Stage], fallback: DateTime<Utc>) -> (DateTime<Utc>, DateT
     (start, end)
 }
 
-/// When the stage finished: its completion, or for a skipped stage the skip transition
-/// (the stage file's last update).
+/// When the stage finished: the later of its completion and its last closed phase span
+/// (a merge held after completion keeps the stage waiting past `completed_at`), or for a
+/// skipped stage the skip transition (the stage file's last update).
 fn stage_end(stage: &Stage) -> Option<DateTime<Utc>> {
-    match stage.status {
-        StageStatus::Skipped => Some(stage.updated_at),
-        _ => stage.completed_at,
+    if stage.status == StageStatus::Skipped {
+        return Some(stage.updated_at);
     }
+    let phase_end = stage.phases.iter().filter_map(|span| span.ended_at).max();
+    stage.completed_at.max(phase_end)
 }
 
 fn execution_secs(stage: &Stage) -> i64 {

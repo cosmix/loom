@@ -1,3 +1,0 @@
-command: cargo test tests::beta_fails --color=never -- --exact --color=never
-exit: 101
-cwd: .

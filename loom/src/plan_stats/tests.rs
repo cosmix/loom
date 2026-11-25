@@ -90,6 +90,19 @@ fn wall_time_runs_from_the_first_start_to_the_last_end_skips_included() {
 }
 
 #[test]
+fn wall_time_ends_at_a_merge_wait_that_outlasts_every_completion() {
+    let mut held = finished("held", 0, 600, 500);
+    held.phases.push(PhaseSpan {
+        phase: Phase::Waiting,
+        started_at: at(601),
+        ended_at: Some(at(5_000)),
+    });
+    let record = assemble(&run(), "Held".to_string(), vec![held], &two_lane_tokens()).unwrap();
+    assert_eq!(record.ended_at, at(5_000));
+    assert_eq!(record.wall_secs, 5_000);
+}
+
+#[test]
 fn stages_keep_their_own_times_and_options_as_persisted() {
     let record = plan_record();
     let ids: Vec<&str> = record

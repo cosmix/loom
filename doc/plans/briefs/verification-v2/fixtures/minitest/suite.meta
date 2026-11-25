@@ -1,3 +1,0 @@
-command: ruby fixture_test.rb
-exit: 1
-cwd: .

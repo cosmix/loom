@@ -144,11 +144,15 @@ function stageRow(stage: PlanStageStats, index: number, record: PlanStats, scale
   if (!stage.started_at && stage.phases.length === 0) return untimedRow(stage, base, scale);
   const start = Date.parse(stage.started_at ?? stage.phases[0]!.started_at);
   const phaseEnd = lastPhaseEnd(stage);
-  const end = stage.completed_at
-    ? Date.parse(stage.completed_at)
-    : Number.isNaN(phaseEnd)
+  // A merge held after completion keeps the stage waiting past `completed_at`.
+  const completedAt = stage.completed_at ? Date.parse(stage.completed_at) : Number.NaN;
+  const end = Number.isNaN(completedAt)
+    ? Number.isNaN(phaseEnd)
       ? Date.parse(record.ended_at)
-      : phaseEnd;
+      : phaseEnd
+    : Number.isNaN(phaseEnd)
+      ? completedAt
+      : Math.max(completedAt, phaseEnd);
   const barX = scale.x(start);
   const barEnd = scale.x(end);
   const segments = stage.phases

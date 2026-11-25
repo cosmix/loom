@@ -1,3 +1,0 @@
-command: python3 -m pytest test_fixture.py -q -k test_delta_missing
-exit: 5
-cwd: .

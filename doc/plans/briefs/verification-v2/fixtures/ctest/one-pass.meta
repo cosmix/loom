@@ -1,3 +1,0 @@
-command: /usr/bin/ctest --test-dir build -R '^alpha_passes$' --output-on-failure
-exit: 0
-cwd: .

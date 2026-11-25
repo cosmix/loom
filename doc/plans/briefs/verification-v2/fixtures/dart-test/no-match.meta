@@ -1,3 +1,0 @@
-command: dart test test/fixture_test.dart --plain-name 'delta_missing'
-exit: 79
-cwd: .

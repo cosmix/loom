@@ -1,3 +1,0 @@
-command: bunx vitest run fixture.test.js -t 'delta_missing'
-exit: 0
-cwd: .

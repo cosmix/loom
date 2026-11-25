@@ -1,3 +1,0 @@
-command: node --test --test-name-pattern='^beta_fails$' fixture.test.js
-exit: 1
-cwd: .

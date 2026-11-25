@@ -135,4 +135,27 @@ describe("timelineLayout", () => {
     expect(open.duration).toBe("30m");
     expect(open.barWidth).toBeCloseTo(30 * PER_MINUTE);
   });
+
+  it("extends a completed stage's bar over a merge wait that ends after completion", () => {
+    const stage = {
+      ...sampleRecord.stages[0]!,
+      started_at: "2026-11-21T09:00:00Z",
+      completed_at: "2026-11-21T09:40:00Z",
+      phases: [
+        {
+          phase: "executing" as const,
+          started_at: "2026-11-21T09:00:00Z",
+          ended_at: "2026-11-21T09:40:00Z",
+        },
+        {
+          phase: "waiting" as const,
+          started_at: "2026-11-21T09:40:01Z",
+          ended_at: "2026-11-21T09:55:00Z",
+        },
+      ],
+    };
+    const held = timelineLayout({ ...sampleRecord, stages: [stage] }).rows[0]!;
+    expect(held.barWidth).toBeCloseTo(55 * PER_MINUTE);
+    expect(held.duration).toBe("55m");
+  });
 });

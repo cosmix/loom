@@ -1,3 +1,0 @@
-command: cargo test tests::alpha_passes -- --exact
-exit: 101
-cwd: .

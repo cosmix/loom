@@ -241,6 +241,28 @@ fn bars_are_scaled_over_the_plan_span() {
 }
 
 #[test]
+fn a_merge_wait_after_completion_extends_the_bar() {
+    let mut plan = record(0);
+    plan.stages.push(stage(
+        "parked",
+        0,
+        10,
+        vec![span(Phase::Executing, 0, 10), span(Phase::Waiting, 11, 60)],
+    ));
+    let lines: Vec<String> = timeline_lines(&plan, 120)
+        .iter()
+        .map(ToString::to_string)
+        .collect();
+    let line = lines.iter().find(|line| line.contains("parked")).unwrap();
+    let cells = line.chars().filter(|c| "▓█▒░".contains(*c)).count();
+    let alpha = lines.iter().find(|line| line.contains("alpha")).unwrap();
+    let alpha_cells = alpha.chars().filter(|c| "▓█▒░".contains(*c)).count();
+    // Completed at minute ten, waiting until minute sixty: the stage lasts the hour.
+    assert!(line.trim_end().ends_with("1h0m"), "{line}");
+    assert!(cells >= alpha_cells * 5, "{cells} cells vs {alpha_cells}");
+}
+
+#[test]
 fn bars_and_rows_stay_inside_the_area() {
     let record = record(3);
     for width in 30..=140u16 {

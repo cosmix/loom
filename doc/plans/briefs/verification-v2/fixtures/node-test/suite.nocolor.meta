@@ -1,3 +1,0 @@
-command: NO_COLOR=1 node --test fixture.test.js
-exit: 1
-cwd: .

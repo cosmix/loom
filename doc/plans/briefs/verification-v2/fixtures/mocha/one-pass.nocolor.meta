@@ -1,3 +1,0 @@
-command: bunx mocha fixture.test.js --grep 'alpha_passes' --no-color
-exit: 0
-cwd: .

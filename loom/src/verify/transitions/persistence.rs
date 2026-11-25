@@ -196,7 +196,9 @@ where
 /// An Executing stage whose session record cannot be read keeps its spans: a
 /// handover clears the session before the next one is written, and that gap is not
 /// a phase of its own. A terminal close is stamped with the persisted completion
-/// time, which `phases::record` keeps from running backwards.
+/// time, unless the open span began after it (a merge wait after completion), in
+/// which case it is closed now. `phases::record` keeps the stamp from running
+/// backwards.
 fn record_phase_change(stage: &mut Stage, session_type: Option<SessionType>) {
     if stage.status == StageStatus::Executing && session_type.is_none() {
         return;
@@ -210,7 +212,17 @@ fn record_phase_change(stage: &mut Stage, session_type: Option<SessionType>) {
     let now = Utc::now();
     let at = match phase {
         Some(_) => now,
-        None => stage.completed_at.unwrap_or(now),
+        None => {
+            let open_start = stage
+                .phases
+                .last()
+                .filter(|span| span.ended_at.is_none())
+                .map(|span| span.started_at);
+            stage
+                .completed_at
+                .filter(|done| open_start.is_none_or(|start| *done >= start))
+                .unwrap_or(now)
+        }
     };
     record(&mut stage.phases, phase, at);
 }
@@ -321,3 +333,7 @@ fn load_stage_from_path(path: &Path) -> Result<Stage> {
 #[cfg(test)]
 #[path = "tests/update_stage.rs"]
 mod update_stage_tests;
+
+#[cfg(test)]
+#[path = "tests/phase_close.rs"]
+mod phase_close_tests;

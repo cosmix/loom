@@ -1,3 +1,0 @@
-command: bunx jest fixture.test.js
-exit: 1
-cwd: .

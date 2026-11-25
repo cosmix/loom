@@ -134,14 +134,15 @@ fn stage_row(
     Line::from(spans)
 }
 
-/// First and last instant of a stage: its own timestamps, else its phases'.
+/// First and last instant of a stage: its own timestamps, else its phases'. The end is
+/// the later of the completion and the last phase end, since a merge wait outlasts it.
 fn extent(record: &PlanStatsRecord, stage: &StageStats) -> Option<(DateTime<Utc>, DateTime<Utc>)> {
     let start = stage
         .started_at
         .or_else(|| stage.phases.first().map(|span| span.started_at))?;
     let end = stage
         .completed_at
-        .or_else(|| stage.phases.iter().filter_map(|span| span.ended_at).max())
+        .max(stage.phases.iter().filter_map(|span| span.ended_at).max())
         .unwrap_or(record.ended_at);
     Some((start, end.max(start)))
 }

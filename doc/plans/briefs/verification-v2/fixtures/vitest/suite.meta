@@ -1,3 +1,0 @@
-command: bunx vitest run fixture.test.js
-exit: 1
-cwd: .

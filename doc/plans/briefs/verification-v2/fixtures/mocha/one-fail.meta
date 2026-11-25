@@ -1,3 +1,0 @@
-command: bunx mocha fixture.test.js --grep 'beta_fails'
-exit: 1
-cwd: .
