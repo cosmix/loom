@@ -90,7 +90,7 @@ agent files and the plan-writer skill; the README restates the tiers and effort.
   stated). It takes no open decisions, bugs of unknown cause, concurrency, security-sensitive
   code or data-loss paths. `Explore` runs with `model: haiku` for locate-only sweeps (paths,
   symbols, call sites) and at its default sonnet when the answer needs behavior read.
-- sonnet (`loom-software-engineer`): pieces that need exploration or the initial iteration on
+- sonnet (`loom-software-engineer`): pieces that need open-ended exploration or the initial iteration on
   failing tests, or are too large to brief in that detail. A piece that seems to sit between
   sonnet and opus goes to sonnet. Fixes for review findings in code a cheaper tier wrote return to
   the tier that wrote the piece and escalate only on a failed fix.
