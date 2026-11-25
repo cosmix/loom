@@ -19,7 +19,7 @@ Stage has 13 states (WaitingForDeps → ... → Completed, terminal); dependents
 
 ## Daemon IPC Pattern
 
-Unix socket IPC (`.loom/work/orchestrator.sock`, mode 0600) admits bounded requests under a stable-file `flock`; the 5-second polling loop syncs the stage graph, spawns ready stages, and drains monitor events. Signal generation (Manus KV-cache prefix layout), heartbeat/context-health monitoring, session backend dispatch (native/tmux), and the memory-spool drain for sandboxed writes are all part of the same daemon loop.
+Unix socket IPC (`.loom/work/orchestrator.sock`, mode 0600) admits bounded requests under a stable-file `flock`; the 5-second polling loop syncs the stage graph, spawns ready stages, and drains monitor events. Signal generation (Manus KV-cache prefix layout), heartbeat/context-health monitoring, tmux session spawn, kill and liveness through `SessionBackend`, and the memory-spool drain for sandboxed writes are all part of the same daemon loop.
 
 → [Orchestrator Daemon Loop](patterns/orchestrator-daemon-loop.md)
 

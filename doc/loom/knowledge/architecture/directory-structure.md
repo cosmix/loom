@@ -15,8 +15,8 @@ loom/src/
     core.rs, lifecycle.rs, protocol.rs, status.rs, client.rs, orchestrator.rs
   orchestrator/             # Core engine
     core/                   # Main loop, stage executor, persistence, recovery
-    terminal/               # SessionBackend dispatcher
-      native/               # Host OS terminal spawning (11+ emulators)
+    terminal/               # SessionBackend facade over the tmux lane
+      launch/               # Session launch prep: capsule, settings, wrapper, PID tracking
       tmux/                 # Detached, per-session tmux servers
     monitor/                # Session health, heartbeat, failure tracking
     liveness.rs             # LivenessService — session liveness probe

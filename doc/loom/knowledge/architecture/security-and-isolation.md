@@ -18,7 +18,7 @@
 - **Acceptance criteria**: Runs arbitrary shell commands (trusted model)
 - **Socket**: Mode 0o600 (owner only), max 100 connections, 10MB message limit, Unix only
 - **Self-update**: minisign signature verification of the binary (`commands/self_update/signature.rs::verify_binary_signature`); agents, skills and commands are not downloaded separately: after the binary swap, `commands/self_update/mod.rs::run_asset_install` re-executes `loom install-assets` so the new binary installs its own embedded copies. The release workflow also publishes `SHA256SUMS.txt` for manual verification
-- **Shell escaping**: escape_shell_single_quote(), escape_applescript_string() in emulator.rs
+- **Shell escaping**: `shell_escape::escape` for shell words, `escape_applescript_string()` in `orchestrator/notify.rs`
 - **permission_mode field** (`SandboxConfig` / `StageSandboxConfig`): Resolves as stage > plan > stage-type default. Default by stage type: ALL four stage types → `auto` (Knowledge, KnowledgeDistill, Standard, IntegrationVerify) — loom stages run autonomously with no human to answer prompts, so the agent auto-accepts actions its heuristics deem safe; the sandbox deny/allow rules are the safety boundary. Override to a stricter mode (`accept-edits`, `plan`) at plan or stage level if needed. **Delivery:** the resolved mode is passed as the `--permission-mode` CLI flag by `build_claude_command` at spawn — NOT via `permissions.defaultMode` in the worktree's `settings.local.json`, which Claude Code v2.1.142+ ignores for `auto` (a repo cannot grant itself auto mode; only the CLI flag or user/managed settings are honored). Auto mode itself requires a supporting account/model (Opus 4.6+/Sonnet 4.6+); loom's job is only to request it correctly. See entry-points.md and mistakes.md.
 
 ## Per-Worktree Gitignore for settings.local.json
@@ -43,7 +43,7 @@ Two write sites:
 - **Loom-spawned sessions** — `sandbox/settings.rs::generate_settings_json` emits a
   top-level `"worktree": { "bgIsolation": "none" }` block, and `sandbox::build_settings`
   carries it into the session capsule
-  (`orchestrator/terminal/native/session_settings/contents.rs::capsule_settings`).
+  (`orchestrator/terminal/launch/session_settings/contents.rs::capsule_settings`).
   `merge_existing_permissions` only touches `permissions.*`, so the block survives it.
 - **Interactive sessions in the main repo** —
   `fs/permissions/settings.rs::ensure_loom_hooks_local` sets it idempotently in
@@ -53,7 +53,7 @@ Two write sites:
 ## Where a Session's Write Grants Come From
 
 Loom's spawn path writes no `.claude/settings.local.json`; only `loom repair` writes the main checkout's file (via `ensure_loom_hooks_local`). Every session kind launches from a generated
-**capsule**, `W/capsules/<session-id>.settings.json` (`orchestrator/terminal/native/session_settings.rs`),
+**capsule**, `W/capsules/<session-id>.settings.json` (`orchestrator/terminal/launch/session_settings.rs`),
 built by the pure `sandbox::settings::build_settings`. Approved permissions live in a loom-owned
 list, `W/permissions/approved.json` (`fs/permissions/approved.rs`), rendered into every later
 session's capsule. Home-directory control surfaces are spelled `~/...` in both the sandbox and
@@ -69,7 +69,7 @@ Three groups of denies are added to every capsule beyond the state root and the 
 
 - **Git administrative directories.** `<common>/hooks`, `<common>/config`, `<common>/config.worktree`, `<common>/logs` whole and `<common>/packed-refs`; every sibling worktree's administrative directory `<common>/worktrees/<name>` whole; and, for a session with an own entry, that entry's `config.worktree`, `gitdir` and `commondir` plus the checkout's `<common>/HEAD` and `<common>/index`, for the worktrees registered at spawn (`deny_git_controls`, `deny_reflogs_and_packed_refs` and `deny_worktree_admin_dirs` in `sandbox/control_surfaces/session_denies.rs`, on the split from `partition_admin_dirs`; [Loom's `config.worktree` Deny and Check](#looms-configworktree-deny-and-check)). Stage branches keep no per-ref reflog, so the `logs` deny does not half-apply a session's `git reset` or `git merge`: the capsule removes `<common>/logs/refs/heads/loom/<worktree dir>` at spawn, pinned commands in a stage worktree pass `-c core.logAllRefUpdates=false`, and the wrapper exports it to the session through `GIT_CONFIG_PARAMETERS`. A session rooted in the checkout keeps the operator's `main` reflog, so a `git reset <commit>` there still moves the tree and fails on the ref; `git reset --hard HEAD` recovers.
 - **Credential reads.** `sandbox.filesystem.denyRead` carries the credential directories, nine credential files and, unless the legacy codex lane is granted (`policy::codex_granted`: codex licensed and `codex.backend = legacy`), `~/.codex/auth.json` (`policy::mandatory_deny_read(codex_licensed)`; [Sandbox and Confinement Gaps](../concerns/sandbox-and-confinement-gaps.md#credential-reads-denied-files-plain-paths-and-what-stays-readable)).
-- **Tool routes.** `permissions.deny` names `LSP`, `RemoteTrigger`, `CronCreate`, `PushNotification`, `Monitor` and `PowerShell` in every capsule and plan-session kind (`plan_session/sandbox/permissions.rs`), and `Workflow` in every capsule except the Stage session of an `ultracode: true` stage (`SESSION_TOOL_DENIES` and `capsule_deny_rules` in `orchestrator/terminal/native/session_settings/contents.rs`; `launch.rs::workflow_licensed`). Bare tool names rather than `--disallowedTools`, which is variadic and would consume the positional prompt ([Tool Routes That Run Outside the Bash Sandbox](../concerns/sandbox-and-confinement-gaps.md#tool-routes-that-run-outside-the-bash-sandbox)).
+- **Tool routes.** `permissions.deny` names `LSP`, `RemoteTrigger`, `CronCreate`, `PushNotification`, `Monitor` and `PowerShell` in every capsule and plan-session kind (`plan_session/sandbox/permissions.rs`), and `Workflow` in every capsule except the Stage session of an `ultracode: true` stage (`SESSION_TOOL_DENIES` and `capsule_deny_rules` in `orchestrator/terminal/launch/session_settings/contents.rs`; `launch.rs::workflow_licensed`). Bare tool names rather than `--disallowedTools`, which is variadic and would consume the positional prompt ([Tool Routes That Run Outside the Bash Sandbox](../concerns/sandbox-and-confinement-gaps.md#tool-routes-that-run-outside-the-bash-sandbox)).
 
 Claude Code still writes a "don't ask again" approval to `<canonical git root>/.claude/settings.local.json`
 even for a capsule-launched session (destination `localSettings`; confirmed against the 2.1.269
@@ -136,7 +136,7 @@ After git exits, on failure too, `ScratchAdmin::publish` applies what changed th
 
 The common directory is outside this: ahead of each command `refuse_planted_links` looks at `packed-refs`, `logs`, `refs` and `refs/heads`, and `refuse_ref_path_links` at the path a ref update names. Every runner command passes `-c gc.auto=0 -c maintenance.auto=false`, so loom's own commands do not rewrite `packed-refs` behind a live session's deny. It also passes `--ignore-submodules=dirty` to the commands that compare the work tree (`without_gitlink_recursion`, `git/runner.rs`): a gitlink's moved commit still shows, and no process starts inside it, so uncommitted content inside a gitlink shows in neither `status`, `diff` nor the completion check. What stays open is under [Races Left Around Pinned Git](../concerns/sandbox-and-confinement-gaps.md#races-left-around-pinned-git).
 
-The srt confinement e2e (`orchestrator/terminal/native/tests_confinement_e2e.rs`, `tests_confinement_srt.rs`) emulates Claude Code's linked-worktree grant and its denies, so stage probes run against what production grants; the bubblewrap probe `tests_capsule_denies::bwrap` proves the sibling-directory denies and the own-directory control on the emitted capsule ([Sandbox and Confinement Gaps](../concerns/sandbox-and-confinement-gaps.md#sandbox-denial-has-no-end-to-end-ci-canary)).
+The srt confinement e2e (`orchestrator/terminal/launch/tests_confinement_e2e.rs`, `tests_confinement_srt.rs`) emulates Claude Code's linked-worktree grant and its denies, so stage probes run against what production grants; the bubblewrap probe `tests_capsule_denies::bwrap` proves the sibling-directory denies and the own-directory control on the emitted capsule ([Sandbox and Confinement Gaps](../concerns/sandbox-and-confinement-gaps.md#sandbox-denial-has-no-end-to-end-ci-canary)).
 
 ## Worktree Membership Is Anchored to the END of the Path
 
@@ -171,7 +171,7 @@ shared `run_startup_preflights` (`commands/run/mod.rs::run_startup_preflights`),
 every installed hook script present, `loom-relay.sh` included; `LOOM_BIN`/the hooks directory outside
 every writable root; `/bin/bash` and every `hook_path` tool resolve outside every writable root) plus
 the `R/loom-hooks/**` rule and the loom-written-keys check `repair --fix` also uses. Every spawn
-repeats checks 2-4 in `native/launch.rs` before writing anything, using `HostFacts`
+repeats checks 2-4 in `launch/prepare.rs` before writing anything, using `HostFacts`
 (`sandbox/config/preflight.rs`) — one struct giving a spawn exactly the host facts a launch sees.
 `LOOM_BIN` must be owned by the operator or root, not group- or world-writable, and outside every
 writable root — an executable-dir deny skips any directory that is, or contains, a session-writable

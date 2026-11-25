@@ -1,6 +1,6 @@
 # Stage Exit Recording
 
-> Stage exits: refused-commit route, idle-stop block, verdict delivery, new guards
+> Stage exits: refused commit, idle stop, verdicts, artifact disputes
 
 ## A Stage Session Ends in a State Loom Records
 
@@ -31,3 +31,11 @@ A stage session ends completed, disputed, blocked or waiting on a question, neve
 - **`NegatedSearch`** (warning, `plan/schema/validation/criterion_hazards/negated_search.rs`): a final `! <command> | <matcher>` (rg, grep), the same in a non-final operand of an all-`&&` chain, or a final check of a search's failure after a statement that pipes to a matcher. `--strict` fails on it; the message names the fail-closed remedy: run the command for its own exit status, and when only some failures count have the tool expose a mode for that. A negated file search without a pipe stays out.
 - **`main-checkout`** (`loom-hooks/worktree-isolation.sh::check_main_checkout_tokens`, `_containment.sh::loom_path_in_main_checkout`): an absolute path into the main checkout that classes `outside` (not state, worktree or scratch) is blocked, tilde paths and `NAME=`, `--flag=` and one-short-option (`-C/path`) prefixes included. It is off when the repository root is `/`, the home directory or an ancestor of it. Gaps: [stage-exits-and-guards-followups](../concerns/stage-exits-and-guards-followups.md).
 - **Ledger tighten mode:** [git-and-build-workflow](../conventions/git-and-build-workflow.md#the-maintainability-ledger-the-commit-hook-lowers-rows-nothing-raises-them).
+
+## Operator Recovery: Artifact Disputes, Landing Notes, Gap Outcomes
+
+- **Artifacts are a disputable and amendable list.** `CriterionField`, `DisputeField` and `AmendField` each carry `artifacts`: `loom stage dispute-criteria --field artifacts --criterion-index N` files against the stage's artifact patterns, an accepted `artifacts` plan patch rewrites that list (`plan_patch.rs::admits` lets an artifacts dispute amend only its own list), and `loom stage amend` may mutate it. An accepted criterion verdict may replace or delete only the filed indices (`verdict_indices.rs::unfiled_patch`); it may insert at any index. See [adjudication-lifecycle](adjudication-lifecycle.md#dispute-kinds-criterion-findings-contract-integrity-impact-tests).
+- **A failed host completion records one outcome per indexed gap.** `host_verify/child_complete.rs::record_goal_gaps` reads the goal-backward failure message through `verify/goal_backward/gap_labels.rs::goal_gap_ids` and records a failed `artifact-<n>`, `wiring-<n>` or `wiring_tests-<n>` outcome for each `[artifact n]`, `[wiring n]` or `[wiring_tests n]` gap. A label counts only at the start of a gap (after the failure prefix or a `;` separator), so bracketed text inside a gap's own text is not a gap. The block guard (`stage_service/control_block.rs`, `control_block_gaps.rs::failed_gaps`) reads those ids, drops an index past the end of the stage's list, refuses `loom stage block` while one remains and names the matching `dispute-criteria --field` route.
+- **A forced or `--no-verify` completion prints what happens next.** `complete_force.rs::landing_note` says the stage is not merged yet: with a daemon running and auto-merge on (the default) the daemon lands it and triggers dependents; with no daemon, `loom run` merges it; otherwise run `loom stage merge <stage>` from `.worktrees/<stage>`. `--force-unsafe` and `--no-verify` (`complete_pipeline.rs`) share it; `--assume-merged` prints its own line.
+
+- **The standard-signal boilerplate has a byte ceiling.** `STAGE_EXIT_RULES` and `BLOCK_F` (`orchestrator/signals/helpers.rs`) share a 10240-byte floor test; adding `artifacts` to the disputable fields pushed the boilerplate to 10250 bytes, so the clause "(even for impact-tests alone)" was dropped: the sentence "reruns completion on your last-completed tree" already covers it. A new field name in that text costs bytes elsewhere.

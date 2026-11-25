@@ -333,3 +333,9 @@ before the parent's import can go.
 **What happened:** a plan step moved a module-level `#[test]` into `mod tests` in `commands/verify.rs` and left `normalized_criteria` below the test module. `clippy::items_after_test_module` fails under `-D warnings`.
 
 **Prevention:** keep non-test items above `#[cfg(test)] mod tests`; a plan step that moves a test says so.
+
+## Deleting an Enum's Imports Broke Test Submodules That Reached Them Through `use super::*`
+
+**What happened:** after the native backend was removed from `terminal/launch/mod.rs`, the test submodules `tests_session_settings`, `tests_wrapper_env` and `tests_capsule` stopped compiling: they had received `Path`, `PathBuf`, `Stage`, `SessionType` and `Result` through `use super::*` from imports that only `NativeBackend` used.
+
+**Prevention:** before deleting an import from a module root, `rg 'use super::\*'` its test submodules and give each an explicit import list. While the crate does not compile, a test-cfg typecheck of one territory works from a scratch copy of `loom/` with the repository's top-level directories symlinked (`build/assets.rs` needs `agents/` and friends) and the blocking parse error patched in the copy.

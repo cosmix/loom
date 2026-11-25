@@ -117,3 +117,11 @@
 **Prevention:** state shared between the filings of one round accumulates and is cleared by the first filing of the next round, never by each writer. A wait key must not include a value the waited-for job itself changes. A gate that hashes a file the daemon writes needs a rule for that write. Behaviour: [stage-exit-recording](../architecture/stage-exit-recording.md#verdict-delivery-to-the-next-session).
 
 **Fix:** per-round accumulation with a clear on the first filing, joined review reasons, a trial rerun that skips the digest comparison, and a frozen-file cover in the review gate.
+
+## A Frozen Contract Test Was 53 Lines, Over the 50-Line Function Limit
+
+**What happened:** the frozen contract `artifacts_cli_fields_parse` (`cli/artifacts_field_contract_tests.rs`) failed the function-length ratchet in `tests/maintainability`: rustfmt expands an argv array to one element per line, which took the test to 53 lines.
+
+**Why:** the contract was written without running the maintainability test after rustfmt.
+
+**Prevention:** contract authors run the maintainability test on the formatted contract file and keep each function under 50 lines (a small `stage_command` helper builds the argv). A contract that fails it is disputed with a replacement, as this one was (41 lines).

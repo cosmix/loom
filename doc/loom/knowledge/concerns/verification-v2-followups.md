@@ -91,7 +91,7 @@ Plan authors are trusted, so these are author-mistake gaps, not stage-agent bypa
 ## Completion-Gate and Dispute Backlog
 
 - `format_gate.rs` builds a `Stage::default()` whose empty id makes `${STAGE_ID}` expand to an empty string, contradicting the module doc; `biome check` also lints, so a lint error in a contract file is reported with "run the formatter" advice; the formatter-gate tests (`freeze_tests.rs`) need a host `rustfmt` binary.
-- Three enums mirror the dispute field (`DisputeField` in `cli/types_stage_disputes.rs`, `AmendField`, `CriterionField`), and `dispute_criteria_with_mode` takes nine arguments under `allow(too_many_arguments)`.
+- Three enums mirror the dispute field (`DisputeField` in `cli/types_stage_disputes.rs`, `AmendField`, `CriterionField`; each names `artifacts` beside `acceptance`, `wiring` and `wiring_tests`), and `dispute_criteria_with_mode` takes nine arguments under `allow(too_many_arguments)`.
 - Other `std::env::set_current_dir` tests (`commands/knowledge/tests*.rs`, `telemetry/tests.rs`) restore the cwd by hand and are not panic-safe; the guard in `commands/stage/state_relay.rs` tests could become a shared `CwdGuard`.
 - `status/data/collector.rs::build_stage_summary` stays under the 50-line ledger through `let (facts, now) = (...)`; moving the ledger entry or extracting a helper is the cleaner fix.
 
@@ -153,7 +153,7 @@ Reviewer suggestions from the gate-dedup and integration-verify rounds that were
 - `loom/src/plan/schema/validation_suite.rs` (the `-p` and `--benches` cases above) and `loom/tests/gate_dedup_contracts.rs::plan_verify_flags_full_vitest_suite_in_standard_stage`: only vitest runs through the binary. A loop over `registry::all()` would pin every adapter.
 - `loom-hooks/subagent-verify-guard.sh::scan_args`: `scan_args` treats `-p`/`--package` as scoped, but `cargo_test.rs::is_full_run` treats `cargo test -p <crate>` as a full run, and `pytest -p plugin` reads as a scope. The main agent can run a whole crate with `-p`.
 - `loom-hooks/subagent-verify-guard.sh::check_command`: `timeout 300 cargo test` bypasses the hook because `timeout` is not in the prefix list. Add `timeout` and `bundle exec`/`php` prefixes. `make test` stays allowed for the main agent by design.
-- `loom-hooks/subagent-verify-guard.sh`: the main-agent branch ignores `LOOM_SESSION_TYPE` (exported by `orchestrator/terminal/native/wrapper.rs::build_wrapper_script`), so contract, adjudication and base-conflict sessions of a standard stage get the main-agent block. Low impact; unverified.
+- `loom-hooks/subagent-verify-guard.sh`: the main-agent branch ignores `LOOM_SESSION_TYPE` (exported by `orchestrator/terminal/launch/wrapper.rs::build_wrapper_script`), so contract, adjudication and base-conflict sessions of a standard stage get the main-agent block. Low impact; unverified.
 - `loom/src/orchestrator/signals/tests_doctrine_gate.rs::the_retired_agent_definition_does_not_exist`: the retired-agent test covers five surfaces. README, CONTRIBUTING, `spawn-guard.sh` `TYPED_AGENTS` and the plan-writer SKILL and references are not asserted. `code_reviewer_judges_criteria_intent` matches two loose words anywhere in the file.
 - `AGENTS.md.template:57`: "The orchestrator performs integration verification" should name the stage's gate (`loom check`) for standard stages.
 - `loom-hooks/tests/subagent-gate-payload.sh`: the header comment splits `LOOM_MAIN_AGENT_PID` across two lines. Case (j) sits before (f) and there is no (k).

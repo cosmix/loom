@@ -54,7 +54,7 @@ the `read:*` cost falls by more than the denied calls cost (see [Read Gate](../a
   1 MiB cases file can hold thousands of cases of up to 400 KB each with no case cap and no overall deadline.
   In `cases.json:78` the `cpp` case does not check the "why" half of the question, and an answer saying `c,
   not cpp` passes; the file is a frozen fixture.
-- **Tests:** the `ask` parse tests in `run_tests.rs:79` belong in `backend_tests.rs` and a new test module for `mod.rs`.
+- **Tests:** the `ask` parse tests in `run_tests.rs:79` belong in a test module for `backend.rs` and a new test module for `mod.rs`.
 
 ## Unimplemented Reviewer Suggestions: Read Gate and Hook Parser
 

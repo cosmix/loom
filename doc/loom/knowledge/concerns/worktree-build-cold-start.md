@@ -16,7 +16,7 @@ Every stage has one build-cache root outside its worktree, shared by its session
 
 - Go (`GOCACHE`, `GOMODCACHE` seeded from the host module cache), Maven (`repo.local.tail`), Gradle (`GRADLE_RO_DEP_CACHE`) and ccache resolve host-seeded dependencies. The Linux probe built and ran every toolchain probe except Maven's offline resolve (its seed lacked the plugins) and left the bubblewrap host-launcher tests and Go's `std_build_is_reused_by_the_second_command` unconfirmed; CI is the gate.
 - Cargo's registry and git checkouts are the host's own, read in place (macOS) or bound at the host path (Linux), so dependencies stay warm; workspace crates in the dev profile always rebuild, because sccache does not cache incremental compilations and the target directory stays in the worktree.
-- `RUSTC_WRAPPER` stays unset for host jobs (`process/environment.rs`), and a sandboxed session gets one only where `orchestrator/terminal/native/build_cache.rs::sccache_usable_in` allows it. sccache serves host-job builds only where a project's own build names it (a CMake launcher), through the consumer's private socket.
+- `RUSTC_WRAPPER` stays unset for host jobs (`process/environment.rs`), and a sandboxed session gets one only where `orchestrator/terminal/launch/build_cache.rs::sccache_usable_in` allows it. sccache serves host-job builds only where a project's own build names it (a CMake launcher), through the consumer's private socket.
 
 What stays cold:
 

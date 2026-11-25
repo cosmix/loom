@@ -288,7 +288,7 @@ shared prefix and read the stage's `setup` first.
 
 ## A Must-Fail Probe That Counts Any Non-Zero Exit Passes When the Harness Never Started (2026-09-13)
 
-**What happened:** the srt confinement e2e (`orchestrator/terminal/native/tests_confinement_e2e.rs`) treated a write probe as refused when `srt --settings <capsule> -c 'touch <path>'` exited non-zero and the file was unchanged. On its first real run outside the Claude Code sandbox, srt crashed (an uncaught Node.js exception) under the knowledge capsule. Every must-fail probe in that test "passed"; only its first must-succeed probe failed, reporting `Node.js v22.18.0` because the helper kept only the last stderr line. The orchestrator had committed the test after seeing only its skip path, since srt cannot run inside the Claude Code sandbox.
+**What happened:** the srt confinement e2e (`orchestrator/terminal/launch/tests_confinement_e2e.rs`) treated a write probe as refused when `srt --settings <capsule> -c 'touch <path>'` exited non-zero and the file was unchanged. On its first real run outside the Claude Code sandbox, srt crashed (an uncaught Node.js exception) under the knowledge capsule. Every must-fail probe in that test "passed"; only its first must-succeed probe failed, reporting `Node.js v22.18.0` because the helper kept only the last stderr line. The orchestrator had committed the test after seeing only its skip path, since srt cannot run inside the Claude Code sandbox.
 
 **Why:** a negative probe cannot tell a sandbox refusal from a sandbox that never ran, unless it proves the command inside actually executed. Keeping only the last stderr line then hid the crash's cause.
 

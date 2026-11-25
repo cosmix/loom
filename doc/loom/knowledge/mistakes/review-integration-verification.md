@@ -301,3 +301,11 @@ sandbox cannot reproduce), from the daemon's host run.
 **Prevention:** a brief for cross-platform Rust requires a reachability table per `cfg` (macOS, macOS test, Linux, Linux test) for every new or moved item whenever Linux cannot be compiled locally; the hosted Linux jobs are the first compile of those paths.
 
 **Fix:** the re-review round named both items and the worker gated them to the builds that use them.
+
+## A Short Follow-Up Reviewer Brief Left Out the loom-review Block, So the Round Counted for Nothing
+
+**What happened:** a one-change follow-up `loom-code-reviewer` brief said "as your agent definition specifies" instead of spelling out the answer shape. The reviewer answered in prose, and the round was recorded as malformed.
+
+**Why:** the earlier briefs of the stage relied on the agent definition, and the reviewer skipped the shape on a trivial change.
+
+**Prevention:** every `loom-code-reviewer` brief, however small, ends with the literal fenced `loom-review` JSON shape (findings, suggestions, resolved, unresolved) marked REQUIRED. A prose-only answer needs a respawn with the shape.

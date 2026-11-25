@@ -49,9 +49,8 @@ Each pass stamps `orchestrator.tick` with its phase, and `loom status` reads a t
 
 ## Session Spawning and Liveness Pattern
 
-The orchestrator holds one `Arc<SessionBackend>` and shares it with `LivenessService`. Spawn resolves
-the native or tmux lane per call and records the chosen lane on `Session.backend`; kill and liveness
-dispatch by that persisted lane. Use `LivenessService::is_alive(session)` rather than raw PID probes.
+The orchestrator holds one `Arc<SessionBackend>` and shares it with `LivenessService`. Spawn, kill and
+liveness all go through the one tmux lane. Use `LivenessService::is_alive(session)` rather than raw PID probes.
 Process identity is PID plus kernel start time, and destructive signaling fails closed when identity
 cannot be verified. For tests, `LivenessService::fixed_for_tests(bool)` avoids constructing a backend.
 
@@ -59,22 +58,20 @@ cannot be verified. For tests, `LivenessService::fixed_for_tests(bool)` avoids c
 
 The orchestrator holds
 `Arc<SessionBackend>` (`orchestrator/core/orchestrator.rs`, constructed via
-`SessionBackend::from_config`), and shares that same `Arc` with the `LivenessService`
+`SessionBackend::new`), and shares that same `Arc` with the `LivenessService`
 (`orchestrator/liveness.rs::LivenessSource`):
 
 ```rust
-let backend = Arc::new(SessionBackend::from_config(config.work_dir.clone())?);
+let backend = Arc::new(SessionBackend::new(config.work_dir.clone()));
 let liveness = LivenessService::new(Arc::clone(&backend));
 ```
 
-`SessionBackend` dispatches each call to the `Native` or `Tmux` lane. Two rules follow:
+`SessionBackend` is a facade over the tmux lane, which reads no configuration. Two rules follow:
 
-- **Spawn** resolves the lane per call from configuration alone (no fallback marker, no automatic lane
-  switch), then records the lane actually used on `Session.backend`. A configured-tmux spawn with no
-  tmux on PATH, or a tmux spawn failure, returns `Err` and blocks the stage instead of retrying on
-  another lane.
-- **Kill and liveness** dispatch on `session.backend` — the lane that _spawned_ it — never on the
-  currently-configured backend, so sessions survive a config change or a daemon restart.
+- **Spawn** goes to tmux with no fallback marker and no automatic lane switch. A spawn with no
+  tmux on PATH (`ensure_tmux`), or a tmux spawn failure, returns `Err` and blocks the stage.
+- **Kill and liveness** read the session record alone (its socket name, tracking key and PID identity),
+  so sessions survive a daemon restart.
 
 Every spawn site uses the shared handle. Other constructors serve session registry probes and operator session/state/merge/retry/loop-recovery commands (`orchestrator/session_registry.rs`, `commands/sessions.rs`, `commands/stage/state.rs`, `commands/stage/state/loop_recovery/mod.rs`, `commands/stage/merge_resolver.rs`, `commands/stage/skip_retry.rs`). `orchestrator/continuation/mod.rs::continue_session` does not construct a backend: `auto_spawn=true` is refused because the daemon owns session spawning.
 

@@ -37,7 +37,7 @@ Open points on [returned input](../architecture/planning-session-bridge.md#recov
 - **`process/owned.rs`:** `wait` and `wait_unreaped` are identical now (collapse them); `try_wait` still reaps (`host_verify/runner.rs`), leaving the pid-reuse window `wait` closes.
 - **`daemon/deadline_transport.rs`:** `socket()` then `F_SETFD FD_CLOEXEC` is not atomic; use `SOCK_CLOEXEC | SOCK_NONBLOCK` on Linux, as `pty.rs` does.
 - **After an orchestrator join timeout** `daemon/server/lifecycle/threads.rs` takes the token tracker thread, so the scheduler's later `stop_and_join` returns at once and its final scan can overlap a tracker pass.
-- **`lsof -F` escapes non-ASCII path bytes as `\xNN`**, so a worktree path with non-ASCII characters never matches the parsed cwd (`orchestrator/terminal/native/pid_tracking.rs`).
+- **`lsof -F` escapes non-ASCII path bytes as `\xNN`**, so a worktree path with non-ASCII characters never matches the parsed cwd (`orchestrator/terminal/launch/pid_tracking.rs`).
 - **Native worker journals** (`native_worker/`): a stage with a permanently corrupt record re-runs `repair_lost_tails`, with identity checks, on every runner tick (`runner_recover.rs`); a journal with no newline at all passes `has_torn_tail`, so `supervisor_is_gone` may tombstone an old unclaimed record and repair returns `Ok(false)` without a warning (`store_repair.rs`; check for a newline, or confirm `create_invocation` writes the first event atomically).
 - **The poison-tolerant lock helper has about a dozen copies** (`remote_control.rs`, `proxy/mod.rs`, `broadcast.rs`, and others); one shared helper would replace them.
 - **Test and comment nits:** `PathGuard` in `terminal/tests_upgrade/spawn_failure.rs` duplicates the one in `remote_control_tests.rs`; with the test override set, `tmux_program.rs` skips the socket-exists stat and the probe timeout (test-only); `web/src/api/terminal.ts` names `bridge.rs` for the 64 KiB cap, which is `MAX_INBOUND_BYTES` applied in `upgrade.rs`.
@@ -105,7 +105,6 @@ Each was left out of the November 2026 review-remediation plan for the reason gi
 | CR-32: the `SUN_PATH_MAX` move and the `handoff`/`orchestrator` cycle | The move touches files four stages of that plan owned; the cycle is accepted ([Core Abstractions](../architecture/core-abstractions.md#layering-violations-known-issues)) |
 | CR-68: process substitution under Seatbelt | The denial is recorded for the write form only; the read form needs a measured run on macOS |
 | CR-71(c), CR-71(d) | Widening the size scanner adds ledger rows, a ratchet loosening that needs its own reviewed change; the coordinator doctrine conflict is a product decision |
-| CR-29(b, c, d), CR-21 in its native-window form | The native terminal backend is being removed |
 | CR-61(c-f), the rest of CR-76, CR-58(d), CR-19's config-TUI crash marker | Accepted limits already recorded, or design gaps with no settled fix |
 | CR-78: signal module splits, the duplicate proposal document, the tree-row duplication | Already in the size ledger; the document's twin is an untracked local file; both copies of the loop sit in other stages' files |
 | P1: attachments in the returned queue | Queue entries carry text only; attachments are a larger change |

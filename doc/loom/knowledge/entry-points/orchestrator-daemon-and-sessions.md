@@ -94,13 +94,12 @@
 
 ## Terminal Backend
 
-- `orchestrator/terminal/backend.rs` - `SessionBackend` dispatcher for native/tmux spawn, kill, and liveness
-- `orchestrator/terminal/mod.rs` - terminal module root; re-exports backend and emulator types
-- `orchestrator/terminal/native/mod.rs` - NativeBackend (spawn/kill/alive)
-- `orchestrator/terminal/native/spawner.rs` - Claude Code session spawning (native)
-- `orchestrator/terminal/emulator.rs` - 11 terminal emulator configs
-- `orchestrator/terminal/native/detection.rs` - Auto-detect terminal
-- `orchestrator/terminal/native/pid_tracking.rs` - Wrapper script, PID tracking, env vars
+- `orchestrator/terminal/backend.rs` - `SessionBackend`: the facade over the tmux lane for spawn, kill and liveness; `require_tmux`, `tmux_on_path` and `TMUX_MISSING_MESSAGE`
+- `orchestrator/terminal/mod.rs` - terminal module root; re-exports the backend and `TmuxBackend`
+- `orchestrator/terminal/tmux/` - `TmuxBackend`, one tmux server per session (`mod.rs`, `backend.rs`, `socket.rs`, `viewer.rs`, `reconcile.rs`, `history.rs`)
+- `orchestrator/terminal/launch/mod.rs` - `build_claude_command` and the re-exports of the launch machinery
+- `orchestrator/terminal/launch/prepare.rs` - assembles one session's launch (capsule, settings, wrapper, build cache)
+- `orchestrator/terminal/launch/pid_tracking.rs` - Wrapper script paths, PID tracking, env vars
 - `orchestrator/liveness.rs` - LivenessService: wraps the shared SessionBackend; fixed_for_tests() stub for unit tests
 
 ## Orchestrator Core Recovery Functions
@@ -123,7 +122,7 @@ allocation-free request preface before the bounded JSON body is accepted.
 
 Startup also publishes `.ignore` and `ripgreprc` at the state root, before either token, via
 `daemon/server/tokens.rs::publish_fresh_tokens`. The session wrapper
-(`orchestrator/terminal/native/wrapper.rs`) exports `RIPGREP_CONFIG_PATH` pointing at the published
+(`orchestrator/terminal/launch/wrapper.rs`) exports `RIPGREP_CONFIG_PATH` pointing at the published
 `ripgreprc`, but only when that file already exists at spawn time; a `loom run --foreground`
 orchestrator runs no daemon, so it publishes neither tokens nor exclusions and its sessions get no
 export. A sandboxed agent's `rg`/`fd`/`ag` opening `admin.token` or `user.token` hits the sandbox's
@@ -161,14 +160,14 @@ pub fn dispute_criteria(
 ) -> Result<()>
 ```
 
-- CLI: `loom stage dispute-criteria <stage-id> [--field acceptance|wiring|wiring-tests] --criterion-index N [--criterion-index N ...] [--owner-stage <id>] --reason <text> [--evidence-commit <sha>] [--failure-output <path>]`. `--field` defaults to `acceptance`; each index is into the list the field names, repeated or given as a list, sorted and deduplicated (`cli/types_stage_disputes.rs`, `stage_service/dispute.rs`, which range-checks every index). `--owner-stage` (wiring only, integration-verify only) makes the indices name a completed stage's wiring list, the one the aggregated re-verification failed.
+- CLI: `loom stage dispute-criteria <stage-id> [--field acceptance|wiring|wiring-tests|artifacts] --criterion-index N [--criterion-index N ...] [--owner-stage <id>] --reason <text> [--evidence-commit <sha>] [--failure-output <path>]`. `--field` defaults to `acceptance`; each index is into the list the field names, repeated or given as a list, sorted and deduplicated (`cli/types_stage_disputes.rs`, `stage_service/dispute.rs`, which range-checks every index). `--owner-stage` (wiring only, integration-verify only) makes the indices name a completed stage's wiring list, the one the aggregated re-verification failed.  An accepted verdict may replace or delete only the filed indices (`orchestrator/adjudication/verdict_indices.rs`); it may insert at any index.
 - Sends `Request::DisputeCriteria { auth_token, stage_id, session_id, field, criterion_indices, reason, evidence_commit, failure_output }` (`daemon/protocol.rs`) over the daemon socket. The **daemon** checks the stage transition, writes `.loom/work/disputes/<stage>/<n>/request.md` (its `kind: criterion` record carries `field`) and transitions the stage to `NeedsAdjudication`, then returns the allocated id.
 - **Credentials: a missing `.loom/work/user.token` is the NORMAL case here, not an error.** The sandbox denies a stage agent that read by design (S-1: the token authorizes every User RPC, not just the ones a stage agent is entitled to). The client presents `daemon::rpc::user_credential()`, which falls back to a non-empty placeholder, and names the session it is running inside via `LOOM_SESSION_ID`. The daemon authorizes it by the connection instead — see `daemon/server/self_service.rs`.
 - `--failure-output` is a path; the client loads it and truncates to 4KB on a UTF-8 char boundary. `models/dispute.rs` holds the one `truncate_to_byte_limit` and `FAILURE_OUTPUT_MAX_BYTES`; the daemon truncates again defensively.
 - The agent never writes `.loom/work/disputes/<stage>/<n>/verdict.md` or `applied.marker` — both are daemon-only.
 - With no daemon listening the dispute cannot be filed at all (the daemon is what persists it), and the command says so rather than reporting a bare connect error.
 - Server-side handler: `daemon/server/dispute.rs`. On-disk schema: `models/dispute.rs`. Verdict rules per field: [adjudication-lifecycle](../architecture/adjudication-lifecycle.md#dispute-kinds-criterion-findings-contract-integrity-impact-tests).
-- Open: `DisputeField` (`cli/types_stage_disputes.rs`), `AmendField` and `CriterionField` mirror one enum three times, and `dispute_criteria_with_mode` takes nine arguments under `allow(too_many_arguments)` (see [code-quality-and-hook-debt](../concerns/code-quality-and-hook-debt.md)).
+- Open: `DisputeField` (`cli/types_stage_disputes.rs`), `AmendField` and `CriterionField` mirror one enum three times (each names `artifacts` beside `acceptance`, `wiring` and `wiring_tests`), and `dispute_criteria_with_mode` takes nine arguments under `allow(too_many_arguments)` (see [code-quality-and-hook-debt](../concerns/code-quality-and-hook-debt.md)).
 
 ## Fix Attempts Counter — Current Usage
 

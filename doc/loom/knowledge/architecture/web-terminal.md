@@ -64,7 +64,7 @@ classes of refusal close code, `4004/4008/4009`, the attach and capacity codes `
 | 1001 | `CLOSE_SERVER_STOPPING` | dashboard shutting down                                                   | `dropped` ("server stopping")                                                                 |
 | 1009 | `CLOSE_TOO_LARGE`       | frame past `MAX_INBOUND_BYTES`, input stream desynced                     | `refused` ("input too large") — never retried, since a retry resends the same oversized frame |
 | 4004 | `CLOSE_UNKNOWN_STAGE`   | no stage with that id                                                     | `refused`, permanent, page never retries                                                      |
-| 4008 | `CLOSE_REFUSED`         | `NativeBackend`, `Unrenderable`, or `Stop::Stalled` (gate never reopened) | `refused`, permanent                                                                          |
+| 4008 | `CLOSE_REFUSED`         | `Unrenderable`, or `Stop::Stalled` (gate never reopened)       | `refused`, permanent                                                                          |
 | 4009 | `CLOSE_NOT_YET`         | `NoSession`/`NotReady` — stage exists, may become attachable              | `waiting`, page retries after `RETRY_WAITING_MS = 2000`                                       |
 | 4010 | `CLOSE_ATTACH_FAILED`   | the stage session could not be resolved, or its tmux attach client could not start | matched literally by `terminal.ts`                                                  |
 | 4011 | `CLOSE_BUSY`            | every terminal slot is taken (sent after the handshake completes)         | matched literally by `terminal.ts`, told apart from a bad cookie                              |
@@ -73,9 +73,8 @@ classes of refusal close code, `4004/4008/4009`, the attach and capacity codes `
 
 ## Resolver: from stage id to a tmux target (`resolve.rs`)
 
-`resolve_target` composes three independent lookups, never trusting a status
+`resolve_target` composes two independent lookups, never trusting a status
 field: `known_stage` from `verify::transitions::load_stage` (does the stage exist at all),
-`all` from `load_all_sessions` (every session ever recorded, for a better refusal reason),
 and `live` from `live_tmux_sessions(work_dir.root())` — the PID-verified liveness list
 (`orchestrator/terminal/tmux/viewer.rs::live_tmux_sessions`; a recorded session is live only if its PID
 still resolves to the right process identity, so a `Paused` session — no live PID — is never
@@ -83,9 +82,9 @@ in `live`). `resolve` filters `live` to the stage via `matches_for_stage`, then
 `pick_newest` (`attach/mod.rs::pick_newest`, max by `created_at`) picks the same session `loom
 attach` would. `target_for` then requires `tmux_session_name`/`socket_name` to
 both be `is_plain_identifier` (`Refusal::Unrenderable` otherwise) and the tmux endpoint
-`ready` (`endpoint_ready`, else `Refusal::NotReady`). No match at all falls back to
-`refusal_without_live_session`, which re-checks `all_sessions` for a non-terminal
-session on a non-tmux backend to report `NativeBackend` instead of a generic `NoSession`.
+`ready` (`endpoint_ready`, else `Refusal::NotReady`). No live match is `Refusal::NoSession`; the
+stage must exist (`Refusal::UnknownStage` otherwise). No refusal depends on how the session was
+started: every session is a tmux session.
 
 ## The poll-based bridge loop (`bridge.rs::run_with`, :75-123)
 

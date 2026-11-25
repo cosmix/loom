@@ -21,7 +21,6 @@ Gaps around the [Merge Resolver Spawn Loop](../patterns/merge-and-recovery.md#me
 - **Transient spawn failures repeat a warning every tick.** While a spawn keeps failing (tmux, lock timeout), the daemon logs a spawn-failure warning on every poll until the cause is fixed. This follows from the no-cap decision.
 - **A failed session save on the CLI resolver path can admit a second resolver.** `commands/stage/merge_resolver.rs` runs with no daemon and tracks nothing, so when its `save_session` fails the signal has no record, and the next liveness check reads it as stale. The daemon's paths, the spawn loop and `try_auto_merge`, keep a resolver whose record failed to save in `active_sessions`.
 - **A tracked resolver with no session record can stay tracked forever.** If it resolves the merge, the monitor never fires for it, so it stays in `active_sessions`: `all_stages_terminal` stays false and it occupies a parallel slot.
-- **Native window evidence needs wmctrl or xdotool on Linux** (`orchestrator/terminal/native/window_ops.rs`). Without them, a launched native resolver with no PID file reads as gone.
 
 ## Attribution Code Has Nothing to Attribute
 
@@ -33,7 +32,7 @@ Gaps around the [Merge Resolver Spawn Loop](../patterns/merge-and-recovery.md#me
 
 ## `human-review --force-complete` Requires No Operator Proof, by Design
 
-It passes `MergeGate::Bypass`. Its authority rests on the capsule: every session kind denies writes to `.loom/`, so a stage agent cannot write the stage file the command changes first (pinned by `orchestrator/terminal/native/tests_capsule_denies.rs`, `every_session_kind_denies_writes_to_the_state_directory`). `human-review` is not relayed to the daemon, and the command checks no operator credential.
+It passes `MergeGate::Bypass`. Its authority rests on the capsule: every session kind denies writes to `.loom/`, so a stage agent cannot write the stage file the command changes first (pinned by `orchestrator/terminal/launch/tests_capsule_denies.rs`, `every_session_kind_denies_writes_to_the_state_directory`). `human-review` is not relayed to the daemon, and the command checks no operator credential.
 
 ## Stage-Id Auto-Detection Fails Closed When a Tag Shares the Branch Name
 

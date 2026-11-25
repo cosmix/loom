@@ -117,7 +117,7 @@ Each guard behavior has a test that goes red when the behavior is mutated (the i
 
 - A control-path move is held (`control_path_move_is_held`, `tests/target_guard_contracts.rs`).
 - An agent fast-forward to its own branch is not marked merged (`agent_fast_forward_to_own_branch_is_not_marked_merged`).
-- A sandboxed session's update of the target is refused (`sandboxed_session_update_of_the_target_is_refused`); `tests_confinement_target` (`orchestrator/terminal/native/`) runs probe 1 under srt, requiring the hook's refusal text on stderr besides a non-zero exit and an unchanged tip, and probe 2 as the control (same move with `core.hooksPath=/dev/null`, which succeeds).
+- A sandboxed session's update of the target is refused (`sandboxed_session_update_of_the_target_is_refused`); `tests_confinement_target` (`orchestrator/terminal/launch/`) runs probe 1 under srt, requiring the hook's refusal text on stderr besides a non-zero exit and an unchanged tip, and probe 2 as the control (same move with `core.hooksPath=/dev/null`, which succeeds).
 - A replace ref and a graft do not hide an unattested change (`replace_ref_does_not_hide_an_unattested_change`).
 - New stage worktrees start at the accepted tip while held (`resolve_worktree_starts_at_the_accepted_tip_while_held`).
 - A conflicted stage gets no resolver while held (`a_conflicted_stage_gets_no_resolver_while_held`, using a `MergeConflict` stage with a missing branch so the held check is the only difference).
