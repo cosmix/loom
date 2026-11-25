@@ -12,7 +12,7 @@
 | [entry-points.md](entry-points.md) | Key files agents should read first | 86 |
 | [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 200 |
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 230 |
-| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 243 |
+| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 245 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 116 |
 | [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 248 |
 
@@ -124,6 +124,7 @@
 | [checkout-identity](mistakes/checkout-identity.md) | Persisted checkout identity: pin path and inode, never st_dev | 13 |
 | [ci-gate-rollout](mistakes/ci-gate-rollout.md) | CI gate rollout slips: untested strict gates, shared index, known-red runs | 84 |
 | [ci-toolchain-and-cargo](mistakes/ci-toolchain-and-cargo.md) |  | 399 |
+| [closed-pipe-panics](mistakes/closed-pipe-panics.md) | println! on a closed stdout panics a server thread; drain piped stdout in tests | 13 |
 | [codex-lane-rogue-wrapper](mistakes/codex-lane-rogue-wrapper.md) |  | 207 |
 | [codex-navigation](mistakes/codex-navigation.md) | Reader | 202 |
 | [codex-worker-briefing](mistakes/codex-worker-briefing.md) |  | 258 |
