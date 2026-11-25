@@ -14,7 +14,7 @@
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 230 |
 | [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 243 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 116 |
-| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 246 |
+| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 248 |
 
 ## Tier 2 — Topics
 
@@ -158,6 +158,7 @@
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Pins | 350 |
 | [plan-authoring](mistakes/plan-authoring.md) |  | 357 |
 | [plan-server-delivery](mistakes/plan-server-delivery.md) | Slips | 376 |
+| [plan-stats-phase-timing](mistakes/plan-stats-phase-timing.md) | Phase spans and timeline bars that ended a stage at completed_at | 13 |
 | [planner-design-brainstorm](mistakes/planner-design-brainstorm.md) | Stubs | 141 |
 | [planner-follow-ups-delivery](mistakes/planner-follow-ups-delivery.md) | Slips | 196 |
 | [planner-polish](mistakes/planner-polish.md) | Polish | 155 |
@@ -213,7 +214,7 @@
 | [contract-autonomy-followups](concerns/contract-autonomy-followups.md) |  | 122 |
 | [knowledge-cli-gaps](concerns/knowledge-cli-gaps.md) |  | 82 |
 | [loom-ask-and-read-gate](concerns/loom-ask-and-read-gate.md) |  | 107 |
-| [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Edges | 96 |
+| [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Edges | 104 |
 | [native-codex-qualification](concerns/native-codex-qualification.md) |  | 139 |
 | [planner-follow-ups-followups](concerns/planner-follow-ups-followups.md) | Planner, chat, guidance, kickoff and typed-config open follow-ups | 221 |
 | [planner-ui-repair-followups](concerns/planner-ui-repair-followups.md) | UI | 213 |

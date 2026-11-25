@@ -171,7 +171,9 @@ post-transition nonce-burn ordering, the attribution code that has nothing left 
 `update-ref` window,
 `human-review --force-complete` requiring no operator proof by design, a
 newline inside a refused fast-forward path, and a loom gate error that parks a stage with no self-recovery (no
-dispute covers loom's own gates, a deliberate block is never retried; proposed: a could-not-evaluate gate result).
+dispute covers loom's own gates, a deliberate block is never retried; proposed: a could-not-evaluate gate result),
+and a merge held by uncommitted edits in the main checkout, which waits for an operator with no escalation
+(proposed: auto-land non-colliding hunks, or alert on a long hold).
 
 → [Merge and Recovery Edge Cases](concerns/merge-and-recovery-edge-cases.md)
 

@@ -94,3 +94,12 @@ main" as merged). The root cause was NOT identified in this plan. Until it is, a
 checked with `git merge-base --is-ancestor <stage tip> <target>` before dependants trust it, and the stage tip is
 recoverable from `git fsck --no-reflogs` (see [phantom-merges](../mistakes/phantom-merges.md)). A retry that starts from
 a completed stage should refuse when `commits_ahead_of(branch, base) > 0` and route to NeedsHandoff instead.
+
+## Uncommitted Edits in the Main Checkout Hold a Merge Until an Operator Acts
+
+A stage merge whose files overlap tracked, uncommitted edits in the operator's checkout is refused as `UncommittedOverlap` (`git/merge/checkout_state.rs`, `checkout_apply.rs`): loom never stashes or rewrites tracked work. The daemon's blocked retry (`merge_handler/blocked_retry.rs`) only re-attempts when the checkout fingerprint changes, so the stage stays `merge-blocked` and every dependent stays waiting until a person commits, stashes or moves the edits. Nothing escalates a long hold: in one run an interactive session's uncommitted edits to two files the stage also changed held the merge 8h45m overnight, though the edits sat in different hunks and a stash, merge and pop applied cleanly.
+
+Open options, none implemented:
+
+- **Auto-land non-colliding overlaps:** per overlapping path, three-way merge the working copy against the old and new target blobs (`git merge-file`); when every path merges clean, advance the target and write the merged bytes, keeping the originals in the quarantine used for displaced files (`land_displacing`). Any collision keeps today's block. This changes the checkout-safety contract, so it needs its own design and tests for partial failure and for edits made during the land.
+- **Escalate a long hold:** raise an attention item or notification once a merge has been blocked longer than a configurable threshold, naming the paths and the remedy.
