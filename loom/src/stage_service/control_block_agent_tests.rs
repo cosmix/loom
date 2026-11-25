@@ -15,7 +15,7 @@ use crate::models::stage::{Stage, StageStatus};
 use crate::plan::schema::ContractSpec;
 use crate::verify::transitions::save_stage;
 
-const STAGE: &str = "stage-blk";
+pub(super) const STAGE: &str = "stage-blk";
 
 #[test]
 fn a_prechecked_old_session_cannot_block_the_new_attempt() {
@@ -34,7 +34,7 @@ fn a_prechecked_old_session_cannot_block_the_new_attempt() {
 }
 
 /// An executing stage whose current session is `session-blk`.
-fn fixture() -> (TempDir, Session, Stage) {
+pub(super) fn fixture() -> (TempDir, Session, Stage) {
     let temp = TempDir::new().unwrap();
     fs::create_dir(temp.path().join("handoffs")).unwrap();
     let mut session = Session::new();
@@ -53,7 +53,7 @@ fn record(temp: &TempDir, session: &Session, stage: &Stage, phase: CompletionPha
 }
 
 /// As [`record`], with the attempt's per-criterion results.
-fn record_with(
+pub(super) fn record_with(
     temp: &TempDir,
     session: &Session,
     stage: &Stage,
@@ -347,53 +347,6 @@ fn a_passing_contract_check_and_other_failed_gates_still_allow_the_block() {
     );
 
     let response = handle_agent_block_stage(temp.path(), STAGE, "x").unwrap();
-
-    assert!(matches!(response, Response::Ok), "{response:?}");
-}
-
-#[test]
-fn an_indexed_goal_gap_refuses_the_block_and_names_its_dispute_route() {
-    let (temp, session, stage) = fixture();
-    let results = [
-        ("goal-backward", false),
-        ("artifact-1", false),
-        ("wiring-0", false),
-        ("wiring_tests-2", false),
-    ];
-    let phase = CompletionPhase::ToolFailed;
-    record_with(&temp, &session, &stage, phase, &results);
-
-    let response = handle_agent_block_stage(temp.path(), STAGE, "x").unwrap();
-
-    let Response::Error { message } = response else {
-        panic!("expected a refusal, got {response:?}");
-    };
-    for route in [
-        "dispute-criteria stage-blk --field artifacts --criterion-index 1 --reason",
-        "dispute-criteria stage-blk --field wiring --criterion-index 0 --reason",
-        "dispute-criteria stage-blk --field wiring-tests --criterion-index 2 --reason",
-    ] {
-        assert!(message.contains(route), "missing {route:?}: {message}");
-    }
-    assert_eq!(
-        load_stage(STAGE, temp.path()).unwrap().status,
-        StageStatus::Executing
-    );
-}
-
-#[test]
-fn a_failed_goal_backward_without_an_indexed_gap_still_blocks() {
-    let (temp, session, stage) = fixture();
-    let results = [("goal-backward", false)];
-    record_with(
-        &temp,
-        &session,
-        &stage,
-        CompletionPhase::ToolFailed,
-        &results,
-    );
-
-    let response = handle_agent_block_stage(temp.path(), STAGE, "dead code").unwrap();
 
     assert!(matches!(response, Response::Ok), "{response:?}");
 }

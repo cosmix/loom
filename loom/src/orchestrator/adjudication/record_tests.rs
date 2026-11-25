@@ -92,6 +92,30 @@ fn records_a_relayed_verdict_text_under_the_same_guards() {
 }
 
 #[test]
+fn an_accept_patching_an_unfiled_index_is_refused_and_nothing_is_written() {
+    let (_tmp, work) = setup(StageStatus::NeedsAdjudication);
+    write_request(&work, 1);
+    let raw = serde_json::json!({
+        "verdict": "accept",
+        "reasoning": "the criterion is wrong",
+        "citations": [{"file": "src/a.rs", "line": 1, "excerpt": "fn a", "claim": "missing"}],
+        "plan_patch": {
+            "field": "acceptance",
+            "patches": [{"op": "delete", "index": 1}],
+            "reason": "wrong entry"
+        }
+    })
+    .to_string();
+
+    let err = record_verdict_text(&work, "s1", 1, &raw, None).unwrap_err();
+    let text = format!("{err:#}");
+    assert!(text.contains("was not recorded"), "{text}");
+    assert!(text.contains("did not file"), "{text}");
+    assert!(text.contains("filed indices 0"), "{text}");
+    assert!(!verdict_file(&work.join("disputes"), "s1", 1).exists());
+}
+
+#[test]
 fn refuses_when_the_stage_is_not_under_adjudication() {
     let (_tmp, work) = setup(StageStatus::Executing);
     write_request(&work, 1);

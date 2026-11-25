@@ -38,7 +38,7 @@ fn aborting_a_spawn_removes_the_pid_file_and_wrapper_it_created() {
     let _tmux_tmpdir = TmuxTmpDirGuard::set(socket_dir.path());
 
     // A failure after the wrapper ran can leave a live tmux process and PID
-    // file. The configured tmux lane reports the failure; cleanup prevents
+    // file. The tmux backend reports the failure; cleanup prevents
     // later liveness checks from adopting that abandoned process.
     //
     // No tmux server is needed: `kill_socket_server` against an absent socket

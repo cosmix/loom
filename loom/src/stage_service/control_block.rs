@@ -134,11 +134,12 @@ fn failures_in(stage: &Stage, results: &[CriterionResult]) -> DisputableFailures
     } else {
         Vec::new()
     };
+    let (artifacts, wiring, wiring_tests) = control_block_gaps::failed_gaps(stage, results);
     DisputableFailures {
         criteria: control_block_gaps::failed_indices(results, "acceptance"),
-        artifacts: control_block_gaps::failed_indices(results, "artifact"),
-        wiring: control_block_gaps::failed_indices(results, "wiring"),
-        wiring_tests: control_block_gaps::failed_indices(results, "wiring_tests"),
+        artifacts,
+        wiring,
+        wiring_tests,
         contracts,
         impact_tests: named(IMPACT_TESTS_LABEL),
     }
@@ -169,8 +170,8 @@ fn failed_completion_refusal(stage_id: &str, failed: &DisputableFailures) -> Str
          checks. A failing check is disputed, never blocked. {} Other routes: `loom stage \
          dispute-findings` for open review findings, `loom stage dispute-integrity` for \
          test-integrity events, `loom stage dispute-criteria --field wiring` or `--field \
-         wiring-tests` for wiring entries, `--field artifacts` for artifact entries. A filing \
-         past the dispute budget goes to the operator automatically.",
+         wiring-tests` for wiring entries, `--field artifacts` for artifact entries. A \
+         filing past the dispute budget goes to the operator automatically.",
         routes.join(" ")
     )
 }

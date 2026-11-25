@@ -32,8 +32,8 @@ fn warn_force_unsafe(landing: &ForcedLanding) {
 pub(super) enum ForcedLanding {
     /// `--assume-merged`: the router proved the commit is in the target.
     AssumeMerged,
-    /// Left unmerged for the daemon's auto-merge, which lands the recorded
-    /// branch tip. `None` records nothing.
+    /// Left unmerged with the branch tip recorded for landing; the landing
+    /// note names the route that merges it. `None` records nothing.
     Unmerged(Option<VerificationSnapshot>),
 }
 
@@ -90,7 +90,9 @@ pub(in crate::commands::stage) fn landing_note(stage_id: &str, daemon_running: b
 
 /// Report how the persisted completion lands. Runs only after the completion
 /// is written, so a recorded commit is never announced for a refused write.
-/// Stdout lines go to `out`; the warning for no recorded commit goes to stderr.
+/// The landing note and the assumed-merge line go to `out`; the recorded-commit
+/// line is printed to stdout directly and the warning for no recorded commit
+/// goes to stderr.
 fn report_forced_landing(
     stage: &Stage,
     landing: &ForcedLanding,

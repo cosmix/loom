@@ -64,38 +64,34 @@ pub fn parse_and_validate(raw: &str) -> ValidationOutcome {
 
 /// [`parse_and_validate`] for a dispute of `kind`.
 pub fn parse_and_validate_for(raw: &str, kind: &DisputeKind) -> ValidationOutcome {
-    match (parse_json_object(raw), kind) {
-        (
-            Ok(json),
-            DisputeKind::Criterion {
-                field,
-                criterion_indices,
-                ..
-            },
-        ) => require_filed(
-            classify_and_validate(json, *field),
-            *field,
-            criterion_indices,
-        ),
-        (Ok(json), _) => verdict_kinds::classify_for_kind(&json, kind),
-        (Err(coerced), _) => coerced,
-    }
+    checked_outcome(raw, kind).unwrap_or_else(needs_more_evidence)
 }
 
-/// An accept that replaces or deletes an entry the dispute did not file is
-/// re-requested, as the duplicate-index check does, so nothing is recorded or
-/// applied. An insert may name any index.
-fn require_filed(
-    outcome: ValidationOutcome,
-    disputed: CriterionField,
-    filed: &[usize],
-) -> ValidationOutcome {
+/// The verdict outcome for `kind`, or the question naming the filed indices
+/// when a criterion accept replaces or deletes an entry the dispute did not
+/// file (an insert may name any index). `parse_and_validate_for` coerces the
+/// question to needs-more-evidence; `parse_and_validate_in` refuses with it.
+fn checked_outcome(raw: &str, kind: &DisputeKind) -> Result<ValidationOutcome, String> {
+    let (disputed, filed) = match kind {
+        DisputeKind::Criterion {
+            field,
+            criterion_indices,
+            ..
+        } => (*field, criterion_indices),
+        _ => {
+            return Ok(match parse_json_object(raw) {
+                Ok(json) => verdict_kinds::classify_for_kind(&json, kind),
+                Err(coerced) => coerced,
+            })
+        }
+    };
+    let outcome = match parse_json_object(raw) {
+        Ok(json) => classify_and_validate(json, disputed),
+        Err(coerced) => coerced,
+    };
     let unfiled = disputed_list_patches(&outcome, disputed)
         .and_then(|patches| unfiled_patch(&patches, filed));
-    match unfiled {
-        Some(index) => needs_more_evidence(unfiled_question(index, filed)),
-        None => outcome,
-    }
+    unfiled.map_or(Ok(outcome), |index| Err(unfiled_question(index, filed)))
 }
 
 /// What a verdict is recorded against: the state directory and the disputed
@@ -110,9 +106,11 @@ pub(crate) struct RecordContext<'a> {
 /// contract dispute's against the stage and its freeze record
 /// (`verdict_contract`); every defect is an `Err` naming it for the judge to
 /// correct: coerced to needs-more-evidence, it would reach the agent and cost
-/// it an evidence round. Every other kind keeps its self-correcting rules; a
-/// criterion accept that narrows the acceptance is also checked against the
-/// stage's base runs (`verdict_narrowing`).
+/// it an evidence round. A criterion accept that replaces or deletes an entry
+/// its dispute did not file is refused the same way (`checked_outcome`).
+/// Every other kind keeps its self-correcting rules; a criterion accept that
+/// narrows the acceptance is also checked against the stage's base runs
+/// (`verdict_narrowing`).
 pub(crate) fn parse_and_validate_in(
     raw: &str,
     kind: &DisputeKind,
@@ -122,7 +120,7 @@ pub(crate) fn parse_and_validate_in(
         kind,
         DisputeKind::FreezeRefusal { .. } | DisputeKind::Contract { .. }
     ) {
-        let outcome = parse_and_validate_for(raw, kind);
+        let outcome = checked_outcome(raw, kind)?;
         if let Some(n) = narrowing_inputs(&outcome, kind, context)? {
             check_narrowing(&context.stage.id, "", n.plan_patch, &n.current, &n.evidence)?;
         }

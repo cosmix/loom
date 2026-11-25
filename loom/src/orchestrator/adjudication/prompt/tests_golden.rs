@@ -118,8 +118,10 @@ loom check demo --no-cache
 ```
 
 Judge every disputed criterion AND every other criterion `loom check` reports
-failing; a verdict may patch any of them. The aggregate command exit status
-decides nothing.
+failing. A verdict may replace or delete only a disputed criterion, and may
+insert new ones; name any other failing criterion you find wrong in your
+reasoning, so the stage agent can dispute it. The aggregate command exit
+status decides nothing.
 
 This asks the daemon to run the criteria in a host job under Loom's setup,
 environment and confinement policy. While its first line reads

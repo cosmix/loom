@@ -8,7 +8,7 @@
 
 ## 1. Motivation
 
-Loom currently spawns Claude Code sessions on the host via `NativeBackend`, with `permissions.defaultMode` hard-coded to `acceptEdits` in worktree settings. This forces a tradeoff:
+Loom currently spawns Claude Code sessions on the host in tmux through `SessionBackend` (a facade over the tmux lane `TmuxBackend`), with `permissions.defaultMode` hard-coded to `acceptEdits` in worktree settings. This forces a tradeoff:
 
 - **acceptEdits + native** is what loom does now. Safe-ish, but Claude Code's sandbox-exec layer on macOS and the in-CLI permissions system have a track record of being inconsistent. Stages still pause for permission prompts on commands the classifier hasn't pre-approved, defeating swarm parallelism.
 - **bypassPermissions + native** removes prompts but is unsafe on a developer host. Not an option.
@@ -453,7 +453,7 @@ pub use crate::plan::schema::execution::BackendType;
 
 pub fn create_backend(backend_type: BackendType, work_dir: &Path) -> Result<Box<dyn TerminalBackend>> {
     match backend_type {
-        BackendType::Native => Ok(Box::new(native::NativeBackend::new(work_dir.to_path_buf())?)),
+        BackendType::Native => Ok(Box::new(SessionBackend::new(work_dir.to_path_buf()))),
         BackendType::Container => Ok(Box::new(container::ContainerBackend::new(work_dir.to_path_buf())?)),
     }
 }
@@ -783,7 +783,7 @@ impl BackendDispatcher {
     /// Build the set of backends the plan actually needs.
     /// Inspecting all stages up-front avoids constructing backends that
     /// are never used (e.g. if no stage opts into native within a
-    /// container project, we don't construct NativeBackend).
+    /// container project, we don't construct the host `SessionBackend`).
     pub fn for_plan(
         project_backend: BackendType,
         needs: BackendNeeds,
@@ -1537,7 +1537,7 @@ A documented acceptance procedure for each release:
 | Container backend                         | `loom/src/orchestrator/terminal/container/{mod,runtime,lifecycle}.rs`                                                           | 2     |
 | Per-stage backend dispatcher              | `loom/src/orchestrator/terminal/dispatcher.rs` (new)                                                                            | 2     |
 | Orchestrator dispatch update              | `loom/src/orchestrator/core/*` (hold `BackendDispatcher`, look up per stage on each spawn)                                      | 2     |
-| Container-relative wrapper script         | `loom/src/orchestrator/terminal/native/pid_tracking.rs` (additive)                                                              | 2     |
+| Container-relative wrapper script         | `loom/src/orchestrator/terminal/launch/pid_tracking.rs` (additive)                                                              | 2     |
 | `loom init --backend` flag                | `loom/src/cli/{dispatch,types}.rs`, `loom/src/commands/init/*`                                                                  | 3     |
 | Language fingerprint                      | `loom/src/orchestrator/terminal/container/fingerprint.rs`, `loom/src/language.rs` (extend)                                      | 3     |
 | Global image cache                        | `loom/src/orchestrator/terminal/container/image.rs`, `loom/resources/Dockerfile.tmpl`                                           | 3     |
@@ -1554,7 +1554,7 @@ A documented acceptance procedure for each release:
 - Implement Phase 1 in a single PR; keep it small and easy to review. The schema change, the resolver, the writer change, and tests fit comfortably in ~250 lines. Phase 1 ships `BackendType` even though only `Native` is constructible at run time; `Container` is reserved for Phase 2.
 - For Phase 2, get `spawn_session` working end-to-end with a hand-built image first. Don't block on Phase 3 (image build automation). The integration point is `BackendType::Container` selection in `.work/config.toml`; you can hand-edit that file during Phase 2 development.
 - Reuse the existing `pid_tracking::create_wrapper_script` rather than duplicating it. Add a `paths: WrapperPaths` parameter that holds either host paths (current behaviour) or container paths (new).
-- The `kill_session` window-title fallback in `NativeBackend` is irrelevant for `ContainerBackend`; don't port it. `<runtime> rm -f` is sufficient.
+- The `kill_session` window-title fallback in the host tmux lane (`TmuxBackend`) is irrelevant for `ContainerBackend`; don't port it. `<runtime> rm -f` is sufficient.
 - Treat the firewall as defence in depth, not the primary boundary. The primary boundaries are: (a) container kernel/namespace isolation, (b) bind mount scope, (c) explicit env-var stripping. The firewall stops prompt-injection-driven exfiltration. Document this in `README.md` so users don't over-rely on it.
 - The `chattr +i` on the firewall script needs `e2fsprogs` in the image; the Dockerfile in Section 7.10 installs it. On Apple Container the in-VM filesystem is ext4 by default; verify `chattr +i` succeeds during image build (the Dockerfile uses `|| true` to tolerate filesystems that don't support it).
 - `loom init` validation must happen before any image build. Failing fast on a bad plan saves the user 5-10 minutes of needless build time.

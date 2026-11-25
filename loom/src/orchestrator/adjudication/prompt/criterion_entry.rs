@@ -231,8 +231,10 @@ fn owner_run_note(stage_id: &str, owner: &str) -> String {
          Judge every disputed wiring check AND every other check of stage '{owner}'\n\
          the re-verification reports failing, each a `{owner}: [wiring n]` line of\n\
          `loom stage complete` (quoted under Failure output when the agent attached\n\
-         it); a verdict may patch any of them. The aggregate command exit status\n\
-         decides nothing.\n\n"
+         it). A verdict may replace or delete only a disputed entry, and may insert\n\
+         new ones; name any other failing entry you find wrong in your reasoning, so\n\
+         the stage agent can dispute it. The aggregate command exit status decides\n\
+         nothing.\n\n"
     )
 }
 

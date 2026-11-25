@@ -163,27 +163,3 @@ fn run_startup_preflights(work_dir: &WorkDir, accept_unix_socket_risk: bool) -> 
 fn print_stop_guidance() {
     println!("  {}  Stop daemon", "loom stop".cyan());
 }
-
-#[cfg(test)]
-mod tmux_preflight_tests {
-    use crate::orchestrator::terminal::TMUX_MISSING_MESSAGE;
-    use crate::orchestrator::terminal::{require_tmux, tmux_on_path};
-    use serial_test::serial;
-
-    #[test]
-    #[serial]
-    fn an_empty_path_fails_the_preflight_with_the_missing_message() {
-        let empty = tempfile::tempdir().unwrap();
-        let original = std::env::var_os("PATH");
-        std::env::set_var("PATH", empty.path());
-
-        let result = require_tmux(tmux_on_path);
-
-        match original {
-            Some(path) => std::env::set_var("PATH", path),
-            None => std::env::remove_var("PATH"),
-        }
-        let err = result.expect_err("no tmux on PATH must fail the preflight");
-        assert_eq!(err.to_string(), TMUX_MISSING_MESSAGE);
-    }
-}

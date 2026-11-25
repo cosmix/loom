@@ -206,11 +206,11 @@ if [[ $CODE -eq 77 ]]; then
 elif [[ -n "$AMBIENT" ]]; then
 	printf 'SKIP: stage evidence present in the test'"'"'s own ancestry (%s)\n' "$AMBIENT"
 else
-	# E2 negative: LOOM_TERMINAL travels further than a stage, so it is not
-	# evidence of one.
-	run_ancestor_guard LOOM_TERMINAL=x
-	assert_code 0 'E2 negative, LOOM_TERMINAL ancestor'
-	assert_silent 'E2 negative, LOOM_TERMINAL ancestor'
+	# E2 negative: any LOOM_* variable other than LOOM_STAGE_ID, LOOM_SESSION_ID
+	# and LOOM_WORK_DIR is not stage evidence (codex-forward-guard.sh).
+	run_ancestor_guard LOOM_UNRELATED=x
+	assert_code 0 'E2 negative, LOOM_UNRELATED ancestor'
+	assert_silent 'E2 negative, LOOM_UNRELATED ancestor'
 fi
 
 # E3 on Linux: Claude Code's Bash sandbox is bubblewrap with its own pid

@@ -1,14 +1,13 @@
 //! Tmux terminal backend
 //!
 //! Spawns sessions in a headless tmux server, one per session, so loom runs
-//! without a GUI. Each session gets its own tmux
-//! socket (see [`socket_name`]) rather than sharing one server, so killing
-//! one session can never take down another.
+//! without a GUI. Each session gets its own tmux socket (see [`socket_name`])
+//! rather than sharing one server, so killing one session can never take down
+//! another.
 //!
 //! Session-launch preparation (prompt, model/effort policy, permission mode,
 //! wrapper script) lives in `super::launch::prepare_session_launch` — this
-//! module only owns the
-//! tmux-specific spawn/kill/liveness mechanics.
+//! module only owns the tmux-specific spawn/kill/liveness mechanics.
 //!
 //! Liveness is PID-based ONLY, never `tmux has-session` — see
 //! [`TmuxBackend::is_session_alive`] for why a tmux-server-alive check would
@@ -361,6 +360,8 @@ mod tests;
 mod tests_history;
 #[cfg(test)]
 mod tests_history_support;
+#[cfg(test)]
+mod tests_kill;
 #[cfg(test)]
 mod tests_socket_teardown;
 #[cfg(test)]

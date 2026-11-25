@@ -42,9 +42,7 @@ pub(crate) static TEST_LOOM_BIN: std::sync::Mutex<Option<std::path::PathBuf>> =
 pub(crate) use pid_guard::{
     pid_only_is_alive, pid_only_terminate, session_process_status, SessionProcessStatus,
 };
-pub use pid_tracking::{
-    cleanup_stage_files, discover_claude_pid, read_pid_entry, wrapper_script_path,
-};
+pub use pid_tracking::{cleanup_stage_files, read_pid_entry, wrapper_script_path};
 pub(crate) use pid_wait::await_session_pid;
 pub(crate) use prepare::{prepare_session_launch, record_daemon_binary, run_host_facts};
 pub use session_log::stderr_log_path;
