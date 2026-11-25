@@ -156,7 +156,7 @@
 | [native-macos-delivery](mistakes/native-macos-delivery.md) | macOS boundary delivery slips: lint scope, pinned fields, shared TMPDIR | 67 |
 | [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Shared | 361 |
 | [phantom-merges](mistakes/phantom-merges.md) | Merges | 347 |
-| [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Pins | 350 |
+| [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Pins | 360 |
 | [plan-authoring](mistakes/plan-authoring.md) |  | 357 |
 | [plan-server-delivery](mistakes/plan-server-delivery.md) | Slips | 376 |
 | [plan-stats-phase-timing](mistakes/plan-stats-phase-timing.md) | Phase spans and timeline bars that ended a stage at completed_at | 13 |

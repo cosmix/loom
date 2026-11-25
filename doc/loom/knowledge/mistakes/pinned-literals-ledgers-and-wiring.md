@@ -348,3 +348,13 @@ change bumps the plan `version` (conventions/plan-yaml-and-hooks).
 **Why:** goal-backward reachability follows direct calls only, and a wiring pattern is searched in the file the plan names.
 
 **Prevention:** a plan that pins a call with a wiring check also names the file that must hold it, and the worker brief says so. A helper that moves the call needs the wiring check amended to the helper's file first. A pass that matches only as a substring of a helper's name proves nothing about the call.
+
+## A Skill Wording Fix Verified Only by the Doctrine Tests Broke the Skill's Size Ceiling
+
+**What happened:** a one-clause addition to `skills/loom-orchestration/SKILL.md` passed `cargo test --lib doctrine` and reached main. Linux CI then failed `orchestration_skill_stays_under_its_size_ceiling` (22662 bytes, ceiling 22600).
+
+**Why:** the ceiling test lives in `orchestrator/signals/tests_size.rs`, and its name does not match the `doctrine` filter.
+
+**Prevention:** after editing any doctrine surface (`skills/*/SKILL.md`, `CLAUDE.md.template`, signal text), run `cargo test --lib orchestrator::signals` and `cargo test --lib skill`, which cover the verbatim pins and the size ceilings.
+
+**Fix:** the exit-6 sentence was compacted in the skill and in its pinned copy in `tests_doctrine_waiting.rs`. The skill is now 22599 bytes.
