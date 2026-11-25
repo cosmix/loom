@@ -297,3 +297,53 @@ fn a_wiring_dispute_past_the_list_says_so() {
         prompt.instructions
     );
 }
+
+/// An artifacts dispute names the `artifacts` list and its entries, pins the
+/// patch `field` to it, says a patch `value` is a plain glob, and never
+/// mentions the wiring lists.
+#[test]
+fn an_artifacts_dispute_names_the_artifacts_list_and_a_plain_glob_value() {
+    let tmp = tempfile::tempdir().unwrap();
+    let stage = Stage {
+        artifacts: vec!["docs/a.md".to_string(), "src/**/*.rs".to_string()],
+        ..stage()
+    };
+    let kind = DisputeKind::criterion(CriterionField::Artifacts, vec![0, 5]);
+    let prompt = staged_briefing_in(tmp.path(), &stage, kind, "the pattern is wrong");
+
+    let instructions = &prompt.instructions;
+    assert!(
+        instructions.contains("RUN THE ARTIFACT PATTERNS"),
+        "{instructions}"
+    );
+    assert!(instructions.contains("`artifacts` list"), "{instructions}");
+    assert!(
+        instructions.contains("\"field\": \"artifacts\""),
+        "{instructions}"
+    );
+    assert!(
+        instructions.contains("a patch `value` is a plain glob string, taken verbatim"),
+        "{instructions}"
+    );
+    assert!(
+        instructions.contains("rg --files --no-ignore --hidden --glob 'docs/a.md'"),
+        "{instructions}"
+    );
+    assert!(
+        instructions.contains("no longer has an artifact pattern at index 5"),
+        "{instructions}"
+    );
+    assert!(instructions.contains(RECORD_COMMAND), "{instructions}");
+    assert!(
+        prompt
+            .evidence
+            .contains("→ [0] docs/a.md\n  [1] src/**/*.rs\n"),
+        "{}",
+        prompt.evidence
+    );
+    assert!(
+        !prompt.render().to_lowercase().contains("wiring"),
+        "{}",
+        prompt.render()
+    );
+}

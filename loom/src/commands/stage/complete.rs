@@ -30,7 +30,7 @@ pub(super) mod complete_authorization;
 #[path = "complete_cache.rs"]
 mod complete_cache;
 #[path = "complete_force.rs"]
-mod complete_force;
+pub(super) mod complete_force;
 #[path = "complete_impact.rs"]
 pub(crate) mod complete_impact;
 #[path = "complete_relay.rs"]

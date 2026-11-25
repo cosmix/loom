@@ -17,7 +17,7 @@ use super::dispute_transport::{send, Dispute};
 use crate::models::dispute::{truncate_to_byte_limit, CriterionTarget, FAILURE_OUTPUT_MAX_BYTES};
 use crate::relay::emit::{mode, EnvSnapshot, RelayMode, RelaySink, StdSink};
 
-/// Dispute entries of a stage's acceptance, wiring or wiring-tests list.
+/// Dispute entries of a stage's acceptance, wiring, wiring-tests or artifacts list.
 ///
 /// Reads the process environment exactly once, then delegates to
 /// `dispute_criteria_with_mode` — the seam tests drive directly with an

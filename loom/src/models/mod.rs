@@ -1,5 +1,7 @@
 pub mod constants;
 pub mod dispute;
+#[cfg(test)]
+mod dispute_artifacts_contract_tests;
 pub mod execution_receipt;
 pub mod failure;
 pub mod forward_receipt;

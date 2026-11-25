@@ -17,6 +17,8 @@ pub enum CriterionField {
     Wiring,
     /// `wiring_tests`: the stage's wiring tests.
     WiringTests,
+    /// `artifacts`: the stage's artifact patterns.
+    Artifacts,
 }
 
 impl CriterionField {
@@ -26,6 +28,7 @@ impl CriterionField {
             CriterionField::Acceptance => "acceptance",
             CriterionField::Wiring => "wiring",
             CriterionField::WiringTests => "wiring-tests",
+            CriterionField::Artifacts => "artifacts",
         }
     }
 
@@ -35,6 +38,7 @@ impl CriterionField {
             CriterionField::Acceptance => "criterion",
             CriterionField::Wiring => "wiring",
             CriterionField::WiringTests => "wiring_tests",
+            CriterionField::Artifacts => "artifact",
         }
     }
 
@@ -44,6 +48,7 @@ impl CriterionField {
             CriterionField::Acceptance => AmendmentField::Acceptance,
             CriterionField::Wiring => AmendmentField::Wiring,
             CriterionField::WiringTests => AmendmentField::WiringTests,
+            CriterionField::Artifacts => AmendmentField::Artifacts,
         }
     }
 }

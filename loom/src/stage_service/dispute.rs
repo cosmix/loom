@@ -10,7 +10,7 @@
 //! 1. validates the stage id
 //! 2. acquires a flock on `.loom/work/disputes/<stage>/.lock`
 //! 3. validates every entry of `criterion_indices` against the list `--field`
-//!    names (`acceptance`, `wiring` or `wiring_tests`); one filing names
+//!    names (`acceptance`, `wiring`, `wiring_tests` or `artifacts`); one filing names
 //!    several entries and spends one dispute of the budget
 //! 4. refuses if `stage.dispute_budget_exhausted()`
 //! 5. refuses if the stage's status cannot move to `NeedsAdjudication`,
@@ -187,6 +187,7 @@ fn refusal(
             CriterionField::Acceptance => stage.acceptance.len(),
             CriterionField::Wiring => stage.wiring.len(),
             CriterionField::WiringTests => stage.wiring_tests.len(),
+            CriterionField::Artifacts => stage.artifacts.len(),
         },
         Some(_) if stage.stage_type != StageType::IntegrationVerify => {
             return Some(error(format!(

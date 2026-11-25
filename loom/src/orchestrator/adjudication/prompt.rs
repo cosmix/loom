@@ -6,7 +6,7 @@
 //!
 //! Each kind of dispute has its own builder: `criterion` (a disputed
 //! acceptance criterion), `criterion_entry` (a disputed wiring check or wiring
-//! test), `findings` (review findings), `contract` (a frozen contract),
+//! test), `criterion_artifacts` (a disputed artifact pattern), `findings` (review findings), `contract` (a frozen contract),
 //! `integrity` (test-integrity events), `impact` (failing impact-selected
 //! tests) and `freeze_refusal` (a contract freeze loom refused). [`build`]
 //! routes by the request's kind and, for a criterion dispute, its field.
@@ -17,6 +17,7 @@
 
 mod contract;
 mod criterion;
+mod criterion_artifacts;
 mod criterion_entry;
 mod diff;
 mod execution_site;
@@ -168,6 +169,9 @@ pub fn build(plan_path: &Path, stage: &Stage, dispute: &DisputeRequest, work_dir
             ),
             CriterionField::WiringTests => {
                 criterion_entry::build_wiring_test(&input, plan_path, criterion_indices)
+            }
+            CriterionField::Artifacts => {
+                criterion_artifacts::build(&input, plan_path, criterion_indices)
             }
         },
         DisputeKind::Findings { .. } => findings::build(&input),

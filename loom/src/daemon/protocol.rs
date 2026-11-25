@@ -128,7 +128,7 @@ pub enum Request {
     /// Ping to check if daemon is alive (Capability::User)
     Ping { auth_token: String },
     /// File a structured dispute against one entry of a stage's acceptance,
-    /// wiring or wiring-tests list.
+    /// wiring, wiring-tests or artifacts list.
     /// The daemon writes request.md, increments dispute_count, transitions
     /// the stage to NeedsAdjudication, and replies with the assigned id.
     ///

@@ -1,7 +1,7 @@
 //! Field-dispatch helpers for [`super::amendment`].
 //!
 //! These functions translate an [`AmendmentField`] into the concrete
-//! `acceptance` / `wiring` / `wiring_tests` / `contracts` / `harness` / `reachable` array on a
+//! `acceptance` / `wiring` / `wiring_tests` / `contracts` / `harness` / `artifacts` / `reachable` array on a
 //! [`StageDefinition`] or runtime [`Stage`], apply an [`AmendmentPatch`] to
 //! that array, and synchronize the amended runtime field.
 
@@ -20,6 +20,7 @@ pub(super) fn current_field_len(stage: &StageDefinition, field: AmendmentField) 
         AmendmentField::WiringTests => stage.wiring_tests.len(),
         AmendmentField::Contracts => stage.contracts.len(),
         AmendmentField::Harness => stage.harness.len(),
+        AmendmentField::Artifacts => stage.artifacts.len(),
         AmendmentField::Reachable => stage.reachable.len(),
     }
 }
@@ -53,6 +54,18 @@ pub(super) fn parse_amendment_value(request: &AmendmentRequest) -> Result<Parsed
                 bail!("Empty harness value in amendment for stage '{stage}'");
             }
             ParsedAmendmentValue::Harness(glob.to_string())
+        }
+        // Same verbatim glob, and it must parse as one: an unparseable pattern
+        // would otherwise be journalled and fail every later goal-backward check.
+        AmendmentField::Artifacts => {
+            let glob = value.trim();
+            if glob.is_empty() {
+                bail!("Empty artifacts value in amendment for stage '{stage}'");
+            }
+            glob::Pattern::new(glob).with_context(|| {
+                format!("Invalid artifacts glob '{glob}' in amendment for stage '{stage}'")
+            })?;
+            ParsedAmendmentValue::Artifacts(glob.to_string())
         }
         AmendmentField::Reachable => {
             ParsedAmendmentValue::Reachable(parse_yaml(value, "ReachableCheck", stage)?)
@@ -91,6 +104,7 @@ pub(super) fn apply_patch_to_stage_def(
         AmendmentField::WiringTests => patch_field!(&mut stage.wiring_tests, WiringTest),
         AmendmentField::Contracts => patch_field!(&mut stage.contracts, Contract),
         AmendmentField::Harness => patch_field!(&mut stage.harness, Harness),
+        AmendmentField::Artifacts => patch_field!(&mut stage.artifacts, Artifacts),
         AmendmentField::Reachable => patch_field!(&mut stage.reachable, Reachable),
     }
 }
@@ -140,6 +154,7 @@ pub(super) fn stage_field_matches(
         AmendmentField::WiringTests => stage.wiring_tests == def.wiring_tests,
         AmendmentField::Contracts => stage.contracts == def.contracts,
         AmendmentField::Harness => stage.harness == def.harness,
+        AmendmentField::Artifacts => stage.artifacts == def.artifacts,
         AmendmentField::Reachable => stage.reachable == def.reachable,
     }
 }
@@ -171,6 +186,9 @@ pub(super) fn sync_stage_from_definition(
         }
         AmendmentField::Harness => {
             stage.harness = def.harness.clone();
+        }
+        AmendmentField::Artifacts => {
+            stage.artifacts = def.artifacts.clone();
         }
         AmendmentField::Reachable => {
             stage.reachable = def.reachable.clone();

@@ -1,11 +1,13 @@
 //! The `--force-unsafe` completion path.
 
 use anyhow::{Context, Result};
+use std::io::Write;
 use std::path::Path;
 
 use crate::commands::stage::progressive_complete::{
     branch_work, report_recorded_commit, warn_unconfirmed, BranchWork,
 };
+use crate::daemon::DaemonServer;
 use crate::git::worktree::find_repo_root_from_cwd;
 use crate::handoff::completion::content::VerificationSnapshot;
 use crate::models::stage::{Stage, StageStatus};
@@ -21,7 +23,7 @@ fn warn_force_unsafe(landing: &ForcedLanding) {
     eprintln!("⚠️  This can corrupt dependency tracking and cause unexpected behavior.");
     eprintln!("⚠️  Use only for manual recovery scenarios.");
     if matches!(landing, ForcedLanding::Unmerged(Some(_))) {
-        eprintln!("⚠️  This records the committed branch tip and queues it for the daemon's auto-merge into the target.");
+        eprintln!("⚠️  This records the committed branch tip for landing; the note after completion names the route that merges it.");
     }
     eprintln!();
 }
@@ -30,8 +32,8 @@ fn warn_force_unsafe(landing: &ForcedLanding) {
 pub(super) enum ForcedLanding {
     /// `--assume-merged`: the router proved the commit is in the target.
     AssumeMerged,
-    /// Left unmerged for the daemon's auto-merge (or `loom stage merge`),
-    /// which lands the recorded branch tip. `None` records nothing.
+    /// Left unmerged for the daemon's auto-merge, which lands the recorded
+    /// branch tip. `None` records nothing.
     Unmerged(Option<VerificationSnapshot>),
 }
 
@@ -66,12 +68,38 @@ fn apply_forced_merge(stage: &mut Stage, landing: &ForcedLanding) {
     stage.merged = stage.merge_assumed;
 }
 
+/// The one-line note printed when a completion recorded a commit but left it
+/// unmerged. Auto-merge can be off (run, plan or stage policy) and the manual
+/// route refuses outside the stage worktree, so both texts are conditional and
+/// name the manual route with its directory.
+pub(in crate::commands::stage) fn landing_note(stage_id: &str, daemon_running: bool) -> String {
+    if daemon_running {
+        format!(
+            "  → Not merged yet: with auto-merge on (the default) the running daemon lands it \
+             and triggers dependents; otherwise run `loom stage merge {stage_id}` from \
+             .worktrees/{stage_id}."
+        )
+    } else {
+        format!(
+            "  → Not merged yet, and no daemon is running to merge it: with auto-merge on (the \
+             default) `loom run` merges it and triggers dependents; otherwise run \
+             `loom stage merge {stage_id}` from .worktrees/{stage_id}."
+        )
+    }
+}
+
 /// Report how the persisted completion lands. Runs only after the completion
 /// is written, so a recorded commit is never announced for a refused write.
-fn report_forced_landing(stage: &Stage, landing: &ForcedLanding) {
+/// Stdout lines go to `out`; the warning for no recorded commit goes to stderr.
+fn report_forced_landing(
+    stage: &Stage,
+    landing: &ForcedLanding,
+    work_dir: &Path,
+    out: &mut dyn Write,
+) -> std::io::Result<()> {
     match landing {
         ForcedLanding::AssumeMerged => {
-            println!("  → Stage marked as merged (manual merge assumed)");
+            writeln!(out, "  → Stage marked as merged (manual merge assumed)")?;
         }
         ForcedLanding::Unmerged(Some(snapshot)) => {
             report_recorded_commit(
@@ -79,11 +107,8 @@ fn report_forced_landing(stage: &Stage, landing: &ForcedLanding) {
                 stage.completed_commit.as_deref(),
                 &snapshot.commit,
             );
-            println!(
-                "  → Not merged yet: the daemon's auto-merge (or `loom stage merge {}`) \
-                 lands it and triggers dependents.",
-                stage.id
-            );
+            let note = landing_note(&stage.id, DaemonServer::is_running(work_dir));
+            writeln!(out, "{note}")?;
         }
         ForcedLanding::Unmerged(None) => {
             eprintln!();
@@ -95,6 +120,7 @@ fn report_forced_landing(stage: &Stage, landing: &ForcedLanding) {
             eprintln!();
         }
     }
+    Ok(())
 }
 
 fn persist_forced_completion(
@@ -188,7 +214,7 @@ pub(super) fn handle_force_unsafe_completion(
 
     apply_forced_merge(&mut stage, &landing);
     persist_forced_completion(&stage, &landing, work_dir)?;
-    report_forced_landing(&stage, &landing);
+    report_forced_landing(&stage, &landing, work_dir, &mut std::io::stdout())?;
     println!("Stage '{stage_id}' force-completed!");
 
     // Only trigger dependent stages if merged=true (i.e., --assume-merged was used)

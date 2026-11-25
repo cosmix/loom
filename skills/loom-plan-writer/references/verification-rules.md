@@ -52,7 +52,7 @@ command enters `acceptance`:
    `mkdir`, `touch` or redirect aimed outside the worktree (logged: a criterion with `HOME=""`
    "passed" by writing the operator's real `~/.loom/config.toml`). Write
    `H=$(mktemp -d "${TMPDIR:-/tmp}/<name>.XXXXXX") && [ -n "$H" ] && ...`. Repair at run time
-   with `loom stage amend --field acceptance|wiring|wiring-tests`.
+   with `loom stage amend --field acceptance|wiring|wiring-tests|artifacts`.
 6. **The full suite runs once, in integration-verify.** A standard stage's acceptance proves the
    code that stage wrote: `cargo test --lib <module>::`, `cargo test --test <target>`, or a name
    filter over its own tests, plus the build and lint lines. Do not put `cargo test --all-targets`

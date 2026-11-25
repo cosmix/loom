@@ -24,9 +24,9 @@ pub struct AmendArgs {
     #[arg(long)]
     pub index: usize,
 
-    /// The new element: a YAML body for every field except `harness`,
-    /// which takes a plain glob verbatim (trimmed, never parsed as YAML,
-    /// so do not quote it). Required for replace/insert, rejected for
+    /// The new element: a YAML body for every field except `harness` and
+    /// `artifacts`, which take a plain glob verbatim (trimmed, never parsed
+    /// as YAML, so do not quote it). Required for replace/insert, rejected for
     /// delete.
     #[arg(long)]
     pub value: Option<String>,
@@ -53,6 +53,8 @@ pub enum AmendField {
     Contracts,
     /// Mutate the `harness` array.
     Harness,
+    /// Mutate the `artifacts` array.
+    Artifacts,
     /// Mutate the `reachable` array.
     Reachable,
 }
@@ -80,6 +82,7 @@ impl AmendField {
             AmendField::WiringTests => AmendmentField::WiringTests,
             AmendField::Contracts => AmendmentField::Contracts,
             AmendField::Harness => AmendmentField::Harness,
+            AmendField::Artifacts => AmendmentField::Artifacts,
             AmendField::Reachable => AmendmentField::Reachable,
         }
     }

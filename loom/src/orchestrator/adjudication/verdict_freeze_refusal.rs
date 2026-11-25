@@ -244,7 +244,10 @@ impl Replay {
             AmendmentField::Acceptance => {
                 self.replace_format_check(&entry.patch, &site.working_dir)
             }
-            AmendmentField::Wiring | AmendmentField::WiringTests | AmendmentField::Reachable => {
+            AmendmentField::Wiring
+            | AmendmentField::WiringTests
+            | AmendmentField::Artifacts
+            | AmendmentField::Reachable => {
                 Err("a refused freeze amends only contracts, harness and acceptance".into())
             }
         }

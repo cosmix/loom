@@ -1,4 +1,6 @@
 #[cfg(test)]
+mod artifacts_field_contract_tests;
+#[cfg(test)]
 mod contract_tests;
 mod dispatch;
 mod dispatch_admin;
