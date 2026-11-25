@@ -358,7 +358,7 @@ pub(crate) fn read_ledger_text(path: &Path) -> Option<String> {
 /// Parse independently so a hook appending a partial line cannot hide the
 /// valid ledger records before it. Missing or unreadable ledgers simply have
 /// no usable rows.
-fn json_lines(path: &Path) -> Vec<Value> {
+pub(crate) fn json_lines(path: &Path) -> Vec<Value> {
     let Some(mut content) = read_ledger_text(path) else {
         return Vec::new();
     };

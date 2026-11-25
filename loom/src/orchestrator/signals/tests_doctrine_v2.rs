@@ -35,7 +35,7 @@ const SKILLS_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../skills");
 
 /// BLOCK-E - the plan-v2 review order, verbatim (DESIGN D16). The v2 review
 /// section of a stage signal and the orchestration skill carry it byte for byte.
-const BLOCK_E: &str = "**Review order (plan v2):** run `loom check` once beside the final review. One fix worker handles all findings and failed criteria; re-check failures with `loom check <stage-id> --criterion <n>`, then one re-review on the follow-up model, then complete. After the final round, code edits including formatting need re-review. Comment-only lines, blank lines, and prose markdown outside skills/, agents/, commands/, loom-hooks/, tests and fixtures need none; the base must be unchanged. Block comments and every other edit need re-review. Commits do not change it.";
+const BLOCK_E: &str = "**Review order (plan v2):** run `loom check` once beside the final review. One fix worker handles all findings and failed criteria; after it returns, re-check failures with `loom check <stage-id> --criterion <n>`, then one re-review on the follow-up model, then complete. Run no `loom check` after the re-review; `loom stage complete` runs every criterion. After the final round, code edits including formatting need re-review. Comment-only lines, blank lines, and prose markdown outside skills/, agents/, commands/, loom-hooks/, tests and fixtures need none; the base must be unchanged. Block comments and every other edit need re-review. Commits do not change it.";
 
 /// BLOCK-F - when the stage cannot finish, verbatim. The standard,
 /// integration-verify and knowledge-distill stable prefixes carry it byte for

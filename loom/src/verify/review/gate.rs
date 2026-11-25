@@ -78,7 +78,7 @@ pub fn check(stage: &Stage, work_dir: &Path, current: &ChangeFingerprint) -> Res
 }
 
 /// The agent type whose spawns and skipped stops the hint counts.
-const REVIEWER_AGENT_TYPE: &str = "loom-code-reviewer";
+pub(crate) const REVIEWER_AGENT_TYPE: &str = "loom-code-reviewer";
 /// Ledger files a session can write are read up to this many bytes.
 const MAX_LEDGER_BYTES: u64 = 1024 * 1024;
 /// Skipped-stop lines the hint prints (the latest ones).

@@ -38,12 +38,17 @@ blocks, and spawn per Rule 6; with no signal, ask the user.
 
 The commit is legitimate only once all three hold: (1) every subagent, coordinator, team, and
 Workflow returned and was absorbed (an abandoned one counts only if you recorded
-why); (2) the gate is green on the complete tree (in a standard stage, your
-`loom check <stage-id>`); (3) the mini
-adversarial code review returned, every finding fixed, gate green again. In a plan version 2 stage
-`loom stage complete` enforces condition (3): it fails until a recorded review round matches the
-worktree and no finding is open. A handoff never justifies
-committing unverified work; record uncommitted files in it.
+why); (2) the gate ran on the complete tree (in a standard stage, your single
+`loom check <stage-id>`, beside the final review); (3) the mini
+adversarial code review returned, every finding and failed criterion is fixed, the failed criteria
+are re-checked with `loom check <stage-id> --criterion <n>`, the re-review is clean. `loom stage complete` runs every criterion itself and reuses passes on an
+unchanged tree, so no `loom check` runs between the last review round and it. In a plan version 2 stage `loom stage complete` enforces condition (3): it fails until a recorded review round matches the worktree and no finding is open. A handoff never
+justifies committing unverified work; record uncommitted files in it.
+
+Never run `loom check` while a worker is out (the reviewer is the exception, for the single full
+check): a check on a tree still being edited is void. Never run a second full one. A standard
+stage's `loom check` refuses both (exit 3); `--force` overrides it when the named worker has in
+fact returned or the rounds are left from an earlier attempt.
 
 Commit with `git add <specific-files>` then `loom stage commit <stage-id> -m "type(scope):
 description"`, and wait for it with `loom request status <id> --wait 90`; never run `git commit`.
@@ -132,7 +137,7 @@ WORKER RESTRICTIONS - YOU ARE A LEAF AGENT:
 - Return a short report: what changed, anything surprising, anything unresolved
 ```
 
-After each wave of workers returns, the main agent compiles the tree once before the next wave or the gate.
+After each wave of workers returns, the main agent compiles the tree once before the next wave or the gate. No `loom check` runs until every worker of the wave returned.
 
 ## Rule 7 — Model allocation
 
@@ -251,7 +256,7 @@ HEAD). An accept writes it to the worktree.
    `loom stage dispute-findings <stage-id> --finding <id> ... --reason "..."`.
    Filing ends the session; a verdict that upholds no finding lets the daemon complete a passing tree. A fourth dispute of a kind means `NeedsHumanReview`.
 
-**Review order (plan v2):** run `loom check` once beside the final review. One fix worker handles all findings and failed criteria; re-check failures with `loom check <stage-id> --criterion <n>`, then one re-review on the follow-up model, then complete. After the final round, code edits including formatting need re-review. Comment-only lines, blank lines, and prose markdown outside skills/, agents/, commands/, loom-hooks/, tests and fixtures need none; the base must be unchanged. Block comments and every other edit need re-review. Commits do not change it.
+**Review order (plan v2):** run `loom check` once beside the final review. One fix worker handles all findings and failed criteria; after it returns, re-check failures with `loom check <stage-id> --criterion <n>`, then one re-review on the follow-up model, then complete. Run no `loom check` after the re-review; `loom stage complete` runs every criterion. After the final round, code edits including formatting need re-review. Comment-only lines, blank lines, and prose markdown outside skills/, agents/, commands/, loom-hooks/, tests and fixtures need none; the base must be unchanged. Block comments and every other edit need re-review. Commits do not change it.
 
 **Test integrity** (standard, integration-verify). Completion compares test files to base.
 Fewer declarations or assertions in a language, assertion statements lost or changed in a test file

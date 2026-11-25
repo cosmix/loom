@@ -54,6 +54,19 @@ fn gate_block_and_orchestration_skill_state_the_check_flow() {
     }
 }
 
+/// Completion runs every criterion itself, so the standard signal and the
+/// orchestration skill both forbid a `loom check` after the last review round.
+#[test]
+fn signal_and_skill_forbid_a_check_before_completion() {
+    let sentence = "no `loom check` runs between the last review round and it";
+    for (label, text) in [
+        ("standard stable prefix", generate_stable_prefix().as_str()),
+        ("skills/loom-orchestration/SKILL.md", ORCHESTRATION_SKILL),
+    ] {
+        assert!(text.contains(sentence), "{label} lost `{sentence}`");
+    }
+}
+
 #[test]
 fn gate_block_keeps_the_full_suite_behind_loom_check() {
     let prefix = generate_stable_prefix();

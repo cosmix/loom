@@ -158,7 +158,7 @@ fn integration_verify_prefix_retains_required_quality_and_isolation_guards() {
         "Exit code 0 does NOT mean success",
         "warnings even when tests pass",
         "is a BLOCKER, not a workaround",
-        "gate is green AGAIN after those fixes",
+        "failed criteria are re-checked with `--criterion` after those fixes",
         "CONTEXT CEILING - HOOK-REPORTED ONLY",
         "SUBAGENT CEILING REACHED",
         "Build/test/sandbox",

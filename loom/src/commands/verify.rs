@@ -27,6 +27,8 @@ use crate::verify::transitions::load_stage;
 mod selection;
 #[path = "verify_relay.rs"]
 mod session_relay;
+#[path = "verify_timing.rs"]
+mod timing;
 
 pub use selection::{check_selection, CheckArgs, CheckSelection};
 use selection::{run_contracts_section, AT_BASE_NEEDS_SESSION, TRIAL_NEEDS_SESSION};
@@ -37,7 +39,7 @@ use selection::{run_contracts_section, AT_BASE_NEEDS_SESSION, TRIAL_NEEDS_SESSIO
 pub fn execute(stage_id: &str, suggest: bool, args: &CheckArgs) -> Result<()> {
     let selection = check_selection(args)?;
     let work_dir = crate::commands::common::work_dir_path()?;
-    session_relay::run(stage_id, &work_dir, suggest, &selection)?;
+    session_relay::run(stage_id, &work_dir, suggest, &selection, args.force)?;
     let stage = load_stage(stage_id, &work_dir)
         .with_context(|| format!("Failed to load stage '{stage_id}'"))?;
     // Resolve the acceptance directory using shared stage execution logic

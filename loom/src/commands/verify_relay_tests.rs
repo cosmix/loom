@@ -39,7 +39,7 @@ fn a_failing_relay_guard_is_refused_with_the_first_line_and_writes_no_ticket() {
         &context,
         "s1",
         temp.path(),
-        &super::CheckSelection::All,
+        (&super::CheckSelection::All, false),
         &mut out,
     )
     .unwrap();

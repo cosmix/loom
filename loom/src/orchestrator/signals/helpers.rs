@@ -268,12 +268,12 @@ pub(super) fn append_knowledge_mission(content: &mut String) {
 /// integration-verify and knowledge prefixes.
 pub(super) fn append_settled_completion_rules(content: &mut String) {
     content.push_str(
-        "- **`loom stage complete` is the LAST act of your session.** Run it ONLY when SETTLED: every subagent returned, every defect fixed and re-verified, all work committed (`git status` clean).\n",
+        "- **`loom stage complete` is the LAST act of your session.** Run it ONLY when SETTLED: every subagent returned, every defect fixed, all work committed (`git status` clean).\n",
     );
     content.push_str(
         "- **After `completed`: STOP and end the session** — post-completion work is LOST WORK.\n",
     );
-    content.push_str("- **Verify acceptance criteria** before completing\n");
+    content.push_str("- `loom stage complete` verifies every criterion itself: no `loom check` runs between the last review round and it\n");
 }
 
 /// BLOCK-F: when a stage cannot finish, the main agent disputes a wrong check

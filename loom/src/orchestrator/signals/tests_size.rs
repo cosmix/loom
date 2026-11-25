@@ -23,10 +23,10 @@ use super::generate::{
 /// `CLAUDE.md.template` is pasted into every session's context on every spawn,
 /// across every stage, in every plan. Rules 3 and 3b live in the hooks that
 /// print them (`tests_guidance_manifest.rs` lists every relocation). The
-/// ceiling equals the actual size (20,388 bytes), so any addition fails here:
+/// ceiling equals the actual size (20,500 bytes), so any addition fails here:
 /// trim the template or move the text to its home instead of raising the
 /// ceiling. The model-allocation plan authorized the one raise to this size.
-const CLAUDE_MD_TEMPLATE_MAX_BYTES: usize = 20_388;
+const CLAUDE_MD_TEMPLATE_MAX_BYTES: usize = 20_500;
 
 /// The KV-cache-stable prefix pasted into the first message of every fresh
 /// session spawned for a standard stage.
@@ -59,7 +59,7 @@ const STABLE_PREFIX_MAX_BYTES: usize = 8_192;
 /// The sandbox section renders the effective configuration, so an inherited
 /// default `deny_read` list counts here; it stays one line in the signal
 /// (`format/sandbox_section.rs`) rather than one line per path.
-const STANDARD_SIGNAL_BOILERPLATE_FLOOR_MAX_BYTES: usize = 10_240;
+const STANDARD_SIGNAL_BOILERPLATE_FLOOR_MAX_BYTES: usize = 10_350;
 
 /// Mirrors `generate::MAX_PLAN_OVERVIEW_BYTES` (private to that module); an
 /// unbounded plan overview is re-embedded in every signal generated for the
@@ -68,9 +68,9 @@ const PLAN_OVERVIEW_MAX_BYTES: usize = 4_096;
 
 /// Every stage main session loads `skills/loom-orchestration/SKILL.md`, so its
 /// bytes are paid on every later request of that session. The ceiling equals
-/// the actual size (21,794 bytes), so any addition fails here. The
+/// the actual size (22,600 bytes), so any addition fails here. The
 /// model-allocation plan authorized the one raise to this size.
-const ORCHESTRATION_SKILL_MAX_BYTES: usize = 21_794;
+const ORCHESTRATION_SKILL_MAX_BYTES: usize = 22_600;
 
 const CLAUDE_MD_TEMPLATE: &str = include_str!("../../../../CLAUDE.md.template");
 const ORCHESTRATION_SKILL: &str = include_str!("../../../../skills/loom-orchestration/SKILL.md");

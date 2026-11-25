@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
-use super::CheckSelection;
+use super::{timing, CheckSelection};
 use crate::commands::stage::read_replacements;
 use crate::fs::work_dir::WorkDir;
 use crate::git::worktree::stage_worktree_path;
@@ -27,12 +27,14 @@ const LEGACY_REFUSAL: &str = "This session cannot relay verification (no LOOM_SC
 
 /// Route `loom check <stage_id>` by where it runs. Returns for the operator's
 /// shell, which then runs locally; a session's outcome ends the process here.
-/// `selection` is what the call runs; the daemon's job runs only it.
+/// `selection` is what the call runs; the daemon's job runs only it. `force`
+/// overrides the timing refusals of a standard stage (`verify_timing.rs`).
 pub(super) fn run(
     stage_id: &str,
     work_dir: &Path,
     suggest: bool,
     selection: &CheckSelection,
+    force: bool,
 ) -> Result<()> {
     let mut out = std::io::stdout();
     match mode(&EnvSnapshot::from_process_env()) {
@@ -47,7 +49,7 @@ pub(super) fn run(
             }
             // Every session outcome ends here: requested and pending exit 0
             // too, and must never fall through to the local run.
-            let code = request_or_wait(&context, stage_id, work_dir, selection, &mut out)?;
+            let code = request_or_wait(&context, stage_id, work_dir, (selection, force), &mut out)?;
             let _ = out.flush();
             std::process::exit(code)
         }
@@ -124,11 +126,36 @@ fn runs_contracts(selection: &CheckSelection) -> bool {
     )
 }
 
+/// The wait this call requests or follows: the selection rides on the ticket,
+/// and the daemon's job runs only it.
+fn wait_site<'a>(
+    context: &'a RelayContext,
+    (stage_id, work_dir): (&'a str, &'a Path),
+    target: &'a Target,
+    selection: &'a CheckSelection,
+    replacements: &'a [FileReplacement],
+) -> WaitSite<'a> {
+    WaitSite {
+        work_dir,
+        stage_id,
+        session_id: &context.session_id,
+        checkout: &target.checkout,
+        knowledge: target.knowledge,
+        kind: JobKind::Check,
+        no_cache: std::env::var("LOOM_ACCEPTANCE_CACHE").as_deref() == Ok("0"),
+        criteria: selected_criteria(selection),
+        contracts: runs_contracts(selection).then_some(replacements),
+        at_base: matches!(selection, CheckSelection::AtBase(_)),
+        scratch_dir: &context.scratch_dir,
+        budget: wait::budget_for(&target.stage),
+    }
+}
+
 fn request_or_wait(
     context: &RelayContext,
     stage_id: &str,
     work_dir: &Path,
-    selection: &CheckSelection,
+    (selection, force): (&CheckSelection, bool),
     out: &mut dyn Write,
 ) -> Result<i32> {
     let found = target(context, stage_id, work_dir)
@@ -137,22 +164,22 @@ fn request_or_wait(
         Ok(found) => found,
         Err(error) => return refuse(out, &format!("{error:#}")),
     };
-    let (criteria, contracts) = (selected_criteria(selection), runs_contracts(selection));
-    let site = WaitSite {
-        work_dir,
-        stage_id,
-        session_id: &context.session_id,
-        checkout: &target.checkout,
-        knowledge: target.knowledge,
-        kind: JobKind::Check,
-        no_cache: std::env::var("LOOM_ACCEPTANCE_CACHE").as_deref() == Ok("0"),
-        // The selection rides on the ticket; the daemon's job runs only it.
-        criteria,
-        contracts: contracts.then_some(replacements.as_slice()),
-        at_base: matches!(selection, CheckSelection::AtBase(_)),
-        scratch_dir: &context.scratch_dir,
-        budget: wait::budget_for(&target.stage),
-    };
+    let site = wait_site(
+        context,
+        (stage_id, work_dir),
+        &target,
+        selection,
+        &replacements,
+    );
+    // A call that finds its request state is the wait that collects the
+    // result; a state that cannot be read surfaces as `wait_or_request`'s
+    // refusal.
+    let joins_pending = || !matches!(wait::pending_request_id(&site), Ok(None));
+    let args = (selection, force);
+    if let Some(text) = timing::refusal(context, &target.stage, work_dir, args, joins_pending) {
+        eprintln!("{text}");
+        return Ok(timing::REFUSED_EXIT);
+    }
     let mut sink = TicketSink::default();
     let mut relay = |request: &HostJobRequest| -> Result<String> {
         let payload = serde_json::to_value(request)?;
@@ -162,6 +189,13 @@ fn request_or_wait(
     let outcome = wait::wait_or_request(&site, &mut relay, out)?;
     if let WaitOutcome::Requested { request_id } = &outcome {
         sink.publish_request(&site, request_id, out)?;
+    }
+    if let WaitOutcome::Finished(record, result) = &outcome {
+        let outcomes = result.as_ref().map_or(&[][..], |result| &result.criteria);
+        let who = (context, &target.stage);
+        if let Some(line) = timing::next_step(who, selection, record.state, outcomes) {
+            writeln!(out, "{line}")?;
+        }
     }
     out.flush().context("failed to flush loom check output")?;
     Ok(wait::exit_code(&outcome))

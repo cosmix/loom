@@ -17,7 +17,7 @@ use crate::verify::review::store::load_carried;
 
 /// DESIGN D16 BLOCK-E, byte for byte. doctrine-v2 pins it against the
 /// orchestration skill's copy.
-const REVIEW_ORDER: &str = "**Review order (plan v2):** run `loom check` once beside the final review. One fix worker handles all findings and failed criteria; re-check failures with `loom check <stage-id> --criterion <n>`, then one re-review on the follow-up model, then complete. After the final round, code edits including formatting need re-review. Comment-only lines, blank lines, and prose markdown outside skills/, agents/, commands/, loom-hooks/, tests and fixtures need none; the base must be unchanged. Block comments and every other edit need re-review. Commits do not change it.";
+const REVIEW_ORDER: &str = "**Review order (plan v2):** run `loom check` once beside the final review. One fix worker handles all findings and failed criteria; after it returns, re-check failures with `loom check <stage-id> --criterion <n>`, then one re-review on the follow-up model, then complete. Run no `loom check` after the re-review; `loom stage complete` runs every criterion. After the final round, code edits including formatting need re-review. Comment-only lines, blank lines, and prose markdown outside skills/, agents/, commands/, loom-hooks/, tests and fixtures need none; the base must be unchanged. Block comments and every other edit need re-review. Commits do not change it.";
 
 /// The review gate of a v2 standard or integration-verify stage: what
 /// `loom stage complete` checks, how reviews are run and briefed, the review

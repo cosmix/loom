@@ -184,4 +184,9 @@ pub(super) const RETIRED_PHRASES: &[&str] = &[
     // sol-tier work goes to sonnet when codex is unavailable.
     concat!("luna-tier work to", " haiku"),
     concat!("luna-tier work will fall back to", " haiku"),
+    // Retired: `loom stage complete` runs every criterion on the final tree, so
+    // no gate is "green again" and no check re-verifies before it.
+    concat!("gate green ", "again"),
+    concat!("gate is green ", "AGAIN"),
+    concat!("defect fixed and ", "re-verified"),
 ];

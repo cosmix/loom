@@ -72,8 +72,8 @@ pub fn compute_hash(content: &str) -> String {
 /// Gate/review pairs interpolated into `append_commit_timing_rules` — one per
 /// stage family (code-producing vs. documentation) — so the argument strings
 /// are defined once rather than repeated at each of the two call sites.
-const CODE_STAGE_GATE: &str = "this stage's acceptance criteria run through `loom check` (the full suite runs once, in integration-verify)";
-const CODE_STAGE_REVIEW: &str = "The mini adversarial code review has RETURNED, every finding is FIXED, and the gate is green AGAIN after those fixes.";
+const CODE_STAGE_GATE: &str = "the stage's one `loom check` passed, beside the final review";
+const CODE_STAGE_REVIEW: &str = "The mini adversarial code review has RETURNED, every finding is FIXED, and failed criteria are re-checked with `--criterion` after those fixes.";
 const DOC_STAGE_GATE: &str = "this stage's acceptance criteria";
 const DOC_STAGE_REVIEW: &str = "You have re-read every knowledge file you wrote — nothing stale left standing, no duplicate headings — and the acceptance criteria pass AGAIN after any fix.";
 /// What the commit doctrine sentence stages: a code stage's own files, or the

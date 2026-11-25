@@ -72,7 +72,7 @@ pub(super) fn append_subagent_ceiling_block(content: &mut String) {
 
 /// Where a standard stage's gate runs, stated as the opening line of its
 /// completion rules.
-const ORCHESTRATOR_GATE: &str = "**The gate is `loom check`**: after all implementers return, format and run `loom check <stage-id>` beside the final review and steps outside acceptance. Fixes run `loom check <stage-id> --criterion <n> ...` for all failed criteria, lint and format. The full suite runs only through `loom check`, never a bare runner; unchanged trees hit the pass cache on repeated checks.\n\n";
+const ORCHESTRATOR_GATE: &str = "**The gate is `loom check`**: once every worker returned, format and run `loom check <stage-id>` ONCE, beside the final review and steps outside acceptance. After the fix worker returns, run `loom check <stage-id> --criterion <n> ...` for failed criteria, lint and format. Never check while a worker is out (the reviewer excepted) or run a second full check. The full suite runs only through `loom check`, never a bare runner.\n\n";
 
 /// Open a STANDARD stage's `**Completion:**` list with `ORCHESTRATOR_GATE`. The
 /// integration-verify prefix opens its list without it: that stage keeps its

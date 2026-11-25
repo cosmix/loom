@@ -53,6 +53,13 @@ pub struct CheckArgs {
     /// evidence a criterion dispute can cite.
     #[arg(long = "at-base")]
     pub at_base: bool,
+
+    /// Override the timing refusals of a standard stage's session: a check
+    /// while a worker is out, and a second full check once a review round is
+    /// recorded. Use it only when the named worker has returned, or the rounds
+    /// belong to an earlier attempt of the stage.
+    #[arg(long = "force")]
+    pub force: bool,
 }
 
 /// What one `loom check` runs.

@@ -266,6 +266,7 @@ fn at_base_needs_a_criterion_and_no_contracts() {
         contracts,
         replacement: Vec::new(),
         at_base: true,
+        force: false,
     };
     let refused = check_selection(&args(Vec::new(), false)).unwrap_err();
     assert!(refused.to_string().contains("--criterion"), "{refused}");

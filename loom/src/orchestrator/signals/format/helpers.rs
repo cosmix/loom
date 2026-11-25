@@ -233,7 +233,7 @@ pub(super) fn format_structured_handoff(handoff: &HandoffV2) -> String {
 /// at maximum attention (Manus recitation pattern) alongside the task list.
 pub(super) fn append_stage_end_sequence(content: &mut String) {
     content.push('\n');
-    content.push_str("**Stage end sequence (in this order, nothing skipped):** every subagent returned → format → `loom check` beside the final review round → every finding and failed criterion fixed, re-checked with `loom check <stage-id> --criterion <n>` and re-reviewed → `loom stage commit` (orchestrator only, one logical commit per concern) → `loom stage complete <stage-id>`. A commit before this point is premature.\n");
+    content.push_str("**Stage end sequence (in this order, nothing skipped):** every subagent returned → format → `loom check <stage-id>` ONCE, beside the final review round → ONE fix worker takes every finding and every failed criterion → once it returns, `loom check <stage-id> --criterion <n>` for each criterion that failed (none failed: no check) → one re-review → `loom stage commit` (orchestrator only, one logical commit per concern) → `loom stage complete <stage-id>`. Run no `loom check` between the last review round and `loom stage complete`: completion runs every criterion. A commit before this point is premature.\n");
 }
 
 /// Append the package-manager-cache carve-out note to the sandbox section,
