@@ -183,7 +183,7 @@
 | [sessions-and-liveness](mistakes/sessions-and-liveness.md) |  | 399 |
 | [shell-command-matchers](mistakes/shell-command-matchers.md) |  | 295 |
 | [source-graph-delivery](mistakes/source-graph-delivery.md) | Misses | 182 |
-| [spawn-observer-and-group-retirement-races](mistakes/spawn-observer-and-group-retirement-races.md) | Process-wide spawn observer races; killpg missing a concurrent fork on macOS | 53 |
+| [spawn-observer-and-group-retirement-races](mistakes/spawn-observer-and-group-retirement-races.md) | Process-wide spawn observer races; killpg missing a concurrent fork on macOS | 63 |
 | [spurious-waiting-for-input](mistakes/spurious-waiting-for-input.md) | Idle | 53 |
 | [status-broadcast-hardening](mistakes/status-broadcast-hardening.md) | Status frame overflow, relay ticket leaks and backgrounded relayed commands | 120 |
 | [store-without-consumer](mistakes/store-without-consumer.md) | Unread | 104 |

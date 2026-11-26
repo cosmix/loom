@@ -51,3 +51,13 @@
 **Prevention:** A change that adds tests which spawn or signal processes runs `cargo test --test integration stand_in_signal_guard` as well as the lib tests. Test code that signals a process owns it through `crate::test_stand_in` (`StandIn` after `require_signals!()`; dropping it kills and reaps with a bound).
 
 **Fix:** The tests use `StandIn::group_leader`, and kill by dropping it.
+
+## Cleanup-Deadline Fix Assumed bwrap's pid 1 Stays in the Leader's Group
+
+**What happened:** The first fix for the Linux "output capture incomplete" flake extended collection while the killed leader's process group had a member, on the premise that bubblewrap's pid-namespace init stays in that group. The flake came back on the next CI run.
+
+**Why:** bubblewrap's `--new-session` calls `setsid()` before forking pid 1, so the init that holds the command's stdio leads its own session and group. The group poll saw an empty group and gave up after the 1 s grace. The premise was never checked against bubblewrap's source or by a test, and the reviewer accepted it from the change's own comments.
+
+**Prevention:** Before building on a claim about another program's process layout, read its source for the order of `setsid`, `setpgid` and `fork`, and pin the claim with a test that runs in CI (here `/proc/1/stat` inside the sandbox). Make an incomplete-capture failure name its cause, so a recurrence identifies itself.
+
+**Fix:** A finished confined command waits for end of file up to 10 s (`CleanupDeadline::contained`); failure texts carry the stream, the wait, and the writer and group state.
