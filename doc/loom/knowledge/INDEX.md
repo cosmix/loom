@@ -12,7 +12,7 @@
 | [entry-points.md](entry-points.md) | Key files agents should read first | 86 |
 | [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 200 |
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 230 |
-| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 245 |
+| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 247 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 116 |
 | [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 248 |
 
@@ -183,6 +183,7 @@
 | [sessions-and-liveness](mistakes/sessions-and-liveness.md) |  | 399 |
 | [shell-command-matchers](mistakes/shell-command-matchers.md) |  | 295 |
 | [source-graph-delivery](mistakes/source-graph-delivery.md) | Misses | 182 |
+| [spawn-observer-and-group-retirement-races](mistakes/spawn-observer-and-group-retirement-races.md) | Process-wide spawn observer races; killpg missing a concurrent fork on macOS | 23 |
 | [spurious-waiting-for-input](mistakes/spurious-waiting-for-input.md) | Idle | 53 |
 | [status-broadcast-hardening](mistakes/status-broadcast-hardening.md) | Status frame overflow, relay ticket leaks and backgrounded relayed commands | 120 |
 | [store-without-consumer](mistakes/store-without-consumer.md) | Unread | 104 |
@@ -224,7 +225,7 @@
 | [platform-and-commit-gaps](concerns/platform-and-commit-gaps.md) |  | 237 |
 | [review-remediation-followups](concerns/review-remediation-followups.md) | Open review suggestions and findings left out of the remediation plan | 112 |
 | [runtime-and-session-safety](concerns/runtime-and-session-safety.md) |  | 201 |
-| [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) |  | 394 |
+| [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) |  | 398 |
 | [source-graph-known-gaps](concerns/source-graph-known-gaps.md) | Limits | 94 |
 | [source-graph-review-backlog](concerns/source-graph-review-backlog.md) | Todo | 287 |
 | [stage-exits-and-guards-followups](concerns/stage-exits-and-guards-followups.md) | Out-of-scope rows, open reviewer suggestions, proposed checks after exits plan | 82 |

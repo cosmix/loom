@@ -392,3 +392,7 @@ A confined command's tree is bound read-write with a nested path `--ro-bind`'d o
 On Linux `Protected` closes it (`verify/criteria/confine_protected.rs`, `pinned`): every directory strictly between the tree and a read-only path is bound onto itself, outermost first, after the tree bind and before the `--ro-bind`. The kernel refuses to rename a mount point (`EBUSY`), so those renames fail with `Device or resource busy`, and writes elsewhere in those directories keep working.
 
 Open: Seatbelt on macOS denies by path, and whether its deny on the literal parent holds against a rename of an ancestor is unmeasured.
+
+## OwnedProcess::retire Signals the Group Once
+
+`process/owned.rs:135-155` sends one `kill_group` and waits only for the leader. On macOS a child forked while `killpg` runs can join the group after the signal and survive. `loom-hooks/_codex-direct.py` `_retire` re-signals until the group is empty ([mistake](../mistakes/spawn-observer-and-group-retirement-races.md)). The Rust path claims nothing about the group being empty, so a straggler can outlive it unseen. Revisit when a Rust owner of a process group must prove the group retired.

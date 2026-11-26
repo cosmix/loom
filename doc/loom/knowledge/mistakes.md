@@ -136,6 +136,8 @@ Ten incidents: merge cleanup that destroyed the evidence it needed, a tracked `<
 
 A `println!` on a server background thread panicked on a closed stdout and failed the plan load; server output ignores write errors, and tests keep draining a piped child's stdout. → [Closed-Pipe Panics](mistakes/closed-pipe-panics.md)
 
+A process-wide spawn observer captured a parallel test's confined spawns (`#[serial]` does not isolate global state), and one `killpg` SIGKILL missed a child forked during it on macOS. → [Spawn Observer and Group Retirement Races](mistakes/spawn-observer-and-group-retirement-races.md)
+
 ## Design and Boundary Lessons
 
 Eight lessons: a store shipped without its consumer, a strict schema attribute breaking a second reader, writer and reader disagreeing on one address, a doctrine channel that was not privileged, computed values with hidden couplings, visibility capped by path reachability, auditing untrusted-value boundaries, and a raw string ended early by its own body. A frontmatter split must keep the YAML start and post-delimiter body start as separate offsets; tests assert both slices across line-ending variants.
