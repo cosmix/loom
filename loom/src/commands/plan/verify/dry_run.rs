@@ -61,8 +61,12 @@ pub struct DryCommand {
     pub confinement: CommandConfinement,
 }
 
-/// Runs one command and returns its result with the failures the runner found.
-pub type DryExecutor<'a> = dyn FnMut(&DryCommand) -> (CriterionResult, Vec<String>) + 'a;
+/// Runs one command and returns its result with the failures the runner found,
+/// or the error that kept the runner from running it.
+pub type DryExecutor<'a> = dyn FnMut(&DryCommand) -> Result<(CriterionResult, Vec<String>)> + 'a;
+
+/// Longest runner error a note quotes.
+const MAX_ERROR: usize = 300;
 
 /// Run the plan at `path` with the real, confined executor.
 pub fn run_dry_run(path: &Path, report: &mut VerifyReport) -> Result<()> {
@@ -218,10 +222,7 @@ fn run_stage(
 
 /// The outcome of `command`, run a second time when the first run timed out.
 fn settled(execute: &mut DryExecutor<'_>, command: &DryCommand) -> DryOutcome {
-    let label = format!(
-        "dry run: {} {} {}",
-        command.stage_id, command.field, command.index
-    );
+    let label = label(command);
     eprintln!(
         "{label} `{}`",
         truncate_for_display(&command.command, MAX_QUOTED)
@@ -233,14 +234,46 @@ fn settled(execute: &mut DryExecutor<'_>, command: &DryCommand) -> DryOutcome {
     })
 }
 
+/// The runner's error chain without the links that only repeat the command: the note already
+/// quotes it, and a long command would otherwise push the cause past the length limit.
+fn not_run_reason(error: &anyhow::Error, command: &str) -> String {
+    let causes: Vec<String> = error
+        .chain()
+        .map(ToString::to_string)
+        .filter(|link| !link.contains(command))
+        .collect();
+    let reason = if causes.is_empty() {
+        error.root_cause().to_string()
+    } else {
+        causes.join(": ")
+    };
+    truncate_for_display(&reason, MAX_ERROR)
+}
+
 fn outcome_of(execute: &mut DryExecutor<'_>, command: &DryCommand) -> DryOutcome {
-    let (result, failures) = execute(command);
+    let (result, failures) = match execute(command) {
+        Ok(ran) => ran,
+        Err(error) => return DryOutcome::NotRun(not_run_reason(&error, &command.command)),
+    };
     let has_summary = has_test_summary(&command.command, &command.dir, &result);
     let outcome = classify_with(&result, &failures, has_summary);
     if outcome == DryOutcome::Failed && has_summary && !result.success {
         return DryOutcome::FailedTests(summary_tail(&command.command, &command.dir, &result));
     }
+    // The note says only that the check fails; the progress log says how.
+    if outcome == DryOutcome::Failed && !failures.is_empty() {
+        let why = truncate_for_display(&failures.join("; "), MAX_ERROR);
+        eprintln!("{} failed: {why}", label(command));
+    }
     outcome
+}
+
+/// The progress-log prefix naming `command`'s stage, field and index.
+fn label(command: &DryCommand) -> String {
+    format!(
+        "dry run: {} {} {}",
+        command.stage_id, command.field, command.index
+    )
 }
 
 fn record(
@@ -309,6 +342,7 @@ fn describe(
             "fails at the base commit (expected before the stage's work)".to_string()
         }
         DryOutcome::FailedTests(tail) => failed_tests_text(tail),
+        DryOutcome::NotRun(error) => format!("could not run at the base commit: {error}"),
     }
 }
 
@@ -357,27 +391,3 @@ mod dry_run_real_tests;
 mod dry_run_tests;
 #[path = "dry_run_tail.rs"]
 mod tail;
-
-#[cfg(test)]
-mod display_tests {
-    use super::*;
-
-    #[test]
-    fn findings_collapse_whitespace_and_include_ellipsis_in_character_budget() {
-        let stage = dry_run_tests::stage("s", "standard", &[], &["true"], "");
-        let text = dry_run_tests::plan("", &[stage]);
-        let mut metadata = parse_plan_metadata(&text).unwrap();
-        let definition = &mut metadata.loom.stages[0];
-        let command = format!(" \t echo  {}\n", "é".repeat(MAX_QUOTED));
-        definition.acceptance = vec![AcceptanceCriterion::Simple(command)];
-        let commands = stage_commands(definition, Default::default(), Path::new("."));
-        let mut report = super::super::report::verify_text(None, Path::new("PLAN.md"), &text);
-        record(&mut report, definition, &commands[0], &DryOutcome::Passed);
-        let quote = format!("echo {}…", "é".repeat(MAX_QUOTED - 6));
-        assert_eq!(quote.chars().count(), MAX_QUOTED);
-        assert_eq!(
-            report.notes.last().unwrap(),
-            &format!("dry run: s acceptance 0 `{quote}` already passes at the base commit")
-        );
-    }
-}

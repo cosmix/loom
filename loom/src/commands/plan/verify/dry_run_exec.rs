@@ -4,7 +4,6 @@
 
 use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
-use std::time::Duration;
 
 use anyhow::{Context, Result};
 
@@ -72,15 +71,16 @@ pub(super) fn run(path: &Path, report: &mut VerifyReport) -> Result<()> {
     })
 }
 
-/// Run `command` as the daemon would. A command the runner could not prepare
-/// (a `working_dir` the stage itself creates) is a failed result, not an error.
+/// Run `command` as the daemon would. `Err` is a command the runner could not
+/// prepare, start or wait for (a `working_dir` the stage itself creates), which
+/// the dry run reports as not run.
 fn execute(
     command: &DryCommand,
     stages: &StageTable<'_>,
     plan_confinement: CommandConfinement,
     local_binding: bool,
-) -> (CriterionResult, Vec<String>) {
-    let ran = match stages.get(command.stage_id.as_str()) {
+) -> Ran {
+    match stages.get(command.stage_id.as_str()) {
         Some((_, stage)) if command.field == "acceptance" => {
             acceptance(command, stage, plan_confinement, local_binding)
         }
@@ -89,21 +89,7 @@ fn execute(
             "stage `{}` is not in the plan",
             command.stage_id
         )),
-    };
-    ran.unwrap_or_else(|error| {
-        let message = format!("{error:#}");
-        let reason = message.lines().next().unwrap_or_default().to_string();
-        let result = CriterionResult::new(
-            command.command.clone(),
-            false,
-            String::new(),
-            reason,
-            None,
-            Duration::ZERO,
-            false,
-        );
-        (result, Vec::new())
-    })
+    }
 }
 
 /// One acceptance criterion through the acceptance runner, cache off.

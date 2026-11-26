@@ -129,7 +129,7 @@ fn a_second_timeout_is_a_timeout() {
             "slow-build" if runs > 1 => passed("slow-build"),
             other => timed_out(other),
         };
-        (result, Vec::new())
+        Ok((result, Vec::new()))
     })
     .expect("the dry run completes");
     for command in ["slow-build", "hang-forever"] {
@@ -225,7 +225,7 @@ fn severity_executor(command: &DryCommand) -> (CriterionResult, Vec<String>) {
 fn severity_report(stages: &[String]) -> VerifyReport {
     let (_repo, path, mut report) = committed_plan(&v1_plan(&stages.concat()));
     run_dry_run_with(&path, &mut report, &mut |command: &DryCommand| {
-        severity_executor(command)
+        Ok(severity_executor(command))
     })
     .expect("the dry run completes");
     report
@@ -314,7 +314,7 @@ fn dry_run_reads_the_committed_tree() {
     run_dry_run_with(&path, &mut report, &mut |command: &DryCommand| {
         let (dir, result) = marker_test(&checkouts, command);
         dirs.push(dir);
-        (result, Vec::new())
+        Ok((result, Vec::new()))
     })
     .expect("the dry run completes");
     assert_eq!(dirs.len(), 2, "each criterion runs once");
@@ -355,7 +355,7 @@ fn dry_run_provisions_before_the_criteria() {
         } else {
             exited(&command.command, 127, "")
         };
-        (result, Vec::new())
+        Ok((result, Vec::new()))
     })
     .expect("the dry run completes");
     assert!(!seen.is_empty(), "the criteria ran");
@@ -369,7 +369,7 @@ fn dry_run_provisions_before_the_criteria() {
     let mut calls = 0;
     run_dry_run_with(&path, &mut report, &mut |command: &DryCommand| {
         calls += 1;
-        (passed(&command.command), Vec::new())
+        Ok((passed(&command.command), Vec::new()))
     })
     .expect("a failed provision is a finding");
     assert_eq!(calls, 0, "no criterion runs after a failed provision");

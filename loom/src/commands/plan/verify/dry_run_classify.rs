@@ -22,6 +22,9 @@ pub enum DryOutcome {
     /// exists at the base commit. The text is the run's failure lines and the
     /// end of its output, which name them.
     FailedTests(String),
+    /// The runner could not prepare, start or wait for the command, so it
+    /// says nothing about the criterion; the text is the runner's error.
+    NotRun(String),
 }
 
 /// How a finding is reported.
@@ -84,6 +87,8 @@ pub fn severity(outcome: &DryOutcome, stage_has_dependencies: bool) -> Option<Dr
         DryOutcome::ZeroTests | DryOutcome::Failed | DryOutcome::FailedTests(_) => {
             Some(DrySeverity::Note)
         }
+        // A `working_dir` the stage itself creates cannot be prepared at base.
+        DryOutcome::NotRun(_) => Some(DrySeverity::Note),
         // An earlier stage may provide the program or script.
         DryOutcome::Missing(_) if stage_has_dependencies => Some(DrySeverity::Note),
         DryOutcome::Missing(_) => Some(DrySeverity::Error),

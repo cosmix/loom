@@ -21,7 +21,7 @@ fn note_for(command: &str, output: (&str, &str)) -> String {
     let commands = stage_commands(definition, Default::default(), Path::new("."));
     let (stdout, stderr) = (output.0.to_string(), output.1.to_string());
     let mut execute =
-        |c: &DryCommand| (result(&c.command, Some(101), &stdout, &stderr), Vec::new());
+        |c: &DryCommand| Ok((result(&c.command, Some(101), &stdout, &stderr), Vec::new()));
     let execute: &mut DryExecutor<'_> = &mut execute;
     let outcome = outcome_of(execute, &commands[0]);
     record(&mut report, definition, &commands[0], &outcome);

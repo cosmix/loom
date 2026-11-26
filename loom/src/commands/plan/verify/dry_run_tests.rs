@@ -164,6 +164,7 @@ fn severity_follows_dependencies() {
         ),
         (DryOutcome::Passed, Some(Note), None),
         (DryOutcome::Failed, Some(Note), Some(Note)),
+        (DryOutcome::NotRun("x".into()), Some(Note), Some(Note)),
     ];
     for (outcome, free, dependent) in table {
         assert_eq!(severity(&outcome, false), free, "{outcome:?}");
@@ -182,7 +183,7 @@ fn severity_follows_dependencies() {
 /// Runs `run_dry_run_with` over `text` with `answer` standing in for the runner.
 fn dry_report(text: &str, answer: &mut dyn FnMut(&DryCommand) -> CriterionResult) -> VerifyReport {
     let (_tmp, path, mut report) = committed(text);
-    let mut execute = |command: &DryCommand| (answer(command), Vec::new());
+    let mut execute = |command: &DryCommand| Ok((answer(command), Vec::new()));
     run_dry_run_with(&path, &mut report, &mut execute).unwrap();
     report
 }
@@ -261,6 +262,54 @@ fn only_a_standard_stage_that_passes_everything_cannot_tell() {
 }
 
 #[test]
+fn findings_collapse_whitespace_and_include_ellipsis_in_character_budget() {
+    let text = plan("", &[stage("s", "standard", &[], &["true"], "")]);
+    let mut metadata = parse_plan_metadata(&text).unwrap();
+    let definition = &mut metadata.loom.stages[0];
+    let command = format!(" \t echo  {}\n", "é".repeat(MAX_QUOTED));
+    definition.acceptance = vec![AcceptanceCriterion::Simple(command)];
+    let root = std::path::Path::new(".");
+    let commands = stage_commands(definition, Default::default(), root);
+    let mut report = verify_text(None, std::path::Path::new("PLAN.md"), &text);
+    record(&mut report, definition, &commands[0], &DryOutcome::Passed);
+    let quote = format!("echo {}…", "é".repeat(MAX_QUOTED - 6));
+    assert_eq!(quote.chars().count(), MAX_QUOTED);
+    assert_eq!(
+        report.notes.last().unwrap(),
+        &format!("dry run: s acceptance 0 `{quote}` already passes at the base commit")
+    );
+}
+
+#[test]
+fn a_command_the_runner_could_not_run_is_reported_with_its_error() {
+    let long = format!("false # {}", "x".repeat(300));
+    let checks =
+        format!("      after_stage:\n        - command: \"{long}\"\n          exit_code: 1\n");
+    let text = plan("", &[stage("gate", "standard", &[], &["true"], &checks)]);
+    let (_tmp, path, mut report) = committed(&text);
+    run_dry_run_with(&path, &mut report, &mut |command: &DryCommand| {
+        use anyhow::Context as _;
+        if command.field != "acceptance" {
+            let refused = Err(anyhow::anyhow!("spawn refused\nby the host"));
+            return refused
+                .with_context(|| format!("Failed to execute criterion: {}", command.command));
+        }
+        Ok((result(&command.command, Some(0), "", ""), Vec::new()))
+    })
+    .unwrap();
+    let note = report
+        .notes
+        .iter()
+        .find(|note| note.contains("after_stage 0"))
+        .expect("a note for the check");
+    assert!(
+        note.ends_with("could not run at the base commit: spawn refused by the host"),
+        "{note}"
+    );
+    assert!(report.errors.is_empty(), "{:?}", report.errors);
+}
+
+#[test]
 fn the_executor_sees_one_committed_checkout_that_is_removed_afterwards() {
     let stages = [stage("a", "standard", &[], &["test -e marker.txt"], "")];
     let (tmp, path, mut report) = committed(&plan("", &stages));
@@ -275,7 +324,7 @@ fn the_executor_sees_one_committed_checkout_that_is_removed_afterwards() {
         );
         assert!(!command.dir.join("marker.txt").exists());
         dirs.push(command.dir.clone());
-        (result(&command.command, Some(1), "", ""), Vec::new())
+        Ok((result(&command.command, Some(1), "", ""), Vec::new()))
     })
     .unwrap();
     assert_eq!(dirs.len(), 1);
@@ -304,7 +353,7 @@ fn provision_runs_before_the_criteria_and_a_failure_stops_the_run() {
         let text = plan(&entry(command), &stages);
         let (_tmp, path) = commit_plan(&text);
         let mut report = verify_text(None, &path, &text);
-        let mut execute = |c: &DryCommand| (answer(c), Vec::new());
+        let mut execute = |c: &DryCommand| Ok((answer(c), Vec::new()));
         run_dry_run_with(&path, &mut report, &mut execute).unwrap();
         report.errors.retain(|e| e.message.starts_with("dry run"));
         report
