@@ -1,28 +1,24 @@
 use super::*;
-use std::os::unix::process::CommandExt;
-use std::process::{Child, Command};
+use crate::test_stand_in::{require_signals, StandIn};
+use std::process::Command;
 use std::sync::mpsc;
 use std::thread;
 
 /// A `sleep` leading its own process group: a group member that outlives the
-/// collection deadline until the test kills it.
-fn group_member() -> Child {
-    Command::new("sleep")
-        .arg("30")
-        .process_group(0)
-        .spawn()
-        .unwrap()
+/// collection deadline until the test drops it, which kills and reaps it.
+fn group_member() -> StandIn {
+    StandIn::group_leader(Command::new("sleep").arg("30"))
 }
 
 #[test]
 fn a_group_member_still_exiting_extends_collection_past_the_deadline() {
-    let mut member = group_member();
+    require_signals!();
+    let member = group_member();
     let group = member.id();
     let (sender, receiver) = mpsc::channel();
     let releaser = thread::spawn(move || {
         thread::sleep(Duration::from_millis(600));
-        member.kill().unwrap();
-        member.wait().unwrap();
+        drop(member);
         sender.send("eof").unwrap();
     });
     let started = Instant::now();
@@ -34,13 +30,13 @@ fn a_group_member_still_exiting_extends_collection_past_the_deadline() {
 
 #[test]
 fn a_group_seen_dying_gets_a_final_grace_once_it_empties() {
-    let mut member = group_member();
+    require_signals!();
+    let member = group_member();
     let group = member.id();
     let (sender, receiver) = mpsc::channel();
     let releaser = thread::spawn(move || {
         thread::sleep(Duration::from_millis(300));
-        member.kill().unwrap();
-        member.wait().unwrap();
+        drop(member);
         thread::sleep(Duration::from_millis(300));
         sender.send("eof").unwrap();
     });
@@ -61,10 +57,10 @@ fn a_fixed_deadline_ends_collection_at_the_deadline() {
 
 #[test]
 fn an_empty_group_ends_collection_at_the_deadline() {
-    let mut gone = group_member();
+    require_signals!();
+    let gone = group_member();
     let group = gone.id();
-    gone.kill().unwrap();
-    gone.wait().unwrap();
+    drop(gone);
     let (_sender, receiver) = mpsc::channel::<()>();
     let started = Instant::now();
     let mut deadline = CleanupDeadline::new(started + Duration::from_millis(100), group);
@@ -74,15 +70,15 @@ fn an_empty_group_ends_collection_at_the_deadline() {
 
 #[test]
 fn a_group_that_never_empties_ends_collection_at_the_limit() {
-    let mut member = group_member();
+    require_signals!();
+    let member = group_member();
     let (_sender, receiver) = mpsc::channel::<()>();
     let started = Instant::now();
     let mut deadline = CleanupDeadline::new(started + Duration::from_millis(50), member.id());
     deadline.limit = started + Duration::from_millis(400);
     assert_eq!(deadline.recv(&receiver), Err(RecvTimeoutError::Timeout));
     let elapsed = started.elapsed();
-    member.kill().unwrap();
-    member.wait().unwrap();
+    drop(member);
     assert!(elapsed >= Duration::from_millis(400), "{elapsed:?}");
     assert!(elapsed < Duration::from_secs(2), "{elapsed:?}");
 }
