@@ -31,3 +31,13 @@
 **Prevention:** a test that changes the process environment adds to a variable other threads read (prepend to `PATH`), never replaces it. A non-serial test that spawns commands resolved from the environment is `#[serial_test::parallel]`, which never overlaps a `#[serial]` test. To reproduce a cross-test flake, run the whole test binary, since the interfering test can be in any module.
 
 **Fix:** `PathGuard::first` in `remote_control_tests.rs` keeps the other `PATH` entries; the four non-serial tests in `dry_run_real_tests.rs` are `#[serial_test::parallel]`.
+
+## The Cleanup Grace Started at the Leader's Exit While Its Group Still Held the Pipes
+
+**What happened:** On loaded Linux CI, confined criteria that exited cleanly were judged failing with "output capture incomplete" (`the_checkout_holds_committed_files_only`, CI run on 7ac2b9ca4). The 1 s `CLEANUP_GRACE` started when the outer bwrap was reaped, but the sandbox's pid 1, still in the leader's group, released stdout and stderr only after its mount namespace was torn down. An earlier investigation of the sibling `after_stage` flake blamed a `PATH` race alone, without reading the CI log, whose capture-incomplete lines would have named this cause.
+
+**Why:** The cleanup contract assumed that once the leader exited and its group was SIGKILLed, only holders outside the group could keep the pipes open. In fact a killed process releases its files late in its exit, in `exit_task_work` after `exit_task_namespaces`, and bwrap reports the exit status before its pid 1 exits.
+
+**Prevention:** Treat a killed group as still writing until it has no member, and bound collection by group membership rather than wall time since the leader exited. Read the failing CI log before settling on a flake cause; this sandbox needs the user to run `gh run view --log-failed` with the `!` prefix.
+
+**Fix:** `process::CleanupDeadline` extends collection on the completed path while the group has a member, up to `DYING_GROUP_LIMIT`, then gives holders outside the group one more `CLEANUP_GRACE`.
