@@ -135,6 +135,13 @@ impl PreparedCommand {
         })
     }
 
+    /// Whether every process the command starts lives in a pid namespace that
+    /// the kernel empties once the launcher is gone: a confined command on
+    /// Linux, which bubblewrap runs with `--unshare-all --die-with-parent`.
+    pub(super) fn contains_its_processes(&self) -> bool {
+        cfg!(target_os = "linux") && self.scratch.is_some()
+    }
+
     pub(super) fn has_group_anchor(&self) -> bool {
         self.group_anchor.is_some()
     }

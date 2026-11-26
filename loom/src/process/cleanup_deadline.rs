@@ -3,20 +3,27 @@
 //! A pipe reaches end of file once its last writer releases it, and a process
 //! releases its descriptors only at the end of its own exit, after the kernel
 //! has torn down any namespace it was the last member of. A killed member of
-//! the operation's group can therefore hold a pipe well after the leader was
-//! reaped: bubblewrap's outer process exits as soon as the sandbox's pid 1
-//! reports the command's status, while that pid 1, still in the leader's
-//! group, is releasing the sandbox's mount namespace. Collection waits for such
-//! a member; the plain [`CLEANUP_GRACE`] bounds only holders outside the group.
+//! the operation's group can therefore hold a pipe after the leader was reaped;
+//! collection waits for such a member, and the plain [`CLEANUP_GRACE`] bounds
+//! only holders outside the group.
+//!
+//! A confined Linux command has such a holder outside every group the caller
+//! can name: bubblewrap's outer process (the leader) exits once the sandbox's
+//! pid 1 reports the command's status, while that pid 1, which keeps the
+//! command's stdio, is still releasing the sandbox's namespaces. Under
+//! `--new-session` it leads a session of its own, so no group poll sees it.
+//! Every process left in the sandbox dies with that pid 1 (`--die-with-parent`
+//! kills it when the leader exits), so collection may wait for end of file up
+//! to the same limit a dying group gets ([`CleanupDeadline::contained`]).
 
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::time::{Duration, Instant};
 
 use super::owned::CLEANUP_GRACE;
 
-/// How long past the retirement deadline collection may wait for a killed group to finish
-/// exiting. Revisit if a namespace or address-space teardown on a loaded host
-/// is seen to take longer.
+/// How long past the retirement deadline collection may wait for a killed
+/// group or a sandbox to finish exiting. Revisit if a namespace or
+/// address-space teardown on a loaded host is seen to take longer.
 const DYING_GROUP_LIMIT: Duration = Duration::from_secs(10);
 const GROUP_POLL_INTERVAL: Duration = Duration::from_millis(10);
 
@@ -28,6 +35,18 @@ pub(crate) struct CleanupDeadline {
     limit: Instant,
     /// Whether the group was seen with a member once `at` had passed.
     dying: bool,
+    seen: Seen,
+}
+
+/// What the deadline last knew of the processes it waits for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Seen {
+    /// No group tracked: a fixed deadline, or a group not yet polled.
+    Untracked,
+    /// A command whose processes live in a pid namespace of their own.
+    Contained,
+    Member,
+    Empty,
 }
 
 impl CleanupDeadline {
@@ -39,6 +58,7 @@ impl CleanupDeadline {
             group: i32::try_from(group).ok(),
             limit: at + DYING_GROUP_LIMIT,
             dying: false,
+            seen: Seen::Untracked,
         }
     }
 
@@ -50,6 +70,21 @@ impl CleanupDeadline {
             group: None,
             limit: at,
             dying: false,
+            seen: Seen::Untracked,
+        }
+    }
+
+    /// Collection ends at end of file or [`DYING_GROUP_LIMIT`] past `at`: for
+    /// a finished command whose every process lives in a pid namespace that
+    /// the kernel empties once the leader is gone (see the module docs).
+    pub(crate) fn contained(at: Instant) -> Self {
+        let limit = at + DYING_GROUP_LIMIT;
+        Self {
+            at: limit,
+            group: None,
+            limit,
+            dying: false,
+            seen: Seen::Contained,
         }
     }
 
@@ -64,6 +99,17 @@ impl CleanupDeadline {
         }
     }
 
+    /// What collection waited for, for a timeout's diagnosis: empty, or a
+    /// clause starting with `, `.
+    pub(crate) fn describe(&self) -> &'static str {
+        match self.seen {
+            Seen::Untracked => "",
+            Seen::Contained => ", sandboxed",
+            Seen::Member => ", group still had a member",
+            Seen::Empty => ", group empty",
+        }
+    }
+
     /// Move `at` on once it has passed: a poll interval while the group has a
     /// member, then one [`CLEANUP_GRACE`] for holders outside the group once
     /// the group, seen dying, is empty. `false` when collection should stop.
@@ -71,12 +117,14 @@ impl CleanupDeadline {
         let Some(group) = self.group else {
             return false;
         };
+        let member = group_has_member(group);
+        self.seen = if member { Seen::Member } else { Seen::Empty };
         let now = Instant::now();
         if now >= self.limit {
             self.group = None;
             return false;
         }
-        if group_has_member(group) {
+        if member {
             self.dying = true;
             self.at = (now + GROUP_POLL_INTERVAL).min(self.limit);
             return true;

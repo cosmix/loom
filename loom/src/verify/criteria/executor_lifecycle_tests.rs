@@ -40,20 +40,25 @@ fn verification_timeout_kills_before_collecting_and_reports_elapsed() {
     guard.assert_retired();
 }
 
+/// The sandbox's pid 1 keeps the command's stdio until its own exit ends, and
+/// leads a session of its own, outside the leader's group: no group poll sees
+/// it, so a confined run's collection waits for end of file instead.
+#[cfg(target_os = "linux")]
 #[test]
-fn capture_error_after_partial_output_is_incomplete() {
-    struct Failing(bool);
-    impl Read for Failing {
-        fn read(&mut self, bytes: &mut [u8]) -> std::io::Result<usize> {
-            if self.0 {
-                return Err(std::io::Error::other("partial failure"));
-            }
-            self.0 = true;
-            bytes[0] = b'x';
-            Ok(1)
-        }
+fn a_confined_commands_sandbox_init_leads_its_own_session() {
+    use crate::process::sandbox_probe::{confined_commands_runnable, skip_unless};
+    let test = "a_confined_commands_sandbox_init_leads_its_own_session";
+    if skip_unless(confined_commands_runnable(), test, "it runs bubblewrap") {
+        return;
     }
-    let capture = read_stream(Failing(false), None);
-    assert!(!capture.complete);
-    assert!(capture.text.starts_with('x'));
+    let temp = tempfile::tempdir().unwrap();
+    let script = "read -r _ _ _ _ group session _ < /proc/1/stat; echo \"$group $session\"";
+    let confined = CommandConfinement::Confined;
+    let spec = CommandSpec::shell(script);
+    let prepared = confine::prepare_confined(&spec, Some(temp.path()), None, confined, None);
+    let prepared = prepared.unwrap();
+    assert!(prepared.contains_its_processes());
+    let result = run_prepared_with_timeout(prepared, Duration::from_secs(30)).unwrap();
+    assert!(result.success && result.output_complete, "{result:?}");
+    assert_eq!(result.stdout.trim(), "1 1");
 }

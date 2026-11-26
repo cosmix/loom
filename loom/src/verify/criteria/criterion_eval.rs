@@ -4,6 +4,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use super::cache_contract::{AssertionVerdict, CriterionContract};
+use super::executor::capture_cause;
 use super::result::CriterionResult;
 use super::zero_tests::{tests_executed, zero_test_failure};
 use crate::models::stage::AcceptanceCriterion;
@@ -50,8 +51,9 @@ fn check_criterion(
     };
     if !verdict.output_complete {
         failures.push(format!(
-            "Command '{}': output capture incomplete",
-            command.written
+            "Command '{}': output capture incomplete{}",
+            command.written,
+            capture_cause(result)
         ));
     }
     if contract.rejects_zero_tests(verdict.tests_executed) {
@@ -191,5 +193,38 @@ mod tests {
             failures,
             ["Command 'probe': expected exit code -1, got no exit code"]
         );
+    }
+
+    #[test]
+    fn an_incomplete_capture_names_the_cause_its_marker_gives() {
+        let criterion = AcceptanceCriterion::Simple("probe".to_string());
+        let spec = CommandSpec::shell("probe");
+        let timeout = Duration::from_secs(1);
+        let contract =
+            CriterionContract::new(&spec, &criterion, timeout, CommandConfinement::Confined);
+        let gap = "output collection timed out: stdout open 1.02s after exit, \
+                   a writer still open, sandboxed";
+        let stdout = format!("[{gap}]");
+        let mut result = CriterionResult::new(
+            "probe".to_string(),
+            false,
+            stdout,
+            String::new(),
+            Some(0),
+            Duration::ZERO,
+            false,
+        );
+        result.output_complete = false;
+        let verdict = contract.verdict(&result);
+        let command = CriterionCommand {
+            written: "probe",
+            expanded: "probe",
+            cwd: Path::new("."),
+        };
+
+        let failures = check_criterion(&criterion, &contract, &result, &command, &verdict);
+
+        let expected = format!("Command 'probe': output capture incomplete ({gap})");
+        assert_eq!(failures, [expected]);
     }
 }

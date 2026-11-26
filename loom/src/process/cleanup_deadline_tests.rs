@@ -53,6 +53,7 @@ fn a_fixed_deadline_ends_collection_at_the_deadline() {
     let mut deadline = CleanupDeadline::fixed(started + Duration::from_millis(100));
     assert_eq!(deadline.recv(&receiver), Err(RecvTimeoutError::Timeout));
     assert!(started.elapsed() < Duration::from_millis(600));
+    assert_eq!(deadline.describe(), "");
 }
 
 #[test]
@@ -66,6 +67,7 @@ fn an_empty_group_ends_collection_at_the_deadline() {
     let mut deadline = CleanupDeadline::new(started + Duration::from_millis(100), group);
     assert_eq!(deadline.recv(&receiver), Err(RecvTimeoutError::Timeout));
     assert!(started.elapsed() < Duration::from_millis(600));
+    assert_eq!(deadline.describe(), ", group empty");
 }
 
 #[test]
@@ -81,6 +83,7 @@ fn a_group_that_never_empties_ends_collection_at_the_limit() {
     drop(member);
     assert!(elapsed >= Duration::from_millis(400), "{elapsed:?}");
     assert!(elapsed < Duration::from_secs(2), "{elapsed:?}");
+    assert_eq!(deadline.describe(), ", group still had a member");
 }
 
 #[test]
@@ -91,4 +94,32 @@ fn the_callers_own_group_never_extends_collection() {
     let mut deadline = CleanupDeadline::new(started + Duration::from_millis(50), own);
     assert_eq!(deadline.recv(&receiver), Err(RecvTimeoutError::Timeout));
     assert!(started.elapsed() < Duration::from_millis(500));
+}
+
+/// A sandbox's pid 1 holds the pipes outside every group the caller can name;
+/// a contained run waits for end of file past the point a group run gives up.
+#[test]
+fn a_contained_deadline_waits_past_the_grace_for_end_of_file() {
+    let (sender, receiver) = mpsc::channel();
+    let releaser = thread::spawn(move || {
+        thread::sleep(CLEANUP_GRACE + Duration::from_millis(300));
+        sender.send("eof").unwrap();
+    });
+    let started = Instant::now();
+    let mut deadline = CleanupDeadline::contained(started + Duration::from_millis(50));
+    assert_eq!(deadline.recv(&receiver), Ok("eof"));
+    assert!(started.elapsed() >= CLEANUP_GRACE + Duration::from_millis(300));
+    releaser.join().unwrap();
+}
+
+#[test]
+fn a_contained_deadline_ends_collection_at_its_limit() {
+    let (_sender, receiver) = mpsc::channel::<()>();
+    let started = Instant::now();
+    let mut deadline = CleanupDeadline::contained(started);
+    deadline.at = started + Duration::from_millis(100);
+    deadline.limit = deadline.at;
+    assert_eq!(deadline.recv(&receiver), Err(RecvTimeoutError::Timeout));
+    assert!(started.elapsed() < Duration::from_millis(600));
+    assert_eq!(deadline.describe(), ", sandboxed");
 }

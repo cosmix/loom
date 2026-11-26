@@ -69,7 +69,10 @@ fn execution_failures(
     }
     let output_complete = result.output_complete;
     if !output_complete {
-        failures.push("output capture incomplete; assertions cannot be certified".into());
+        let cause = super::executor::capture_cause(result);
+        failures.push(format!(
+            "output capture incomplete{cause}; assertions cannot be certified"
+        ));
     }
     let exit_code_matched = result.exit_code == Some(spec.expected_exit);
     if !exit_code_matched {
