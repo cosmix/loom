@@ -58,7 +58,7 @@
 | [source-graph-build](architecture/source-graph-build.md) |  | 142 |
 | [source-graph-resolution](architecture/source-graph-resolution.md) |  | 269 |
 | [stage-build-cache](architecture/stage-build-cache.md) | Per-stage cache root: env, seeds, sockets, read roots, xcrun bypass | 60 |
-| [stage-exit-recording](architecture/stage-exit-recording.md) | Stage exits: refused commit, idle stop, verdicts, artifact disputes | 41 |
+| [stage-exit-recording](architecture/stage-exit-recording.md) | Stage exits: refused commit, idle stop, verdicts, artifact disputes | 43 |
 | [status-data-model](architecture/status-data-model.md) | Fields | 269 |
 | [summary-store](architecture/summary-store.md) |  | 352 |
 | [target-guard](architecture/target-guard.md) | Tip | 180 |
