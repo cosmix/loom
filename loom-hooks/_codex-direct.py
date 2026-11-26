@@ -227,28 +227,41 @@ def _reap_adopted() -> None:
             return
 
 
+def _kill_pids(pids: list[int]) -> bool:
+    delivered = True
+    for pid in pids:
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            continue
+        except OSError:
+            delivered = False
+    return delivered
+
+
 def _retire(proc: subprocess.Popen[bytes], tracker: Descendants, deadline: float, tick) -> bool:
     # Same ownership contract as Rust OwnedProcess: kill the owned group on
     # timeout or leader exit, reap and drain within one cleanup deadline.
     # Snapshot identities also cover observed descendants that escaped the group.
     signal_ok = _signal_group(proc.pid, signal.SIGKILL)
     living = tracker.living()
-    for pid in living or []:
-        try:
-            os.kill(pid, signal.SIGKILL)
-        except ProcessLookupError:
-            continue
-        except OSError:
-            signal_ok = False
+    signal_ok = _kill_pids(living or []) and signal_ok
     joined = _wait_until(proc, deadline, tick)
     while joined:
         _reap_adopted()
         group_ok, group_alive = _probe_group(proc.pid)
+        # One SIGKILL does not retire a group for good: on macOS a child forked
+        # while killpg runs joins the group after the signal and outlives it.
+        # Re-signal straight after the probe found members, so the group id
+        # has no time to be freed and reused before the signal.
+        if group_alive and time.monotonic() < deadline:
+            _signal_group(proc.pid, signal.SIGKILL)
         living_now = tracker.living()
         if group_ok and not group_alive and living_now == []:
             return signal_ok and living is not None and not tracker.probe_failed
         if time.monotonic() >= deadline:
             break
+        _kill_pids(living_now or [])
         tick()
     return False
 

@@ -58,6 +58,56 @@ def run_case(directory, terminal):
             supervisor._reap_adopted()
 
 
+def run_missed_member_case(directory):
+    """macOS lets a child forked during killpg join the group after the signal.
+    The first group signal is dropped and snapshots see only the leader, so only
+    a repeated group signal retires the survivor."""
+    pid_file = directory / "missed-member"
+    code = "\n".join([
+        "import json, os, subprocess, sys",
+        "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])",
+        f"path = {str(pid_file)!r}; open(path + '.tmp', 'w').write(json.dumps([os.getpid(), child.pid])); os.replace(path + '.tmp', path)",
+        f"events = {EVENTS!r}",
+        "for event in events: print(json.dumps(event), flush=True)",
+        "os._exit(0)",
+    ])
+    real_signal, real_snapshot, sent = supervisor._signal_group, supervisor._snapshot, []
+
+    def first_signal_misses(pgid, signum):
+        sent.append(signum)
+        return True if len(sent) == 1 else real_signal(pgid, signum)
+
+    def leader_only():
+        snapshot = real_snapshot()
+        if snapshot is None:
+            return None
+        if not pid_file.exists():
+            return {}
+        leader = json.loads(pid_file.read_text())[0]
+        return {pid: entry for pid, entry in snapshot.items() if pid == leader}
+
+    supervisor._signal_group, supervisor._snapshot = first_signal_misses, leader_only
+    try:
+        result = supervisor.supervise([sys.executable, "-c", code], 2000, 2000)
+        assert result.ownership_retained is False, result
+        assert len(sent) > 1, sent
+        leader, child = json.loads(pid_file.read_text())
+        assert supervisor._probe_group(leader) == (True, False)
+        try:
+            os.kill(child, 0)
+        except ProcessLookupError:
+            return
+        raise AssertionError(f"missed group member {child} survived")
+    finally:
+        supervisor._signal_group, supervisor._snapshot = real_signal, real_snapshot
+        if pid_file.exists():
+            try:
+                os.killpg(json.loads(pid_file.read_text())[0], signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            supervisor._reap_adopted()
+
+
 def signal_runner(pid_file, sent, during_spawn):
     child_code = "\n".join([
         "import json, os, subprocess, sys, time",
@@ -129,6 +179,7 @@ def main():
     with tempfile.TemporaryDirectory(prefix="loom-direct-lifecycle-") as temp:
         for terminal in (True, False):
             run_case(Path(temp), terminal)
+        run_missed_member_case(Path(temp))
         for sent in (signal.SIGTERM, signal.SIGHUP):
             run_signal_case(Path(temp), sent)
             run_signal_case(Path(temp), sent, during_spawn=True)
