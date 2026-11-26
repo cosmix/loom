@@ -2,8 +2,8 @@
 //! --contracts`, a replacement trial, and the contracts a full check runs.
 //! Each contract is a shell command (no test-runner adapter), so its verdict
 //! is its exit code. Every test starts loom's real confinement and skips
-//! where it cannot start; every one is serial, because the spawn observer is
-//! one process-wide slot.
+//! where it cannot start; every one is serial, because its fixture pins
+//! `HOME` (`CacheEnv`), which is process-wide.
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt;

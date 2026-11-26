@@ -1,6 +1,6 @@
 //! Tests for the host child (`child::run_job`). Each one that runs criteria
 //! starts loom's real confinement and skips where it cannot start; every one
-//! is serial, because the spawn observer is one process-wide slot.
+//! is serial, because its fixture pins `HOME` (`CacheEnv`), which is process-wide.
 
 use std::fs;
 use std::path::{Path, PathBuf};
