@@ -41,3 +41,13 @@
 **Prevention:** Treat a killed group as still writing until it has no member, and bound collection by group membership rather than wall time since the leader exited. Read the failing CI log before settling on a flake cause; this sandbox needs the user to run `gh run view --log-failed` with the `!` prefix.
 
 **Fix:** `process::CleanupDeadline` extends collection on the completed path while the group has a member, up to `DYING_GROUP_LIMIT`, then gives holders outside the group one more `CLEANUP_GRACE`.
+
+## New Process Tests Verified With the Lib Suite Alone Broke the Stand-In Guard
+
+**What happened:** `process/cleanup_deadline_tests.rs` spawned and killed `sleep` groups with raw `Child::kill`. `cargo test --lib` and the pre-push hook (which only compiles tests) passed, and CI's `Test (linux, integration)` failed in `stand_in_signal_guard::no_test_can_hang_on_a_stand_in`.
+
+**Why:** The guard that scans src/ test code for raw kills and unbounded waits lives in the `integration` test target, which a lib-only run never executes.
+
+**Prevention:** A change that adds tests which spawn or signal processes runs `cargo test --test integration stand_in_signal_guard` as well as the lib tests. Test code that signals a process owns it through `crate::test_stand_in` (`StandIn` after `require_signals!()`; dropping it kills and reaps with a bound).
+
+**Fix:** The tests use `StandIn::group_leader`, and kill by dropping it.
