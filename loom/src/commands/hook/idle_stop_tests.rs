@@ -18,6 +18,7 @@ fn blocking() -> StopFacts {
         host_job_live: false,
         worked_since_last_block: true,
         blocks_so_far: 0,
+        background_tasks: 0,
     }
 }
 
@@ -188,7 +189,17 @@ impl StopFixture {
     }
 
     fn block(&self) -> Option<String> {
-        block_line(self.work.path(), STAGE_ID, SESSION_ID, &self.scratch)
+        self.block_with_tasks(0)
+    }
+
+    fn block_with_tasks(&self, background_tasks: u32) -> Option<String> {
+        block_line(
+            self.work.path(),
+            STAGE_ID,
+            SESSION_ID,
+            &self.scratch,
+            background_tasks,
+        )
     }
 }
 
@@ -277,4 +288,85 @@ fn each_block_records_the_incremented_count_until_the_limit() {
         read_marker(&scratch).unwrap().unwrap().count,
         MAX_IDLE_STOP_BLOCKS
     );
+}
+
+#[test]
+fn background_tasks_get_their_own_reason_and_name_the_stage() {
+    let reason = decide(
+        "test-stage",
+        &StopFacts {
+            background_tasks: 2,
+            ..blocking()
+        },
+    )
+    .unwrap();
+    assert!(reason.contains("test-stage"));
+    assert!(reason.contains("2 background task"));
+    assert!(reason.contains("not counted"));
+    assert!(reason.contains("loom stage complete test-stage"));
+    assert!(reason.contains("loom stage block test-stage"));
+    assert_ne!(reason, decide("test-stage", &blocking()).unwrap());
+}
+
+#[test]
+fn background_tasks_do_not_lift_the_limit_or_the_heartbeat_rule() {
+    let spent = StopFacts {
+        background_tasks: 2,
+        blocks_so_far: MAX_IDLE_STOP_BLOCKS,
+        ..blocking()
+    };
+    assert_eq!(decide("test-stage", &spent), None);
+
+    let no_tool_since = StopFacts {
+        background_tasks: 2,
+        worked_since_last_block: false,
+        ..blocking()
+    };
+    assert_eq!(decide("test-stage", &no_tool_since), None);
+}
+
+#[test]
+fn background_task_count_reads_the_stop_payload() {
+    assert_eq!(background_task_count(&json!({})), Some(0));
+    assert_eq!(
+        background_task_count(&json!({"stop_hook_active": false})),
+        Some(0)
+    );
+    assert_eq!(
+        background_task_count(&json!({"background_tasks": null})),
+        Some(0)
+    );
+    assert_eq!(
+        background_task_count(&json!({"background_tasks": []})),
+        Some(0)
+    );
+    assert_eq!(
+        background_task_count(&json!({"background_tasks": [{"id": "a"}, {"id": "b"}]})),
+        Some(2)
+    );
+    assert_eq!(
+        background_task_count(&json!({"background_tasks": "two"})),
+        None
+    );
+    assert_eq!(
+        background_task_count(&json!({"background_tasks": {}})),
+        None
+    );
+}
+
+#[test]
+fn background_tasks_block_without_spending_the_limit() {
+    let fixture = StopFixture::new(SessionType::Stage);
+    let work = fixture.work.path();
+    let mut heartbeat = read_heartbeat(&heartbeat_path(work, STAGE_ID)).unwrap();
+    let scratch = safe_open_dirfd(&fixture.scratch).unwrap();
+
+    assert!(fixture.block_with_tasks(2).is_some());
+    assert_eq!(read_marker(&scratch).unwrap().unwrap().count, 0);
+    assert_eq!(fixture.block_with_tasks(2), None);
+
+    heartbeat.timestamp += chrono::Duration::milliseconds(1);
+    write_heartbeat(work, &heartbeat).unwrap();
+    assert!(fixture.block().is_some());
+    assert_eq!(read_marker(&scratch).unwrap().unwrap().count, 1);
 }

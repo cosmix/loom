@@ -46,6 +46,8 @@ pub(crate) struct StopFacts {
     pub worked_since_last_block: bool,
     /// Blocks this session has already received from this check.
     pub blocks_so_far: u32,
+    /// Background tasks of the session the Stop payload lists as in flight.
+    pub background_tasks: u32,
 }
 
 /// The reason to block the stop with, or `None` to let the session stop.
@@ -60,7 +62,14 @@ pub(crate) fn decide(stage_id: &str, facts: &StopFacts) -> Option<String> {
         return None;
     }
 
-    Some(format!(
+    Some(match facts.background_tasks {
+        0 => idle_reason(stage_id),
+        tasks => background_reason(stage_id, tasks),
+    })
+}
+
+fn idle_reason(stage_id: &str) -> String {
+    format!(
         "Stage {stage_id} is still Executing and this session runs unattended: nobody reads a final message. \
          End in a recorded state. (1) Finish: commit, then `loom stage complete {stage_id}`. \
          (2) A wrong check, contract, finding or integrity event: file the dispute that names it; \
@@ -69,7 +78,27 @@ pub(crate) fn decide(stage_id: &str, facts: &StopFacts) -> Option<String> {
          \"<what is needed and why>\"`, or AskUserQuestion when one answer unblocks you. \
          If a background command or agent of yours is still running, wait for it; \
          this notice does not repeat until the session records a new heartbeat."
-    ))
+    )
+}
+
+fn background_reason(stage_id: &str, tasks: u32) -> String {
+    let (noun, verb) = if tasks == 1 {
+        ("task", "is")
+    } else {
+        ("tasks", "are")
+    };
+    format!(
+        "Stage {stage_id} is still Executing and {tasks} background {noun} of this session {verb} in flight. \
+         If you are waiting on them, end your turn again: this notice is not counted and does not repeat \
+         until the session records a new heartbeat. \
+         If your work is finished or cannot continue, end in a recorded state, because this session runs \
+         unattended and nobody reads a final message. \
+         (1) Finish: commit, then `loom stage complete {stage_id}`. \
+         (2) A wrong check, contract, finding or integrity event: file the dispute that names it; \
+         a refused commit does not stop a filing. \
+         (3) Something only a person can give (a credential, a host install, a decision, a denied permission): \
+         `loom stage block {stage_id} \"<what is needed and why>\"`, or AskUserQuestion when one answer unblocks you."
+    )
 }
 
 /// `loom hook idle-stop`: reads the Stop payload on stdin, prints one
@@ -92,6 +121,7 @@ fn idle_stop_line() -> Option<String> {
         return None;
     }
 
+    let background_tasks = background_task_count(&payload)?;
     let session_id = non_empty_env("LOOM_SESSION_ID")?;
     let scratch_dir = non_empty_env("LOOM_SCRATCH_DIR")?;
     let work_dir = WorkDir::new(non_empty_env("LOOM_WORK_DIR")?).ok()?;
@@ -100,26 +130,28 @@ fn idle_stop_line() -> Option<String> {
         &stage_id,
         &session_id,
         Path::new(&scratch_dir),
+        background_tasks,
     )
 }
 
-fn block_line(work_dir: &Path, stage_id: &str, session_id: &str, scratch: &Path) -> Option<String> {
-    let stage = crate::verify::load_stage(stage_id, work_dir).ok()?;
-    let owns_executing_stage = stage.id == stage_id
-        && stage.status == StageStatus::Executing
-        && stage.session.as_deref() == Some(session_id);
-    let stage_session = load_session_exact(work_dir, session_id)
-        .ok()
-        .flatten()
-        .is_some_and(|session| {
-            matches!(
-                session.session_type,
-                SessionType::Stage | SessionType::Knowledge
-            )
-        });
-    if !owns_executing_stage || !stage_session {
-        return None;
+/// Background tasks the Stop payload lists as in flight. An absent or `null`
+/// field means none; any other non-array value is unreadable evidence.
+fn background_task_count(payload: &Value) -> Option<u32> {
+    match payload.get("background_tasks") {
+        None | Some(Value::Null) => Some(0),
+        Some(Value::Array(tasks)) => Some(u32::try_from(tasks.len()).unwrap_or(u32::MAX)),
+        Some(_) => None,
     }
+}
+
+fn block_line(
+    work_dir: &Path,
+    stage_id: &str,
+    session_id: &str,
+    scratch: &Path,
+    background_tasks: u32,
+) -> Option<String> {
+    stage_work_session(work_dir, stage_id, session_id)?;
     let children_quiet = children_quiet(work_dir, stage_id, session_id);
     let host_job_live = match load_current(work_dir, stage_id) {
         Ok(job) => job.is_some_and(|job| !job.state.is_terminal()),
@@ -136,17 +168,42 @@ fn block_line(work_dir: &Path, stage_id: &str, session_id: &str, scratch: &Path)
     }
     let timestamp = heartbeat.timestamp;
     let (blocks_so_far, worked_since_last_block) = marker_facts(&scratch, timestamp);
+    // `stage_work_session` returned `Some`, so both ownership facts hold.
     let facts = StopFacts {
-        owns_executing_stage,
-        stage_session,
+        owns_executing_stage: true,
+        stage_session: true,
         children_quiet,
         host_job_live,
         worked_since_last_block,
         blocks_so_far,
+        background_tasks,
     };
     let reason = decide(stage_id, &facts)?;
-    write_marker(&scratch, blocks_so_far + 1, timestamp).ok()?;
+    // A block for background tasks leaves the count alone: the session is
+    // waiting, not stuck. The timestamp is still recorded, so one heartbeat
+    // never gets two blocks.
+    let count = blocks_so_far + u32::from(background_tasks == 0);
+    write_marker(&scratch, count, timestamp).ok()?;
     Some(json!({"decision": "block", "reason": reason}).to_string())
+}
+
+/// `Some` when the stage is `Executing` with this session as its session and
+/// the session runs stage work (a stage or knowledge session).
+fn stage_work_session(work_dir: &Path, stage_id: &str, session_id: &str) -> Option<()> {
+    let stage = crate::verify::load_stage(stage_id, work_dir).ok()?;
+    let owns_executing_stage = stage.id == stage_id
+        && stage.status == StageStatus::Executing
+        && stage.session.as_deref() == Some(session_id);
+    let stage_session = load_session_exact(work_dir, session_id)
+        .ok()
+        .flatten()
+        .is_some_and(|session| {
+            matches!(
+                session.session_type,
+                SessionType::Stage | SessionType::Knowledge
+            )
+        });
+    (owns_executing_stage && stage_session).then_some(())
 }
 
 fn children_quiet(work_dir: &Path, stage_id: &str, session_id: &str) -> Option<bool> {

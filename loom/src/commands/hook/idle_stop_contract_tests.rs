@@ -14,6 +14,7 @@ fn blocking() -> StopFacts {
         host_job_live: false,
         worked_since_last_block: true,
         blocks_so_far: 0,
+        background_tasks: 0,
     }
 }
 
