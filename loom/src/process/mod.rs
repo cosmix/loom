@@ -3,6 +3,7 @@
 //! This module provides common process management functions used across the codebase.
 
 pub mod boot_id;
+mod cleanup_deadline;
 mod environment;
 mod errors;
 mod identity;
@@ -13,6 +14,7 @@ pub(crate) mod macos_procs;
 mod owned;
 mod spawn;
 mod tail;
+pub(crate) use cleanup_deadline::CleanupDeadline;
 pub use liveness::{is_process_alive, terminate};
 pub(crate) use owned::{
     kill_group, run_bounded_terminating_output, signal_group_id, wait_with_deadline, OwnedProcess,
@@ -142,9 +144,9 @@ fn run_bounded_inner(
         .with_context(|| format!("Failed to wait for {:?}", command.get_program()))?
     {
         Some(status) => {
-            let deadline = child.retire();
-            let remaining = deadline.saturating_duration_since(Instant::now());
-            collect_output(status, stdout_reader, stderr_reader, remaining, command)
+            let group = child.child().id();
+            let mut deadline = CleanupDeadline::new(child.retire(), group);
+            collect_output(status, stdout_reader, stderr_reader, &mut deadline, command)
         }
         None => {
             let deadline = child.expire(expiry);
@@ -235,18 +237,11 @@ fn collect_output(
     status: ExitStatus,
     stdout_reader: ReaderHandle,
     stderr_reader: ReaderHandle,
-    remaining: Duration,
+    deadline: &mut CleanupDeadline,
     command: &Command,
 ) -> Result<BoundedOutput> {
-    let deadline = Instant::now() + remaining;
-    let stdout = recv_stream(
-        &stdout_reader,
-        deadline.saturating_duration_since(Instant::now()),
-    );
-    let stderr = recv_stream(
-        &stderr_reader,
-        deadline.saturating_duration_since(Instant::now()),
-    );
+    let stdout = recv_cleanup(&stdout_reader, deadline);
+    let stderr = recv_cleanup(&stderr_reader, deadline);
     if let (Some(stdout), Some(stderr)) = (stdout, stderr) {
         return finish_output(status, stdout, stderr, command).map(BoundedOutput::Completed);
     }
@@ -260,7 +255,24 @@ fn recv_stream(receiver: &ReaderHandle, deadline: Duration) -> Option<std::io::R
     let Some(receiver) = receiver else {
         return Some(Ok(Vec::new()));
     };
-    match receiver.recv_timeout(deadline) {
+    received(receiver.recv_timeout(deadline))
+}
+
+/// [`recv_stream`] by a retired child's [`CleanupDeadline`].
+fn recv_cleanup(
+    receiver: &ReaderHandle,
+    deadline: &mut CleanupDeadline,
+) -> Option<std::io::Result<Vec<u8>>> {
+    let Some(receiver) = receiver else {
+        return Some(Ok(Vec::new()));
+    };
+    received(deadline.recv(receiver))
+}
+
+fn received(
+    result: Result<std::io::Result<Vec<u8>>, mpsc::RecvTimeoutError>,
+) -> Option<std::io::Result<Vec<u8>>> {
+    match result {
         Ok(result) => Some(result),
         Err(mpsc::RecvTimeoutError::Timeout) => None,
         Err(mpsc::RecvTimeoutError::Disconnected) => Some(Err(std::io::Error::other(

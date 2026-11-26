@@ -4,8 +4,10 @@
 //! Leader exit and timeout retire the group immediately. A streaming adapter may
 //! also retire on its protocol completion (quota replies); exit-status protocols
 //! (verification/direct forwarding) require the leader status before success.
-//! Reaping and pipe collection share one absolute cleanup deadline. Readers may
-//! report partial output; they must never extend the operation with an unbounded join.
+//! Reaping and pipe collection share one absolute cleanup deadline, which pipe
+//! collection extends, up to a fixed limit, while the killed group is still
+//! exiting (`CleanupDeadline`). Readers may report partial output; they must
+//! never extend the operation with an unbounded join.
 use std::process::{Child, Command, ExitStatus, Output};
 use std::time::{Duration, Instant};
 

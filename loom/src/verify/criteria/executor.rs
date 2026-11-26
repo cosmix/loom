@@ -1,6 +1,6 @@
 //! Low-level command execution for acceptance criteria
 
-use crate::process::OwnedProcess;
+use crate::process::{CleanupDeadline, OwnedProcess};
 use anyhow::{Context, Result};
 use std::io::Read;
 use std::path::Path;
@@ -194,9 +194,13 @@ pub(super) fn run_prepared_live(
     if wait_result.is_none() {
         super::escapees::kill_escapees(leader);
     }
-    let cleanup_deadline = child.retire();
+    let retired = child.retire();
+    let mut cleanup = match wait_result {
+        Some(_) => CleanupDeadline::new(retired, leader.anchor.unwrap_or(leader.pid)),
+        None => CleanupDeadline::fixed(retired),
+    };
     prepared.retire_group();
-    let (stdout, mut stderr) = output.collect(cleanup_deadline);
+    let (stdout, mut stderr) = output.collect(&mut cleanup);
     let complete = stdout.complete && stderr.complete;
     if wait_result.is_none() {
         stderr
@@ -236,13 +240,12 @@ impl OutputReaders {
         }
     }
 
-    /// Collect (stdout, stderr). The reader threads should finish promptly once
-    /// the process exits; a stalled one yields a marker rather than hanging.
-    fn collect(self, deadline: Instant) -> (Captured, Captured) {
-        (
-            collect_stream(self.stdout, deadline),
-            collect_stream(self.stderr, deadline),
-        )
+    /// Collect (stdout, stderr). The reader threads finish once the killed
+    /// group has exited and no other holder keeps a pipe open; one stalled past
+    /// `deadline` yields a marker rather than hanging.
+    fn collect(self, deadline: &mut CleanupDeadline) -> (Captured, Captured) {
+        let stdout = collect_stream(&self.stdout, deadline);
+        (stdout, collect_stream(&self.stderr, deadline))
     }
 }
 
@@ -267,13 +270,11 @@ fn spawn_reader<R: Read + Send + 'static>(
     rx
 }
 
-fn collect_stream(stream: mpsc::Receiver<Captured>, deadline: Instant) -> Captured {
-    stream
-        .recv_timeout(deadline.saturating_duration_since(Instant::now()))
-        .unwrap_or_else(|_| Captured {
-            text: OUTPUT_COLLECTION_TIMEOUT_MARKER.to_string(),
-            complete: false,
-        })
+fn collect_stream(stream: &mpsc::Receiver<Captured>, deadline: &mut CleanupDeadline) -> Captured {
+    deadline.recv(stream).unwrap_or_else(|_| Captured {
+        text: OUTPUT_COLLECTION_TIMEOUT_MARKER.to_string(),
+        complete: false,
+    })
 }
 
 struct Captured {
