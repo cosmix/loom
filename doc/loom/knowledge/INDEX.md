@@ -124,7 +124,7 @@
 | [checkout-identity](mistakes/checkout-identity.md) | Persisted checkout identity: pin path and inode, never st_dev | 13 |
 | [ci-gate-rollout](mistakes/ci-gate-rollout.md) | CI gate rollout slips: untested strict gates, shared index, known-red runs | 84 |
 | [ci-toolchain-and-cargo](mistakes/ci-toolchain-and-cargo.md) |  | 399 |
-| [closed-pipe-panics](mistakes/closed-pipe-panics.md) | println! on a closed stdout panics a server thread; drain piped stdout in tests | 13 |
+| [closed-pipe-panics](mistakes/closed-pipe-panics.md) | println! on a closed stdout panics a server thread; drain piped stdout in tests | 23 |
 | [codex-lane-rogue-wrapper](mistakes/codex-lane-rogue-wrapper.md) |  | 207 |
 | [codex-navigation](mistakes/codex-navigation.md) | Reader | 202 |
 | [codex-worker-briefing](mistakes/codex-worker-briefing.md) |  | 258 |
