@@ -210,10 +210,14 @@ fn client(path: &Path) -> UnixStream {
     stream
 }
 
-/// Sends `request` and reads the whole reply until the proxy closes.
+/// Sends `request` and reads the whole reply until the proxy closes. A proxy that rejects an
+/// oversized head replies and closes before the client finishes writing, so a broken pipe on
+/// the send is expected there; the reply already sent is still readable.
 fn exchange(path: &Path, request: &[u8]) -> String {
     let mut stream = client(path);
-    stream.write_all(request).expect("send");
+    if let Err(error) = stream.write_all(request) {
+        assert_eq!(error.kind(), ErrorKind::BrokenPipe, "send: {error}");
+    }
     let mut reply = Vec::new();
     let _ = stream.read_to_end(&mut reply);
     String::from_utf8_lossy(&reply).into_owned()
