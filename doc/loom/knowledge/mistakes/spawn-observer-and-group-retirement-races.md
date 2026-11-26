@@ -21,3 +21,13 @@
 **Prevention:** a retirement loop re-signals the group while the probe still finds members, until the deadline. The group id cannot be reused while it has members. Success still needs an empty group.
 
 **Fix:** `_retire` re-signals the group and the living tracked pids on every pass. Regression test: `run_missed_member_case` in `loom-hooks/tests/codex-direct-lifecycle.py`. Rust `OwnedProcess::retire` (`process/owned.rs`) still sends one `kill_group`; see [concerns](../concerns/sandbox-and-confinement-gaps.md).
+
+## A serial test replaced PATH under a parallel test's confined spawn
+
+**What happened:** `after_stage_checks_are_judged_as_completion_judges_them` kept failing now and then on Linux CI after the spawn observer became per-thread. `remote_control_tests.rs` set the process `PATH` to one directory holding a fake `claude` for the length of two `#[serial]` tests. A confined spawn on another thread in that window could not resolve `bwrap` (`confine_host.rs::bubblewrap`), the runner returned an error, and the dry run then reported an error as a failing check. The link to the CI failures is inferred from the code; the CI logs were not available.
+
+**Why:** the investigation followed a timing correlation with another test's timeout kill and looped only the dry-run tests, so the test that changed the environment never ran beside them. `#[serial]` keeps serial tests apart and nothing else.
+
+**Prevention:** a test that changes the process environment adds to a variable other threads read (prepend to `PATH`), never replaces it. A non-serial test that spawns commands resolved from the environment is `#[serial_test::parallel]`, which never overlaps a `#[serial]` test. To reproduce a cross-test flake, run the whole test binary, since the interfering test can be in any module.
+
+**Fix:** `PathGuard::first` in `remote_control_tests.rs` keeps the other `PATH` entries; the four non-serial tests in `dry_run_real_tests.rs` are `#[serial_test::parallel]`.

@@ -183,7 +183,7 @@
 | [sessions-and-liveness](mistakes/sessions-and-liveness.md) |  | 399 |
 | [shell-command-matchers](mistakes/shell-command-matchers.md) |  | 295 |
 | [source-graph-delivery](mistakes/source-graph-delivery.md) | Misses | 182 |
-| [spawn-observer-and-group-retirement-races](mistakes/spawn-observer-and-group-retirement-races.md) | Process-wide spawn observer races; killpg missing a concurrent fork on macOS | 23 |
+| [spawn-observer-and-group-retirement-races](mistakes/spawn-observer-and-group-retirement-races.md) | Process-wide spawn observer races; killpg missing a concurrent fork on macOS | 33 |
 | [spurious-waiting-for-input](mistakes/spurious-waiting-for-input.md) | Idle | 53 |
 | [status-broadcast-hardening](mistakes/status-broadcast-hardening.md) | Status frame overflow, relay ticket leaks and backgrounded relayed commands | 120 |
 | [store-without-consumer](mistakes/store-without-consumer.md) | Unread | 104 |
@@ -214,7 +214,7 @@
 | [code-quality-and-hook-debt](concerns/code-quality-and-hook-debt.md) | Debt | 325 |
 | [consolidation-followups](concerns/consolidation-followups.md) |  | 147 |
 | [contract-autonomy-followups](concerns/contract-autonomy-followups.md) |  | 122 |
-| [dry-run-verification-gaps](concerns/dry-run-verification-gaps.md) | Dry-run check gaps: bwrap exit 1 masks setup failure; Linux after_stage flake | 13 |
+| [dry-run-verification-gaps](concerns/dry-run-verification-gaps.md) | Dry-run check gaps: bwrap exit 1 masks setup failure; after_stage flake cause | 15 |
 | [knowledge-cli-gaps](concerns/knowledge-cli-gaps.md) |  | 82 |
 | [loom-ask-and-read-gate](concerns/loom-ask-and-read-gate.md) |  | 107 |
 | [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Edges | 105 |

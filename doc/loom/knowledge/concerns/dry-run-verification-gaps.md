@@ -1,6 +1,6 @@
 # Dry Run Verification Gaps
 
-> Dry-run check gaps: bwrap exit 1 masks setup failure; Linux after_stage flake
+> Dry-run check gaps: bwrap exit 1 masks setup failure; after_stage flake cause
 
 ## A Confined Check Expecting Exit 1 Passes When bubblewrap Fails to Start
 
@@ -8,6 +8,8 @@ bubblewrap exits 1 when its own setup fails, so a confined `after_stage` or wiri
 
 ## after_stage Checks Fail Intermittently on Linux CI
 
-`dry_run_real_tests::after_stage_checks_are_judged_as_completion_judges_them` fails on Linux CI about 15 s into `cargo test --lib`. Check 0 (`false`, `exit_code: 1`) is reported as failing; check 1 (`echo hi`, `stdout_contains: ["absent"]`) is meant to fail, and acceptance `true` passes in the same run, so bubblewrap works and only the `false` verdict is wrong. The cause is unconfirmed: it did not reproduce in a Linux container under load. Three causes fit: a runner error, a signal (no exit code), or incomplete output capture. A runner error is reported as `NotRun` ("could not run at the base commit: <cause>"), and a `Failed` outcome logs its runner failures to stderr, so the next failure names which one.
+`dry_run_real_tests::after_stage_checks_are_judged_as_completion_judges_them` failed on Linux CI with check 0 (`false`, `exit_code: 1`) reported as failing while acceptance `true` passed in the same run. The CI logs of those runs were never read, so the cause is inferred from the tree and unconfirmed on CI. The claim that a timeout kill of `a_command_slow_with_a_warm_cache_is_a_timeout` reaches the `false` run is wrong: `escapees::members` selects only by the unreaped leader's pid, group and session, and no other test's process can match.
 
-In both CI failures the 2 s timeout of `a_command_slow_with_a_warm_cache_is_a_timeout` (`sleep 4`) fired while the after_stage run was in progress, and neither test is `#[serial]`. Leading hypothesis: that timeout kill reaches a process outside its own job and signals the `false` run. The per-thread spawn observer did not remove the flake, so the crossing path is elsewhere. To check: loop `cargo test --lib dry_run_real_tests -- --test-threads=8` on Linux and read the note or stderr on failure; if marking both tests `#[serial]` stops the flake, the timeout kill is hitting the wrong process.
+A cause the tree does show: a `#[serial]` test replaced the process `PATH` while this non-serial test resolved `bwrap` from it, so the runner returned an error ([mistake](../mistakes/spawn-observer-and-group-retirement-races.md)). The dry-run real tests are `#[serial_test::parallel]` and never run beside a `#[serial]` test. They still run beside each other, so a recurrence points at something else: a runner error is reported as `NotRun` ("could not run at the base commit: <cause>"), and a `Failed` outcome logs its runner failures to stderr, so the next failure names its cause.
+
+`verify/criteria/tests/cache_input_runner_tests.rs` still sets `PATH` to its fixture directory plus `/usr/bin:/bin`; a host with `bwrap` elsewhere loses it for non-serial, non-parallel confined tests during that test.
