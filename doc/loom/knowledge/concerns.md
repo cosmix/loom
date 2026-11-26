@@ -246,3 +246,4 @@ Reviewer suggestions the November 2026 remediation plan left open (merge quarant
 The stage-exits plan's out-of-scope decisions with their revisit conditions, two unreproduced daemon warnings, the unimplemented reviewer suggestions (idle-stop, main-checkout rule, ledger hook, feedback file, frozen-file cover, `NegatedSearch`, doctrine pins) and two proposed checks for recurring mistakes.
 
 → [Stage Exits and Guards Follow-Ups](concerns/stage-exits-and-guards-followups.md)
+Dry-run checks: an exit-1 check passes when bubblewrap fails to start; an after_stage test flakes on Linux CI, cause unconfirmed. → [Dry-Run Verification Gaps](concerns/dry-run-verification-gaps.md)

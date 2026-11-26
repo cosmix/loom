@@ -14,7 +14,7 @@
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 230 |
 | [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 247 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 116 |
-| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 248 |
+| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 249 |
 
 ## Tier 2 — Topics
 
@@ -214,6 +214,7 @@
 | [code-quality-and-hook-debt](concerns/code-quality-and-hook-debt.md) | Debt | 325 |
 | [consolidation-followups](concerns/consolidation-followups.md) |  | 147 |
 | [contract-autonomy-followups](concerns/contract-autonomy-followups.md) |  | 122 |
+| [dry-run-verification-gaps](concerns/dry-run-verification-gaps.md) | Dry-run check gaps: bwrap exit 1 masks setup failure; Linux after_stage flake | 11 |
 | [knowledge-cli-gaps](concerns/knowledge-cli-gaps.md) |  | 82 |
 | [loom-ask-and-read-gate](concerns/loom-ask-and-read-gate.md) |  | 107 |
 | [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Edges | 105 |
