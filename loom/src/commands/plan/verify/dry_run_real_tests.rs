@@ -1,5 +1,7 @@
 //! The real, confined executor of `loom plan verify --dry-run`, end to end.
 //! Each test needs bubblewrap and skips where a session's own sandbox refuses it.
+//! The commands resolve their programs from the process environment, which `#[serial]` tests
+//! change, so every test here is `parallel` or `serial` and never runs beside one.
 
 use super::dry_run_tests::{committed, plan, stage};
 use super::*;
@@ -19,6 +21,7 @@ fn dry_run_of(text: &str) -> VerifyReport {
 }
 
 #[test]
+#[serial_test::parallel]
 fn a_sound_plan_leaves_no_error_and_no_warning() {
     if skipped("a_sound_plan_leaves_no_error_and_no_warning") {
         return;
@@ -41,6 +44,7 @@ fn a_sound_plan_leaves_no_error_and_no_warning() {
 }
 
 #[test]
+#[serial_test::parallel]
 fn the_checkout_holds_committed_files_only() {
     if skipped("the_checkout_holds_committed_files_only") {
         return;
@@ -64,6 +68,7 @@ fn the_checkout_holds_committed_files_only() {
 }
 
 #[test]
+#[serial_test::parallel]
 fn a_command_slow_with_a_warm_cache_is_a_timeout() {
     if skipped("a_command_slow_with_a_warm_cache_is_a_timeout") {
         return;
@@ -100,6 +105,7 @@ fn the_plans_inherit_confinement_reaches_acceptance() {
 }
 
 #[test]
+#[serial_test::parallel]
 fn after_stage_checks_are_judged_as_completion_judges_them() {
     if skipped("after_stage_checks_are_judged_as_completion_judges_them") {
         return;

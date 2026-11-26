@@ -261,13 +261,16 @@ fn fake_claude(dir: &Path, version: &str) -> PathBuf {
     path
 }
 
-/// Points `PATH` at one directory for the life of the guard.
+/// Puts one directory first on `PATH` for the life of the guard. The other entries stay: a test
+/// on another thread resolves its own programs from the same `PATH`.
 struct PathGuard(Option<OsString>);
 
 impl PathGuard {
-    fn only(dir: &Path) -> Self {
+    fn first(dir: &Path) -> Self {
         let previous = std::env::var_os("PATH");
-        std::env::set_var("PATH", dir);
+        let entries = std::iter::once(dir.to_path_buf())
+            .chain(previous.iter().flat_map(std::env::split_paths));
+        std::env::set_var("PATH", std::env::join_paths(entries).unwrap());
         Self(previous)
     }
 }
@@ -287,7 +290,7 @@ fn resolve_follows_a_replaced_binary() {
     let bin = tempfile::tempdir().unwrap();
     let work_dir = tempfile::tempdir().unwrap();
     fake_claude(bin.path(), "2.1.60");
-    let _path = PathGuard::only(bin.path());
+    let _path = PathGuard::first(bin.path());
     reset_disabled_for_process();
 
     assert!(resolve(work_dir.path()));
@@ -302,7 +305,7 @@ fn resolve_follows_a_replaced_binary() {
 fn preflight_reports_the_replaced_version() {
     let bin = tempfile::tempdir().unwrap();
     let path = fake_claude(bin.path(), "2.1.60");
-    let _path = PathGuard::only(bin.path());
+    let _path = PathGuard::first(bin.path());
 
     assert_eq!(preflight(&path), RemoteControlStatus::Enabled);
     fake_claude(bin.path(), "2.0.0");
